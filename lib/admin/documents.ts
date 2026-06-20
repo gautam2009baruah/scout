@@ -1,0 +1,645 @@
+import { getPool } from "@/lib/db/pool";
+import { getStorageProvider } from "@/lib/storage/provider";
+import { getAccessibleTopicIds } from "./content-structure";
+import { enqueueProcessingJob } from "./processing-jobs";
+import type { AdminSession } from "./auth";
+import crypto from "node:crypto";
+
+export const DOCUMENT_STATUSES = [
+  "uploaded",
+  "queued",
+  "processing",
+  "parsed",
+  "chunked",
+  "embedded",
+  "indexed",
+  "failed",
+  "deleted"
+] as const;
+
+export const SUPPORTED_DOCUMENT_FILE_TYPES = ["pdf", "docx", "txt", "csv", "xlsx", "pptx"] as const;
+
+type DocumentStatus = typeof DOCUMENT_STATUSES[number];
+type DocumentFileType = typeof SUPPORTED_DOCUMENT_FILE_TYPES[number];
+
+export type DocumentRow = {
+  id: string;
+  companyId: string;
+  folderId: string;
+  folderName: string;
+  name: string;
+  originalFilename: string;
+  fileType: DocumentFileType;
+  mimeType: string | null;
+  fileSize: number;
+  checksum: string;
+  storagePath: string | null;
+  version: number;
+  status: DocumentStatus;
+  uploadedBy: string;
+  uploadedByName: string;
+  errorMessage: string | null;
+  roleAccessCount: number;
+  userAccessCount: number;
+  canDelete: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type CreateDocumentInput = {
+  companyId: string;
+  folderId: string;
+  name?: string;
+  originalFilename: string;
+  fileType?: string;
+  mimeType?: string;
+  fileSize: number;
+  checksum: string;
+  storagePath?: string | null;
+  version?: number;
+  status?: DocumentStatus;
+};
+
+export type UpdateDocumentInput = {
+  name?: string;
+  status?: string;
+  errorMessage?: string | null;
+  storagePath?: string | null;
+  version?: number;
+};
+
+export type DocumentFilters = {
+  folderId?: string;
+  status?: string;
+  fileType?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+};
+
+export class DocumentError extends Error {
+  statusCode: number;
+
+  constructor(message: string, statusCode = 400) {
+    super(message);
+    this.name = "DocumentError";
+    this.statusCode = statusCode;
+  }
+}
+
+export type UploadDocumentFile = {
+  name: string;
+  type: string;
+  size: number;
+  arrayBuffer(): Promise<ArrayBuffer>;
+};
+
+function isDocumentStatus(value: string): value is DocumentStatus {
+  return DOCUMENT_STATUSES.includes(value as DocumentStatus);
+}
+
+function isSupportedFileType(value: string): value is DocumentFileType {
+  return SUPPORTED_DOCUMENT_FILE_TYPES.includes(value.toLowerCase() as DocumentFileType);
+}
+
+function normalizeFileType(input: CreateDocumentInput) {
+  const explicit = input.fileType?.trim().toLowerCase();
+
+  if (explicit) {
+    return explicit;
+  }
+
+  const extension = input.originalFilename.split(".").pop()?.toLowerCase() ?? "";
+  return extension;
+}
+
+function defaultDocumentName(originalFilename: string) {
+  return originalFilename.replace(/\.[^.]+$/, "").trim() || originalFilename;
+}
+
+function sanitizeFilename(filename: string) {
+  return filename
+    .trim()
+    .replace(/[/\\]/g, "-")
+    .replace(/[^a-zA-Z0-9._ -]/g, "_")
+    .replace(/\s+/g, " ")
+    .slice(0, 180) || "document";
+}
+
+function buildDocumentStoragePath(companyId: string, folderId: string, documentId: string, filename: string) {
+  return `/companies/${companyId}/folders/${folderId}/documents/${documentId}/${sanitizeFilename(filename)}`;
+}
+
+function checksumBuffer(buffer: Buffer) {
+  return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+async function assertFolderAccess(companyId: string, folderId: string, session: AdminSession) {
+  const result = await getPool().query<{ company_id: string }>(
+    "SELECT company_id FROM topics WHERE id = $1 AND deleted_at IS NULL",
+    [folderId]
+  );
+  const folderCompanyId = result.rows[0]?.company_id;
+
+  if (!folderCompanyId) {
+    throw new DocumentError("Folder was not found.", 404);
+  }
+
+  if (folderCompanyId !== companyId) {
+    throw new DocumentError("Document company must match the folder company.");
+  }
+
+  if (session.user.isAdminRole) {
+    return;
+  }
+
+  const accessibleTopicIds = await getAccessibleTopicIds(session);
+
+  if (!accessibleTopicIds?.has(folderId)) {
+    throw new DocumentError("You do not have access to this folder.", 403);
+  }
+}
+
+function mapDocument(row: {
+  id: string;
+  company_id: string;
+  folder_id: string;
+  folder_name: string;
+  name: string;
+  original_filename: string;
+  file_type: DocumentFileType;
+  mime_type: string | null;
+  file_size: string | number;
+  checksum: string;
+  storage_path: string | null;
+  version: number;
+  status: DocumentStatus;
+  uploaded_by: string;
+  uploaded_by_name: string;
+  error_message: string | null;
+  role_access_count?: string | number;
+  user_access_count?: string | number;
+  created_at: Date;
+  updated_at: Date;
+}, session?: AdminSession): DocumentRow {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    folderId: row.folder_id,
+    folderName: row.folder_name,
+    name: row.name,
+    originalFilename: row.original_filename,
+    fileType: row.file_type,
+    mimeType: row.mime_type,
+    fileSize: Number(row.file_size),
+    checksum: row.checksum,
+    storagePath: row.storage_path,
+    version: row.version,
+    status: row.status,
+    uploadedBy: row.uploaded_by,
+    uploadedByName: row.uploaded_by_name,
+    errorMessage: row.error_message,
+    roleAccessCount: Number(row.role_access_count ?? 0),
+    userAccessCount: Number(row.user_access_count ?? 0),
+    canDelete: session ? session.user.isAdminRole || row.uploaded_by === session.user.id : false,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+const documentSelect = `
+  SELECT
+    documents.id,
+    documents.company_id,
+    documents.folder_id,
+    topics.name AS folder_name,
+    documents.name,
+    documents.original_filename,
+    documents.file_type,
+    documents.mime_type,
+    documents.file_size,
+    documents.checksum,
+    documents.storage_path,
+    documents.version,
+    documents.status,
+    documents.uploaded_by,
+    users.name AS uploaded_by_name,
+    documents.error_message,
+    (
+      SELECT COUNT(*)
+      FROM document_role_permissions
+      WHERE document_role_permissions.document_id = documents.id
+        AND document_role_permissions.deleted_at IS NULL
+    ) AS role_access_count,
+    (
+      SELECT COUNT(*)
+      FROM document_user_permissions
+      WHERE document_user_permissions.document_id = documents.id
+        AND document_user_permissions.deleted_at IS NULL
+    ) AS user_access_count,
+    documents.created_at,
+    documents.updated_at
+  FROM documents
+  INNER JOIN topics ON topics.id = documents.folder_id
+  INNER JOIN users ON users.id = documents.uploaded_by
+`;
+
+export async function createDocument(input: CreateDocumentInput, session: AdminSession) {
+  const originalFilename = input.originalFilename.trim();
+  const checksum = input.checksum.trim().toLowerCase();
+  const fileType = normalizeFileType(input);
+  const name = input.name?.trim() || defaultDocumentName(originalFilename);
+  const fileSize = Number(input.fileSize);
+  const version = Number(input.version ?? 1);
+  const status = input.status ?? "uploaded";
+
+  if (!input.companyId || !input.folderId || !originalFilename || !checksum || !name) {
+    throw new DocumentError("Company, folder, filename, checksum, and name are required.");
+  }
+
+  if (!Number.isSafeInteger(fileSize) || fileSize < 0) {
+    throw new DocumentError("File size is invalid.");
+  }
+
+  if (!Number.isSafeInteger(version) || version < 1) {
+    throw new DocumentError("Version is invalid.");
+  }
+
+  if (!isSupportedFileType(fileType)) {
+    throw new DocumentError("Unsupported file type.");
+  }
+
+  if (!isDocumentStatus(status) || status === "deleted") {
+    throw new DocumentError("Invalid document status.");
+  }
+
+  await assertFolderAccess(input.companyId, input.folderId, session);
+
+  try {
+    const result = await getPool().query<{ id: string }>(
+      `
+        INSERT INTO documents (
+          company_id,
+          folder_id,
+          name,
+          original_filename,
+          file_type,
+          mime_type,
+          file_size,
+          checksum,
+          storage_path,
+          version,
+          status,
+          uploaded_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::document_status, $12)
+        RETURNING id
+      `,
+      [
+        input.companyId,
+        input.folderId,
+        name,
+        originalFilename,
+        fileType,
+        input.mimeType?.trim() || null,
+        fileSize,
+        checksum,
+        input.storagePath?.trim() || null,
+        version,
+        status,
+        session.user.id
+      ]
+    );
+
+    return getDocumentById(result.rows[0].id, session);
+  } catch (error) {
+    if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+      throw new DocumentError("A document with the same checksum already exists for this company.", 409);
+    }
+
+    throw error;
+  }
+}
+
+export async function uploadDocuments(input: { companyId: string; folderId: string; files: UploadDocumentFile[] }, session: AdminSession) {
+  if (!input.companyId || !input.folderId) {
+    throw new DocumentError("Company and folder are required.");
+  }
+
+  if (input.files.length === 0) {
+    throw new DocumentError("Select at least one file.");
+  }
+
+  const storage = getStorageProvider();
+  const uploaded: DocumentRow[] = [];
+
+  for (const file of input.files) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const checksum = checksumBuffer(buffer);
+    const document = await createDocument(
+      {
+        companyId: input.companyId,
+        folderId: input.folderId,
+        originalFilename: file.name,
+        fileType: file.name.split(".").pop()?.toLowerCase(),
+        mimeType: file.type || "application/octet-stream",
+        fileSize: file.size,
+        checksum,
+        status: "queued"
+      },
+      session
+    );
+    const storagePath = buildDocumentStoragePath(input.companyId, input.folderId, document.id, file.name);
+
+    try {
+      await storage.save_file(buffer, storagePath);
+      const uploadedDocument = await updateDocument(
+        document.id,
+        {
+          storagePath,
+          status: "uploaded",
+          errorMessage: null
+        },
+        session
+      );
+      await enqueueProcessingJob({
+        companyId: uploadedDocument.companyId,
+        documentId: uploadedDocument.id,
+        jobType: "parse_document",
+        maxAttempts: 3
+      });
+      uploaded.push(uploadedDocument);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to save file to storage.";
+      try {
+        if (await storage.file_exists(storagePath)) {
+          await storage.delete_file(storagePath);
+        }
+      } catch {
+        // Keep the original storage failure visible to the user.
+      }
+      await updateDocument(
+        document.id,
+        {
+          status: "failed",
+          errorMessage: message
+        },
+        session
+      );
+      throw new DocumentError(`Unable to store "${file.name}": ${message}`, 500);
+    }
+  }
+
+  return uploaded;
+}
+
+export async function listDocuments(filters: DocumentFilters, session: AdminSession) {
+  const page = Math.max(1, Number(filters.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 20));
+  const offset = (page - 1) * pageSize;
+  const conditions = ["documents.status <> 'deleted'"];
+  const params: unknown[] = [];
+  const accessibleTopicIds = await getAccessibleTopicIds(session);
+
+  if (accessibleTopicIds) {
+    params.push(Array.from(accessibleTopicIds));
+    conditions.push(`documents.folder_id = ANY($${params.length}::uuid[])`);
+  }
+
+  if (filters.folderId) {
+    params.push(filters.folderId);
+    conditions.push(`documents.folder_id = $${params.length}`);
+  }
+
+  if (filters.status) {
+    if (!isDocumentStatus(filters.status) || filters.status === "deleted") {
+      throw new DocumentError("Invalid document status.");
+    }
+
+    params.push(filters.status);
+    conditions.push(`documents.status = $${params.length}::document_status`);
+  }
+
+  if (filters.fileType) {
+    const fileType = filters.fileType.toLowerCase();
+
+    if (!isSupportedFileType(fileType)) {
+      throw new DocumentError("Invalid file type.");
+    }
+
+    params.push(fileType);
+    conditions.push(`documents.file_type = $${params.length}`);
+  }
+
+  if (filters.search?.trim()) {
+    params.push(`%${filters.search.trim()}%`);
+    conditions.push(`(documents.name ILIKE $${params.length} OR documents.original_filename ILIKE $${params.length})`);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const dataParams = [...params, pageSize, offset];
+  const documentsResult = await getPool().query(
+    `
+      ${documentSelect}
+      ${whereClause}
+      ORDER BY documents.created_at DESC
+      LIMIT $${params.length + 1}
+      OFFSET $${params.length + 2}
+    `,
+    dataParams
+  );
+  const countResult = await getPool().query<{ total: string }>(
+    `SELECT COUNT(*) AS total FROM documents ${whereClause}`,
+    params
+  );
+  const total = Number(countResult.rows[0]?.total ?? 0);
+
+  return {
+    documents: documentsResult.rows.map((row) => mapDocument(row, session)),
+    page,
+    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    pageSize,
+    total
+  };
+}
+
+export async function getDocumentById(id: string, session: AdminSession) {
+  if (!id) {
+    throw new DocumentError("Document is required.");
+  }
+
+  const result = await getPool().query(`${documentSelect} WHERE documents.id = $1`, [id]);
+  const document = result.rows[0] ? mapDocument(result.rows[0], session) : null;
+
+  if (!document || document.status === "deleted") {
+    throw new DocumentError("Document was not found.", 404);
+  }
+
+  await assertFolderAccess(document.companyId, document.folderId, session);
+  return document;
+}
+
+export async function updateDocument(id: string, input: UpdateDocumentInput, session: AdminSession) {
+  const existing = await getDocumentById(id, session);
+  const fields: string[] = [];
+  const params: unknown[] = [id];
+
+  if (typeof input.name === "string") {
+    const name = input.name.trim();
+
+    if (!name) {
+      throw new DocumentError("Document name is required.");
+    }
+
+    params.push(name);
+    fields.push(`name = $${params.length}`);
+  }
+
+  if (typeof input.status === "string") {
+    if (!isDocumentStatus(input.status)) {
+      throw new DocumentError("Invalid document status.");
+    }
+
+    params.push(input.status);
+    fields.push(`status = $${params.length}::document_status`);
+  }
+
+  if (typeof input.version !== "undefined") {
+    const version = Number(input.version);
+
+    if (!Number.isSafeInteger(version) || version < 1) {
+      throw new DocumentError("Version is invalid.");
+    }
+
+    params.push(version);
+    fields.push(`version = $${params.length}`);
+  }
+
+  if (typeof input.errorMessage !== "undefined") {
+    params.push(input.errorMessage?.trim() || null);
+    fields.push(`error_message = $${params.length}`);
+  }
+
+  if (typeof input.storagePath !== "undefined") {
+    params.push(input.storagePath?.trim() || null);
+    fields.push(`storage_path = $${params.length}`);
+  }
+
+  if (fields.length === 0) {
+    return existing;
+  }
+
+  await getPool().query(
+    `
+      UPDATE documents
+      SET ${fields.join(", ")}, updated_at = now()
+      WHERE id = $1 AND status <> 'deleted'
+    `,
+    params
+  );
+
+  return getDocumentById(id, session);
+}
+
+export async function deleteDocument(id: string, session: AdminSession) {
+  const existing = await getDocumentById(id, session);
+  const storage = getStorageProvider();
+
+  if (!session.user.isAdminRole && existing.uploadedBy !== session.user.id) {
+    throw new DocumentError("Only admin users and the uploader can delete this document.", 403);
+  }
+
+  const result = await getPool().query(
+    "UPDATE documents SET status = 'deleted', updated_at = now() WHERE id = $1 AND status <> 'deleted'",
+    [existing.id]
+  );
+
+  if (result.rowCount !== 1) {
+    throw new DocumentError("Document was not found.", 404);
+  }
+
+  if (existing.storagePath) {
+    await storage.delete_file(existing.storagePath);
+  }
+}
+
+export async function getDocumentAccess(documentId: string, session: AdminSession) {
+  const document = await getDocumentById(documentId, session);
+  const [roles, users] = await Promise.all([
+    getPool().query<{ role_id: string }>(
+      "SELECT role_id FROM document_role_permissions WHERE document_id = $1 AND deleted_at IS NULL",
+      [document.id]
+    ),
+    getPool().query<{ user_id: string }>(
+      "SELECT user_id FROM document_user_permissions WHERE document_id = $1 AND deleted_at IS NULL",
+      [document.id]
+    )
+  ]);
+
+  return {
+    documentId: document.id,
+    isCustom: roles.rows.length > 0 || users.rows.length > 0,
+    roleIds: roles.rows.map((row) => row.role_id),
+    userIds: users.rows.map((row) => row.user_id)
+  };
+}
+
+export async function replaceDocumentAccess(
+  documentId: string,
+  input: { roleIds?: string[]; userIds?: string[] },
+  session: AdminSession
+) {
+  const document = await getDocumentById(documentId, session);
+  await assertFolderAccess(document.companyId, document.folderId, session);
+
+  const roleIds = Array.from(new Set(input.roleIds ?? []));
+  const userIds = Array.from(new Set(input.userIds ?? []));
+  const client = await getPool().connect();
+
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "UPDATE document_role_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE document_id = $1 AND deleted_at IS NULL",
+      [document.id, session.user.id]
+    );
+    await client.query(
+      "UPDATE document_user_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE document_id = $1 AND deleted_at IS NULL",
+      [document.id, session.user.id]
+    );
+
+    if (roleIds.length > 0) {
+      await client.query(
+        `
+          INSERT INTO document_role_permissions (company_id, document_id, role_id, created_by, updated_by)
+          SELECT $1, $2, role_id, $3, $3
+          FROM unnest($4::uuid[]) AS role_id
+          ON CONFLICT (document_id, role_id)
+          DO UPDATE SET deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
+        `,
+        [document.companyId, document.id, session.user.id, roleIds]
+      );
+    }
+
+    if (userIds.length > 0) {
+      await client.query(
+        `
+          INSERT INTO document_user_permissions (company_id, document_id, user_id, created_by, updated_by)
+          SELECT $1, $2, user_id, $3, $3
+          FROM unnest($4::uuid[]) AS user_id
+          ON CONFLICT (document_id, user_id)
+          DO UPDATE SET deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
+        `,
+        [document.companyId, document.id, session.user.id, userIds]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return getDocumentAccess(document.id, session);
+}

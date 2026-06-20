@@ -1,0 +1,34 @@
+import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { AdminShell, MasterDataForms, MasterDataSummary } from "@/components/admin";
+import { getMasterData } from "@/lib/admin/administration";
+import { MODULE_KEYS, getAllAdminModules, requireModuleAccess } from "@/lib/admin/permissions";
+import { getCurrentAdminSession } from "@/lib/admin/session";
+
+export const metadata: Metadata = {
+  title: "Administration | Scout Admin",
+  description: "Create and maintain company and role master data."
+};
+
+export default async function MasterDataPage() {
+  const session = await getCurrentAdminSession();
+
+  if (!session) {
+    redirect("/control-panel/login");
+  }
+
+  if (session.user.mustChangePassword) {
+    redirect("/control-panel/change-password");
+  }
+
+  requireModuleAccess(session, MODULE_KEYS.administration);
+
+  const [{ companies, roles }, modules] = await Promise.all([getMasterData(), getAllAdminModules()]);
+
+  return (
+    <AdminShell active={MODULE_KEYS.administration} session={session} title="Administration">
+      <MasterDataForms companies={companies} modules={modules} />
+      <MasterDataSummary companies={companies} roles={roles} />
+    </AdminShell>
+  );
+}

@@ -1,0 +1,128 @@
+import { PDFParse } from "pdf-parse";
+import mammoth from "mammoth";
+
+export type ParsedDocumentPage = {
+  page_number: number;
+  text: string;
+};
+
+export type ParsedDocumentOutput = {
+  title: string;
+  pages: ParsedDocumentPage[];
+  metadata: {
+    author?: string;
+    created_at?: string;
+    page_count: number;
+    [key: string]: unknown;
+  };
+};
+
+export interface DocumentParser {
+  can_parse(file_type: string): boolean;
+  parse(file: Buffer): Promise<ParsedDocumentOutput>;
+}
+
+function buildOutput(title: string, pages: ParsedDocumentPage[], metadata: Record<string, unknown> = {}): ParsedDocumentOutput {
+  return {
+    title,
+    pages,
+    metadata: {
+      ...metadata,
+      page_count: pages.length
+    }
+  };
+}
+
+function splitTextIntoPages(text: string) {
+  const byFormFeed = text.split(/\f/g).map((page) => page.trim()).filter(Boolean);
+
+  if (byFormFeed.length > 0) {
+    return byFormFeed;
+  }
+
+  const trimmed = text.trim();
+  return trimmed ? [trimmed] : [""];
+}
+
+class TxtDocumentParser implements DocumentParser {
+  can_parse(fileType: string) {
+    return fileType === "txt";
+  }
+
+  async parse(file: Buffer) {
+    const text = file.toString("utf8");
+    return buildOutput("", [{ page_number: 1, text }]);
+  }
+}
+
+class PdfDocumentParser implements DocumentParser {
+  can_parse(fileType: string) {
+    return fileType === "pdf";
+  }
+
+  async parse(file: Buffer) {
+    const parser = new PDFParse({ data: file });
+
+    try {
+      const [textResult, infoResult] = await Promise.all([
+        parser.getText(),
+        parser.getInfo().catch(() => null)
+      ]);
+      const pageTexts = splitTextIntoPages(textResult.text);
+      const pages = pageTexts.map((text, index) => ({ page_number: index + 1, text }));
+      const info = infoResult?.info ?? {};
+
+      return buildOutput(
+        typeof info.Title === "string" ? info.Title : "",
+        pages,
+        {
+          author: typeof info.Author === "string" ? info.Author : "",
+          created_at: typeof info.CreationDate === "string" ? info.CreationDate : "",
+          pdf_info: info
+        }
+      );
+    } finally {
+      await parser.destroy();
+    }
+  }
+}
+
+class DocxDocumentParser implements DocumentParser {
+  can_parse(fileType: string) {
+    return fileType === "docx";
+  }
+
+  async parse(file: Buffer) {
+    const result = await mammoth.extractRawText({ buffer: file });
+    const text = result.value.trim();
+    const pages = splitTextIntoPages(text).map((pageText, index) => ({ page_number: index + 1, text: pageText }));
+
+    return buildOutput("", pages, {
+      warnings: result.messages.map((message) => message.message)
+    });
+  }
+}
+
+class PlaceholderDocumentParser implements DocumentParser {
+  constructor(private fileTypes: string[]) {}
+
+  can_parse(fileType: string) {
+    return this.fileTypes.includes(fileType);
+  }
+
+  async parse(): Promise<ParsedDocumentOutput> {
+    throw new Error("Parser is not implemented for this file type yet.");
+  }
+}
+
+const parsers: DocumentParser[] = [
+  new TxtDocumentParser(),
+  new PdfDocumentParser(),
+  new DocxDocumentParser(),
+  new PlaceholderDocumentParser(["csv", "xlsx", "pptx"])
+];
+
+export function getDocumentParser(fileType: string) {
+  const normalized = fileType.toLowerCase();
+  return parsers.find((parser) => parser.can_parse(normalized)) ?? null;
+}
