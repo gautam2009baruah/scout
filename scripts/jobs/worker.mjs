@@ -12,9 +12,13 @@ const databaseUrl = process.env.DATABASE_URL;
 const pollMs = Number(process.env.JOB_WORKER_POLL_MS || 2000);
 const runOnce = process.argv.includes("--once");
 const storageRoot = path.resolve(process.cwd(), process.env.STORAGE_ROOT || "./storage");
-const embeddingProviderName = process.env.EMBEDDING_PROVIDER || "local_mock";
-const embeddingModel = process.env.EMBEDDING_MODEL || (embeddingProviderName === "openai" ? "text-embedding-3-small" : "local_mock");
-const embeddingDimensions = Number(process.env.EMBEDDING_DIMENSIONS || 1536);
+const defaultEmbeddingConfig = {
+  provider: process.env.EMBEDDING_PROVIDER || "local_bge",
+  model: normalizeEmbeddingModel(process.env.EMBEDDING_PROVIDER || "local_bge", process.env.EMBEDDING_MODEL || "nomic-embed-text"),
+  dimension: Number(process.env.EMBEDDING_DIMENSIONS || 768),
+  endpoint: process.env.EMBEDDING_ENDPOINT || "http://localhost:11434/api/embed",
+  apiKey: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || ""
+};
 const embeddingBatchSize = Number(process.env.EMBEDDING_BATCH_SIZE || 64);
 
 if (!databaseUrl) {
@@ -51,6 +55,43 @@ async function saveStoredFile(storagePath, buffer) {
   const target = resolveStoragePath(storagePath);
   await mkdir(path.dirname(target), { recursive: true });
   await writeFile(target, buffer);
+}
+
+async function deleteStoredFile(storagePath) {
+  const { rm } = await import("node:fs/promises");
+  await rm(resolveStoragePath(storagePath), { force: true });
+}
+
+async function fetchExternalFile(document) {
+  const sourceUrl = document.external_source_url || document.external_source_reference;
+
+  if (!sourceUrl) {
+    throw new Error("External source URL is required for external reference documents.");
+  }
+
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(sourceUrl);
+  } catch {
+    throw new Error("Only HTTP and HTTPS external source URLs are supported right now.");
+  }
+
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw new Error("Only HTTP and HTTPS external source URLs are supported right now.");
+  }
+
+  const response = await fetch(parsedUrl, {
+    headers: {
+      Accept: "application/octet-stream,*/*"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to read external source. HTTP ${response.status}.`);
+  }
+
+  return Buffer.from(await response.arrayBuffer());
 }
 
 async function claimNextJob() {
@@ -231,13 +272,38 @@ function normalizeVector(vector) {
   return vector.map((value) => Number((value / length).toFixed(8)));
 }
 
+function timeoutSignal(ms) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ms);
+
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeout)
+  };
+}
+
+function normalizeGeminiEmbeddingModel(model) {
+  return normalizeEmbeddingModel("gemini", model);
+}
+
+function normalizeEmbeddingModel(provider, model) {
+  const cleanModel = (model || "").replace(/^models\//, "");
+
+  if (provider === "gemini" && (!cleanModel || cleanModel === "text-embedding-004")) {
+    return "gemini-embedding-001";
+  }
+
+  return cleanModel;
+}
+
 async function embedLocalMockText(text) {
-  const vector = new Array(embeddingDimensions).fill(0);
+  const config = await getEmbeddingConfig();
+  const vector = new Array(config.dimension).fill(0);
   const tokens = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 
   for (const token of tokens) {
     const hash = crypto.createHash("sha256").update(token).digest();
-    const index = hash.readUInt32BE(0) % embeddingDimensions;
+    const index = hash.readUInt32BE(0) % config.dimension;
     const sign = hash[4] % 2 === 0 ? 1 : -1;
     vector[index] += sign;
   }
@@ -245,20 +311,94 @@ async function embedLocalMockText(text) {
   return normalizeVector(vector);
 }
 
-async function embedOpenAIBatch(texts) {
-  const apiKey = process.env.OPENAI_API_KEY || "";
+async function getEmbeddingConfig() {
+  try {
+    const result = await client.query(
+      `
+        SELECT
+          embedding_provider,
+          embedding_model,
+          embedding_dimension,
+          embedding_endpoint,
+          embedding_api_key
+        FROM ai_provider_config
+        WHERE id = 1
+      `
+    );
+    const row = result.rows[0];
+
+    if (row) {
+      return {
+        provider: row.embedding_provider,
+        model: normalizeEmbeddingModel(row.embedding_provider, row.embedding_model),
+        dimension: Number(row.embedding_dimension),
+        endpoint: row.embedding_endpoint || defaultEmbeddingConfig.endpoint,
+        apiKey: row.embedding_api_key || defaultEmbeddingConfig.apiKey
+      };
+    }
+  } catch {
+    // Migrations may not have run yet. Fall back to environment config.
+  }
+
+  return defaultEmbeddingConfig;
+}
+
+async function embedLocalBGEBatch(texts, config) {
+  try {
+    return await requestLocalEmbeddings(config.model, texts, config);
+  } catch {
+    try {
+      return await requestLocalEmbeddings("nomic-embed-text", texts, config);
+    } catch {
+      return Promise.all(texts.map((text) => embedLocalMockText(text)));
+    }
+  }
+}
+
+async function requestLocalEmbeddings(model, texts, config) {
+  const timeout = timeoutSignal(15000);
+
+  try {
+    const response = await fetch(config.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, input: texts }),
+      signal: timeout.signal
+    });
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(typeof payload?.error === "string" ? payload.error : "Local BGE embedding request failed.");
+    }
+
+    if (Array.isArray(payload?.embeddings)) {
+      return payload.embeddings;
+    }
+
+    if (Array.isArray(payload?.data)) {
+      return payload.data.map((item) => item.embedding);
+    }
+
+    throw new Error("Local BGE embedding response did not include embeddings.");
+  } finally {
+    timeout.clear();
+  }
+}
+
+async function embedOpenAIBatch(texts, config) {
+  const apiKey = config.apiKey;
 
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai.");
+    throw new Error("EMBEDDING_API_KEY or OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai.");
   }
 
   const body = {
-    model: embeddingModel,
+    model: config.model,
     input: texts
   };
 
-  if (process.env.EMBEDDING_DIMENSIONS) {
-    body.dimensions = embeddingDimensions;
+  if (config.dimension) {
+    body.dimensions = config.dimension;
   }
 
   const response = await fetch("https://api.openai.com/v1/embeddings", {
@@ -280,16 +420,78 @@ async function embedOpenAIBatch(texts) {
     .map((item) => item.embedding);
 }
 
+async function embedGeminiBatch(texts, config) {
+  if (!config.apiKey) {
+    throw new Error("EMBEDDING_API_KEY or GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini.");
+  }
+
+  const model = normalizeGeminiEmbeddingModel(config.model);
+  const modelResource = `models/${model}`;
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:batchEmbedContents?key=${config.apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        requests: texts.map((text) => ({
+          model: modelResource,
+          content: { parts: [{ text }] },
+          ...(config.dimension ? { outputDimensionality: config.dimension } : {})
+        }))
+      })
+    }
+  );
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(typeof payload?.error?.message === "string" ? payload.error.message : "Gemini embedding request failed.");
+  }
+
+  return payload.embeddings.map((item) => item.values);
+}
+
+async function embedCustomBatch(texts, config) {
+  if (!config.endpoint) {
+    throw new Error("EMBEDDING_ENDPOINT is required when EMBEDDING_PROVIDER=custom.");
+  }
+
+  const response = await fetch(config.endpoint, {
+    method: "POST",
+    headers: {
+      ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ model: config.model, input: texts })
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(typeof payload?.error?.message === "string" ? payload.error.message : "Custom embedding request failed.");
+  }
+
+  return payload.embeddings ?? payload.data?.map((item) => item.embedding);
+}
+
 async function embedBatch(texts) {
-  if (embeddingProviderName === "local_mock") {
-    return Promise.all(texts.map((text) => embedLocalMockText(text)));
+  const config = await getEmbeddingConfig();
+
+  if (config.provider === "local_bge") {
+    return embedLocalBGEBatch(texts, config);
   }
 
-  if (embeddingProviderName === "openai") {
-    return embedOpenAIBatch(texts);
+  if (config.provider === "openai") {
+    return embedOpenAIBatch(texts, config);
   }
 
-  throw new Error(`Unsupported embedding provider: ${embeddingProviderName}`);
+  if (config.provider === "gemini") {
+    return embedGeminiBatch(texts, config);
+  }
+
+  if (config.provider === "custom") {
+    return embedCustomBatch(texts, config);
+  }
+
+  throw new Error(`Unsupported embedding provider: ${config.provider}`);
 }
 
 async function getEmbeddingColumnMode() {
@@ -368,7 +570,15 @@ async function parseByFileType(fileType, file) {
 async function parseDocument(job) {
   const documentResult = await client.query(
     `
-      SELECT id, company_id, file_type, storage_path
+      SELECT
+        id,
+        company_id,
+        file_type,
+        storage_path,
+        storage_mode,
+        external_source_url,
+        external_source_reference,
+        source_metadata_json
       FROM documents
       WHERE id = $1 AND status <> 'deleted'
     `,
@@ -380,7 +590,7 @@ async function parseDocument(job) {
     throw new Error("Document was not found.");
   }
 
-  if (!document.storage_path) {
+  if (document.storage_mode === "managed_upload" && !document.storage_path) {
     throw new Error("Document has no stored file path.");
   }
 
@@ -389,10 +599,13 @@ async function parseDocument(job) {
     [document.id]
   );
 
-  const originalFile = await getStoredFile(document.storage_path);
+  const originalFile = document.storage_mode === "managed_upload"
+    ? await getStoredFile(document.storage_path)
+    : await fetchExternalFile(document);
   const parsedOutput = await parseByFileType(document.file_type, originalFile);
   const parsedPath = parsedOutputPath(document.company_id, document.id);
   await saveStoredFile(parsedPath, Buffer.from(JSON.stringify(parsedOutput, null, 2), "utf8"));
+  const retentionMode = document.storage_mode === "strict_external_reference" ? "temporary" : "stored";
 
   await client.query("BEGIN");
 
@@ -404,14 +617,16 @@ async function parseDocument(job) {
           document_id,
           parsed_file_path,
           page_count,
-          metadata_json
+          metadata_json,
+          retention_mode
         )
-        VALUES ($1, $2, $3, $4, $5::jsonb)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6)
         ON CONFLICT (document_id)
         DO UPDATE SET
           parsed_file_path = EXCLUDED.parsed_file_path,
           page_count = EXCLUDED.page_count,
           metadata_json = EXCLUDED.metadata_json,
+          retention_mode = EXCLUDED.retention_mode,
           updated_at = now()
       `,
       [
@@ -419,7 +634,12 @@ async function parseDocument(job) {
         document.id,
         parsedPath,
         parsedOutput.pages.length,
-        JSON.stringify(parsedOutput.metadata ?? {})
+        JSON.stringify({
+          ...(parsedOutput.metadata ?? {}),
+          storage_mode: document.storage_mode,
+          external_source_reference: document.external_source_reference ?? document.external_source_url ?? null
+        }),
+        retentionMode
       ]
     );
 
@@ -472,7 +692,9 @@ async function chunkDocument(job) {
         documents.folder_id,
         documents.name,
         documents.file_type,
-        document_parsed_contents.parsed_file_path
+        documents.storage_mode,
+        document_parsed_contents.parsed_file_path,
+        document_parsed_contents.retention_mode
       FROM documents
       INNER JOIN document_parsed_contents ON document_parsed_contents.document_id = documents.id
       WHERE documents.id = $1
@@ -553,6 +775,14 @@ async function chunkDocument(job) {
       [document.id]
     );
 
+    if (document.storage_mode === "strict_external_reference" || document.retention_mode === "temporary") {
+      await deleteStoredFile(document.parsed_file_path).catch(() => null);
+      await client.query(
+        "DELETE FROM document_parsed_contents WHERE document_id = $1",
+        [document.id]
+      );
+    }
+
     await client.query(
       `
         INSERT INTO processing_jobs (company_id, document_id, job_type, max_attempts)
@@ -592,6 +822,7 @@ async function embedDocument(job) {
   );
 
   const embeddingMode = await getEmbeddingColumnMode();
+  const embeddingConfig = await getEmbeddingConfig();
 
   await client.query("BEGIN");
 
@@ -609,14 +840,18 @@ async function embedDocument(job) {
             document_id,
             chunk_id,
             embedding,
-            embedding_model
+            embedding_provider,
+            embedding_model,
+            embedding_dimension
           )
           SELECT
             company_id,
             document_id,
             chunk_id,
             embedding::${embeddingMode === "vector" ? "vector" : "jsonb"},
-            $5
+            $5,
+            $6,
+            $7
           FROM unnest(
             $1::uuid[],
             $2::uuid[],
@@ -629,7 +864,9 @@ async function embedDocument(job) {
           batch.map((chunk) => chunk.document_id),
           batch.map((chunk) => chunk.id),
           embeddings.map((embedding) => serializeEmbedding(embedding, embeddingMode)),
-          embeddingModel
+          embeddingConfig.provider,
+          embeddingConfig.model,
+          embeddingConfig.dimension
         ]
       );
     }

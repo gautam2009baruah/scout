@@ -18,5 +18,28 @@ services:
       timeout: 5s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: scout-ollama
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - scout-ollama-data:/root/.ollama
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: scout-ollama-init
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "ollama pull ${OLLAMA_LLM_MODEL:-qwen3:0.6b} &&
+       ollama pull ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text}"
+    restart: "no"
+
 volumes:
   scout-postgres-data:
+  scout-ollama-data:

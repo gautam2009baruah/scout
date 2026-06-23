@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileText, FileUp, FolderPlus, KeyRound, Loader2, Pencil, ShieldCheck, Trash2 } from "lucide-react";
+import { Download, FileText, FileUp, FolderPlus, KeyRound, Link2, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./topic-tree";
 import type { RoleSummary } from "@/lib/admin/administration";
@@ -49,9 +49,116 @@ type DocumentGridState = {
   total: number;
 };
 
+type DocumentStorageMode = "managed_upload" | "external_reference" | "strict_external_reference";
+
+type ExternalReferenceRow = {
+  id: string;
+  externalSourceUrl: string;
+  originalFilename: string;
+  fileType: string;
+  sourceMetadata: string;
+};
+
+type DocumentProgressRow = {
+  id: string;
+  label: string;
+  status: string;
+  progress: number;
+  error?: string;
+  documentId?: string;
+};
+
+const supportedFileTypes = ["pdf", "docx", "txt", "csv", "xlsx", "pptx"];
+
+const documentStorageModeOptions: Array<{
+  value: DocumentStorageMode;
+  label: string;
+  description: string;
+  details: string[];
+}> = [
+  {
+    value: "managed_upload",
+    label: "Managed upload",
+    description: "Best when Scout should keep the original file as the system of record.",
+    details: [
+      "Store original file permanently",
+      "Store parsed output if needed",
+      "Store chunks",
+      "Store embeddings"
+    ]
+  },
+  {
+    value: "external_reference",
+    label: "External reference",
+    description: "Best when the source lives elsewhere, but Scout can keep enough processed data for search.",
+    details: [
+      "Do not store original file permanently",
+      "Temporary file allowed during processing",
+      "Store chunks",
+      "Store embeddings",
+      "Store source metadata",
+      "Store citation metadata",
+      "Store external source link/reference"
+    ]
+  },
+  {
+    value: "strict_external_reference",
+    label: "Strict external",
+    description: "Best for strict retention policies where only retrieval-ready data should remain.",
+    details: [
+      "Do not store original file permanently",
+      "Do not store full parsed text permanently",
+      "Temporary file/text allowed only during processing",
+      "Delete temp file/text after chunking and embedding",
+      "Store only chunks, embeddings, source metadata, citation metadata"
+    ]
+  }
+];
+
 async function readMessage(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);
   return typeof body?.message === "string" ? body.message : fallback;
+}
+
+function createExternalReferenceRow(): ExternalReferenceRow {
+  return {
+    id: globalThis.crypto?.randomUUID?.() ?? `external-${Date.now()}-${Math.random()}`,
+    externalSourceUrl: "",
+    originalFilename: "",
+    fileType: "pdf",
+    sourceMetadata: ""
+  };
+}
+
+function inferNameFromReference(reference: string) {
+  try {
+    const url = new URL(reference);
+    return decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "") || "external-document";
+  } catch {
+    return reference.split(/[\\/]/).filter(Boolean).pop() || "external-document";
+  }
+}
+
+function progressForDocumentStatus(status: string) {
+  switch (status) {
+    case "uploaded":
+      return 30;
+    case "queued":
+      return 38;
+    case "processing":
+      return 58;
+    case "parsed":
+      return 70;
+    case "chunked":
+      return 82;
+    case "embedded":
+    case "indexed":
+      return 100;
+    case "failed":
+      return 100;
+    default:
+      return 20;
+  }
 }
 
 function filterTreeByCompany(nodes: TopicTreeNode[], companyId: string): TopicTreeNode[] {
@@ -93,6 +200,9 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadProgressLabel, setUploadProgressLabel] = useState("");
+  const [documentStorageMode, setDocumentStorageMode] = useState<DocumentStorageMode>("managed_upload");
+  const [externalRows, setExternalRows] = useState<ExternalReferenceRow[]>([createExternalReferenceRow()]);
+  const [documentProgressRows, setDocumentProgressRows] = useState<DocumentProgressRow[]>([]);
   const [documentGrid, setDocumentGrid] = useState<DocumentGridState>({ documents: [], page: 1, pageCount: 1, pageSize: 8, total: 0 });
   const [documentFilters, setDocumentFilters] = useState({ fileType: "", search: "", status: "" });
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
@@ -144,6 +254,10 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
       .filter((grant) => grant.type === "user" && grant.topicId === editTarget?.topicId && editUserIds.includes(grant.assigneeId))
       .map((grant) => grant.assigneeName),
     [editTarget?.topicId, editUserIds, grants]
+  );
+  const selectedStorageMode = useMemo(
+    () => documentStorageModeOptions.find((option) => option.value === documentStorageMode) ?? documentStorageModeOptions[0],
+    [documentStorageMode]
   );
 
   function openContextMenu(target: TopicActionTarget) {
@@ -202,6 +316,9 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
     setUploadFiles([]);
     setUploadProgress(0);
     setUploadProgressLabel("");
+    setDocumentStorageMode("managed_upload");
+    setExternalRows([createExternalReferenceRow()]);
+    setDocumentProgressRows([]);
   }
 
   function closeUploadModal() {
@@ -209,7 +326,22 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
     setUploadFiles([]);
     setUploadProgress(0);
     setUploadProgressLabel("");
+    setDocumentStorageMode("managed_upload");
+    setExternalRows([createExternalReferenceRow()]);
+    setDocumentProgressRows([]);
     setTopicState({ message: "", status: "idle" });
+  }
+
+  function updateExternalRow(id: string, patch: Partial<ExternalReferenceRow>) {
+    setExternalRows((rows) => rows.map((row) => row.id === id ? { ...row, ...patch } : row));
+  }
+
+  function addExternalReferenceRow() {
+    setExternalRows((rows) => [...rows, createExternalReferenceRow()]);
+  }
+
+  function removeExternalReferenceRow(id: string) {
+    setExternalRows((rows) => rows.length === 1 ? rows : rows.filter((row) => row.id !== id));
   }
 
   async function loadDocuments(target: TopicActionTarget, page = 1, filters = documentFilters) {
@@ -486,7 +618,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
   }
 
   function uploadWithProgress(form: FormData) {
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<{ documents?: Array<{ id: string; originalFilename?: string; name?: string; status?: string; errorMessage?: string | null }> }>((resolve, reject) => {
       const request = new XMLHttpRequest();
 
       request.upload.onprogress = (event) => {
@@ -498,6 +630,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
         const progress = Math.min(90, Math.round((event.loaded / event.total) * 90));
         setUploadProgress(progress);
         setUploadProgressLabel(`Uploading files ${progress}%`);
+        setDocumentProgressRows((rows) => rows.map((row) => ({ ...row, progress, status: "Uploading" })));
       };
 
       request.onload = () => {
@@ -512,7 +645,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
         if (request.status >= 200 && request.status < 300) {
           setUploadProgress(100);
           setUploadProgressLabel("Upload complete");
-          resolve();
+          resolve(body ?? {});
           return;
         }
 
@@ -527,37 +660,192 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
     });
   }
 
+  async function pollRegisteredDocuments(documentIds: string[]) {
+    if (!documentIds.length) {
+      return;
+    }
+
+    const finalStatuses = new Set(["embedded", "indexed", "failed", "deleted"]);
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 350 : 1800));
+
+      const documents = await Promise.all(
+        documentIds.map(async (id) => {
+          const response = await fetch(`/api/admin/documents/${id}`);
+          if (!response.ok) {
+            return null;
+          }
+          const body = await response.json().catch(() => null);
+          return body?.document ?? null;
+        })
+      );
+
+      const validDocuments = documents.filter(Boolean);
+
+      setDocumentProgressRows((rows) => {
+        const nextRows = rows.map((row) => {
+          if (!row.documentId) {
+            return row;
+          }
+
+          const document = validDocuments.find((item) => item.id === row.documentId);
+          if (!document) {
+            return row;
+          }
+
+          return {
+            ...row,
+            status: document.status,
+            progress: progressForDocumentStatus(document.status),
+            error: document.errorMessage ?? undefined
+          };
+        });
+        const averageProgress = nextRows.length ? Math.round(nextRows.reduce((sum, row) => sum + row.progress, 0) / nextRows.length) : 0;
+
+        setUploadProgress(averageProgress);
+        setUploadProgressLabel(averageProgress >= 100 ? "Processing complete" : "Processing in background...");
+
+        return nextRows;
+      });
+
+      if (validDocuments.length === documentIds.length && validDocuments.every((document) => finalStatuses.has(document.status))) {
+        return;
+      }
+    }
+  }
+
   async function registerUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!uploadTarget?.topicId || uploadFiles.length === 0) {
+    if (!uploadTarget?.topicId) {
+      setTopicState({ message: "Select a folder first.", status: "error" });
+      return;
+    }
+
+    if (documentStorageMode === "managed_upload" && uploadFiles.length === 0) {
       setTopicState({ message: "Select at least one file.", status: "error" });
       return;
     }
 
     setTopicState({ message: "", status: "submitting" });
     setUploadProgress(2);
-    setUploadProgressLabel("Preparing upload...");
+    setUploadProgressLabel(documentStorageMode === "managed_upload" ? "Preparing upload..." : "Registering references...");
 
-    const form = new FormData();
-    form.set("companyId", uploadTarget.companyId);
-    form.set("folderId", uploadTarget.topicId);
-    uploadFiles.forEach((file) => form.append("files", file));
+    let createdDocuments: Array<{ id: string; originalFilename?: string; name?: string; status?: string; errorMessage?: string | null }> = [];
 
-    try {
-      await uploadWithProgress(form);
-    } catch (error) {
-      setTopicState({ message: error instanceof Error ? error.message : "Unable to upload files.", status: "error" });
-      setUploadProgress(0);
-      setUploadProgressLabel("");
-      return;
+    if (documentStorageMode === "managed_upload") {
+      setDocumentProgressRows(uploadFiles.map((file) => ({
+        id: `${file.name}-${file.lastModified}`,
+        label: file.name,
+        progress: 2,
+        status: "Preparing"
+      })));
+
+      const form = new FormData();
+      form.set("companyId", uploadTarget.companyId);
+      form.set("folderId", uploadTarget.topicId);
+      uploadFiles.forEach((file) => form.append("files", file));
+
+      try {
+        const body = await uploadWithProgress(form);
+        createdDocuments = body.documents ?? [];
+      } catch (error) {
+        setTopicState({ message: error instanceof Error ? error.message : "Unable to upload files.", status: "error" });
+        setUploadProgress(0);
+        setUploadProgressLabel("");
+        setDocumentProgressRows((rows) => rows.map((row) => ({ ...row, status: "Failed", progress: 100, error: error instanceof Error ? error.message : "Unable to upload files." })));
+        return;
+      }
+    } else {
+      const activeRows = externalRows
+        .map((row) => ({ ...row, externalSourceUrl: row.externalSourceUrl.trim(), originalFilename: row.originalFilename.trim(), sourceMetadata: row.sourceMetadata.trim() }))
+        .filter((row) => row.externalSourceUrl || row.originalFilename);
+
+      if (activeRows.length === 0) {
+        setTopicState({ message: "Add at least one external reference.", status: "error" });
+        return;
+      }
+
+      const documents = [];
+
+      for (const row of activeRows) {
+        let sourceMetadata: Record<string, unknown> = {};
+
+        if (row.sourceMetadata) {
+          try {
+            sourceMetadata = JSON.parse(row.sourceMetadata);
+          } catch {
+            setTopicState({ message: "Source metadata must be valid JSON.", status: "error" });
+            return;
+          }
+        }
+
+        documents.push({
+          companyId: uploadTarget.companyId,
+          folderId: uploadTarget.topicId,
+          storageMode: documentStorageMode,
+          externalSourceUrl: row.externalSourceUrl || undefined,
+          externalSourceReference: row.externalSourceUrl || row.originalFilename,
+          originalFilename: row.originalFilename || inferNameFromReference(row.externalSourceUrl),
+          fileType: row.fileType,
+          fileSize: 0,
+          sourceMetadata
+        });
+      }
+
+      setDocumentProgressRows(documents.map((document, index) => ({
+        id: activeRows[index].id,
+        label: document.originalFilename,
+        progress: 15,
+        status: "Registering"
+      })));
+
+      try {
+        const response = await fetch("/api/admin/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documents })
+        });
+
+        const body = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(typeof body?.message === "string" ? body.message : "Unable to register references.");
+        }
+
+        createdDocuments = body?.documents ?? [];
+        setUploadProgress(38);
+        setUploadProgressLabel("References queued");
+      } catch (error) {
+        setTopicState({ message: error instanceof Error ? error.message : "Unable to register references.", status: "error" });
+        setDocumentProgressRows((rows) => rows.map((row) => ({ ...row, status: "Failed", progress: 100, error: error instanceof Error ? error.message : "Unable to register references." })));
+        return;
+      }
     }
 
-    setUploadTarget(null);
-    setUploadFiles([]);
-    setUploadProgress(0);
-    setUploadProgressLabel("");
-    setTopicState({ message: "Document metadata registered.", status: "success" });
+    const createdByLabel = new Map(createdDocuments.map((document) => [document.originalFilename ?? document.name ?? document.id, document]));
+
+    setDocumentProgressRows((rows) => {
+      const nextRows = rows.map((row) => {
+        const document = createdByLabel.get(row.label) ?? createdDocuments.find((item) => item.name === row.label || item.id === row.documentId);
+        return document ? {
+          ...row,
+          documentId: document.id,
+          status: document.status ?? "queued",
+          progress: progressForDocumentStatus(document.status ?? "queued"),
+          error: document.errorMessage ?? undefined
+        } : row;
+      });
+
+      setUploadProgress(nextRows.length ? Math.round(nextRows.reduce((sum, row) => sum + row.progress, 0) / nextRows.length) : 0);
+      setUploadProgressLabel("Documents queued");
+
+      return nextRows;
+    });
+
+    setTopicState({ message: "Documents queued for processing. You can close this window while processing continues.", status: "success" });
+    await pollRegisteredDocuments(createdDocuments.map((document) => document.id));
     router.refresh();
   }
 
@@ -608,7 +896,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
                   type="button"
                 >
                   <FileUp className="h-4 w-4 text-violet-600" />
-                  Upload
+                  Add Documents
                 </button>
                 <button
                   className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-100"
@@ -701,7 +989,16 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
                     <tr className="align-top" key={document.id}>
                       <td className="px-3 py-3 font-semibold text-slate-500">{(documentGrid.page - 1) * documentGrid.pageSize + index + 1}</td>
                       <td className="px-3 py-3">
-                        <p className="font-semibold text-slate-950">{document.name}</p>
+                        <div className="flex max-w-72 items-center gap-2">
+                          <p className="min-w-0 truncate font-semibold text-slate-950">{document.name}</p>
+                          <a
+                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                            href={`/api/admin/documents/${document.id}/download`}
+                            title="Download"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </a>
+                        </div>
                         <p className="max-w-64 truncate text-xs text-slate-500">{document.originalFilename}</p>
                         <p className="text-xs text-slate-400">By {document.uploadedByName}</p>
                       </td>
@@ -829,44 +1126,135 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
 
       {uploadTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={closeUploadModal}>
-          <form className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={registerUpload}>
+          <form className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={registerUpload}>
             <div className="flex items-center gap-3">
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600 text-white">
                 <FileUp className="h-5 w-5" />
               </span>
               <div>
-                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Upload documents</h2>
+                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Add documents</h2>
                 <p className="text-sm text-slate-500">{uploadTarget.topicName}</p>
               </div>
             </div>
 
-            <label className="mt-5 block rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-violet-300 hover:bg-violet-50/50">
-              <input
-                accept=".pdf,.docx,.txt,.csv,.xlsx,.pptx"
-                className="sr-only"
-                multiple
-                onChange={(event) => setUploadFiles(Array.from(event.target.files ?? []))}
-                type="file"
-              />
-              <span className="text-sm font-semibold text-slate-800">Choose files</span>
-              <span className="mt-1 block text-xs text-slate-500">PDF, DOCX, TXT, CSV, XLSX, PPTX</span>
-            </label>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {documentStorageModeOptions.map((option) => {
+                const active = option.value === documentStorageMode;
 
-            {uploadFiles.length ? (
-              <div className="mt-3 max-h-32 overflow-auto rounded-lg border border-slate-200">
-                {uploadFiles.map((file) => (
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0" key={`${file.name}-${file.lastModified}`}>
-                    <span className="truncate text-sm font-medium text-slate-700">{file.name}</span>
-                    <span className="shrink-0 text-xs text-slate-500">{Math.ceil(file.size / 1024)} KB</span>
+                return (
+                  <button
+                    className={`rounded-lg border px-3 py-3 text-left transition ${active ? "border-violet-300 bg-violet-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}
+                    disabled={topicState.status === "submitting"}
+                    key={option.value}
+                    onClick={() => {
+                      setDocumentStorageMode(option.value);
+                      setDocumentProgressRows([]);
+                      setTopicState({ message: "", status: "idle" });
+                    }}
+                    type="button"
+                  >
+                    <span className={`text-sm font-semibold ${active ? "text-violet-800" : "text-slate-800"}`}>{option.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-500">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-sm font-semibold text-slate-800">{selectedStorageMode.label}</div>
+              <div className="mt-2 grid gap-1.5 md:grid-cols-2">
+                {selectedStorageMode.details.map((detail) => (
+                  <div className="flex items-start gap-2 text-xs leading-5 text-slate-600" key={detail}>
+                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-violet-500" />
+                    <span>{detail}</span>
                   </div>
                 ))}
               </div>
-            ) : null}
+            </div>
 
-            {topicState.status === "submitting" ? (
+            {documentStorageMode === "managed_upload" ? (
+              <>
+                <label className="mt-5 block rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-violet-300 hover:bg-violet-50/50">
+                  <input
+                    accept=".pdf,.docx,.txt,.csv,.xlsx,.pptx"
+                    className="sr-only"
+                    disabled={topicState.status === "submitting"}
+                    multiple
+                    onChange={(event) => {
+                      setUploadFiles(Array.from(event.target.files ?? []));
+                      setDocumentProgressRows([]);
+                    }}
+                    type="file"
+                  />
+                  <span className="text-sm font-semibold text-slate-800">Choose files</span>
+                  <span className="mt-1 block text-xs text-slate-500">PDF, DOCX, TXT, CSV, XLSX, PPTX</span>
+                </label>
+
+                {uploadFiles.length ? (
+                  <div className="mt-3 max-h-32 overflow-auto rounded-lg border border-slate-200">
+                    {uploadFiles.map((file) => (
+                      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0" key={`${file.name}-${file.lastModified}`}>
+                        <span className="truncate text-sm font-medium text-slate-700">{file.name}</span>
+                        <span className="shrink-0 text-xs text-slate-500">{Math.ceil(file.size / 1024)} KB</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <div className="mt-5 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">External references</div>
+                    <div className="text-xs text-slate-500">Add one row per source. Scout will process the reference and keep metadata for citation.</div>
+                  </div>
+                  <button className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60" disabled={topicState.status === "submitting"} onClick={addExternalReferenceRow} type="button">
+                    <Plus className="h-3.5 w-3.5" />
+                    Add row
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {externalRows.map((row, index) => (
+                    <div className="rounded-lg border border-slate-200 bg-white p-3" key={row.id}>
+                      <div className="grid gap-2 md:grid-cols-[1.4fr_1fr_120px_36px]">
+                        <label className="block">
+                          <span className="text-xs font-semibold text-slate-600">Source link/reference</span>
+                          <div className="mt-1 flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 focus-within:border-slate-900 focus-within:ring-4 focus-within:ring-slate-900/10">
+                            <Link2 className="h-4 w-4 text-slate-400" />
+                            <input className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { externalSourceUrl: event.target.value })} placeholder="https://source.example/file.pdf" value={row.externalSourceUrl} />
+                          </div>
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-semibold text-slate-600">Display filename</span>
+                          <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { originalFilename: event.target.value })} placeholder={`Reference ${index + 1}`} value={row.originalFilename} />
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-semibold text-slate-600">Type</span>
+                          <select className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { fileType: event.target.value })} value={row.fileType}>
+                            {supportedFileTypes.map((fileType) => (
+                              <option key={fileType} value={fileType}>{fileType.toUpperCase()}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <button className="mt-5 inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={topicState.status === "submitting" || externalRows.length === 1} onClick={() => removeExternalReferenceRow(row.id)} title="Remove row" type="button">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <label className="mt-2 block">
+                        <span className="text-xs font-semibold text-slate-600">Source metadata JSON</span>
+                        <textarea className="mt-1 min-h-16 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { sourceMetadata: event.target.value })} placeholder='{"owner":"Finance","source":"SharePoint"}' value={row.sourceMetadata} />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {documentProgressRows.length ? (
               <div className="mt-4 rounded-lg border border-violet-100 bg-violet-50/60 px-3 py-2">
                 <div className="mb-1 flex items-center justify-between gap-3 text-xs font-semibold text-violet-700">
-                  <span>{uploadProgressLabel || "Uploading files..."}</span>
+                  <span>{uploadProgressLabel || "Processing documents..."}</span>
                   <span>{uploadProgress}%</span>
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-white">
@@ -874,6 +1262,20 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
                     className="h-full rounded-full bg-violet-600 transition-all duration-200"
                     style={{ width: `${uploadProgress}%` }}
                   />
+                </div>
+                <div className="mt-3 max-h-36 space-y-2 overflow-auto">
+                  {documentProgressRows.map((row) => (
+                    <div className="rounded-md bg-white/80 px-2.5 py-2" key={row.id}>
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="truncate font-semibold text-slate-700">{row.label}</span>
+                        <span className={`shrink-0 font-semibold ${row.error ? "text-red-600" : "text-violet-700"}`}>{row.error ? "Failed" : row.status}</span>
+                      </div>
+                      <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100">
+                        <div className={`h-full rounded-full transition-all duration-300 ${row.error ? "bg-red-500" : "bg-violet-600"}`} style={{ width: `${row.progress}%` }} />
+                      </div>
+                      {row.error ? <div className="mt-1 text-xs text-red-600">{row.error}</div> : null}
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}
@@ -890,7 +1292,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
               </button>
               <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-70" disabled={topicState.status === "submitting"} type="submit">
                 {topicState.status === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-                Register
+                {documentStorageMode === "managed_upload" ? "Upload" : "Register"}
               </button>
             </div>
           </form>

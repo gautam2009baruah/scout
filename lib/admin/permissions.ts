@@ -6,7 +6,9 @@ export const MODULE_KEYS = {
   overview: 1,
   administration: 2,
   userManagement: 3,
-  contentStructure: 4
+  contentStructure: 4,
+  aiConfiguration: 5,
+  guidedWorkflows: 6
 } as const;
 
 export type AdminModuleKey = number;

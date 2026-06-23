@@ -82,14 +82,9 @@ export default function Home() {
   variant="floating"
   position="bottom-right"
   assistantName="Acme Assistant"
+  companyId="fb88ab9c-36e9-42dc-8df1-710ec6f6065f"
+  userId="9cf813e7-0cdb-4945-a585-31fbb9fdc719"
   theme={{ brandColor: "#111827", accentColor: "#0ea5e9" }}
-  onSendMessage={async (message, history) => {
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({ message, history })
-    });
-    return res.json();
-  }}
 />`}</code>
               </pre>
             </div>
@@ -99,17 +94,15 @@ export default function Home() {
             <ScoutChatbot
               assistantName="Acme Assistant"
               badge="Widget"
-              modeNotice="Standalone component mode: configure this once and mount it inside any customer website or application."
+              companyId="fb88ab9c-36e9-42dc-8df1-710ec6f6065f"
+              modeNotice={null}
               placeholder="Ask the assistant..."
-              quickPrompts={[
-                "Show integration options",
-                "Customize my brand",
-                "Connect my backend"
-              ]}
+              quickPrompts={[]}
               theme={{
                 brandColor: "#111827",
                 accentColor: "#0ea5e9"
               }}
+              userId="9cf813e7-0cdb-4945-a585-31fbb9fdc719"
             />
           </div>
         </div>

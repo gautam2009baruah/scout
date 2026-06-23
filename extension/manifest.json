@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Scout Guided Workflow Recorder",
+  "version": "0.1.0",
+  "description": "Admin-driven workflow recorder for Scout guided workflows.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": ["<all_urls>"]
+}

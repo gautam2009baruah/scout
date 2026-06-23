@@ -18,9 +18,11 @@ export const DOCUMENT_STATUSES = [
 ] as const;
 
 export const SUPPORTED_DOCUMENT_FILE_TYPES = ["pdf", "docx", "txt", "csv", "xlsx", "pptx"] as const;
+export const DOCUMENT_STORAGE_MODES = ["managed_upload", "external_reference", "strict_external_reference"] as const;
 
 type DocumentStatus = typeof DOCUMENT_STATUSES[number];
 type DocumentFileType = typeof SUPPORTED_DOCUMENT_FILE_TYPES[number];
+type DocumentStorageMode = typeof DOCUMENT_STORAGE_MODES[number];
 
 export type DocumentRow = {
   id: string;
@@ -34,6 +36,10 @@ export type DocumentRow = {
   fileSize: number;
   checksum: string;
   storagePath: string | null;
+  storageMode: DocumentStorageMode;
+  externalSourceUrl: string | null;
+  externalSourceReference: string | null;
+  sourceMetadata: Record<string, unknown>;
   version: number;
   status: DocumentStatus;
   uploadedBy: string;
@@ -56,6 +62,10 @@ export type CreateDocumentInput = {
   fileSize: number;
   checksum: string;
   storagePath?: string | null;
+  storageMode?: string;
+  externalSourceUrl?: string | null;
+  externalSourceReference?: string | null;
+  sourceMetadata?: Record<string, unknown>;
   version?: number;
   status?: DocumentStatus;
 };
@@ -102,6 +112,10 @@ function isSupportedFileType(value: string): value is DocumentFileType {
   return SUPPORTED_DOCUMENT_FILE_TYPES.includes(value.toLowerCase() as DocumentFileType);
 }
 
+function isDocumentStorageMode(value: string): value is DocumentStorageMode {
+  return DOCUMENT_STORAGE_MODES.includes(value as DocumentStorageMode);
+}
+
 function normalizeFileType(input: CreateDocumentInput) {
   const explicit = input.fileType?.trim().toLowerCase();
 
@@ -132,6 +146,20 @@ function buildDocumentStoragePath(companyId: string, folderId: string, documentI
 
 function checksumBuffer(buffer: Buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
+}
+
+function checksumText(value: string) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function filenameFromExternalReference(reference: string) {
+  try {
+    const url = new URL(reference);
+    const last = decodeURIComponent(url.pathname.split("/").filter(Boolean).pop() || "");
+    return last || "external-document";
+  } catch {
+    return reference.split(/[\\/]/).filter(Boolean).pop() || "external-document";
+  }
 }
 
 async function assertFolderAccess(companyId: string, folderId: string, session: AdminSession) {
@@ -172,6 +200,10 @@ function mapDocument(row: {
   file_size: string | number;
   checksum: string;
   storage_path: string | null;
+  storage_mode: DocumentStorageMode;
+  external_source_url: string | null;
+  external_source_reference: string | null;
+  source_metadata_json: Record<string, unknown>;
   version: number;
   status: DocumentStatus;
   uploaded_by: string;
@@ -194,6 +226,10 @@ function mapDocument(row: {
     fileSize: Number(row.file_size),
     checksum: row.checksum,
     storagePath: row.storage_path,
+    storageMode: row.storage_mode,
+    externalSourceUrl: row.external_source_url,
+    externalSourceReference: row.external_source_reference,
+    sourceMetadata: row.source_metadata_json ?? {},
     version: row.version,
     status: row.status,
     uploadedBy: row.uploaded_by,
@@ -220,6 +256,10 @@ const documentSelect = `
     documents.file_size,
     documents.checksum,
     documents.storage_path,
+    documents.storage_mode,
+    documents.external_source_url,
+    documents.external_source_reference,
+    documents.source_metadata_json,
     documents.version,
     documents.status,
     documents.uploaded_by,
@@ -246,7 +286,10 @@ const documentSelect = `
 
 export async function createDocument(input: CreateDocumentInput, session: AdminSession) {
   const originalFilename = input.originalFilename.trim();
-  const checksum = input.checksum.trim().toLowerCase();
+  const storageMode = input.storageMode?.trim() || "managed_upload";
+  const externalSourceUrl = input.externalSourceUrl?.trim() || null;
+  const externalSourceReference = input.externalSourceReference?.trim() || externalSourceUrl;
+  const checksum = (input.checksum || (storageMode === "managed_upload" ? "" : checksumText(`${input.companyId}:${input.folderId}:${externalSourceReference || originalFilename}`))).trim().toLowerCase();
   const fileType = normalizeFileType(input);
   const name = input.name?.trim() || defaultDocumentName(originalFilename);
   const fileSize = Number(input.fileSize);
@@ -255,6 +298,14 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
 
   if (!input.companyId || !input.folderId || !originalFilename || !checksum || !name) {
     throw new DocumentError("Company, folder, filename, checksum, and name are required.");
+  }
+
+  if (!isDocumentStorageMode(storageMode)) {
+    throw new DocumentError("Invalid document storage mode.");
+  }
+
+  if (storageMode !== "managed_upload" && !externalSourceReference) {
+    throw new DocumentError("External source reference is required.");
   }
 
   if (!Number.isSafeInteger(fileSize) || fileSize < 0) {
@@ -288,11 +339,15 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
           file_size,
           checksum,
           storage_path,
+          storage_mode,
+          external_source_url,
+          external_source_reference,
+          source_metadata_json,
           version,
           status,
           uploaded_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::document_status, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::document_storage_mode, $11, $12, $13::jsonb, $14, $15::document_status, $16)
         RETURNING id
       `,
       [
@@ -304,7 +359,11 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
         input.mimeType?.trim() || null,
         fileSize,
         checksum,
-        input.storagePath?.trim() || null,
+        storageMode === "managed_upload" ? input.storagePath?.trim() || null : null,
+        storageMode,
+        externalSourceUrl,
+        externalSourceReference,
+        JSON.stringify(input.sourceMetadata ?? {}),
         version,
         status,
         session.user.id
@@ -319,6 +378,40 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
 
     throw error;
   }
+}
+
+export async function registerExternalDocument(input: CreateDocumentInput, session: AdminSession) {
+  const storageMode = input.storageMode || "external_reference";
+
+  if (storageMode === "managed_upload") {
+    throw new DocumentError("External document registration requires an external storage mode.");
+  }
+
+  const sourceReference = input.externalSourceUrl || input.externalSourceReference || "";
+  const originalFilename = input.originalFilename?.trim() || filenameFromExternalReference(sourceReference);
+  const fileType = input.fileType || originalFilename.split(".").pop()?.toLowerCase() || "";
+
+  const document = await createDocument(
+    {
+      ...input,
+      originalFilename,
+      fileType,
+      fileSize: Number(input.fileSize ?? 0),
+      checksum: input.checksum || checksumText(`${input.companyId}:${input.folderId}:${sourceReference}`),
+      storageMode,
+      status: "queued"
+    },
+    session
+  );
+
+  await enqueueProcessingJob({
+    companyId: document.companyId,
+    documentId: document.id,
+    jobType: "parse_document",
+    maxAttempts: 3
+  });
+
+  return document;
 }
 
 export async function uploadDocuments(input: { companyId: string; folderId: string; files: UploadDocumentFile[] }, session: AdminSession) {
@@ -561,6 +654,25 @@ export async function deleteDocument(id: string, session: AdminSession) {
   if (existing.storagePath) {
     await storage.delete_file(existing.storagePath);
   }
+}
+
+export async function getDocumentDownload(id: string, session: AdminSession) {
+  const document = await getDocumentById(id, session);
+
+  if (!document.storagePath) {
+    throw new DocumentError("Document file is not available for download.", 404);
+  }
+
+  const storage = getStorageProvider();
+
+  if (!(await storage.file_exists(document.storagePath))) {
+    throw new DocumentError("Document file was not found in storage.", 404);
+  }
+
+  return {
+    document,
+    file: await storage.get_file(document.storagePath)
+  };
 }
 
 export async function getDocumentAccess(documentId: string, session: AdminSession) {

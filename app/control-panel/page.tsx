@@ -1,28 +1,24 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import {
-  Activity,
+  Bot,
+  Building2,
   CheckCircle2,
-  Database,
-  FileUp,
-  LockKeyhole,
-  UserPlus
+  FileText,
+  FolderTree,
+  ShieldCheck,
+  UserRoundCheck,
+  UsersRound
 } from "lucide-react";
 import { AdminShell } from "@/components/admin";
-import { getDashboardMetrics } from "@/lib/admin/dashboard";
+import { getUserDashboardSummary } from "@/lib/admin/dashboard";
 import { MODULE_KEYS, hasModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export const metadata: Metadata = {
-  title: "Admin Dashboard | Scout",
-  description: "Scout multi-tenant admin dashboard."
+  title: "Overview | Scout",
+  description: "Scout control panel overview."
 };
-
-const actions = [
-  { icon: UserPlus, title: "Register user", description: "Invite admins, operators, and tenant users." },
-  { icon: FileUp, title: "Upload files", description: "Queue tenant documents for validation and processing." },
-  { icon: Database, title: "Configure data", description: "Attach PostgreSQL or client-provided database adapters." }
-];
 
 export default async function AdminDashboardPage() {
   const session = await getCurrentAdminSession();
@@ -39,80 +35,136 @@ export default async function AdminDashboardPage() {
     redirect(session.modules[0]?.href ?? "/control-panel/login");
   }
 
-  const dashboard = await getDashboardMetrics();
-  const metrics = [
-    { label: "Active companies", value: dashboard.activeCompanies, detail: "Companies available for users" },
-    { label: "Registered users", value: dashboard.registeredUsers, detail: `${dashboard.activeUsers} active` },
-    { label: "Invited users", value: dashboard.invitedUsers, detail: "Awaiting account activation" },
-    { label: "Company roles", value: dashboard.roles, detail: `${dashboard.queuedEmails} queued emails` }
-  ];
+  const summary = await getUserDashboardSummary(session);
+  const cards = [
+    summary.administration ? {
+      detail: `${summary.administration.roles} roles configured`,
+      icon: Building2,
+      label: "Companies",
+      tone: "bg-slate-950 text-white",
+      value: summary.administration.activeCompanies
+    } : null,
+    summary.userManagement ? {
+      detail: `${summary.userManagement.activeUsers} active users`,
+      icon: UsersRound,
+      label: "Users",
+      tone: "bg-sky-600 text-white",
+      value: summary.userManagement.totalUsers
+    } : null,
+    summary.contentStructure ? {
+      detail: `${summary.contentStructure.documents} documents available`,
+      icon: FolderTree,
+      label: "Folders",
+      tone: "bg-emerald-600 text-white",
+      value: summary.contentStructure.folders
+    } : null,
+    summary.aiConfiguration ? {
+      detail: summary.aiConfiguration.llmModel,
+      icon: Bot,
+      label: "Active AI provider",
+      tone: "bg-violet-600 text-white",
+      value: summary.aiConfiguration.llmProvider
+    } : null
+  ].filter(Boolean) as Array<{
+    detail: string;
+    icon: typeof Building2;
+    label: string;
+    tone: string;
+    value: number | string;
+  }>;
 
   return (
-    <AdminShell active={MODULE_KEYS.overview} session={session} title="Admin overview">
+    <AdminShell active={MODULE_KEYS.overview} session={session} title="Overview">
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" key={metric.label}>
-            <p className="text-sm font-medium text-slate-500">{metric.label}</p>
-            <p className="mt-3 text-3xl font-semibold tracking-normal text-slate-950">{metric.value}</p>
-            <p className="mt-2 text-sm text-teal-700">{metric.detail}</p>
+        {cards.map((card) => (
+          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" key={card.label}>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-slate-500">{card.label}</p>
+              <span className={`inline-flex h-9 w-9 items-center justify-center rounded-lg ${card.tone}`}>
+                <card.icon className="h-4 w-4" />
+              </span>
+            </div>
+            <p className="mt-4 text-3xl font-semibold tracking-normal text-slate-950">{card.value}</p>
+            <p className="mt-2 text-sm text-slate-600">{card.detail}</p>
           </article>
         ))}
       </section>
 
-      <section className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-lg font-semibold tracking-normal text-slate-950">Operational modules</h2>
-              <p className="mt-1 text-sm text-slate-500">Initial admin workspace for the modules we will add next.</p>
-            </div>
-            <span className="inline-flex w-fit items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
-              <CheckCircle2 className="h-4 w-4" />
-              Ready for extension
-            </span>
-          </div>
-
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {actions.map((action) => (
-              <article className="rounded-lg border border-slate-200 bg-[#f8fafc] p-4" key={action.title}>
-                <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white text-slate-950 shadow-sm">
-                  <action.icon className="h-5 w-5" />
-                </span>
-                <h3 className="mt-4 text-sm font-semibold text-slate-950">{action.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{action.description}</p>
-              </article>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold tracking-normal text-slate-950">System status</h2>
-            <Activity className="h-5 w-5 text-teal-600" />
-          </div>
-          <div className="mt-5 space-y-4">
-            <div className="rounded-lg border border-slate-200 bg-[#f8fafc] p-4">
-              <div className="flex items-center gap-3">
-                <Database className="h-5 w-5 text-slate-700" />
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">Database adapter</p>
-                  <p className="text-sm text-slate-500">PostgreSQL target, provider-neutral contract</p>
-                </div>
+      <section className="mt-6 grid gap-6 xl:grid-cols-2">
+        {summary.userManagement ? (
+          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-sky-50 text-sky-700">
+                <UserRoundCheck className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold tracking-normal text-slate-950">User Status</h2>
+                <p className="text-sm text-slate-500">Users visible in your workspace.</p>
               </div>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-[#f8fafc] p-4">
-              <div className="flex items-center gap-3">
-                <LockKeyhole className="h-5 w-5 text-slate-700" />
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">Authentication</p>
-                  <p className="text-sm text-slate-500">15-minute database-backed sessions</p>
-                </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <Metric label="Active" value={summary.userManagement.activeUsers} />
+              <Metric label="Invited" value={summary.userManagement.invitedUsers} />
+              <Metric label="Disabled" value={summary.userManagement.disabledUsers} />
+            </div>
+          </article>
+        ) : null}
+
+        {summary.contentStructure ? (
+          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+                <FileText className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Documents</h2>
+                <p className="text-sm text-slate-500">Files available in folders you can access.</p>
               </div>
             </div>
-          </div>
-        </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <Metric label="Available" value={summary.contentStructure.uploadedDocuments} />
+              <Metric label="Processing" value={summary.contentStructure.processingDocuments} />
+              <Metric label="Failed" value={summary.contentStructure.failedDocuments} />
+            </div>
+          </article>
+        ) : null}
+
+        {summary.aiConfiguration ? (
+          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                <ShieldCheck className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Active AI Configuration</h2>
+                <p className="text-sm text-slate-500">Currently selected answer and retrieval providers.</p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <Metric label={summary.aiConfiguration.llmProvider} value={summary.aiConfiguration.llmModel} />
+              <Metric label={summary.aiConfiguration.embeddingProvider} value={summary.aiConfiguration.embeddingModel} />
+            </div>
+          </article>
+        ) : null}
+
+        {cards.length === 0 ? (
+          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+              <p className="text-sm font-medium text-slate-700">No overview summaries are available for your current module access.</p>
+            </div>
+          </article>
+        ) : null}
       </section>
-
     </AdminShell>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
+      <p className="mt-2 break-words text-xl font-semibold tracking-normal text-slate-950">{value}</p>
+    </div>
   );
 }

@@ -6,7 +6,7 @@ import { MODULE_KEYS, getAllAdminModules, requireModuleAccess } from "@/lib/admi
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export const metadata: Metadata = {
-  title: "Administration | Scout Admin",
+  title: "Company & Role Setup | Scout Admin",
   description: "Create and maintain company and role master data."
 };
 
@@ -26,7 +26,7 @@ export default async function MasterDataPage() {
   const [{ companies, roles }, modules] = await Promise.all([getMasterData(), getAllAdminModules()]);
 
   return (
-    <AdminShell active={MODULE_KEYS.administration} session={session} title="Administration">
+    <AdminShell active={MODULE_KEYS.administration} session={session} title="Company & Role Setup">
       <MasterDataForms companies={companies} modules={modules} />
       <MasterDataSummary companies={companies} roles={roles} />
     </AdminShell>

@@ -31,6 +31,7 @@ export class KeywordSearchService {
           COALESCE(document_chunks.metadata_json ->> 'folder_path', '') AS folder_path,
           document_chunks.content,
           document_chunks.page_number,
+          COALESCE(document_chunks.section_title, '') AS section_title,
           (
             ts_rank_cd(to_tsvector('simple', document_chunks.content), search_query.query)
             + CASE WHEN document_chunks.content ILIKE '%' || $2 || '%' THEN 0.05 ELSE 0 END

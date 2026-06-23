@@ -134,6 +134,87 @@ export async function enqueueProcessingJob(input: {
   return result.rows[0].id;
 }
 
+export async function enqueueDocumentReembeddingJobs() {
+  const result = await getPool().query<{ document_count: string; job_count: string }>(
+    `
+      WITH target_documents AS (
+        SELECT documents.id, documents.company_id
+        FROM documents
+        WHERE documents.status <> 'deleted'
+          AND EXISTS (
+            SELECT 1
+            FROM document_chunks
+            WHERE document_chunks.document_id = documents.id
+          )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM processing_jobs
+            WHERE processing_jobs.document_id = documents.id
+              AND processing_jobs.job_type IN ('parse_document', 'chunk_document', 'embed_document')
+              AND processing_jobs.status = 'running'
+          )
+      ),
+      updated_documents AS (
+        UPDATE documents
+        SET status = 'chunked',
+            error_message = NULL,
+            updated_at = now()
+        WHERE documents.id IN (SELECT id FROM target_documents)
+          AND documents.status <> 'deleted'
+        RETURNING documents.id
+      ),
+      queued_jobs AS (
+        INSERT INTO processing_jobs (
+          company_id,
+          document_id,
+          job_type,
+          status,
+          attempts,
+          max_attempts,
+          error_message,
+          started_at,
+          completed_at,
+          created_at,
+          updated_at
+        )
+        SELECT
+          target_documents.company_id,
+          target_documents.id,
+          'embed_document'::processing_job_type,
+          'pending'::processing_job_status,
+          0,
+          3,
+          NULL,
+          NULL,
+          NULL,
+          now(),
+          now()
+        FROM target_documents
+        ON CONFLICT (document_id, job_type) WHERE status IN ('pending', 'running', 'retrying')
+        DO UPDATE
+        SET status = 'pending',
+            attempts = 0,
+            max_attempts = EXCLUDED.max_attempts,
+            error_message = NULL,
+            started_at = NULL,
+            completed_at = NULL,
+            updated_at = now()
+        WHERE processing_jobs.status <> 'running'
+        RETURNING id
+      )
+      SELECT
+        (SELECT COUNT(*) FROM updated_documents) AS document_count,
+        (SELECT COUNT(*) FROM queued_jobs) AS job_count
+    `
+  );
+  const row = result.rows[0];
+
+  return {
+    documentCount: Number(row?.document_count ?? 0),
+    jobCount: Number(row?.job_count ?? 0)
+  };
+}
+
 async function accessibleJobCondition(session: AdminSession, params: unknown[]) {
   if (session.user.isAdminRole) {
     return "";

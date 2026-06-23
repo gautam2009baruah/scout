@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Bell, FolderTree, LayoutDashboard, Search, ShieldCheck, TableProperties, UserPlus, UsersRound } from "lucide-react";
+import { Bell, Bot, Building2, ChevronDown, FolderTree, LayoutDashboard, MapPinned, Search, ShieldCheck, TableProperties, UserPlus, UsersRound } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
 
@@ -13,12 +13,25 @@ type AdminShellProps = {
 
 const moduleIcons = {
   [MODULE_KEYS.overview]: LayoutDashboard,
-  [MODULE_KEYS.administration]: TableProperties,
+  [MODULE_KEYS.administration]: Building2,
   [MODULE_KEYS.contentStructure]: FolderTree,
-  [MODULE_KEYS.userManagement]: UsersRound
+  [MODULE_KEYS.userManagement]: UsersRound,
+  [MODULE_KEYS.aiConfiguration]: Bot,
+  [MODULE_KEYS.guidedWorkflows]: MapPinned
 } as const;
 
 export function AdminShell({ active, children, session, title }: AdminShellProps) {
+  const visibleModules = new Map(session.modules.map((module) => [module.key, module]));
+  const overviewModule = visibleModules.get(MODULE_KEYS.overview);
+  const contentStructureModule = visibleModules.get(MODULE_KEYS.contentStructure);
+  const guidedWorkflowsModule = visibleModules.get(MODULE_KEYS.guidedWorkflows);
+  const administrationModules = [
+    visibleModules.get(MODULE_KEYS.administration),
+    visibleModules.get(MODULE_KEYS.userManagement),
+    visibleModules.get(MODULE_KEYS.aiConfiguration)
+  ].filter(Boolean) as AdminSession["modules"];
+  const isAdministrationActive = administrationModules.some((module) => module.key === active);
+
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
       <div className="flex min-h-screen">
@@ -34,24 +47,29 @@ export function AdminShell({ active, children, session, title }: AdminShellProps
           </div>
 
           <nav className="mt-8 space-y-1">
-            {session.modules.map((module) => {
-              const Icon = moduleIcons[module.key as keyof typeof moduleIcons] ?? LayoutDashboard;
+            {overviewModule ? <NavLink active={active} module={overviewModule} /> : null}
 
-              return (
-                <Link
-                  className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
-                    module.key === active
-                      ? "bg-slate-950 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                  }`}
-                  href={module.href}
-                  key={module.key}
-                >
-                  <Icon className="h-4 w-4" />
-                  {module.name}
-                </Link>
-              );
-            })}
+            {administrationModules.length > 0 ? (
+              <details className="group" open>
+                <summary className={`flex h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-3 text-sm font-medium transition marker:hidden ${
+                  isAdministrationActive
+                    ? "bg-slate-100 text-slate-950"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                }`}>
+                  <TableProperties className="h-4 w-4" />
+                  <span className="flex-1">Administration</span>
+                  <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+                </summary>
+                <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
+                  {administrationModules.map((module) => (
+                    <NavLink active={active} inset key={module.key} module={module} />
+                  ))}
+                </div>
+              </details>
+            ) : null}
+
+            {contentStructureModule ? <NavLink active={active} module={contentStructureModule} /> : null}
+            {guidedWorkflowsModule ? <NavLink active={active} module={guidedWorkflowsModule} /> : null}
           </nav>
         </aside>
 
@@ -92,5 +110,31 @@ export function AdminShell({ active, children, session, title }: AdminShellProps
         </section>
       </div>
     </main>
+  );
+}
+
+function NavLink({
+  active,
+  inset,
+  module
+}: {
+  active: AdminModuleKey;
+  inset?: boolean;
+  module: AdminSession["modules"][number];
+}) {
+  const Icon = moduleIcons[module.key as keyof typeof moduleIcons] ?? LayoutDashboard;
+
+  return (
+    <Link
+      className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
+        module.key === active
+          ? "bg-slate-950 text-white shadow-sm"
+          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+      } ${inset ? "text-[13px]" : ""}`}
+      href={module.href}
+    >
+      <Icon className="h-4 w-4" />
+      {module.name}
+    </Link>
   );
 }

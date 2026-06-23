@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createDocument, DocumentError, listDocuments, uploadDocuments } from "@/lib/admin/documents";
+import { createDocument, DocumentError, listDocuments, registerExternalDocument, uploadDocuments } from "@/lib/admin/documents";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export const runtime = "nodejs";
@@ -60,18 +60,27 @@ export async function POST(request: Request) {
     const registered = [];
 
     for (const document of documents) {
-      registered.push(await createDocument(
+      const storageMode = typeof document.storageMode === "string" ? document.storageMode : typeof document.storage_mode === "string" ? document.storage_mode : "managed_upload";
+      const createInput = {
+        companyId: String(document.companyId ?? document.company_id ?? ""),
+        folderId: String(document.folderId ?? document.folder_id ?? ""),
+        name: typeof document.name === "string" ? document.name : undefined,
+        originalFilename: String(document.originalFilename ?? document.original_filename ?? ""),
+        fileType: typeof document.fileType === "string" ? document.fileType : typeof document.file_type === "string" ? document.file_type : undefined,
+        mimeType: typeof document.mimeType === "string" ? document.mimeType : typeof document.mime_type === "string" ? document.mime_type : undefined,
+        fileSize: Number(document.fileSize ?? document.file_size ?? 0),
+        checksum: String(document.checksum ?? ""),
+        storagePath: typeof document.storagePath === "string" ? document.storagePath : typeof document.storage_path === "string" ? document.storage_path : undefined,
+        storageMode,
+        externalSourceUrl: typeof document.externalSourceUrl === "string" ? document.externalSourceUrl : typeof document.external_source_url === "string" ? document.external_source_url : undefined,
+        externalSourceReference: typeof document.externalSourceReference === "string" ? document.externalSourceReference : typeof document.external_source_reference === "string" ? document.external_source_reference : undefined,
+        sourceMetadata: typeof document.sourceMetadata === "object" && document.sourceMetadata ? document.sourceMetadata : typeof document.source_metadata_json === "object" && document.source_metadata_json ? document.source_metadata_json : undefined,
+        version: typeof document.version === "number" ? document.version : undefined
+      };
+
+      registered.push(await (storageMode === "managed_upload" ? createDocument : registerExternalDocument)(
         {
-          companyId: String(document.companyId ?? ""),
-          folderId: String(document.folderId ?? ""),
-          name: typeof document.name === "string" ? document.name : undefined,
-          originalFilename: String(document.originalFilename ?? ""),
-          fileType: typeof document.fileType === "string" ? document.fileType : undefined,
-          mimeType: typeof document.mimeType === "string" ? document.mimeType : undefined,
-          fileSize: Number(document.fileSize ?? -1),
-          checksum: String(document.checksum ?? ""),
-          storagePath: typeof document.storagePath === "string" ? document.storagePath : undefined,
-          version: typeof document.version === "number" ? document.version : undefined
+          ...createInput
         },
         auth.session
       ));

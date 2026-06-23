@@ -9,6 +9,7 @@ export type VectorSearchResult = {
   folder_path: string;
   content: string;
   page_number: number;
+  section_title: string;
   score: number;
 };
 
@@ -29,13 +30,13 @@ export class VectorSearchService {
       return [];
     }
 
-    const provider = getEmbeddingProvider();
+    const provider = await getEmbeddingProvider();
     const queryEmbedding = await provider.embed_text(normalizedQuery);
     const mode = await getEmbeddingColumnMode();
 
     return mode === "vector"
-      ? searchVector(company_id, queryEmbedding, user_role_ids, provider.model, limit, user_id)
-      : searchJson(company_id, queryEmbedding, user_role_ids, provider.model, limit, user_id);
+      ? searchVector(company_id, queryEmbedding, user_role_ids, provider.provider, provider.model, limit, user_id)
+      : searchJson(company_id, queryEmbedding, user_role_ids, provider.provider, provider.model, limit, user_id);
   }
 }
 
@@ -144,7 +145,7 @@ export function documentPermissionClause(userIdParam: number, roleIdsParam: numb
   `;
 }
 
-async function searchVector(companyId: string, queryEmbedding: number[], roleIds: string[], model: string, limit: number, userId = "00000000-0000-0000-0000-000000000000") {
+async function searchVector(companyId: string, queryEmbedding: number[], roleIds: string[], provider: string, model: string, limit: number, userId = "00000000-0000-0000-0000-000000000000") {
   const result = await getPool().query(
     `
       SELECT
@@ -155,24 +156,26 @@ async function searchVector(companyId: string, queryEmbedding: number[], roleIds
         COALESCE(document_chunks.metadata_json ->> 'folder_path', '') AS folder_path,
         document_chunks.content,
         document_chunks.page_number,
+        COALESCE(document_chunks.section_title, '') AS section_title,
         1 - (chunk_embeddings.embedding <=> $2::vector) AS score
       FROM chunk_embeddings
       INNER JOIN document_chunks ON document_chunks.id = chunk_embeddings.chunk_id
       INNER JOIN documents ON documents.id = document_chunks.document_id
       WHERE chunk_embeddings.company_id = $1
         AND chunk_embeddings.embedding_model = $4
+        AND chunk_embeddings.embedding_provider = $6
         AND documents.status IN ('embedded', 'indexed')
-        ${documentPermissionClause(6, 3)}
+        ${documentPermissionClause(7, 3)}
       ORDER BY chunk_embeddings.embedding <=> $2::vector
       LIMIT $5
     `,
-    [companyId, serializeVector(queryEmbedding), roleIds, model, limit, userId]
+    [companyId, serializeVector(queryEmbedding), roleIds, model, limit, provider, userId]
   );
 
   return result.rows.map(mapSearchRow);
 }
 
-async function searchJson(companyId: string, queryEmbedding: number[], roleIds: string[], model: string, limit: number, userId = "00000000-0000-0000-0000-000000000000") {
+async function searchJson(companyId: string, queryEmbedding: number[], roleIds: string[], provider: string, model: string, limit: number, userId = "00000000-0000-0000-0000-000000000000") {
   const result = await getPool().query(
     `
       SELECT
@@ -183,16 +186,18 @@ async function searchJson(companyId: string, queryEmbedding: number[], roleIds: 
         COALESCE(document_chunks.metadata_json ->> 'folder_path', '') AS folder_path,
         document_chunks.content,
         document_chunks.page_number,
+        COALESCE(document_chunks.section_title, '') AS section_title,
         chunk_embeddings.embedding
       FROM chunk_embeddings
       INNER JOIN document_chunks ON document_chunks.id = chunk_embeddings.chunk_id
       INNER JOIN documents ON documents.id = document_chunks.document_id
       WHERE chunk_embeddings.company_id = $1
         AND chunk_embeddings.embedding_model = $3
+        AND chunk_embeddings.embedding_provider = $5
         AND documents.status IN ('embedded', 'indexed')
         ${documentPermissionClause(4, 2)}
     `,
-    [companyId, roleIds, model, userId]
+    [companyId, roleIds, model, userId, provider]
   );
 
   return result.rows
@@ -211,6 +216,7 @@ export function mapSearchRow(row: {
   folder_path: string;
   content: string;
   page_number: number;
+  section_title?: string | null;
   score: string | number;
 }): VectorSearchResult {
   return {
@@ -221,6 +227,7 @@ export function mapSearchRow(row: {
     folder_path: row.folder_path,
     content: row.content,
     page_number: Number(row.page_number),
+    section_title: row.section_title ?? "",
     score: Number(Number(row.score).toFixed(4))
   };
 }

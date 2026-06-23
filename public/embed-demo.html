@@ -261,7 +261,11 @@
     brandColor: "#111827",
     accentColor: "#0ea5e9",
     position: "bottom-right",
-    apiUrl: "/api/chat"
+    apiUrl: "/chat/query",
+    companyId: "fb88ab9c-36e9-42dc-8df1-710ec6f6065f",
+    userId: "9cf813e7-0cdb-4945-a585-31fbb9fdc719",
+    quickPrompts: [],
+    modeNotice: ""
   });
 &lt;/script&gt;</code></pre>
       </section>
@@ -278,10 +282,13 @@
         brandColor: "#111827",
         accentColor: "#0ea5e9",
         position: "bottom-right",
+        apiUrl: "/chat/query",
+        companyId: "fb88ab9c-36e9-42dc-8df1-710ec6f6065f",
+        userId: "9cf813e7-0cdb-4945-a585-31fbb9fdc719",
         welcomeMessage:
-          "Hi, I am the Acme Assistant. This chatbot was installed on a plain HTML page with one script tag.",
-        quickPrompts: ["How do I install this?", "Can I change colors?", "How does the API connect?"],
-        modeNotice: "Universal HTML demo: no React, Next.js, or Tailwind required on the client site."
+          "Hi, I am the Acme Assistant. Ask me a question and I will search the available documents.",
+        quickPrompts: [],
+        modeNotice: ""
       });
     </script>
   </body>

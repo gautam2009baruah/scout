@@ -11,6 +11,9 @@
     brandColor: "#111827",
     accentColor: "#0ea5e9",
     apiUrl: "",
+    companyId: "",
+    userId: "",
+    conversationId: "",
     quickPrompts: ["Show pricing options", "Help me choose a plan", "Contact support"],
     modeNotice: "Demo mode: connect apiUrl to route messages to your backend.",
     width: 440,
@@ -122,7 +125,7 @@
         state.messages.push({
           id: "message-" + Date.now() + "-error",
           role: "assistant",
-          text: "I could not reach the assistant service. Please try again in a moment.",
+          text: error && error.message ? error.message : "I could not reach the assistant service. Please try again in a moment.",
           time: formatTime()
         });
         state.isTyping = false;
@@ -386,27 +389,52 @@
       };
     }
 
-    const response = await fetch(options.apiUrl, {
-      method: "POST",
-      headers: Object.assign({ "Content-Type": "application/json" }, options.headers || {}),
-      body: JSON.stringify({
-        message: message,
-        history: history
-      })
-    });
+    const controller = new AbortController();
+    const timeout = window.setTimeout(function () {
+      controller.abort();
+    }, Number(options.requestTimeoutMs) || 60000);
+    let response;
+
+    try {
+      response = await fetch(options.apiUrl, {
+        method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" }, options.headers || {}),
+        body: JSON.stringify({
+          company_id: options.companyId,
+          user_id: options.userId,
+          question: message,
+          conversation_id: options.conversationId || undefined,
+          history: history
+        }),
+        signal: controller.signal
+      });
+    } catch (error) {
+      if (error && error.name === "AbortError") {
+        throw new Error("The assistant is taking too long to respond. Please check that the AI service is running.");
+      }
+
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
 
     if (!response.ok) {
-      throw new Error("Chat API request failed");
+      const errorData = await response.json().catch(function () { return null; });
+      throw new Error(errorData && errorData.message ? errorData.message : "Chat API request failed");
     }
 
     const data = await response.json();
+
+    if (data && data.conversation_id) {
+      options.conversationId = data.conversation_id;
+    }
 
     if (typeof data === "string") {
       return { text: data };
     }
 
     return {
-      text: data.text || data.message || data.reply || "I received your message.",
+      text: data.answer || data.text || data.message || data.reply || "I received your message.",
       time: data.time
     };
   }

@@ -46,12 +46,16 @@ export type ScoutChatTheme = {
 export type ScoutChatbotProps = {
   assistantName?: string;
   badge?: string;
+  chatEndpoint?: string;
   className?: string;
+  companyId?: string;
+  conversationId?: string;
   defaultMinimized?: boolean;
   defaultOpen?: boolean;
   initialMessages?: ScoutChatMessage[];
   launcherLabel?: string;
   modeNotice?: ReactNode;
+  onConversationChange?: (conversationId: string) => void;
   onOpenChange?: (isOpen: boolean) => void;
   onSendMessage?: (message: string, history: ScoutChatMessage[]) => Promise<ScoutChatMessage | string | void>;
   placeholder?: string;
@@ -60,6 +64,7 @@ export type ScoutChatbotProps = {
   showHeaderActions?: boolean;
   subtitle?: string;
   theme?: ScoutChatTheme;
+  userId?: string;
   userLabel?: string;
   variant?: "floating" | "inline";
   welcomeMessage?: string;
@@ -92,12 +97,16 @@ const defaultWelcome =
 export function ScoutChatbot({
   assistantName = "Scout Assistant",
   badge = "Beta",
+  chatEndpoint = "/chat/query",
   className,
+  companyId,
+  conversationId,
   defaultMinimized = false,
   defaultOpen = true,
   initialMessages,
   launcherLabel = "Open chat",
   modeNotice = "Frontend demo mode: responses are mocked locally until your backend API is connected.",
+  onConversationChange,
   onOpenChange,
   onSendMessage,
   placeholder = "Ask anything...",
@@ -106,6 +115,7 @@ export function ScoutChatbot({
   showHeaderActions = true,
   subtitle = "Online now",
   theme,
+  userId,
   userLabel = "You",
   variant = "inline",
   welcomeMessage = defaultWelcome
@@ -129,6 +139,7 @@ export function ScoutChatbot({
   const [isTyping, setIsTyping] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const nextMessageId = useRef(messages.length + 1);
+  const activeConversationId = useRef(conversationId ?? "");
 
   const cssVars: WidgetStyle = {
     "--scout-brand": theme?.brandColor ?? "#020617",
@@ -171,7 +182,9 @@ export function ScoutChatbot({
     setIsTyping(true);
 
     try {
-      const customReply = await onSendMessage?.(trimmed, nextHistory);
+      const customReply = onSendMessage
+        ? await onSendMessage(trimmed, nextHistory)
+        : await sendChatQuery(trimmed);
       const assistantReply = resolveReply(customReply);
 
       window.setTimeout(
@@ -190,18 +203,47 @@ export function ScoutChatbot({
         },
         onSendMessage ? 120 : 700
       );
-    } catch {
+    } catch (error) {
       setMessages((current) => [
         ...current,
         createRenderedMessage({
           id: `local-${nextMessageId.current++}`,
           role: "assistant",
-          text: "I could not reach the assistant service. Please try again in a moment.",
+          text: error instanceof Error ? error.message : "I could not reach the assistant service. Please try again in a moment.",
           time: formatTime()
         })
       ]);
       setIsTyping(false);
     }
+  }
+
+  async function sendChatQuery(question: string) {
+    if (!companyId || !userId) {
+      return undefined;
+    }
+
+    const response = await fetch(chatEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_id: companyId,
+        user_id: userId,
+        question,
+        conversation_id: activeConversationId.current || undefined
+      })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(typeof body?.message === "string" ? body.message : "Chat query failed.");
+    }
+
+    if (typeof body?.conversation_id === "string") {
+      activeConversationId.current = body.conversation_id;
+      onConversationChange?.(body.conversation_id);
+    }
+
+    return typeof body?.answer === "string" ? body.answer : undefined;
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {

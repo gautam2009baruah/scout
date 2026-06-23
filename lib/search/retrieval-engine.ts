@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/db/pool";
+import { CitationEngine, type Citation } from "./citation-engine";
 import { KeywordSearchService } from "./keyword-search";
 import { VectorSearchService, type VectorSearchResult } from "./vector-search";
 
@@ -9,12 +10,14 @@ export type RetrievalChunk = {
   document_name: string;
   folder_path: string;
   page_number: number;
+  section_title: string;
   score: number;
 };
 
 export type RetrievalResponse = {
   query: string;
   chunks: RetrievalChunk[];
+  citations: Citation[];
 };
 
 type SearchScores = {
@@ -108,7 +111,7 @@ export class RetrievalEngine {
     const roleIds = await getUserRoleIds(company_id, user_id);
 
     if (roleIds.length === 0) {
-      return { query: normalizedQuery, chunks: [] };
+      return { query: normalizedQuery, chunks: [], citations: [] };
     }
 
     const [vectorResults, keywordResults] = await Promise.all([
@@ -158,6 +161,7 @@ export class RetrievalEngine {
           document_name: item.result.document_name,
           folder_path: item.result.folder_path,
           page_number: item.result.page_number,
+          section_title: item.result.section_title,
           score: Number(score.toFixed(4))
         };
       })
@@ -166,7 +170,8 @@ export class RetrievalEngine {
 
     return {
       query: normalizedQuery,
-      chunks
+      chunks,
+      citations: CitationEngine.build_citations(chunks)
     };
   }
 }

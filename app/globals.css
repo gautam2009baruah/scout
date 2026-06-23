@@ -45,3 +45,17 @@ textarea {
   background: #cbd5e1;
   border-radius: 999px;
 }
+
+.button-secondary {
+  display: inline-flex;
+  height: 2.5rem;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 0 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+}
