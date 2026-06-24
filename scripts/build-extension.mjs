@@ -38,7 +38,14 @@ async function bundle(files) {
 }
 
 const background = await bundle(["browserApi.ts", "background.ts"]);
-const contentScript = await bundle(["selectorBuilder.ts", "recorder.ts", "browserApi.ts", "contentScript.ts"]);
+const contentScript = await bundle([
+  "controlIdentity.ts",
+  "elementFinder.ts",
+  "elementPicker.ts",
+  "recorder.ts",
+  "browserApi.ts",
+  "contentScript.ts"
+]);
 const manifest = await readFile(path.join(extensionRoot, "manifest.json"), "utf8");
 
 for (const output of outputs) {

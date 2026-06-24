@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scout Recorder Test Page</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        padding: 40px;
+        background: #f8fafc;
+        color: #1e293b;
+        line-height: 1.6;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+
+      h1 {
+        color: #0f172a;
+        margin-bottom: 12px;
+        font-size: 32px;
+      }
+
+      .intro {
+        background: #3b82f6;
+        color: white;
+        padding: 20px;
+        border-radius: 12px;
+        margin-bottom: 32px;
+      }
+
+      .intro h2 {
+        margin-bottom: 8px;
+      }
+
+      .intro p {
+        opacity: 0.95;
+      }
+
+      .test-section {
+        background: white;
+        padding: 24px;
+        border-radius: 12px;
+        margin-bottom: 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      }
+
+      .test-section h3 {
+        color: #1e293b;
+        margin-bottom: 16px;
+        font-size: 20px;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 8px;
+      }
+
+      .test-group {
+        margin-bottom: 24px;
+      }
+
+      .test-group:last-child {
+        margin-bottom: 0;
+      }
+
+      .test-item {
+        margin-bottom: 16px;
+        padding: 16px;
+        background: #f8fafc;
+        border-radius: 8px;
+        border-left: 4px solid #3b82f6;
+      }
+
+      .test-label {
+        font-weight: 600;
+        color: #475569;
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+
+      .confidence-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+        margin-left: 8px;
+      }
+
+      .confidence-high {
+        background: #d1fae5;
+        color: #065f46;
+      }
+
+      .confidence-medium {
+        background: #fef3c7;
+        color: #92400e;
+      }
+
+      .confidence-low {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+
+      button {
+        padding: 10px 20px;
+        background: #3b82f6;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: background 0.2s;
+      }
+
+      button:hover {
+        background: #2563eb;
+      }
+
+      button:active {
+        background: #1d4ed8;
+      }
+
+      .button-secondary {
+        background: #64748b;
+      }
+
+      .button-secondary:hover {
+        background: #475569;
+      }
+
+      input,
+      textarea,
+      select {
+        padding: 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-size: 14px;
+        font-family: inherit;
+        width: 100%;
+        max-width: 400px;
+      }
+
+      input:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      }
+
+      label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 500;
+        color: #334155;
+        font-size: 14px;
+      }
+
+      .icon-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .icon-button svg {
+        width: 18px;
+        height: 18px;
+      }
+
+      .duplicate-buttons {
+        display: flex;
+        gap: 12px;
+      }
+
+      code {
+        background: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 13px;
+        color: #e11d48;
+      }
+
+      .nested-button-container {
+        padding: 16px;
+        background: #f1f5f9;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎯 Scout Recorder Test Page</h1>
+
+      <div class="intro">
+        <h2>Testing Robust Control Identification</h2>
+        <p>
+          This page contains various UI controls designed to test the Scout
+          recorder's element identification system. Try recording different
+          interactions to verify selector confidence levels and fallback
+          strategies.
+        </p>
+      </div>
+
+      <!-- Test Section 1: Stable Selectors (High Confidence) -->
+      <div class="test-section">
+        <h3>1. Stable Selectors (High Confidence)</h3>
+
+        <div class="test-group">
+          <div class="test-item">
+            <div class="test-label">
+              data-adoption-id
+              <span class="confidence-badge confidence-high">99% confidence</span>
+            </div>
+            <button data-adoption-id="create-order" onclick="alert('Order created!')">
+              Create Order
+            </button>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Best practice: <code>data-adoption-id="create-order"</code>
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              data-testid
+              <span class="confidence-badge confidence-high">95% confidence</span>
+            </div>
+            <button data-testid="submit-form" onclick="alert('Form submitted!')">
+              Submit Form
+            </button>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Test automation: <code>data-testid="submit-form"</code>
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              Stable ID
+              <span class="confidence-badge confidence-high">90% confidence</span>
+            </div>
+            <button id="save-button" onclick="alert('Saved!')">
+              Save Changes
+            </button>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Stable ID: <code>id="save-button"</code>
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              Stable Name Attribute
+              <span class="confidence-badge confidence-high">85% confidence</span>
+            </div>
+            <button name="cancel-action" onclick="alert('Cancelled!')">
+              Cancel
+            </button>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              <code>name="cancel-action"</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Section 2: Semantic Selectors (Medium Confidence) -->
+      <div class="test-section">
+        <h3>2. Semantic Selectors (Medium Confidence)</h3>
+
+        <div class="test-group">
+          <div class="test-item">
+            <div class="test-label">
+              ARIA Label
+              <span class="confidence-badge confidence-medium">82% confidence</span>
+            </div>
+            <button aria-label="Close dialog" onclick="alert('Dialog closed!')">
+              ✕
+            </button>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Icon button with <code>aria-label="Close dialog"</code>
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              Button with Role + Text
+              <span class="confidence-badge confidence-medium">78% confidence</span>
+            </div>
+            <button role="button" onclick="alert('Downloaded!')">
+              Download Report
+            </button>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Uses <code>role="button"</code> + visible text
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              Input with Label
+              <span class="confidence-badge confidence-medium">76% confidence</span>
+            </div>
+            <label for="user-email">Email Address</label>
+            <input
+              type="email"
+              id="user-email"
+              placeholder="Enter your email"
+            />
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Label association via <code>for="user-email"</code>
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              Input with Placeholder
+              <span class="confidence-badge confidence-medium">70% confidence</span>
+            </div>
+            <input
+              type="text"
+              placeholder="Search products..."
+              style="margin-bottom: 8px;"
+            />
+            <div style="font-size: 13px; color: #64748b;">
+              Identified by <code>placeholder="Search products..."</code>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Section 3: Challenging Cases (Low Confidence) -->
+      <div class="test-section">
+        <h3>3. Challenging Cases (Low Confidence)</h3>
+
+        <div class="test-group">
+          <div class="test-item">
+            <div class="test-label">
+              Generated ID (Framework-style)
+              <span class="confidence-badge confidence-low">50-60% confidence</span>
+            </div>
+            <button id="react-button-abc123xyz" onclick="alert('Clicked!')">
+              Dynamic ID Button
+            </button>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Generated ID: <code>id="react-button-abc123xyz"</code> (looks auto-generated)
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              Duplicate Button Text (Needs Disambiguation)
+              <span class="confidence-badge confidence-low">Requires context</span>
+            </div>
+            <div class="duplicate-buttons">
+              <button data-testid="edit-profile" onclick="alert('Edit Profile')">
+                Edit
+              </button>
+              <button data-testid="edit-settings" onclick="alert('Edit Settings')">
+                Edit
+              </button>
+            </div>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Same text, disambiguated by <code>data-testid</code>
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              Nested Icon Button
+              <span class="confidence-badge confidence-low">Complex structure</span>
+            </div>
+            <div class="nested-button-container">
+              <button class="icon-button" onclick="alert('Added to cart!')">
+                <svg
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M12 4v16m8-8H4"
+                  ></path>
+                </svg>
+                <span>Add to Cart</span>
+              </button>
+            </div>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              Button with nested SVG icon
+            </div>
+          </div>
+
+          <div class="test-item">
+            <div class="test-label">
+              React/CSS Module Classes
+              <span class="confidence-badge confidence-low">Dynamic classes</span>
+            </div>
+            <button
+              class="Button__primary___2x9a7 Button__large___1k8s9"
+              onclick="alert('Submitted!')"
+            >
+              Submit with Dynamic Classes
+            </button>
+            <div style="margin-top: 8px; font-size: 13px; color: #64748b;">
+              CSS Modules classes (not reliable)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Section 4: Form Inputs -->
+      <div class="test-section">
+        <h3>4. Form Inputs & Sensitive Fields</h3>
+
+        <div class="test-group">
+          <div class="test-item">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" placeholder="johndoe" />
+          </div>
+
+          <div class="test-item">
+            <label for="password">Password (Should Mask)</label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              placeholder="Enter password"
+            />
+            <div style="margin-top: 8px; font-size: 13px; color: #ef4444;">
+              ⚠️ Should be recorded as [masked-password]
+            </div>
+          </div>
+
+          <div class="test-item">
+            <label for="card-number">Card Number (Should Mask)</label>
+            <input
+              type="text"
+              id="card-number"
+              name="card-number"
+              placeholder="1234 5678 9012 3456"
+            />
+            <div style="margin-top: 8px; font-size: 13px; color: #ef4444;">
+              ⚠️ Should be recorded as [masked-card-number]
+            </div>
+          </div>
+
+          <div class="test-item">
+            <label>Country</label>
+            <select id="country" name="country">
+              <option value="">Select a country</option>
+              <option value="us">United States</option>
+              <option value="uk">United Kingdom</option>
+              <option value="ca">Canada</option>
+              <option value="au">Australia</option>
+            </select>
+          </div>
+
+          <div class="test-item">
+            <label>Comments</label>
+            <textarea
+              id="comments"
+              name="comments"
+              placeholder="Enter your feedback..."
+              rows="4"
+            ></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Section 5: Manual Picker Test Area -->
+      <div class="test-section">
+        <h3>5. Manual Picker Test Area</h3>
+
+        <div class="test-group">
+          <div class="test-item">
+            <div class="test-label">Instructions</div>
+            <p style="margin-bottom: 12px;">
+              Use the <strong>"Select Control"</strong> button in the recorder
+              toolbar to manually pick elements below:
+            </p>
+            <ul style="margin-left: 20px; margin-bottom: 12px;">
+              <li>Hover over any element to see its confidence score</li>
+              <li>Click to capture the element identity</li>
+              <li>Press <code>Escape</code> to cancel picker mode</li>
+            </ul>
+          </div>
+
+          <div class="test-item">
+            <button onclick="alert('Action 1')" style="margin-right: 8px;">
+              Action Button 1
+            </button>
+            <button onclick="alert('Action 2')" style="margin-right: 8px;">
+              Action Button 2
+            </button>
+            <button onclick="alert('Action 3')">Action Button 3</button>
+          </div>
+
+          <div class="test-item">
+            <label>Wrapping Label with Input</label>
+            <div>
+              <label style="display: inline-flex; align-items: center; gap: 8px;">
+                <input type="checkbox" name="terms" />
+                <span>I agree to the terms and conditions</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Test Results -->
+      <div class="test-section">
+        <h3>✅ Expected Test Results</h3>
+        <div class="test-group">
+          <div class="test-item" style="border-left-color: #10b981;">
+            <strong>High Confidence (85-99%):</strong>
+            <ul style="margin-left: 20px; margin-top: 8px;">
+              <li>data-adoption-id → 99%</li>
+              <li>data-testid, data-test, data-cy → 95%</li>
+              <li>Stable IDs → 90%</li>
+              <li>Name attributes → 85%</li>
+            </ul>
+          </div>
+
+          <div class="test-item" style="border-left-color: #f59e0b;">
+            <strong>Medium Confidence (70-84%):</strong>
+            <ul style="margin-left: 20px; margin-top: 8px;">
+              <li>ARIA labels → 82%</li>
+              <li>Role + text → 78%</li>
+              <li>Label associations → 76%</li>
+              <li>Placeholder text → 70%</li>
+            </ul>
+          </div>
+
+          <div class="test-item" style="border-left-color: #ef4444;">
+            <strong>Low Confidence (&lt;70%):</strong>
+            <ul style="margin-left: 20px; margin-top: 8px;">
+              <li>Generated IDs → 50-60% (penalty applied)</li>
+              <li>CSS selectors → 55%</li>
+              <li>XPath fallback → 40%</li>
+              <li>Duplicate text → Requires disambiguation</li>
+            </ul>
+          </div>
+
+          <div class="test-item" style="border-left-color: #8b5cf6;">
+            <strong>Expected Behaviors:</strong>
+            <ul style="margin-left: 20px; margin-top: 8px;">
+              <li>✅ Low confidence captures trigger confirmation dialog</li>
+              <li>✅ "Reselect Control" launches picker mode</li>
+              <li>✅ Picker shows real-time confidence on hover</li>
+              <li>✅ Picker click prevents actual page interaction</li>
+              <li>✅ Escape key cancels picker mode</li>
+              <li>✅ Password and card fields are masked</li>
+              <li>✅ Multiple selector fallbacks stored per element</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Log clicks for testing
+      document.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') {
+          console.log('Button clicked:', {
+            text: e.target.textContent,
+            id: e.target.id,
+            name: e.target.name,
+            'data-adoption-id': e.target.getAttribute('data-adoption-id'),
+            'data-testid': e.target.getAttribute('data-testid'),
+          });
+        }
+      });
+    </script>
+  </body>
+</html>

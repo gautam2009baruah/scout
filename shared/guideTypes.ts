@@ -1,13 +1,19 @@
-export type RecordedActionType = "click" | "input" | "navigation" | "submit";
+export type RecordedActionType = "click" | "input" | "navigation" | "submit" | "change" | "manual-select";
 
 export type SelectorCandidateType =
+  | "data-adoption-id"
   | "data-testid"
+  | "data-test"
+  | "data-cy"
   | "id"
   | "name"
   | "aria-label"
   | "role-text"
+  | "label-text"
+  | "placeholder"
   | "css"
-  | "xpath";
+  | "xpath"
+  | "text-context";
 
 export type GuideStatus = "draft" | "published";
 export type GuideStepTrigger = "click" | "input" | "manualNext";
@@ -16,6 +22,30 @@ export type SelectorCandidate = {
   type: SelectorCandidateType;
   value: string;
   confidence: number;
+  reason: string;
+};
+
+export type ElementIdentity = {
+  tagName: string;
+  role?: string;
+  text?: string;
+  ariaLabel?: string;
+  labelText?: string;
+  placeholder?: string;
+  name?: string;
+  id?: string;
+  dataAttributes: Record<string, string>;
+  url: string;
+  path: string;
+  selectorCandidates: SelectorCandidate[];
+  confidenceScore: number;
+  needsUserConfirmation: boolean;
+  boundingBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 };
 
 export type RecordedAction = {
@@ -23,7 +53,11 @@ export type RecordedAction = {
   type: RecordedActionType;
   url: string;
   timestamp: number;
-  selectorCandidates: SelectorCandidate[];
+  elementIdentity?: ElementIdentity;
+  maskedValue?: string;
+  originalEventType?: string;
+  // Legacy fields for backward compatibility
+  selectorCandidates?: SelectorCandidate[];
   elementText?: string;
   ariaLabel?: string;
   role?: string;
