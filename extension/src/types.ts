@@ -1,4 +1,5 @@
 export type {
+  ElementIdentity,
   Guide,
   GuideStep,
   GuideStepTrigger,
