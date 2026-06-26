@@ -8,7 +8,8 @@ import {
   FolderTree,
   ShieldCheck,
   UserRoundCheck,
-  UsersRound
+  UsersRound,
+  Workflow
 } from "lucide-react";
 import { AdminShell } from "@/components/admin";
 import { getUserDashboardSummary } from "@/lib/admin/dashboard";
@@ -64,6 +65,13 @@ export default async function AdminDashboardPage() {
       label: "Active AI provider",
       tone: "bg-violet-600 text-white",
       value: summary.aiConfiguration.llmProvider
+    } : null,
+    summary.guidedWorkflows ? {
+      detail: `${summary.guidedWorkflows.publishedGuides} published guides`,
+      icon: Workflow,
+      label: "Guided workflows",
+      tone: "bg-amber-600 text-white",
+      value: summary.guidedWorkflows.trainingSessions
     } : null
   ].filter(Boolean) as Array<{
     detail: string;
@@ -129,20 +137,22 @@ export default async function AdminDashboardPage() {
           </article>
         ) : null}
 
-        {summary.aiConfiguration ? (
+        {summary.guidedWorkflows ? (
           <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
                 <ShieldCheck className="h-5 w-5" />
               </span>
               <div>
-                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Active AI Configuration</h2>
-                <p className="text-sm text-slate-500">Currently selected answer and retrieval providers.</p>
+                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Guided Workflows</h2>
+                <p className="text-sm text-slate-500">Training setup, drafts, and guides ready for target apps.</p>
               </div>
             </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <Metric label={summary.aiConfiguration.llmProvider} value={summary.aiConfiguration.llmModel} />
-              <Metric label={summary.aiConfiguration.embeddingProvider} value={summary.aiConfiguration.embeddingModel} />
+            <div className="mt-5 grid gap-3 sm:grid-cols-4">
+              <Metric label="Target apps" value={summary.guidedWorkflows.targetApps} />
+              <Metric label="Training sessions" value={summary.guidedWorkflows.trainingSessions} />
+              <Metric label="Drafts" value={summary.guidedWorkflows.draftGuides} />
+              <Metric label="Published" value={summary.guidedWorkflows.publishedGuides} />
             </div>
           </article>
         ) : null}

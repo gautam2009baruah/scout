@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Clipboard, Download, Globe2, Play, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, Check, Clipboard, Copy, Play, RefreshCw, Save, Search, Trash2 } from "lucide-react";
 import type { GuideStatus, GuideStep } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
 
@@ -21,6 +21,23 @@ type EditorState = {
   steps: GuideStep[];
 };
 
+type SessionDetailsState = {
+  session: GuidedWorkflowRecordingSessionRow | null;
+  actions: Array<{
+    id: string;
+    type: string;
+    url: string;
+    timestamp: number;
+    labelText?: string | null;
+    ariaLabel?: string | null;
+    elementText?: string | null;
+    nearbyText?: string | null;
+    tagName?: string | null;
+  }>;
+};
+
+const SCOUT_BASE_URL = "http://localhost:3001";
+
 export function GuidedWorkflowManager({ companies, guides, recordingSessions, targetApps }: GuidedWorkflowManagerProps) {
   const [apps, setApps] = useState(targetApps);
   const [sessions, setSessions] = useState(recordingSessions);
@@ -37,10 +54,92 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     allowedOrigins: "",
     sessionTitle: "New training session"
   });
-  const [latestToken, setLatestToken] = useState("");
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(recordingSessions[0]?.id ?? null);
+  const [sessionDetails, setSessionDetails] = useState<SessionDetailsState>({ session: null, actions: [] });
   const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>({ status: "idle", message: "" });
-  const companyApps = apps.filter((app) => app.companyId === setupForm.companyId);
-  const selectedApp = apps.find((app) => app.id === setupForm.targetAppId) ?? null;
+  const firstCompanyId = companies[0]?.id ?? "";
+  const firstTargetAppId = apps.find((app) => app.companyId === firstCompanyId)?.id ?? "";
+  const [draftFilters, setDraftFilters] = useState({ companyId: firstCompanyId, targetAppId: firstTargetAppId, title: "" });
+  const [filters, setFilters] = useState({ companyId: firstCompanyId, targetAppId: firstTargetAppId, title: "" });
+  const filterApps = apps.filter((app) => app.companyId === draftFilters.companyId);
+  const filteredSessions = useMemo(() => sessions.filter((session) => {
+    const matchesCompany = session.companyId === filters.companyId;
+    const matchesTargetApp = session.targetAppId === filters.targetAppId;
+    const matchesTitle = !filters.title.trim() || session.title.toLowerCase().includes(filters.title.trim().toLowerCase());
+    return matchesCompany && matchesTargetApp && matchesTitle;
+  }), [filters.companyId, filters.targetAppId, filters.title, sessions]);
+  const selectedSession = useMemo(() => sessions.find((session) => session.id === selectedSessionId) ?? null, [sessions, selectedSessionId]);
+  const selectedRecorderConfig = selectedSession ? recorderConfigForSession(selectedSession) : null;
+
+  useEffect(() => {
+    const nextApps = apps.filter((app) => app.companyId === draftFilters.companyId);
+    if (!nextApps.some((app) => app.id === draftFilters.targetAppId)) {
+      setDraftFilters((current) => ({ ...current, targetAppId: nextApps[0]?.id ?? "" }));
+    }
+  }, [apps, draftFilters.companyId, draftFilters.targetAppId]);
+
+  useEffect(() => {
+    setSelectedSessionId((current) => (current && filteredSessions.some((session) => session.id === current) ? current : filteredSessions[0]?.id ?? null));
+  }, [filteredSessions]);
+
+  useEffect(() => {
+    if (!selectedSession?.guideId) return;
+    const guide = items.find((item) => item.id === selectedSession.guideId);
+    if (!guide || selectedId === guide.id) return;
+    setSelectedId(guide.id);
+    setEditor(editorFromGuide(guide));
+  }, [items, selectedId, selectedSession?.guideId]);
+
+  useEffect(() => {
+    if (!selectedSessionId) {
+      setSessionDetails({ session: null, actions: [] });
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshSessionDetails() {
+      try {
+        const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${selectedSessionId}`);
+        const body = await response.json().catch(() => null);
+        if (cancelled) return;
+
+        setSessionDetails({
+          session: body?.session ?? null,
+          actions: Array.isArray(body?.actions) ? body.actions : []
+        });
+        if (body?.session) {
+          setSessions((current) => current.map((session) => session.id === body.session.id ? body.session : session));
+        }
+
+        if (body?.session?.guideId) {
+          const guideResponse = await fetch(`/api/admin/guided-workflows/${body.session.guideId}`);
+          const guideBody = await guideResponse.json().catch(() => null);
+          if (!cancelled && guideBody?.guide) {
+            setItems((current) => current.map((guide) => guide.id === guideBody.guide.id ? guideBody.guide : guide));
+            setSelectedId((current) => current || guideBody.guide.id);
+            setEditor((current) => {
+              const storedGuide = items.find((guide) => guide.id === guideBody.guide.id);
+              const hasLocalEdits = Boolean(storedGuide && JSON.stringify(normalizeSteps(current.steps)) !== JSON.stringify(normalizeSteps(storedGuide.steps)));
+              return selectedId === guideBody.guide.id && !hasLocalEdits ? editorFromGuide(guideBody.guide) : current;
+            });
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setSessionDetails({ session: null, actions: [] });
+        }
+      }
+    }
+
+    void refreshSessionDetails();
+    const intervalId = window.setInterval(() => void refreshSessionDetails(), 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [selectedId, selectedSessionId]);
 
   function selectGuide(guide: GuidedWorkflowRow) {
     setSelectedId(guide.id);
@@ -126,7 +225,6 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     }
 
     setSessions((current) => [body.session, ...current]);
-    setLatestToken(body.recorderToken);
     setState({ status: "success", message: "Recording session created. Copy the recorder config into the trainer extension." });
   }
 
@@ -146,7 +244,63 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     setSessions((current) => current.map((session) => session.id === body.session.id ? body.session : session));
   }
 
+  function updateSessionTitleLocally(sessionId: string, title: string) {
+    const trimmedValue = title.trim();
+    setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, title: trimmedValue || session.title } : session));
+    if (selectedSessionId === sessionId) {
+      setSessionDetails((current) => current.session && current.session.id === sessionId ? { ...current, session: { ...current.session, title: trimmedValue || current.session.title } } : current);
+    }
+  }
+
+  async function saveSessionTitle(sessionId: string, title: string) {
+    const trimmedTitle = title.trim();
+    if (!trimmedTitle) {
+      setState({ status: "error", message: "Session title cannot be empty." });
+      return;
+    }
+
+    const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: trimmedTitle })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to update session title." });
+      return;
+    }
+
+    setSessions((current) => current.map((session) => session.id === body.session.id ? body.session : session));
+    setSessionDetails((current) => current.session && current.session.id === sessionId ? { ...current, session: body.session } : current);
+    setState({ status: "success", message: "Session title updated." });
+  }
+
+  async function deleteSession(sessionId: string) {
+    if (!window.confirm("Delete this recording session?")) return;
+
+    const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionId}`, { method: "DELETE" });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to delete session." });
+      return;
+    }
+
+    setSessions((current) => current.filter((session) => session.id !== sessionId));
+    if (selectedSessionId === sessionId) {
+      const nextSelection = sessions.find((session) => session.id !== sessionId)?.id ?? null;
+      setSelectedSessionId(nextSelection);
+    }
+    setState({ status: "success", message: "Recording session deleted." });
+  }
+
   async function convertSession(sessionId: string) {
+    const session = sessions.find((item) => item.id === sessionId);
+    if (session?.guideId && selected?.id === session.guideId) {
+      await saveGuide(undefined, { silent: true });
+    }
+
     setState({ status: "submitting", message: "" });
     const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionId}`, {
       method: "PATCH",
@@ -164,12 +318,44 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     setSelectedId(body.guide.id);
     setEditor(editorFromGuide(body.guide));
     setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, status: "converted", guideId: body.guide.id } : session));
-    setState({ status: "success", message: "Guide draft generated from the recording session." });
+    setState({ status: "success", message: session?.guideId ? "Guide draft updated." : "Guide draft generated from the recording session." });
   }
 
-  async function saveGuide(nextStatus?: GuideStatus) {
-    if (!selected) return;
+  async function publishSessionGuide(session: GuidedWorkflowRecordingSessionRow) {
+    if (!session.guideId) {
+      setState({ status: "error", message: "Create a guide draft before publishing." });
+      return;
+    }
+
+    if (selected?.id === session.guideId) {
+      await saveGuide("published");
+      return;
+    }
+
     setState({ status: "submitting", message: "" });
+    const response = await fetch(`/api/admin/guided-workflows/${session.guideId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "published" })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to publish guide." });
+      return;
+    }
+
+    setItems((current) => current.map((guide) => guide.id === body.guide.id ? body.guide : guide));
+    setSelectedId(body.guide.id);
+    setEditor(editorFromGuide(body.guide));
+    setState({ status: "success", message: "Guide published. Refresh the target app to see it." });
+  }
+
+  async function saveGuide(nextStatus?: GuideStatus, options?: { silent?: boolean }) {
+    if (!selected) return;
+    if (!options?.silent) {
+      setState({ status: "submitting", message: "" });
+    }
     const response = await fetch(`/api/admin/guided-workflows/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -183,14 +369,18 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to save guide." });
+      if (!options?.silent) {
+        setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to save guide." });
+      }
       return;
     }
 
     setItems((current) => current.map((guide) => guide.id === body.guide.id ? body.guide : guide));
     setSelectedId(body.guide.id);
     setEditor(editorFromGuide(body.guide));
-    setState({ status: "success", message: nextStatus === "published" ? "Guide published." : "Guide saved." });
+    if (!options?.silent) {
+      setState({ status: "success", message: nextStatus === "published" ? "Guide saved and published. Refresh the target app to see it." : "Guide saved." });
+    }
   }
 
   async function regenerateGuide() {
@@ -227,20 +417,39 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     });
   }
 
-  function deleteStep(index: number) {
-    setEditor((current) => ({ ...current, steps: current.steps.filter((_, stepIndex) => stepIndex !== index).map((step, stepIndex) => ({ ...step, order: stepIndex + 1 })) }));
+  async function hardDeleteStep(index: number) {
+    if (!selected) return;
+    const step = editor.steps[index];
+    if (!step) return;
+
+    setState({ status: "submitting", message: "" });
+    const response = await fetch(`/api/admin/guided-workflows/${selected.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deleteStepId: step.id })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to delete step." });
+      return;
+    }
+
+    setItems((current) => current.map((guide) => guide.id === body.guide.id ? body.guide : guide));
+    setSelectedId(body.guide.id);
+    setEditor(editorFromGuide(body.guide));
+    setSessionDetails((current) => ({
+      ...current,
+      actions: step.actionSourceId ? current.actions.filter((action) => action.id !== step.actionSourceId) : current.actions
+    }));
+    setSessions((current) => current.map((session) => session.id === selectedSessionId ? { ...session, actionsCount: Math.max(0, session.actionsCount - 1) } : session));
+    setState({ status: "success", message: "Step deleted." });
   }
 
   function exportGuide() {
     if (!selected) return;
     downloadJson(`${slug(editor.title) || "guide"}.json`, { ...selected, title: editor.title, description: editor.description, status: editor.status, steps: editor.steps });
   }
-
-  const recorderConfig = latestToken ? {
-    scoutBaseUrl: typeof window === "undefined" ? "" : window.location.origin,
-    recorderToken: latestToken,
-    ingestPath: "/api/guided-workflow-recorder/actions"
-  } : null;
 
   return (
     <div className="grid gap-6">
@@ -249,180 +458,233 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
       ) : null}
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Globe2 className="h-4 w-4" />Training setup</div>
-            <p className="mt-1 text-sm text-slate-500">Reuse a target app for repeat training sessions, or create a new app profile the first time.</p>
-          </div>
-          {selectedApp ? <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{selectedApp.name}</span> : null}
-        </div>
-
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
-          <div className="grid gap-3">
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Company">
-                <select
-                  className="input"
-                  onChange={(event) => updateSetup({ companyId: event.target.value, targetAppMode: "new", targetAppId: "", appName: "", baseUrl: "", allowedOrigins: "" })}
-                  value={setupForm.companyId}
-                >
-                  {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-                </select>
-              </Field>
-              <Field label="Target app">
-                <select
-                  className="input"
-                  onChange={(event) => {
-                    if (event.target.value === "__new") {
-                      updateSetup({ targetAppMode: "new", targetAppId: "", appName: "", baseUrl: "", allowedOrigins: "" });
-                      return;
-                    }
-                    updateSetup({ targetAppMode: "existing" });
-                    chooseExistingTargetApp(event.target.value);
-                  }}
-                  value={setupForm.targetAppMode === "new" ? "__new" : setupForm.targetAppId}
-                >
-                  <option value="__new">Create new target app</option>
-                  {companyApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
-                </select>
-              </Field>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Target app name">
-                <input className="input" disabled={setupForm.targetAppMode === "existing"} onChange={(event) => updateSetup({ appName: event.target.value })} placeholder="CRM Production" value={setupForm.appName} />
-              </Field>
-              <Field label="Target app URL">
-                <input className="input" disabled={setupForm.targetAppMode === "existing"} onChange={(event) => updateSetup({ baseUrl: event.target.value })} placeholder="https://app.example.com" value={setupForm.baseUrl} />
-              </Field>
-            </div>
-
-            <Field label="Allowed origins">
-              <textarea className="input min-h-20 py-2" disabled={setupForm.targetAppMode === "existing"} onChange={(event) => updateSetup({ allowedOrigins: event.target.value })} placeholder="https://app.example.com" value={setupForm.allowedOrigins} />
-            </Field>
-
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
-              <Field label="Training session title">
-                <input className="input" onChange={(event) => updateSetup({ sessionTitle: event.target.value })} value={setupForm.sessionTitle} />
-              </Field>
-              <button
-                className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60"
-                disabled={!setupForm.companyId || !setupForm.sessionTitle || (setupForm.targetAppMode === "new" && !setupForm.appName) || (setupForm.targetAppMode === "existing" && !setupForm.targetAppId) || state.status === "submitting"}
-                onClick={createRecordingSession}
-                type="button"
-              >
-                <Plus className="h-4 w-4" />Create training session
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Clipboard className="h-4 w-4" />Recorder extension config</div>
-            {recorderConfig ? (
-              <div className="mt-3 grid gap-3">
-                <pre className="max-h-52 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-white">{JSON.stringify(recorderConfig, null, 2)}</pre>
-                <button className="button-secondary justify-center bg-white" onClick={() => navigator.clipboard.writeText(JSON.stringify(recorderConfig, null, 2))} type="button">Copy config</button>
-              </div>
-            ) : (
-              <p className="mt-3 text-sm text-slate-500">Create a training session to generate the token for the trainer extension.</p>
-            )}
-          </div>
+        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
+          <Field label="Company">
+            <select className="input" onChange={(event) => setDraftFilters({ companyId: event.target.value, targetAppId: apps.find((app) => app.companyId === event.target.value)?.id ?? "", title: "" })} required value={draftFilters.companyId}>
+              {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Target app">
+            <select className="input" onChange={(event) => setDraftFilters((current) => ({ ...current, targetAppId: event.target.value, title: "" }))} required value={draftFilters.targetAppId}>
+              {filterApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Training session title">
+            <input className="input" onChange={(event) => setDraftFilters((current) => ({ ...current, title: event.target.value }))} placeholder="Filter by title" value={draftFilters.title} />
+          </Field>
+          <button
+            className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!draftFilters.companyId || !draftFilters.targetAppId}
+            onClick={() => setFilters(draftFilters)}
+            type="button"
+          >
+            <Search className="h-4 w-4" />Filter
+          </button>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="grid gap-4">
-          <Panel title="Recording sessions">
-            {sessions.length === 0 ? <p className="text-sm text-slate-500">No training sessions yet.</p> : sessions.map((session) => (
-              <div className="rounded-lg border border-slate-200 p-3" key={session.id}>
-                <p className="text-sm font-semibold text-slate-950">{session.title}</p>
-                <p className="mt-1 text-xs text-slate-500">{session.targetAppName ?? session.companyName} | {session.status} | {session.actionsCount} actions</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button className="button-secondary h-8 px-3 text-xs" onClick={() => updateSession(session.id, "paused")} type="button">Pause</button>
-                  <button className="button-secondary h-8 px-3 text-xs" onClick={() => updateSession(session.id, "stopped")} type="button">Stop</button>
-                  <button className="inline-flex h-8 items-center rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white disabled:opacity-40" disabled={session.actionsCount === 0 || session.status === "converted"} onClick={() => convertSession(session.id)} type="button">Generate guide</button>
-                </div>
-              </div>
-            ))}
-          </Panel>
+      <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <Panel title="Training Sessions">
+          {filteredSessions.length === 0 ? (
+            <p className="text-sm text-slate-500">No training sessions yet.</p>
+          ) : (
+            <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
+              {filteredSessions.map((session) => {
+                const active = selectedSessionId === session.id;
+                const displayStatus = workflowStatusForSession(session, items);
+                return (
+                  <button
+                    className={`w-full rounded-lg border p-3 text-left transition ${active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                    key={session.id}
+                    onClick={() => setSelectedSessionId(session.id)}
+                    type="button"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-semibold">{session.title}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"}`}>{displayStatus}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Panel>
 
-          <Panel title="Player install snippets">
-            {apps.length === 0 ? <p className="text-sm text-slate-500">Add a target app to get its install snippet.</p> : apps.map((app) => (
-              <div className="rounded-lg border border-slate-200 p-3" key={app.id}>
-                <p className="text-sm font-semibold text-slate-950">{app.name}</p>
-                <p className="mt-1 text-xs text-slate-500">{app.baseUrl || app.companyName}</p>
-                <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-white">{installSnippet(app.id)}</pre>
-                <button className="button-secondary mt-3 h-8 px-3 text-xs" onClick={() => navigator.clipboard.writeText(installSnippet(app.id))} type="button">Copy snippet</button>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel title="Published and draft guides">
-            {items.length === 0 ? <p className="text-sm text-slate-500">No guided workflows yet.</p> : items.map((guide) => (
-              <button className={`block w-full rounded-md px-3 py-3 text-left text-sm transition ${selected?.id === guide.id ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"}`} key={guide.id} onClick={() => selectGuide(guide)} type="button">
-                <span className="block font-semibold">{guide.title}</span>
-                <span className={`mt-1 block text-xs ${selected?.id === guide.id ? "text-slate-300" : "text-slate-500"}`}>{guide.targetAppName ?? guide.companyName} | {guide.status} | {guide.steps.length} steps</span>
-              </button>
-            ))}
-          </Panel>
-        </aside>
-
-        <GuideEditor deleteStep={deleteStep} editor={editor} exportGuide={exportGuide} moveStep={moveStep} regenerateGuide={regenerateGuide} saveGuide={saveGuide} selected={selected} setEditor={setEditor} updateStep={updateStep} />
+        <SessionDetailsPanel
+          convertSession={convertSession}
+          deleteSession={deleteSession}
+          deleteStep={hardDeleteStep}
+          editor={editor}
+          guides={items}
+          moveStep={moveStep}
+          publishSessionGuide={publishSessionGuide}
+          recorderConfig={selectedRecorderConfig}
+          selectedSession={selectedSession}
+          sessionDetails={sessionDetails}
+          updateStep={updateStep}
+        />
       </section>
     </div>
   );
 }
 
-function GuideEditor({ deleteStep, editor, exportGuide, moveStep, regenerateGuide, saveGuide, selected, setEditor, updateStep }: {
+function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor, guides, moveStep, publishSessionGuide, recorderConfig, selectedSession, sessionDetails, updateStep }: {
+  convertSession(sessionId: string): void;
+  deleteSession(sessionId: string): void;
   deleteStep(index: number): void;
   editor: EditorState;
-  exportGuide(): void;
+  guides: GuidedWorkflowRow[];
   moveStep(index: number, direction: -1 | 1): void;
-  regenerateGuide(): void;
-  saveGuide(nextStatus?: GuideStatus): void;
-  selected: GuidedWorkflowRow | null;
-  setEditor(next: EditorState): void;
+  publishSessionGuide(session: GuidedWorkflowRecordingSessionRow): void;
+  recorderConfig: { scoutBaseUrl: string; recorderToken: string; sessionTitle: string; recordingSessionId: string; ingestPath: string } | null;
+  selectedSession: GuidedWorkflowRecordingSessionRow | null;
+  sessionDetails: SessionDetailsState;
   updateStep(index: number, patch: Partial<GuideStep>): void;
 }) {
-  if (!selected) return <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">Create or convert a training session to start editing a guide.</section>;
+  const [copiedKey, setCopiedKey] = useState("");
+  const [configTab, setConfigTab] = useState<"recorder" | "snippet">("recorder");
+
+  useEffect(() => {
+    if (!selectedSession?.guideId) {
+      setConfigTab("recorder");
+    }
+  }, [selectedSession?.guideId]);
+
+  if (!selectedSession) {
+    return (
+      <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
+        Select a training session from the list to inspect the recorded steps.
+      </section>
+    );
+  }
+
+  const sessionGuide = selectedSession.guideId ? guides.find((guide) => guide.id === selectedSession.guideId) ?? null : null;
+  const guidePublished = sessionGuide?.status === "published";
+  const guideSteps = sessionGuide ? editor.steps : [];
+  const syncedActionCount = sessionDetails.session?.id === selectedSession.id ? sessionDetails.actions.length : selectedSession.actionsCount;
+  const guideDirty = Boolean(sessionGuide && JSON.stringify(normalizeSteps(editor.steps)) !== JSON.stringify(normalizeSteps(sessionGuide.steps)));
+  const hasNewSyncedActions = Boolean(sessionGuide && syncedActionCount > sessionGuide.recordedActions.length);
+  const canUpdateDraft = syncedActionCount > 0 && (!sessionGuide || sessionGuide.status === "unpublished" || guideDirty || hasNewSyncedActions);
+  const canPublish = Boolean(sessionGuide && guideSteps.length > 0 && (guideDirty || sessionGuide.status === "draft"));
+
+  async function copyText(key: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopiedKey(key);
+    window.setTimeout(() => setCopiedKey((current) => current === key ? "" : current), 1200);
+  }
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
       <div className="grid gap-5 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{selected.targetAppName ?? selected.companyName}</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-normal text-slate-950">Guide editor</h2>
+          <div className="min-w-0 flex-1">
+            <p className="text-lg font-semibold text-slate-950">{selectedSession.title}</p>
+            <p className="mt-2 text-sm text-slate-500">
+              <span className="font-medium text-slate-700">Synced actions:</span> {syncedActionCount} • <span className="font-medium text-slate-700">Created:</span> {formatDate(selectedSession.createdAt)}
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="button-secondary" onClick={regenerateGuide} type="button"><RefreshCw className="h-4 w-4" />Regenerate</button>
-            <button className="button-secondary" onClick={exportGuide} type="button"><Download className="h-4 w-4" />Export JSON</button>
-            <button className="button-secondary" onClick={() => saveGuide("draft")} type="button"><Save className="h-4 w-4" />Save</button>
-            <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white" onClick={() => saveGuide("published")} type="button"><Play className="h-4 w-4" />Publish</button>
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!canUpdateDraft}
+              onClick={() => convertSession(selectedSession.id)}
+              type="button"
+            >
+              <RefreshCw className="h-4 w-4" />Save guide draft
+            </button>
+            <button
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
+              disabled={!canPublish}
+              onClick={() => publishSessionGuide(selectedSession)}
+              type="button"
+            >
+              <Play className="h-4 w-4" />Publish
+            </button>
+            <button className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-700" onClick={() => deleteSession(selectedSession.id)} type="button">
+              <Trash2 className="h-4 w-4" />Delete
+            </button>
           </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Field label="Guide title"><input className="input" onChange={(event) => setEditor({ ...editor, title: event.target.value })} value={editor.title} /></Field>
-          <Field label="Description"><input className="input" onChange={(event) => setEditor({ ...editor, description: event.target.value })} value={editor.description} /></Field>
+
+        <p className="text-xs text-slate-500">
+          {syncedActionCount === 0
+              ? "Record and sync at least one action in this session to enable Create guide draft."
+            : selectedSession.guideId
+              ? sessionGuide?.status === "unpublished" ? "Save the guide draft before publishing." : guideDirty ? "Save draft changes before publishing." : hasNewSyncedActions ? "New synced steps are waiting. Save the guide draft before publishing." : guidePublished ? "This session is published. Add or edit steps to enable another update." : "This session has draft steps. Publish it to make them available in the target app."
+              : "Save guide draft turns the synced training actions into a draft guided workflow that can be published later."}
+        </p>
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+              <button className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${configTab === "recorder" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100"}`} onClick={() => setConfigTab("recorder")} type="button"><Clipboard className="h-3.5 w-3.5" />Recorder config</button>
+              <button className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${configTab === "snippet" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100"} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!guidePublished} onClick={() => setConfigTab("snippet")} type="button"><Copy className="h-3.5 w-3.5" />Install snippet</button>
+            </div>
+            {configTab === "recorder" && recorderConfig ? (
+              <button className="button-secondary h-8 gap-2 px-3 text-xs" onClick={() => copyText("recorder-config", JSON.stringify(recorderConfig, null, 2))} type="button">
+                {copiedKey === "recorder-config" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copiedKey === "recorder-config" ? "Copied" : "Copy config"}
+              </button>
+            ) : configTab === "snippet" && guidePublished ? (
+              <button className="button-secondary h-8 gap-2 px-3 text-xs" onClick={() => copyText("install-snippet", installSnippet(selectedSession.targetAppId ?? ""))} type="button">
+                {copiedKey === "install-snippet" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copiedKey === "install-snippet" ? "Copied" : "Copy snippet"}
+              </button>
+            ) : null}
+          </div>
+          {configTab === "recorder" ? (
+            recorderConfig ? (
+              <div>
+                <p className="mt-3 text-xs text-slate-500">Copy this into the trainer extension for this training session.</p>
+                <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-white">{JSON.stringify(recorderConfig, null, 2)}</pre>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-500">Create a new training session to generate a fresh recorder token.</p>
+            )
+          ) : guidePublished ? (
+            <div>
+              <p className="mt-3 text-xs text-slate-500">Paste this into the target app to show the guided navigation player.</p>
+              <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-white">{installSnippet(selectedSession.targetAppId ?? "")}</pre>
+            </div>
+          ) : null}
         </div>
+
         <div className="grid gap-3">
-          {editor.steps.length === 0 ? <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">No steps generated yet.</p> : editor.steps.map((step, index) => (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">Guide steps</p>
+              <p className="mt-1 text-xs text-slate-500">Edit descriptions, delete mistakes, and reorder steps before publishing.</p>
+            </div>
+          </div>
+
+          {!sessionGuide ? (
+            <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+              {sessionDetails.actions.length === 0 ? "No synced steps yet for this session." : "Create a guide draft to review and edit the synced steps."}
+            </p>
+          ) : guideSteps.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">This guide has no steps.</p>
+          ) : guideSteps.map((step, index) => (
             <div className="rounded-lg border border-slate-200 p-4" key={step.id}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-slate-950">Step {index + 1}</span>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex min-w-0 gap-3">
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-semibold text-white">{index + 1}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-950">Control identifier</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-600">{controlIdentifierSummary(step)}</p>
+                  </div>
+                </div>
                 <div className="flex gap-1">
-                  <IconAction disabled={index === 0} label="Move up" onClick={() => moveStep(index, -1)}><ArrowUp className="h-4 w-4" /></IconAction>
-                  <IconAction disabled={index === editor.steps.length - 1} label="Move down" onClick={() => moveStep(index, 1)}><ArrowDown className="h-4 w-4" /></IconAction>
-                  <IconAction label="Delete step" onClick={() => deleteStep(index)}><Trash2 className="h-4 w-4" /></IconAction>
+                  <button aria-label="Move step up" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === 0} onClick={() => moveStep(index, -1)} title="Move step up" type="button"><ArrowUp className="h-4 w-4" /></button>
+                  <button aria-label="Move step down" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === guideSteps.length - 1} onClick={() => moveStep(index, 1)} title="Move step down" type="button"><ArrowDown className="h-4 w-4" /></button>
+                  <button aria-label="Delete step" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={() => deleteStep(index)} title="Delete step" type="button"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
               </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <Field label="Step title"><input className="input" onChange={(event) => updateStep(index, { title: event.target.value })} value={step.title} /></Field>
-                <Field label="Trigger"><select className="input" onChange={(event) => updateStep(index, { trigger: event.target.value as GuideStep["trigger"] })} value={step.trigger}><option value="click">Click</option><option value="input">Input</option><option value="manualNext">Manual next</option></select></Field>
-                <Field label="URL match"><input className="input" onChange={(event) => updateStep(index, { urlMatch: event.target.value })} value={step.urlMatch} /></Field>
-                <Field label="Tooltip message"><input className="input" onChange={(event) => updateStep(index, { message: event.target.value })} value={step.message} /></Field>
-              </div>
-              <p className="mt-3 truncate rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">Target: {step.target.selectorCandidates[0]?.type ?? "none"} {step.target.selectorCandidates[0]?.value ?? ""}</p>
+              <label className="mt-3 grid gap-1 text-xs font-medium text-slate-600">
+                Step description
+                <input
+                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                  onChange={(event) => updateStep(index, { message: event.target.value })}
+                  value={step.message}
+                />
+              </label>
             </div>
           ))}
         </div>
@@ -435,8 +697,55 @@ function editorFromGuide(guide: GuidedWorkflowRow | null): EditorState {
   return { title: guide?.title ?? "", description: guide?.description ?? "", status: guide?.status ?? "draft", steps: guide?.steps ?? [] };
 }
 
+function controlIdentifierSummary(step: GuideStep) {
+  const bestSelector = step.target.selectorCandidates?.[0];
+  const parts = [
+    bestSelector ? `${bestSelector.type}: ${bestSelector.value} (${Math.round(bestSelector.confidence * 100)}%)` : null,
+    step.target.role ? `role: ${step.target.role}` : null,
+    step.target.tagName ? `tag: ${step.target.tagName}` : null,
+    step.target.fallbackText ? `text: ${step.target.fallbackText}` : null
+  ].filter(Boolean);
+
+  return parts.join(" | ") || "No control identifier captured.";
+}
+
+function normalizeSteps(steps: GuideStep[]) {
+  return steps.map((step, index) => ({
+    ...step,
+    order: index + 1
+  }));
+}
+
+function workflowStatusForSession(session: GuidedWorkflowRecordingSessionRow, guides: GuidedWorkflowRow[]) {
+  const guide = session.guideId ? guides.find((item) => item.id === session.guideId) : null;
+  if (guide) return guide.status;
+  return session.actionsCount > 0 ? "unpublished" : "unpublished";
+}
+
+function recorderConfigForSession(session: GuidedWorkflowRecordingSessionRow) {
+  const recorderToken = session.recorderConfig?.recorderToken;
+  if (!recorderToken) return null;
+
+  return {
+    scoutBaseUrl: SCOUT_BASE_URL,
+    recorderToken,
+    sessionTitle: session.title,
+    recordingSessionId: session.id,
+    ingestPath: "/api/guided-workflow-recorder/actions"
+  };
+}
+
 function splitLines(value: string) {
   return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toISOString().replace("T", " ").slice(0, 16);
 }
 
 function slug(value: string) {
@@ -454,7 +763,7 @@ function downloadJson(filename: string, value: unknown) {
 }
 
 function installSnippet(targetAppId: string) {
-  const baseUrl = typeof window === "undefined" ? "http://localhost:3001" : window.location.origin;
+  const baseUrl = SCOUT_BASE_URL;
 
   return `<script src="${baseUrl}/scout-adoption-player.js"></script>
 <script>
@@ -466,7 +775,7 @@ function installSnippet(targetAppId: string) {
 }
 
 function Panel({ children, title }: { children: ReactNode; title: string }) {
-  return <section className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><h2 className="text-sm font-semibold text-slate-950">{title}</h2>{children}</section>;
+  return <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><h2 className="text-sm font-semibold text-slate-950">{title}</h2>{children}</section>;
 }
 
 function Field({ children, label }: { children: ReactNode; label: string }) {

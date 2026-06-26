@@ -15,7 +15,7 @@ export type SelectorCandidateType =
   | "xpath"
   | "text-context";
 
-export type GuideStatus = "draft" | "published";
+export type GuideStatus = "unpublished" | "draft" | "published";
 export type GuideStepTrigger = "click" | "input" | "manualNext";
 
 export type SelectorCandidate = {
@@ -53,7 +53,9 @@ export type RecordedAction = {
   type: RecordedActionType;
   url: string;
   timestamp: number;
+  stepOrder?: number;
   elementIdentity?: ElementIdentity;
+  stepDescription?: string;
   maskedValue?: string;
   originalEventType?: string;
   // Legacy fields for backward compatibility

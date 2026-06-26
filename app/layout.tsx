@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Script from "next/script";
+import { ScoutAdoptionLoader } from "@/components/scout-adoption-loader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,15 +16,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         {children}
-        <Script id="scout-adoption-player-config" strategy="beforeInteractive">
-          {`
-            window.ScoutAdoptionPlayerConfig = {
-              scoutBaseUrl: "http://localhost:3001",
-              targetAppId: "9de764bc-205e-4476-b061-12d101b092da"
-            };
-          `}
-        </Script>
-        <Script src="http://localhost:3001/scout-adoption-player.js" strategy="afterInteractive" />
+        <ScoutAdoptionLoader />
       </body>
     </html>
   );

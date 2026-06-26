@@ -100,14 +100,18 @@ export function createRecordedAction(
  * Create a manual select action from element picker
  */
 export function createManualSelectAction(
-  elementIdentity: ElementIdentity
+  elementIdentity: ElementIdentity,
+  stepDescription?: string,
+  stepOrder?: number
 ): RecordedAction {
   return {
     id: createId(),
     type: "manual-select",
     url: location.href,
     timestamp: Date.now(),
+    stepOrder,
     elementIdentity,
+    stepDescription: stepDescription?.trim() || undefined,
     originalEventType: "manual-picker",
     // Legacy fields
     selectorCandidates: elementIdentity.selectorCandidates,

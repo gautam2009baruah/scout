@@ -64,6 +64,12 @@ export function AdminShell({ active, children, session, title }: AdminShellProps
                   {administrationModules.map((module) => (
                     <NavLink active={active} inset key={module.key} module={module} />
                   ))}
+                  {guidedWorkflowsModule ? (
+                    <Link className="flex h-11 items-center gap-3 rounded-lg px-3 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950" href="/control-panel/administration/training-setup">
+                      <MapPinned className="h-4 w-4" />
+                      Training Setup
+                    </Link>
+                  ) : null}
                 </div>
               </details>
             ) : null}

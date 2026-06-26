@@ -24,12 +24,33 @@ export default async function GuidedWorkflowsPage() {
 
   requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
-  const [{ companies }, guides, targetApps, recordingSessions] = await Promise.all([
+  const [masterDataResult, guidesResult, targetAppsResult, recordingSessionsResult] = await Promise.allSettled([
     getMasterData(),
     listGuidedWorkflows(session),
     listGuidedWorkflowTargetApps(session),
     listGuidedWorkflowRecordingSessions(session)
   ]);
+
+  const companies = masterDataResult.status === "fulfilled" ? masterDataResult.value.companies : [];
+  const guides = guidesResult.status === "fulfilled" ? guidesResult.value : [];
+  const targetApps = targetAppsResult.status === "fulfilled" ? targetAppsResult.value : [];
+  const recordingSessions = recordingSessionsResult.status === "fulfilled" ? recordingSessionsResult.value : [];
+
+  if (masterDataResult.status === "rejected") {
+    console.error("Failed to load guided workflows master data", masterDataResult.reason);
+  }
+
+  if (guidesResult.status === "rejected") {
+    console.error("Failed to load guided workflows", guidesResult.reason);
+  }
+
+  if (targetAppsResult.status === "rejected") {
+    console.error("Failed to load guided workflow target apps", targetAppsResult.reason);
+  }
+
+  if (recordingSessionsResult.status === "rejected") {
+    console.error("Failed to load guided workflow recording sessions", recordingSessionsResult.reason);
+  }
 
   return (
     <AdminShell active={MODULE_KEYS.guidedWorkflows} session={session} title="Guided Workflows">

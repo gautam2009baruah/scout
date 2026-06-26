@@ -19,6 +19,8 @@ export type RecordingState = {
 export type RecorderConfig = {
   scoutBaseUrl: string;
   recorderToken: string;
+  sessionTitle?: string;
+  recordingSessionId?: string;
   ingestPath?: string;
 };
 

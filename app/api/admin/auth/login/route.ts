@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_MINUTES, createAdminSession } from "@/lib/admin/session";
+import { ADMIN_SESSION_COOKIE, createAdminSession } from "@/lib/admin/session";
 
 export const runtime = "nodejs";
 
@@ -32,8 +32,7 @@ export async function POST(request: Request) {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: ADMIN_SESSION_MINUTES * 60
+    path: "/"
   });
 
   return response;

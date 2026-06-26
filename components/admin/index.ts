@@ -4,6 +4,7 @@ export { AdminShell } from "./admin-shell";
 export { AdminLoginForm } from "./admin-login-form";
 export { ChangePasswordForm } from "./change-password-form";
 export { GuidedWorkflowManager } from "./guided-workflow-console";
+export { GuidedWorkflowTrainingSetup } from "./guided-workflow-training-setup";
 export { UserList } from "./employee-list";
 export { UserRegisterForm } from "./employee-register-form";
 export { MasterDataForms } from "./master-data-forms";

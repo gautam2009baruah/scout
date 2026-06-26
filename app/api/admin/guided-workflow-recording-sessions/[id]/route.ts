@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createGuideFromRecordingSession, getGuidedWorkflowRecordingSessionById, GuidedWorkflowError, listRecordedActionsForSession, updateGuidedWorkflowRecordingSession } from "@/lib/admin/guided-workflows";
+import { createGuideFromRecordingSession, deleteGuidedWorkflowRecordingSession, getGuidedWorkflowRecordingSessionById, GuidedWorkflowError, listRecordedActionsForSession, updateGuidedWorkflowRecordingSession } from "@/lib/admin/guided-workflows";
 import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
@@ -59,10 +59,27 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({
       session: await updateGuidedWorkflowRecordingSession(
         id,
-        { status: body?.status },
+        { status: body?.status, title: body?.title },
         auth.session
       )
     });
+  } catch (error) {
+    if (error instanceof GuidedWorkflowError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
+
+    throw error;
+  }
+}
+
+export async function DELETE(_request: Request, context: RouteContext) {
+  const auth = await requireSession();
+  if ("response" in auth) return auth.response;
+
+  try {
+    const { id } = await context.params;
+    await deleteGuidedWorkflowRecordingSession(id, auth.session);
+    return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof GuidedWorkflowError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });

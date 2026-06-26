@@ -8,6 +8,10 @@ function compactText(value?: string) {
   return value?.replace(/\s+/g, " ").trim() ?? "";
 }
 
+function trainerDescription(action: RecordedAction) {
+  return compactText(action.stepDescription);
+}
+
 function bestElementName(action: RecordedAction) {
   return compactText(action.labelText)
     || compactText(action.ariaLabel)
@@ -18,6 +22,9 @@ function bestElementName(action: RecordedAction) {
 }
 
 function titleForAction(action: RecordedAction) {
+  const description = trainerDescription(action);
+  if (description) return description;
+
   const name = bestElementName(action);
 
   if (action.type === "input") {
@@ -36,6 +43,9 @@ function titleForAction(action: RecordedAction) {
 }
 
 function messageForAction(action: RecordedAction) {
+  const description = trainerDescription(action);
+  if (description) return description;
+
   const name = bestElementName(action);
 
   if (action.type === "input") {
@@ -61,8 +71,8 @@ function triggerForAction(action: RecordedAction): GuideStep["trigger"] {
 
 function isDuplicate(previous: RecordedAction | undefined, action: RecordedAction) {
   if (!previous) return false;
-  const previousSelector = previous.selectorCandidates[0]?.value ?? "";
-  const selector = action.selectorCandidates[0]?.value ?? "";
+  const previousSelector = previous.selectorCandidates?.[0]?.value ?? "";
+  const selector = action.selectorCandidates?.[0]?.value ?? "";
 
   return previous.type === action.type
     && previous.url === action.url
@@ -74,13 +84,13 @@ export function generateGuideFromRecording(actions: RecordedAction[], input?: { 
   const now = new Date().toISOString();
   const cleanedActions = actions.filter((action, index) => !isDuplicate(actions[index - 1], action));
   const steps = cleanedActions
-    .filter((action) => action.type !== "navigation" || action.selectorCandidates.length > 0)
+    .filter((action) => action.type !== "navigation" || (action.selectorCandidates?.length ?? 0) > 0)
     .map((action, index): GuideStep => ({
       id: createId("step"),
       order: index + 1,
       urlMatch: action.url,
       target: {
-        selectorCandidates: action.selectorCandidates,
+        selectorCandidates: action.selectorCandidates ?? [],
         fallbackText: bestElementName(action),
         role: action.role,
         tagName: action.tagName

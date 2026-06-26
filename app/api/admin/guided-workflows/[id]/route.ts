@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGuidedWorkflowById, GuidedWorkflowError, regenerateGuidedWorkflow, updateGuidedWorkflow } from "@/lib/admin/guided-workflows";
+import { deleteRecordedActionForGuideStep, getGuidedWorkflowById, GuidedWorkflowError, regenerateGuidedWorkflow, updateGuidedWorkflow } from "@/lib/admin/guided-workflows";
 import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
@@ -57,14 +57,16 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const guide = body.regenerate === true
+    const guide = typeof body.deleteStepId === "string"
+      ? await deleteRecordedActionForGuideStep(id, body.deleteStepId, auth.session)
+      : body.regenerate === true
       ? await regenerateGuidedWorkflow(id, auth.session)
       : await updateGuidedWorkflow(
         id,
         {
           title: typeof body.title === "string" ? body.title : undefined,
           description: typeof body.description === "string" ? body.description : undefined,
-          status: body.status === "draft" || body.status === "published" ? body.status : undefined,
+          status: body.status === "unpublished" || body.status === "draft" || body.status === "published" ? body.status : undefined,
           recordedActions: Array.isArray(body.recordedActions) ? body.recordedActions : undefined,
           steps: Array.isArray(body.steps) ? body.steps : undefined
         },

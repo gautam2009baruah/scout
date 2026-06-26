@@ -68,6 +68,12 @@ export type UserDashboardSummary = {
     embeddingProvider: string;
     embeddingModel: string;
   };
+  guidedWorkflows?: {
+    targetApps: number;
+    trainingSessions: number;
+    draftGuides: number;
+    publishedGuides: number;
+  };
 };
 
 export async function getUserDashboardSummary(session: AdminSession): Promise<UserDashboardSummary> {
@@ -192,6 +198,33 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
       llmModel: row?.llm_model || "Not configured",
       embeddingProvider: row?.embedding_provider || "Not configured",
       embeddingModel: row?.embedding_model || "Not configured"
+    };
+  }
+
+  if (hasModuleAccess(session, MODULE_KEYS.guidedWorkflows)) {
+    const accessFilter = session.user.isAdminRole ? "" : "AND company_id = $1";
+    const params = session.user.isAdminRole ? [] : [session.user.tenantId];
+    const result = await getPool().query<{
+      target_apps: string;
+      training_sessions: string;
+      draft_guides: string;
+      published_guides: string;
+    }>(
+      `
+        SELECT
+          (SELECT COUNT(*) FROM guided_workflow_target_apps WHERE 1 = 1 ${accessFilter}) AS target_apps,
+          (SELECT COUNT(*) FROM guided_workflow_recording_sessions WHERE 1 = 1 ${accessFilter}) AS training_sessions,
+          (SELECT COUNT(*) FROM guided_workflow_guides WHERE status = 'draft' ${accessFilter}) AS draft_guides,
+          (SELECT COUNT(*) FROM guided_workflow_guides WHERE status = 'published' ${accessFilter}) AS published_guides
+      `,
+      params
+    );
+    const row = result.rows[0];
+    summary.guidedWorkflows = {
+      targetApps: Number(row?.target_apps ?? 0),
+      trainingSessions: Number(row?.training_sessions ?? 0),
+      draftGuides: Number(row?.draft_guides ?? 0),
+      publishedGuides: Number(row?.published_guides ?? 0)
     };
   }
 

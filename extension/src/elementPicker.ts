@@ -69,6 +69,7 @@ function injectPickerStyles() {
       background: rgba(0, 0, 0, 0.02);
       z-index: 2147483645;
       cursor: crosshair;
+      pointer-events: none;
     }
   `;
 
@@ -150,6 +151,11 @@ function updateHighlight(element: Element) {
       <span style="color: #cbd5e1;">${bestSelector?.type || "unknown"}</span>
       <span class="${confidenceClass}"> ${Math.round(confidence * 100)}%</span>
     </div>
+    ${
+      identity.needsUserConfirmation
+        ? `<div style="margin-top: 2px; color: #fbbf24;">Control identity is uncertain. Confirm or reselect.</div>`
+        : ""
+    }
   `;
 
   // Position label above or below element

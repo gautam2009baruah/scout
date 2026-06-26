@@ -33,6 +33,14 @@ async function setRecorderStatus(patch: Partial<RecorderStatus>) {
   await browserApi.setStorage({ recorderStatus: { ...current, ...patch } });
 }
 
+function shouldClearConfig(responseStatus: number, message: string) {
+  const normalized = message.toLowerCase();
+  return [401, 404, 409].includes(responseStatus)
+    || normalized.includes("recording session was not found")
+    || normalized.includes("recording session is closed")
+    || normalized.includes("session token");
+}
+
 async function postAction(action: RecordedAction, configOverride?: RecorderConfig) {
   const config = configOverride ?? await getRecorderConfig();
 
@@ -54,7 +62,16 @@ async function postAction(action: RecordedAction, configOverride?: RecorderConfi
     const payload = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(typeof payload?.message === "string" ? payload.message : `Scout upload failed with HTTP ${response.status}.`);
+      const message = typeof payload?.message === "string" ? payload.message : `Scout upload failed with HTTP ${response.status}.`;
+      if (shouldClearConfig(response.status, message)) {
+        await browserApi.setStorage({ recorderConfig: undefined });
+        await setRecorderStatus({
+          configured: false,
+          lastPostStatus: "Recorder config expired",
+          lastError: "Recorder config expired or is no longer valid. Paste a fresh config."
+        });
+      }
+      throw new Error(message);
     }
 
     const status = await getRecorderStatus();
@@ -66,6 +83,10 @@ async function postAction(action: RecordedAction, configOverride?: RecorderConfi
       lastError: ""
     });
   } catch (error) {
+    const currentStatus = await getRecorderStatus();
+    if (currentStatus.configured === false) {
+      return;
+    }
     await setRecorderStatus({
       configured: true,
       lastPostStatus: "Upload failed",
@@ -75,6 +96,12 @@ async function postAction(action: RecordedAction, configOverride?: RecorderConfi
 }
 
 async function syncActionsToScout(configOverride?: RecorderConfig) {
+  const config = configOverride ?? await getRecorderConfig();
+  if (!config?.scoutBaseUrl || !config.recorderToken || !config.sessionTitle) {
+    await setRecorderStatus({ configured: false, lastPostStatus: "Sync blocked", lastError: "Configure a Scout training session before syncing." });
+    return;
+  }
+
   const state = await getState();
   const status = await getRecorderStatus();
   const alreadyPosted = status.postedCount ?? 0;
@@ -86,7 +113,13 @@ async function syncActionsToScout(configOverride?: RecorderConfig) {
   }
 
   for (const action of pending) {
-    await postAction(action, configOverride);
+    await postAction(action, config);
+  }
+
+  const nextStatus = await getRecorderStatus();
+  if (!nextStatus.lastError) {
+    await setState(defaultState);
+    await setRecorderStatus({ postedCount: 0, lastPostStatus: "Synced and cleared local recording", lastError: "" });
   }
 }
 
@@ -94,35 +127,55 @@ browserApi.onMessage(async (message) => {
   if (!message || typeof message !== "object") return;
   const type = (message as { type?: string }).type;
   const state = await getState();
+  const status = await getRecorderStatus();
 
   if (type === "SCOUT_RECORDER_CONFIGURE") {
     const recorderConfig = (message as { recorderConfig?: RecorderConfig }).recorderConfig;
-    if (recorderConfig?.scoutBaseUrl && recorderConfig.recorderToken) {
+    if (recorderConfig?.scoutBaseUrl && recorderConfig.recorderToken && recorderConfig.sessionTitle) {
       await browserApi.setStorage({ recorderConfig });
+      await setState(defaultState);
       await setRecorderStatus({ configured: true, postedCount: 0, lastPostStatus: "Configured", lastError: "" });
     }
+  }
+  if (type === "SCOUT_RECORDER_CLEAR_CONFIG") {
+    await browserApi.setStorage({ recorderConfig: undefined });
+    await setState(defaultState);
+    await setRecorderStatus({ configured: false, postedCount: 0, lastPostStatus: "Config cleared", lastError: "" });
   }
   if (type === "SCOUT_RECORDING_START") await setState({ isRecording: true, isPaused: false, actions: [] });
   if (type === "SCOUT_RECORDING_STOP") await setState({ ...state, isRecording: false, isPaused: false });
   if (type === "SCOUT_RECORDING_PAUSE") await setState({ ...state, isPaused: true });
   if (type === "SCOUT_RECORDING_RESUME") await setState({ ...state, isRecording: true, isPaused: false });
-  if (type === "SCOUT_RECORDING_CLEAR") await setState(defaultState);
+  if (type === "SCOUT_RECORDING_CLEAR") {
+    await setState(defaultState);
+    await setRecorderStatus({ postedCount: 0, lastPostStatus: "Recording cleared", lastError: "" });
+  }
+  if (type === "SCOUT_RECORDING_DELETE_ACTION") {
+    const actionId = (message as { actionId?: string }).actionId;
+    const actions = state.actions.filter((action) => action.id !== actionId);
+    await setState({ ...state, isRecording: false, isPaused: false, actions });
+    await setRecorderStatus({
+      postedCount: Math.min(status.postedCount ?? 0, actions.length),
+      lastPostStatus: "Step deleted locally",
+      lastError: ""
+    });
+  }
   if (type === "SCOUT_RECORDING_SYNC") {
     const recorderConfig = (message as { recorderConfig?: RecorderConfig }).recorderConfig;
-    if (recorderConfig?.scoutBaseUrl && recorderConfig.recorderToken) {
+    if (recorderConfig?.scoutBaseUrl && recorderConfig.recorderToken && recorderConfig.sessionTitle) {
       await browserApi.setStorage({ recorderConfig });
       await setRecorderStatus({ configured: true });
     }
     await syncActionsToScout(recorderConfig);
   }
-  if (type === "SCOUT_RECORDING_ACTION" && state.isRecording && !state.isPaused) {
+  if (type === "SCOUT_RECORDING_ACTION") {
     const action = (message as { action: RecordedAction }).action;
     const recorderConfig = (message as { recorderConfig?: RecorderConfig }).recorderConfig;
-    if (recorderConfig?.scoutBaseUrl && recorderConfig.recorderToken) {
+    if (recorderConfig?.scoutBaseUrl && recorderConfig.recorderToken && recorderConfig.sessionTitle) {
       await browserApi.setStorage({ recorderConfig });
       await setRecorderStatus({ configured: true });
     }
-    await setState({ ...state, actions: [...state.actions, action] });
-    await postAction(action, recorderConfig);
+    await setState({ ...state, isRecording: false, isPaused: false, actions: [...state.actions, action] });
+    await setRecorderStatus({ lastPostStatus: "Step saved locally", lastError: "" });
   }
 });

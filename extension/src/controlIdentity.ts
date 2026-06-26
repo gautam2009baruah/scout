@@ -62,7 +62,7 @@ function calculateConfidence(
 
   let confidence = baseConfidence[type] || 0.50;
 
-  // Penalize generated-looking IDs and classes
+  // Penalize generated-looking IDs and classes.
   if (type === "id" || type === "css") {
     const generatedPatterns = [
       /^[a-z0-9]{8,}$/i, // Long alphanumeric strings
@@ -80,7 +80,7 @@ function calculateConfidence(
     );
 
     if (hasGeneratedPattern) {
-      confidence *= 0.60; // Significant penalty for generated IDs
+      confidence *= 0.60;
     }
   }
 
@@ -115,7 +115,6 @@ function buildStableCssSelector(element: Element): string {
       break;
     }
 
-    // Check for stable ID
     if (current.id) {
       const isStable = !/^[a-z0-9]{8,}$|__[A-Z]|^ember\d+|^ng-/i.test(
         current.id
@@ -133,7 +132,6 @@ function buildStableCssSelector(element: Element): string {
       break;
     }
 
-    // Fallback to tag
     segments.unshift(tag);
     current = current.parentElement;
     depth++;
@@ -187,10 +185,11 @@ function getBoundingBox(element: Element) {
 function getDataAttributes(element: Element): Record<string, string> {
   const dataAttrs: Record<string, string> = {};
   const attrs = element.attributes;
+  const sensitiveDataPattern = /(token|secret|password|otp|cvv|card|auth|key|session)/i;
 
   for (let i = 0; i < attrs.length; i++) {
     const attr = attrs[i];
-    if (attr.name.startsWith("data-")) {
+    if (attr.name.startsWith("data-") && !sensitiveDataPattern.test(attr.name)) {
       dataAttrs[attr.name] = attr.value;
     }
   }
@@ -208,7 +207,6 @@ function generateSelectorCandidates(
 ): SelectorCandidate[] {
   const candidates: SelectorCandidate[] = [];
 
-  // 1. data-adoption-id (highest priority - customer-provided stable ID)
   const adoptionId = element.getAttribute("data-adoption-id");
   if (adoptionId) {
     const selector = `[data-adoption-id="${cssEscape(adoptionId)}"]`;
@@ -220,7 +218,6 @@ function generateSelectorCandidates(
     });
   }
 
-  // 2. Test IDs (data-testid, data-test, data-cy)
   for (const attr of ["data-testid", "data-test", "data-cy"] as const) {
     const value = element.getAttribute(attr);
     if (value) {
@@ -234,7 +231,6 @@ function generateSelectorCandidates(
     }
   }
 
-  // 3. ID attribute
   if (element.id) {
     const selector = `#${cssEscape(element.id)}`;
     const confidence = calculateConfidence("id", element.id, element);
@@ -247,7 +243,6 @@ function generateSelectorCandidates(
     });
   }
 
-  // 4. Name attribute
   const name = element.getAttribute("name");
   if (name) {
     const selector = `[name="${cssEscape(name)}"]`;
@@ -259,7 +254,6 @@ function generateSelectorCandidates(
     });
   }
 
-  // 5. Aria-label
   const ariaLabel = element.getAttribute("aria-label");
   if (ariaLabel) {
     const selector = `[aria-label="${cssEscape(ariaLabel)}"]`;
@@ -271,7 +265,6 @@ function generateSelectorCandidates(
     });
   }
 
-  // 6. Role + visible text
   const role = element.getAttribute("role");
   if (role && visibleText) {
     const value = `${role}::${visibleText}`;
@@ -283,7 +276,6 @@ function generateSelectorCandidates(
     });
   }
 
-  // 7. Label text (for form inputs)
   if (labelText) {
     candidates.push({
       type: "label-text",
@@ -293,7 +285,6 @@ function generateSelectorCandidates(
     });
   }
 
-  // 8. Placeholder (for inputs)
   const placeholder = element.getAttribute("placeholder");
   if (placeholder) {
     const selector = `[placeholder="${cssEscape(placeholder)}"]`;
@@ -305,17 +296,6 @@ function generateSelectorCandidates(
     });
   }
 
-  // 9. Text context (button/link text)
-  if (visibleText && ["button", "a", "span", "div"].includes(element.tagName.toLowerCase())) {
-    candidates.push({
-      type: "text-context",
-      value: visibleText,
-      confidence: calculateConfidence("text-context", visibleText, element),
-      reason: "Visible element text for context matching",
-    });
-  }
-
-  // 10. Stable CSS selector
   const cssSelector = buildStableCssSelector(element);
   if (cssSelector) {
     candidates.push({
@@ -326,7 +306,6 @@ function generateSelectorCandidates(
     });
   }
 
-  // 11. XPath (last resort)
   const xpath = buildXPath(element);
   candidates.push({
     type: "xpath",
@@ -335,7 +314,6 @@ function generateSelectorCandidates(
     reason: "XPath fallback (least stable)",
   });
 
-  // Sort by confidence (highest first)
   return candidates.sort((a, b) => b.confidence - a.confidence);
 }
 

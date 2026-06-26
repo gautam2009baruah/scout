@@ -320,9 +320,10 @@ export function verifyElementIdentity(
   // Fallback to text/label matching
   const text = getVisibleText(element);
   const label = getAssociatedLabelText(element as HTMLElement);
-
-  return (
-    (identity.text && text === identity.text) ||
-    (identity.labelText && label === identity.labelText)
+  const matchesText = Boolean(identity.text && text === identity.text);
+  const matchesLabel = Boolean(
+    identity.labelText && label === identity.labelText
   );
+
+  return matchesText || matchesLabel;
 }

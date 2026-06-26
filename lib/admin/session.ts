@@ -186,7 +186,9 @@ export async function getCurrentAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  await getPool().query("UPDATE user_sessions SET last_seen_at = now() WHERE id = $1", [row.session_id]);
+  const nextExpiresAt = new Date(Date.now() + ADMIN_SESSION_MINUTES * 60 * 1000);
+  await getPool().query("UPDATE user_sessions SET last_seen_at = now(), expires_at = $2 WHERE id = $1", [row.session_id, nextExpiresAt]);
+  row.expires_at = nextExpiresAt;
 
   return toAdminSession(row);
 }
