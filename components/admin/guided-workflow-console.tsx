@@ -36,7 +36,13 @@ type SessionDetailsState = {
   }>;
 };
 
-const SCOUT_BASE_URL = "http://localhost:3001";
+function getScoutBaseUrl() {
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  return "http://localhost:3000";
+}
 
 export function GuidedWorkflowManager({ companies, guides, recordingSessions, targetApps }: GuidedWorkflowManagerProps) {
   const [apps, setApps] = useState(targetApps);
@@ -116,12 +122,14 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
           const guideResponse = await fetch(`/api/admin/guided-workflows/${body.session.guideId}`);
           const guideBody = await guideResponse.json().catch(() => null);
           if (!cancelled && guideBody?.guide) {
-            setItems((current) => current.map((guide) => guide.id === guideBody.guide.id ? guideBody.guide : guide));
+            setItems((current) => current.some((guide) => guide.id === guideBody.guide.id)
+              ? current.map((guide) => guide.id === guideBody.guide.id ? guideBody.guide : guide)
+              : [guideBody.guide, ...current]);
             setSelectedId((current) => current || guideBody.guide.id);
             setEditor((current) => {
               const storedGuide = items.find((guide) => guide.id === guideBody.guide.id);
-              const hasLocalEdits = Boolean(storedGuide && JSON.stringify(normalizeSteps(current.steps)) !== JSON.stringify(normalizeSteps(storedGuide.steps)));
-              return selectedId === guideBody.guide.id && !hasLocalEdits ? editorFromGuide(guideBody.guide) : current;
+              const hasLocalEdits = Boolean(storedGuide && editorHasChanges(current, storedGuide));
+              return (!selectedId || selectedId === guideBody.guide.id) && !hasLocalEdits ? editorFromGuide(guideBody.guide) : current;
             });
           }
         }
@@ -562,10 +570,10 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
   const guidePublished = sessionGuide?.status === "published";
   const guideSteps = sessionGuide ? editor.steps : [];
   const syncedActionCount = sessionDetails.session?.id === selectedSession.id ? sessionDetails.actions.length : selectedSession.actionsCount;
-  const guideDirty = Boolean(sessionGuide && JSON.stringify(normalizeSteps(editor.steps)) !== JSON.stringify(normalizeSteps(sessionGuide.steps)));
+  const guideDirty = Boolean(sessionGuide && editorHasChanges(editor, sessionGuide));
   const hasNewSyncedActions = Boolean(sessionGuide && syncedActionCount > sessionGuide.recordedActions.length);
-  const canUpdateDraft = syncedActionCount > 0 && (!sessionGuide || sessionGuide.status === "unpublished" || guideDirty || hasNewSyncedActions);
-  const canPublish = Boolean(sessionGuide && guideSteps.length > 0 && (guideDirty || sessionGuide.status === "draft"));
+  const canUpdateDraft = Boolean(sessionGuide && (guideDirty || hasNewSyncedActions));
+  const canPublish = Boolean(sessionGuide && sessionGuide.status === "draft" && guideSteps.length > 0 && !guideDirty && !hasNewSyncedActions);
 
   async function copyText(key: string, value: string) {
     await navigator.clipboard.writeText(value);
@@ -608,10 +616,10 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
 
         <p className="text-xs text-slate-500">
           {syncedActionCount === 0
-              ? "Record and sync at least one action in this session to enable Create guide draft."
+              ? "Record and sync at least one action in this session to create a draft guide."
             : selectedSession.guideId
-              ? sessionGuide?.status === "unpublished" ? "Save the guide draft before publishing." : guideDirty ? "Save draft changes before publishing." : hasNewSyncedActions ? "New synced steps are waiting. Save the guide draft before publishing." : guidePublished ? "This session is published. Add or edit steps to enable another update." : "This session has draft steps. Publish it to make them available in the target app."
-              : "Save guide draft turns the synced training actions into a draft guided workflow that can be published later."}
+              ? guideDirty ? "Save draft changes before publishing." : hasNewSyncedActions ? "New synced steps are waiting. Save the guide draft before publishing." : guidePublished ? "This session is published. Add or edit steps to enable another update." : "This draft is ready to publish."
+              : "Synced steps are being converted into a draft guide."}
         </p>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -716,10 +724,16 @@ function normalizeSteps(steps: GuideStep[]) {
   }));
 }
 
+function editorHasChanges(editor: EditorState, guide: GuidedWorkflowRow) {
+  return editor.title !== guide.title
+    || editor.description !== guide.description
+    || JSON.stringify(normalizeSteps(editor.steps)) !== JSON.stringify(normalizeSteps(guide.steps));
+}
+
 function workflowStatusForSession(session: GuidedWorkflowRecordingSessionRow, guides: GuidedWorkflowRow[]) {
   const guide = session.guideId ? guides.find((item) => item.id === session.guideId) : null;
   if (guide) return guide.status;
-  return session.actionsCount > 0 ? "unpublished" : "unpublished";
+  return "draft";
 }
 
 function recorderConfigForSession(session: GuidedWorkflowRecordingSessionRow) {
@@ -727,7 +741,7 @@ function recorderConfigForSession(session: GuidedWorkflowRecordingSessionRow) {
   if (!recorderToken) return null;
 
   return {
-    scoutBaseUrl: SCOUT_BASE_URL,
+    scoutBaseUrl: getScoutBaseUrl(),
     recorderToken,
     sessionTitle: session.title,
     recordingSessionId: session.id,
@@ -763,7 +777,7 @@ function downloadJson(filename: string, value: unknown) {
 }
 
 function installSnippet(targetAppId: string) {
-  const baseUrl = SCOUT_BASE_URL;
+  const baseUrl = getScoutBaseUrl();
 
   return `<script src="${baseUrl}/scout-adoption-player.js"></script>
 <script>

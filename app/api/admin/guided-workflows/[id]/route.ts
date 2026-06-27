@@ -66,7 +66,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         {
           title: typeof body.title === "string" ? body.title : undefined,
           description: typeof body.description === "string" ? body.description : undefined,
-          status: body.status === "unpublished" || body.status === "draft" || body.status === "published" ? body.status : undefined,
+          status: body.status === "draft" || body.status === "published" ? body.status : undefined,
           recordedActions: Array.isArray(body.recordedActions) ? body.recordedActions : undefined,
           steps: Array.isArray(body.steps) ? body.steps : undefined
         },

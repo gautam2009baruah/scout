@@ -6,7 +6,13 @@ import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow } fr
 
 type CompanyOption = { id: string; name: string };
 
-const SCOUT_BASE_URL = "http://localhost:3001";
+function getScoutBaseUrl() {
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+
+  return "http://localhost:3000";
+}
 
 export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targetApps }: {
   companies: CompanyOption[];
@@ -271,7 +277,7 @@ function recorderConfigForSession(session: GuidedWorkflowRecordingSessionRow) {
   if (!recorderToken) return null;
 
   return {
-    scoutBaseUrl: SCOUT_BASE_URL,
+    scoutBaseUrl: getScoutBaseUrl(),
     recorderToken,
     sessionTitle: session.title,
     recordingSessionId: session.id,

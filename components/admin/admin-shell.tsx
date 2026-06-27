@@ -6,6 +6,7 @@ import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
 
 type AdminShellProps = {
   active: AdminModuleKey;
+  activeHref?: string;
   children: ReactNode;
   session: AdminSession;
   title: string;
@@ -20,7 +21,9 @@ const moduleIcons = {
   [MODULE_KEYS.guidedWorkflows]: MapPinned
 } as const;
 
-export function AdminShell({ active, children, session, title }: AdminShellProps) {
+const TRAINING_SETUP_HREF = "/control-panel/administration/training-setup";
+
+export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
   const visibleModules = new Map(session.modules.map((module) => [module.key, module]));
   const overviewModule = visibleModules.get(MODULE_KEYS.overview);
   const contentStructureModule = visibleModules.get(MODULE_KEYS.contentStructure);
@@ -30,7 +33,8 @@ export function AdminShell({ active, children, session, title }: AdminShellProps
     visibleModules.get(MODULE_KEYS.userManagement),
     visibleModules.get(MODULE_KEYS.aiConfiguration)
   ].filter(Boolean) as AdminSession["modules"];
-  const isAdministrationActive = administrationModules.some((module) => module.key === active);
+  const isTrainingSetupActive = activeHref === TRAINING_SETUP_HREF;
+  const isAdministrationActive = administrationModules.some((module) => module.key === active) || isTrainingSetupActive;
 
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
@@ -47,7 +51,7 @@ export function AdminShell({ active, children, session, title }: AdminShellProps
           </div>
 
           <nav className="mt-8 space-y-1">
-            {overviewModule ? <NavLink active={active} module={overviewModule} /> : null}
+            {overviewModule ? <NavLink active={active} activeHref={activeHref} module={overviewModule} /> : null}
 
             {administrationModules.length > 0 ? (
               <details className="group" open>
@@ -62,10 +66,17 @@ export function AdminShell({ active, children, session, title }: AdminShellProps
                 </summary>
                 <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
                   {administrationModules.map((module) => (
-                    <NavLink active={active} inset key={module.key} module={module} />
+                    <NavLink active={active} activeHref={activeHref} inset key={module.key} module={module} />
                   ))}
                   {guidedWorkflowsModule ? (
-                    <Link className="flex h-11 items-center gap-3 rounded-lg px-3 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950" href="/control-panel/administration/training-setup">
+                    <Link
+                      className={`flex h-11 items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition ${
+                        isTrainingSetupActive
+                          ? "bg-slate-950 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                      }`}
+                      href={TRAINING_SETUP_HREF}
+                    >
                       <MapPinned className="h-4 w-4" />
                       Training Setup
                     </Link>
@@ -74,8 +85,8 @@ export function AdminShell({ active, children, session, title }: AdminShellProps
               </details>
             ) : null}
 
-            {contentStructureModule ? <NavLink active={active} module={contentStructureModule} /> : null}
-            {guidedWorkflowsModule ? <NavLink active={active} module={guidedWorkflowsModule} /> : null}
+            {contentStructureModule ? <NavLink active={active} activeHref={activeHref} module={contentStructureModule} /> : null}
+            {guidedWorkflowsModule ? <NavLink active={active} activeHref={activeHref} module={guidedWorkflowsModule} /> : null}
           </nav>
         </aside>
 
@@ -121,19 +132,22 @@ export function AdminShell({ active, children, session, title }: AdminShellProps
 
 function NavLink({
   active,
+  activeHref,
   inset,
   module
 }: {
   active: AdminModuleKey;
+  activeHref?: string;
   inset?: boolean;
   module: AdminSession["modules"][number];
 }) {
   const Icon = moduleIcons[module.key as keyof typeof moduleIcons] ?? LayoutDashboard;
+  const isActive = module.key === active && (!activeHref || module.href === activeHref);
 
   return (
     <Link
       className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
-        module.key === active
+        isActive
           ? "bg-slate-950 text-white shadow-sm"
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
       } ${inset ? "text-[13px]" : ""}`}

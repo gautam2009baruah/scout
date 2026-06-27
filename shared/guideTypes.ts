@@ -15,7 +15,7 @@ export type SelectorCandidateType =
   | "xpath"
   | "text-context";
 
-export type GuideStatus = "unpublished" | "draft" | "published";
+export type GuideStatus = "draft" | "published";
 export type GuideStepTrigger = "click" | "input" | "manualNext";
 
 export type SelectorCandidate = {

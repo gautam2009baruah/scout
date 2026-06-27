@@ -705,7 +705,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
             recorded_actions_json,
             steps_json
           )
-          VALUES ($1, $2, $3, $4, $5, 'unpublished', $6::jsonb, $7::jsonb)
+          VALUES ($1, $2, $3, $4, $5, 'draft', $6::jsonb, $7::jsonb)
           RETURNING id
         `,
         [
@@ -837,7 +837,7 @@ export async function updateGuidedWorkflow(id: string, input: {
   }
 
   if (input.status) {
-    if (!["unpublished", "draft", "published"].includes(input.status)) {
+    if (!["draft", "published"].includes(input.status)) {
       throw new GuidedWorkflowError("Invalid guide status.");
     }
 
