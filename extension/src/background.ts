@@ -9,7 +9,7 @@ const defaultState: RecordingState = {
 
 async function getState() {
   const stored = await browserApi.getStorage<{ recordingState?: RecordingState }>({ recordingState: defaultState });
-  return stored.recordingState ?? defaultState;
+  return { ...defaultState, ...(stored.recordingState ?? defaultState), actions: stored.recordingState?.actions ?? [] };
 }
 
 async function setState(recordingState: RecordingState) {
@@ -112,8 +112,12 @@ async function syncActionsToScout(configOverride?: RecorderConfig) {
     return;
   }
 
-  for (const action of pending) {
-    await postAction(action, config);
+  for (let pendingIndex = 0; pendingIndex < pending.length; pendingIndex++) {
+    const action = pending[pendingIndex];
+    const isMainStep = typeof action.isMainStep === "boolean"
+      ? action.isMainStep
+      : action.guidePhase === "entry" ? false : true;
+    await postAction({ ...action, isMainStep }, config);
   }
 
   const nextStatus = await getRecorderStatus();

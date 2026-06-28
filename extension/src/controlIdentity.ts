@@ -356,6 +356,7 @@ export function buildElementIdentity(
     ariaLabel: element.getAttribute("aria-label") || undefined,
     labelText,
     placeholder: element.getAttribute("placeholder") || undefined,
+    inputType: element instanceof HTMLInputElement ? element.type : undefined,
     name: element.getAttribute("name") || undefined,
     id: element.id || undefined,
     dataAttributes: getDataAttributes(element),

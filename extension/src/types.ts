@@ -3,6 +3,9 @@ export type {
   Guide,
   GuideStep,
   GuideStepTrigger,
+  GuideStepPurpose,
+  NavigationStepMode,
+  ContinueWhen,
   RecordedAction,
   RecordedActionType,
   SelectorCandidate,
@@ -10,9 +13,21 @@ export type {
   TargetElement
 } from "../../shared/guideTypes";
 
+export type GuidePageContext = {
+  url: string;
+  title: string;
+  capturedAt: string;
+};
+
+export type GoalContext = GuidePageContext & {
+  actionBoundary: number;
+};
+
 export type RecordingState = {
   isRecording: boolean;
   isPaused: boolean;
+  startContext?: GuidePageContext;
+  goalContext?: GoalContext;
   actions: import("../../shared/guideTypes").RecordedAction[];
 };
 

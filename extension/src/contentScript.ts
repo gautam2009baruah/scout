@@ -2,8 +2,9 @@ import { browserApi } from "./browserApi";
 import {
   createRecordedAction,
   createManualSelectAction,
+  defaultTriggerForElementIdentity,
 } from "./recorder";
-import type { RecorderConfig, RecorderStatus, RecordingState } from "./types";
+import type { ContinueWhen, GuidePageContext, GuideStepPurpose, GuideStepTrigger, NavigationStepMode, RecorderConfig, RecorderStatus, RecordingState } from "./types";
 import { enterPickerMode, isPickerActive } from "./elementPicker";
 import { findElement } from "./elementFinder";
 
@@ -15,6 +16,8 @@ const previewOverlayId = "scout-recorder-preview";
 const recorderBuild = "202606241500";
 declare const chrome: any;
 
+const emptyRecordingState: RecordingState = { isRecording: false, isPaused: false, actions: [] };
+
 let isInPickerMode = false;
 let pendingConfirmationAction: ReturnType<typeof createRecordedAction> | null =
   null;
@@ -24,9 +27,26 @@ let toolbarPosition = { right: 14, bottom: Math.max(14, Math.floor(window.innerH
 let syncInProgress = false;
 
 async function getState() {
-  const stored = await browserApi.getStorage<{ recordingState?: RecordingState }>({ recordingState: { isRecording: false, isPaused: false, actions: [] } });
-  const state = stored.recordingState ?? { isRecording: false, isPaused: false, actions: [] };
+  const stored = await browserApi.getStorage<{ recordingState?: RecordingState }>({ recordingState: emptyRecordingState });
+  const state = { ...emptyRecordingState, ...(stored.recordingState ?? emptyRecordingState), actions: stored.recordingState?.actions ?? [] };
   return { ...state, isRecording: false, isPaused: false };
+}
+
+function currentPageContext(): GuidePageContext {
+  return {
+    url: window.location.href,
+    title: document.title,
+    capturedAt: new Date().toISOString()
+  };
+}
+
+async function ensureStartContext() {
+  const state = await getState();
+  if (state.startContext) return state.startContext;
+
+  const startContext = currentPageContext();
+  await browserApi.setStorage({ recordingState: { ...state, startContext } });
+  return startContext;
 }
 
 async function getRecorderMeta() {
@@ -76,7 +96,9 @@ function showToast(message: string, tone: "success" | "error" | "info" = "info")
 async function sendAction(action: ReturnType<typeof createRecordedAction>, skipConfirmation = false) {
   if (!action) return;
 
+  await ensureStartContext();
   const state = await getState();
+  const actionWithMainFlag = { ...action, isMainStep: action.isMainStep !== false };
 
   // Only check confirmation if recording is active
   if (!skipConfirmation && state.isRecording && !state.isPaused) {
@@ -90,12 +112,12 @@ async function sendAction(action: ReturnType<typeof createRecordedAction>, skipC
   const meta = await getRecorderMeta();
   await browserApi.sendMessage({
     type: "SCOUT_RECORDING_ACTION",
-    action,
+    action: actionWithMainFlag,
     recorderConfig: meta.recorderConfig,
   });
   window.setTimeout(async () => {
     const updated = await getState();
-    const saved = updated.actions.some((item) => item.id === action.id);
+    const saved = updated.actions.some((item) => item.id === actionWithMainFlag.id);
     showToast(saved ? `Step ${action.stepOrder ?? updated.actions.length} saved locally. Sync pending.` : "Step was not saved. Please try again.", saved ? "success" : "error");
     await renderToolbar();
   }, 300);
@@ -231,33 +253,83 @@ function isRecorderConfigured(config: RecorderConfig | undefined) {
   return Boolean(config?.scoutBaseUrl && config.recorderToken && config.sessionTitle);
 }
 
-async function showPickedControlReview(identity: NonNullable<typeof lastPickedIdentity>, stepOrder: number): Promise<{ action: "accept" | "reselect" | "cancel"; description?: string }> {
+function attachDialogDrag(dialog: HTMLElement, handle: HTMLElement) {
+  let dragging = false;
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+
+  handle.addEventListener("pointerdown", (event) => {
+    if ((event.target as HTMLElement).closest("button,input,select,textarea")) return;
+    const rect = dialog.getBoundingClientRect();
+    dragging = true;
+    startX = event.clientX;
+    startY = event.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+    dialog.style.left = `${rect.left}px`;
+    dialog.style.top = `${rect.top}px`;
+    dialog.style.right = "auto";
+    dialog.style.bottom = "auto";
+    handle.setPointerCapture(event.pointerId);
+  });
+
+  handle.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    const rect = dialog.getBoundingClientRect();
+    const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+    const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
+    const nextLeft = Math.min(Math.max(8, startLeft + event.clientX - startX), maxLeft);
+    const nextTop = Math.min(Math.max(8, startTop + event.clientY - startY), maxTop);
+    dialog.style.left = `${nextLeft}px`;
+    dialog.style.top = `${nextTop}px`;
+  });
+
+  handle.addEventListener("pointerup", () => {
+    dragging = false;
+  });
+}
+
+async function showPickedControlReview(identity: NonNullable<typeof lastPickedIdentity>, stepOrder: number): Promise<{
+  action: "accept" | "reselect" | "cancel";
+  description?: string;
+  purpose: GuideStepPurpose;
+  isMainStep: boolean;
+  navigationMode?: NavigationStepMode;
+  continueWhen?: ContinueWhen;
+  trigger: GuideStepTrigger;
+}> {
   document.getElementById(pickerReviewDialogId)?.remove();
 
   const meta = await getRecorderMeta();
   const sessionTitle = meta.recorderConfig?.sessionTitle?.trim();
   const bestSelector = identity.selectorCandidates[0];
   const confidence = Math.round(identity.confidenceScore * 100);
+  const defaultTrigger = defaultTriggerForElementIdentity(identity);
   const dialog = document.createElement("div");
   dialog.id = pickerReviewDialogId;
   dialog.style.cssText = `
     position: fixed;
     right: 16px;
-    bottom: 68px;
+    bottom: 16px;
     z-index: 2147483647;
-    width: min(360px, calc(100vw - 32px));
+    width: min(420px, calc(100vw - 16px));
+    max-height: calc(100vh - 32px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     background: #0f172a;
     color: #f8fafc;
     border: 1px solid rgba(148, 163, 184, .25);
     border-radius: 12px;
     box-shadow: 0 18px 50px rgba(15, 23, 42, .45);
-    padding: 14px;
     font: 12px system-ui, sans-serif;
   `;
 
   dialog.innerHTML = `
-    <div style="display:flex;justify-content:space-between;gap:10px;align-items:start">
-      <div>
+    <div id="scout-picker-drag-handle" style="display:flex;justify-content:space-between;gap:10px;align-items:start;padding:14px 14px 10px;border-bottom:1px solid rgba(148,163,184,.18);cursor:move;user-select:none">
+      <div style="min-width:0">
         <div style="font-weight:700;font-size:13px">Review selected control</div>
         ${sessionTitle ? `<div style="margin-top:3px;color:#93c5fd">Session: ${escapeHtml(sessionTitle)}</div>` : ""}
         <div style="margin-top:3px;color:#f8fafc;font-weight:700">Step ${stepOrder}</div>
@@ -265,6 +337,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
       </div>
       <div style="border-radius:999px;background:${identity.confidenceScore >= 0.75 ? "#064e3b" : "#78350f"};color:${identity.confidenceScore >= 0.75 ? "#d1fae5" : "#fef3c7"};padding:3px 8px;font-weight:700">${confidence}%</div>
     </div>
+    <div id="scout-picker-scroll-area" style="overflow:auto;padding:12px 14px;min-height:0">
     ${
       identity.needsUserConfirmation
         ? `<div style="margin-top:10px;border-radius:8px;background:#451a03;color:#fde68a;padding:8px">Control identity is uncertain. Confirm or reselect.</div>`
@@ -284,7 +357,49 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
       <span style="display:block;margin-bottom:5px;font-weight:700">Step description shown to users</span>
       <textarea id="scout-picker-description" rows="3" placeholder="Example: Click Save to finish the request." style="box-sizing:border-box;width:100%;resize:vertical;border:1px solid #334155;border-radius:8px;background:#020617;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none"></textarea>
     </label>
-    <div style="margin-top:12px;display:flex;justify-content:flex-end;gap:8px">
+    <label style="display:block;margin-top:12px;color:#cbd5e1">
+      <span style="display:block;margin-bottom:5px;font-weight:700">Step purpose</span>
+      <select id="scout-picker-purpose" style="box-sizing:border-box;width:100%;border:1px solid #334155;border-radius:8px;background:#020617;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
+        <option value="main">Main Training Step</option>
+        <option value="navigation">Navigation Step</option>
+      </select>
+    </label>
+    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid #1e293b;border-radius:10px;padding:10px;background:#020617;color:#cbd5e1">
+      <span>
+        <span style="display:block;font-weight:700;color:#f8fafc">Is main step</span>
+        <span style="display:block;margin-top:3px;color:#94a3b8;line-height:1.35">Uncheck for entry steps before the main guide flow.</span>
+      </span>
+      <input id="scout-picker-is-main-step" type="checkbox" checked style="width:18px;height:18px;accent-color:#10b981" />
+    </label>
+    <label style="display:block;margin-top:12px;color:#cbd5e1">
+      <span style="display:block;margin-bottom:5px;font-weight:700">Trigger</span>
+      <select id="scout-picker-trigger" style="box-sizing:border-box;width:100%;border:1px solid #334155;border-radius:8px;background:#020617;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
+        <option value="click"${defaultTrigger === "click" ? " selected" : ""}>Click</option>
+        <option value="change"${defaultTrigger === "change" ? " selected" : ""}>Change</option>
+        <option value="blur"${defaultTrigger === "blur" ? " selected" : ""}>Blur</option>
+        <option value="focus"${defaultTrigger === "focus" ? " selected" : ""}>Focus</option>
+        <option value="manualNext"${defaultTrigger === "manualNext" ? " selected" : ""}>Manual next</option>
+      </select>
+    </label>
+    <div id="scout-picker-navigation-controls" style="display:none;margin-top:12px;border:1px solid #1e293b;border-radius:10px;padding:10px;background:#020617;color:#cbd5e1">
+      <div style="font-weight:700;color:#f8fafc">Navigation behavior</div>
+      <select id="scout-picker-navigation-mode" style="box-sizing:border-box;width:100%;margin-top:7px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
+        <option value="waitForUser">Wait for user click</option>
+        <option value="autoClick">Auto-click this control</option>
+      </select>
+      <div style="margin-top:6px;color:#94a3b8;line-height:1.35">Use auto-click for entry/menu links that can safely move the user to the target page.</div>
+    </div>
+    <div style="margin-top:12px;border:1px solid #1e293b;border-radius:10px;padding:10px;background:#020617;color:#cbd5e1">
+      <div style="font-weight:700;color:#f8fafc">Continue when</div>
+      <select id="scout-picker-continue-type" style="box-sizing:border-box;width:100%;margin-top:7px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
+        <option value="manualNext">Manual next</option>
+        <option value="urlContains">URL contains</option>
+        <option value="elementVisible">Element visible</option>
+      </select>
+      <input id="scout-picker-continue-value" placeholder="" style="box-sizing:border-box;width:100%;margin-top:7px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none;display:none" />
+    </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 14px 14px;border-top:1px solid rgba(148,163,184,.18);background:#0f172a">
       <button id="scout-picker-cancel" style="${modalButtonStyle("#334155")}">Cancel</button>
       <button id="scout-picker-reselect" style="${modalButtonStyle("#1d4ed8")}">Reselect</button>
       <button id="scout-picker-accept" style="${modalButtonStyle("#059669")}">Use Control</button>
@@ -292,12 +407,62 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   `;
 
   document.body.appendChild(dialog);
+  const dragHandle = document.getElementById("scout-picker-drag-handle");
+  if (dragHandle) attachDialogDrag(dialog, dragHandle);
+  const purposeSelect = document.getElementById("scout-picker-purpose") as HTMLSelectElement | null;
+  const navigationControls = document.getElementById("scout-picker-navigation-controls");
+  const syncNavigationControls = () => {
+    if (navigationControls) {
+      navigationControls.style.display = purposeSelect?.value === "navigation" ? "block" : "none";
+    }
+  };
+  purposeSelect?.addEventListener("change", syncNavigationControls);
+  syncNavigationControls();
+  const continueTypeSelect = document.getElementById("scout-picker-continue-type") as HTMLSelectElement | null;
+  const continueValueInput = document.getElementById("scout-picker-continue-value") as HTMLInputElement | null;
+  const syncContinueValueInput = () => {
+    if (!continueTypeSelect || !continueValueInput) return;
+
+    if (continueTypeSelect.value === "manualNext") {
+      continueValueInput.value = "";
+      continueValueInput.style.display = "none";
+      continueValueInput.disabled = true;
+      continueValueInput.placeholder = "";
+      return;
+    }
+
+    continueValueInput.style.display = "block";
+    continueValueInput.disabled = false;
+    continueValueInput.placeholder = continueTypeSelect.value === "urlContains"
+      ? "Example: /control-panel/guided-workflows"
+      : "Example: [data-adoption-id='save-button']";
+  };
+  continueTypeSelect?.addEventListener("change", syncContinueValueInput);
+  syncContinueValueInput();
 
   return new Promise((resolve) => {
     const finish = (value: "accept" | "reselect" | "cancel") => {
       const description = (document.getElementById("scout-picker-description") as HTMLTextAreaElement | null)?.value.trim();
+      const purposeValue = (document.getElementById("scout-picker-purpose") as HTMLSelectElement | null)?.value;
+      const purpose: GuideStepPurpose = purposeValue === "navigation" ? "navigation" : "main";
+      const isMainStep = (document.getElementById("scout-picker-is-main-step") as HTMLInputElement | null)?.checked !== false;
+      const navigationModeValue = (document.getElementById("scout-picker-navigation-mode") as HTMLSelectElement | null)?.value;
+      const navigationMode: NavigationStepMode | undefined = purpose === "navigation" && navigationModeValue === "autoClick" ? "autoClick" : purpose === "navigation" ? "waitForUser" : undefined;
+      const continueType = (document.getElementById("scout-picker-continue-type") as HTMLSelectElement | null)?.value;
+      const continueValue = (document.getElementById("scout-picker-continue-value") as HTMLInputElement | null)?.value.trim() ?? "";
+      const continueWhen: ContinueWhen =
+        continueType === "urlContains" && continueValue
+          ? { type: "urlContains", value: continueValue }
+          : continueType === "elementVisible" && continueValue
+          ? { type: "elementVisible", selector: continueValue }
+          : { type: "manualNext" };
+      const triggerValue = (document.getElementById("scout-picker-trigger") as HTMLSelectElement | null)?.value;
+      const trigger: GuideStepTrigger =
+        triggerValue === "change" || triggerValue === "blur" || triggerValue === "focus" || triggerValue === "manualNext"
+          ? triggerValue
+          : "click";
       dialog.remove();
-      resolve({ action: value, description });
+      resolve({ action: value, description, purpose, isMainStep, navigationMode, continueWhen, trigger });
     };
 
     document.getElementById("scout-picker-accept")?.addEventListener("click", () => finish("accept"));
@@ -317,6 +482,7 @@ async function startPickerMode() {
     showToast("Configure a training session before creating steps.", "error");
     return;
   }
+  await ensureStartContext();
 
   isInPickerMode = true;
   await renderToolbar(); // Update toolbar to show picker mode
@@ -339,7 +505,7 @@ async function startPickerMode() {
     }
 
     if (reviewResult.action === "accept") {
-      const action = createManualSelectAction(identity, reviewResult.description, stepOrder);
+      const action = createManualSelectAction(identity, reviewResult.description, stepOrder, reviewResult.purpose, reviewResult.navigationMode, reviewResult.continueWhen, reviewResult.trigger, reviewResult.isMainStep);
       await sendAction(action, true);
     }
   }
@@ -365,6 +531,7 @@ const icons = {
   preview: icon(`<path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="3"/>`),
   sync: icon(`<path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 16h5v5"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 8h-5V3"/>`),
   spinner: icon(`<path d="M21 12a9 9 0 0 1-9 9"/><path d="M3 12a9 9 0 0 1 9-9"/>`),
+  goal: icon(`<path d="M12 21V3"/><path d="M6 4h11l-2 4 2 4H6"/>`),
   export: icon(`<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>`),
   minimize: icon(`<path d="M6 12h12"/>`)
 };
@@ -389,7 +556,7 @@ function addBadge(buttonElement: HTMLElement, value: number) {
   buttonElement.style.position = "relative";
   const badge = document.createElement("span");
   badge.textContent = value > 9 ? "9+" : String(value);
-  badge.style.cssText = "position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 3px;border-radius:999px;background:#ef4444;color:white;font:10px system-ui,sans-serif;font-weight:800;line-height:16px;text-align:center;box-shadow:0 0 0 2px #020617";
+  badge.style.cssText = "position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 3px;border-radius:999px;background:#ef4444;color:white;font:10px system-ui,sans-serif;font-weight:800;line-height:16px;text-align:center;box-shadow:0 0 0 2px #cbd5e1";
   buttonElement.appendChild(badge);
   return buttonElement;
 }
@@ -456,8 +623,29 @@ async function previewCreatedSteps() {
     const label = document.createElement("div");
     const order = action.stepOrder ?? actions.indexOf(action) + 1;
     const description = action.stepDescription || action.elementText || action.labelText || action.ariaLabel || action.tagName || "Selected control";
+    const purpose = action.stepPurpose === "navigation" ? "Navigation" : "Main";
+    const mode = action.stepPurpose === "navigation" ? action.navigationMode === "autoClick" ? "Auto-click" : "Wait" : "";
+    const continueText = action.continueWhen?.type === "urlContains"
+      ? `URL contains: ${action.continueWhen.value}`
+      : action.continueWhen?.type === "elementVisible"
+      ? `Element visible: ${action.continueWhen.selector}`
+      : action.continueWhen?.type === "manualNext"
+      ? "Manual next"
+      : "";
     label.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${Math.max(8, rect.top + window.scrollY - 62)}px;max-width:320px;border-radius:12px;background:#0f172a;color:white;padding:8px 9px 9px;box-shadow:0 12px 32px rgba(15,23,42,.36);pointer-events:auto`;
-    label.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:#2563eb;font-weight:800">${order}</span><strong style="flex:1">Step ${order}</strong><button type="button" aria-label="Delete step ${order}" title="Delete step" data-scout-delete-step="${escapeHtml(action.id)}" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid rgba(248,113,113,.42);border-radius:999px;background:rgba(127,29,29,.6);color:#fecaca;cursor:pointer;font:14px system-ui,sans-serif;font-weight:800;line-height:1">x</button></div><div style="margin-top:5px;color:#dbeafe;line-height:1.35">${escapeHtml(description)}</div>`;
+    label.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:999px;background:#2563eb;font-weight:800">${order}</span>
+        <strong style="flex:1">Step ${order}</strong>
+        <button type="button" aria-label="Delete step ${order}" title="Delete step" data-scout-delete-step="${escapeHtml(action.id)}" style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid rgba(248,113,113,.42);border-radius:999px;background:rgba(127,29,29,.6);color:#fecaca;cursor:pointer;font:14px system-ui,sans-serif;font-weight:800;line-height:1">x</button>
+      </div>
+      <div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:5px">
+        <span style="border-radius:999px;background:${action.stepPurpose === "navigation" ? "#78350f" : "#064e3b"};color:${action.stepPurpose === "navigation" ? "#fde68a" : "#d1fae5"};padding:2px 7px;font-size:10px;font-weight:800">${purpose} Step</span>
+        ${mode ? `<span style="border-radius:999px;background:#1e3a8a;color:#dbeafe;padding:2px 7px;font-size:10px;font-weight:800">${escapeHtml(mode)}</span>` : ""}
+      </div>
+      <div style="margin-top:7px;color:#dbeafe;line-height:1.35">${escapeHtml(description)}</div>
+      ${continueText ? `<div style="margin-top:6px;border-top:1px solid rgba(148,163,184,.18);padding-top:6px;color:#cbd5e1;line-height:1.35"><strong style="color:#f8fafc">Continue:</strong> ${escapeHtml(continueText)}</div>` : ""}
+    `;
     label.querySelector<HTMLButtonElement>("[data-scout-delete-step]")?.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -570,6 +758,7 @@ async function configureRecorder() {
       type: "SCOUT_RECORDER_CONFIGURE",
       recorderConfig
     });
+    await ensureStartContext();
     const readBack = await getRecorderMeta();
 
     if (!readBack.recorderConfig) {
@@ -604,14 +793,31 @@ async function clearRecorderConfig() {
 
 async function exportJson() {
   const state = await getState();
-  const blob = new Blob([JSON.stringify(state.actions, null, 2)], { type: "application/json" });
+  const startContext = state.startContext ?? currentPageContext();
+  const firstMainStep = state.actions.find((action) => action.isMainStep !== false);
+  const goalContext = firstMainStep
+    ? {
+      url: firstMainStep.url,
+      title: document.title,
+      capturedAt: new Date(firstMainStep.timestamp).toISOString()
+    }
+    : startContext;
+  const entrySteps = state.actions.filter((action) => action.isMainStep === false);
+  const mainSteps = state.actions.filter((action) => action.isMainStep !== false);
+  const payload = {
+    startContext,
+    goalContext,
+    entrySteps,
+    mainSteps
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = "scout-recording.json";
   link.click();
   URL.revokeObjectURL(url);
-  showToast(`Exported ${state.actions.length} step${state.actions.length === 1 ? "" : "s"}.`, "success");
+  showToast(`Exported ${entrySteps.length} entry and ${mainSteps.length} main step${mainSteps.length === 1 ? "" : "s"}.`, "success");
 }
 
 async function renderToolbar() {
@@ -622,14 +828,14 @@ async function renderToolbar() {
   const pendingSyncCount = Math.max(0, state.actions.length - (meta.recorderStatus?.postedCount ?? 0));
   const root = document.createElement("div");
   root.id = toolbarId;
-  root.style.cssText = `position:fixed;right:${toolbarPosition.right}px;bottom:${toolbarPosition.bottom}px;z-index:2147483647;display:flex;flex-direction:column;gap:7px;align-items:center;background:#020617;color:white;border:1px solid rgba(148,163,184,.25);border-radius:${toolbarMinimized ? "999px" : "18px"};padding:${toolbarMinimized ? "7px" : "8px"};box-shadow:0 14px 36px rgb(15 23 42 / .35);font:12px system-ui,sans-serif;cursor:grab;user-select:none`;
+  root.style.cssText = `position:fixed;right:${toolbarPosition.right}px;bottom:${toolbarPosition.bottom}px;z-index:2147483647;display:flex;flex-direction:column;gap:7px;align-items:center;background:#cbd5e1;color:#0f172a;border:1px solid rgba(100,116,139,.55);border-radius:${toolbarMinimized ? "999px" : "18px"};padding:${toolbarMinimized ? "7px" : "8px"};box-shadow:0 14px 34px rgba(15,23,42,.22);font:12px system-ui,sans-serif;cursor:grab;user-select:none`;
   attachDrag(root);
 
   if (toolbarMinimized) {
     root.append(iconButton("Open Scout recorder", icons.scout, async () => {
       toolbarMinimized = false;
       await renderToolbar();
-    }, configured ? "#0f172a" : "#b45309"));
+    }, "#2563eb"));
     document.body.appendChild(root);
     return;
   }

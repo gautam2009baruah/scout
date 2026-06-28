@@ -1,4 +1,4 @@
-import type { RecordedAction, RecordedActionType, ElementIdentity } from "./types";
+import type { RecordedAction, RecordedActionType, ElementIdentity, GuideStepPurpose, NavigationStepMode, ContinueWhen, GuideStepTrigger } from "./types";
 import { buildElementIdentity } from "./controlIdentity";
 
 const sensitiveNamePattern = /(password|token|secret|card|cvv|otp|ssn|account)/i;
@@ -48,6 +48,26 @@ function maskValue(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectE
   return value.length > 80 ? `${value.slice(0, 77)}...` : value;
 }
 
+export function defaultTriggerForElementIdentity(identity: Pick<ElementIdentity, "tagName" | "role" | "inputType">): GuideStepTrigger {
+  const tagName = identity.tagName.toLowerCase();
+  const role = identity.role?.toLowerCase();
+  const inputType = identity.inputType?.toLowerCase() ?? "text";
+
+  if (tagName === "textarea") return "blur";
+  if (tagName === "select") return "change";
+
+  if (tagName === "input") {
+    if (["button", "submit", "reset", "image"].includes(inputType)) return "click";
+    if (["checkbox", "radio", "file", "range", "color", "date", "datetime-local", "month", "time", "week"].includes(inputType)) return "change";
+    return "blur";
+  }
+
+  if (role && ["checkbox", "radio", "switch", "combobox", "listbox", "option", "slider"].includes(role)) return "change";
+  if (role && ["button", "link", "menuitem", "tab"].includes(role)) return "click";
+
+  return "click";
+}
+
 /**
  * Create a recorded action from a DOM event target
  *
@@ -84,6 +104,8 @@ export function createRecordedAction(
     elementIdentity,
     maskedValue,
     originalEventType,
+    trigger: defaultTriggerForElementIdentity(elementIdentity),
+    isMainStep: true,
     // Legacy fields for backward compatibility
     selectorCandidates: elementIdentity.selectorCandidates,
     elementText: elementIdentity.text,
@@ -102,7 +124,12 @@ export function createRecordedAction(
 export function createManualSelectAction(
   elementIdentity: ElementIdentity,
   stepDescription?: string,
-  stepOrder?: number
+  stepOrder?: number,
+  stepPurpose: GuideStepPurpose = "main",
+  navigationMode?: NavigationStepMode,
+  continueWhen?: ContinueWhen,
+  trigger: GuideStepTrigger = defaultTriggerForElementIdentity(elementIdentity),
+  isMainStep = true
 ): RecordedAction {
   return {
     id: createId(),
@@ -110,6 +137,11 @@ export function createManualSelectAction(
     url: location.href,
     timestamp: Date.now(),
     stepOrder,
+    stepPurpose,
+    navigationMode: stepPurpose === "navigation" ? navigationMode ?? "waitForUser" : undefined,
+    continueWhen,
+    trigger,
+    isMainStep,
     elementIdentity,
     stepDescription: stepDescription?.trim() || undefined,
     originalEventType: "manual-picker",
@@ -119,6 +151,7 @@ export function createManualSelectAction(
     ariaLabel: elementIdentity.ariaLabel,
     role: elementIdentity.role,
     tagName: elementIdentity.tagName,
+    inputType: elementIdentity.inputType,
     labelText: elementIdentity.labelText,
   };
 }

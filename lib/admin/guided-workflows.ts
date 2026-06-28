@@ -1,6 +1,6 @@
 import { getPool, withPoolRetry } from "@/lib/db/pool";
 import { generateGuideFromRecording } from "@/lib/guided-workflows/guide-generator";
-import type { Guide, GuideStatus, GuideStep, RecordedAction } from "@/shared/guideTypes";
+import type { Guide, GuideStatus, GuideStep, GuideStepTrigger, RecordedAction } from "@/shared/guideTypes";
 import type { AdminSession } from "./auth";
 import crypto from "node:crypto";
 
@@ -69,6 +69,9 @@ function mapGuide(row: {
   created_at: Date;
   updated_at: Date;
 }): GuidedWorkflowRow {
+  const recordedActions = row.recorded_actions_json ?? [];
+  const actionsById = new Map(recordedActions.map((action) => [action.id, action]));
+
   return {
     id: row.id,
     companyId: row.company_id,
@@ -79,12 +82,53 @@ function mapGuide(row: {
     title: row.title,
     description: row.description,
     status: row.status,
-    recordedActions: row.recorded_actions_json ?? [],
-    steps: row.steps_json ?? [],
+    recordedActions,
+    steps: (row.steps_json ?? []).map((step) => {
+      const source = actionsById.get(step.actionSourceId);
+      const stepPurpose = step.stepPurpose ?? source?.stepPurpose ?? "main";
+
+      return {
+        ...step,
+        stepPurpose,
+        navigationMode: stepPurpose === "navigation" ? step.navigationMode ?? source?.navigationMode ?? "waitForUser" : undefined,
+        continueWhen: step.continueWhen ?? source?.continueWhen ?? { type: "manualNext" },
+        trigger: normalizeGuideStepTrigger(step.trigger ?? source?.trigger),
+        isMainStep: normalizeIsMainStep(step.isMainStep ?? source?.isMainStep ?? source?.guidePhase)
+      };
+    }),
     createdByName: row.created_by_name,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   };
+}
+
+function normalizeGuideStepTrigger(value: unknown): GuideStepTrigger {
+  return value === "change" || value === "blur" || value === "focus" || value === "input" || value === "manualNext" ? value : "click";
+}
+
+function normalizeIsMainStep(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (value === "entry") return false;
+  return true;
+}
+
+function applyGuideStepFlags(recordedActions: RecordedAction[], steps: GuideStep[]) {
+  const isMainStepByActionId = new Map<string, boolean>();
+
+  steps.forEach((step) => {
+    if (!step.actionSourceId) return;
+    isMainStepByActionId.set(step.actionSourceId, normalizeIsMainStep(step.isMainStep));
+  });
+
+  return recordedActions.map((action) => ({
+    ...stripLegacyGuidePhase(action),
+    isMainStep: isMainStepByActionId.get(action.id) ?? normalizeIsMainStep(action.isMainStep ?? action.guidePhase)
+  }));
+}
+
+function stripLegacyGuidePhase(action: RecordedAction): RecordedAction {
+  const { guidePhase: _legacyGuidePhase, ...nextAction } = action;
+  return nextAction;
 }
 
 async function assertCompanyAccess(companyId: string, session: AdminSession) {
@@ -542,9 +586,9 @@ export async function getGuidedWorkflowRecordingSessionById(id: string, session:
 
 export async function listRecordedActionsForSession(sessionId: string, session: AdminSession) {
   await getGuidedWorkflowRecordingSessionById(sessionId, session);
-  const result = await getPool().query<{ action_json: RecordedAction }>(
+  const result = await getPool().query<{ action_json: RecordedAction; is_main_step: boolean }>(
     `
-      SELECT action_json
+      SELECT action_json, is_main_step
       FROM guided_workflow_recorded_actions
       WHERE recording_session_id = $1
       ORDER BY action_index ASC
@@ -552,7 +596,7 @@ export async function listRecordedActionsForSession(sessionId: string, session: 
     [sessionId]
   );
 
-  return result.rows.map((row) => row.action_json);
+  return result.rows.map((row) => ({ ...row.action_json, isMainStep: normalizeIsMainStep(row.is_main_step) }));
 }
 
 export async function appendRecordedActionByToken(token: string, action: RecordedAction, origin?: string) {
@@ -614,17 +658,20 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
     }
 
     const nextIndex = Number(recordingSession.next_action_index);
+    const isMainStep = normalizeIsMainStep(action.isMainStep ?? action.guidePhase);
+    const actionWithMainFlag: RecordedAction = { ...stripLegacyGuidePhase(action), isMainStep };
     await client.query(
       `
         INSERT INTO guided_workflow_recorded_actions (
           company_id,
           recording_session_id,
           action_index,
-          action_json
+          action_json,
+          is_main_step
         )
-        VALUES ($1, $2, $3, $4::jsonb)
+        VALUES ($1, $2, $3, $4::jsonb, $5)
       `,
-      [recordingSession.company_id, recordingSession.id, nextIndex, JSON.stringify(action)]
+      [recordingSession.company_id, recordingSession.id, nextIndex, JSON.stringify(actionWithMainFlag), isMainStep]
     );
     await client.query(
       `
@@ -662,10 +709,10 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
             .map((recordedAction) => recordedAction.id)
             .filter((actionId) => actionId && !currentStepSourceIds.has(actionId))
         );
-        const nextRecordedActions = [...existingRecordedActions, action];
+        const nextRecordedActions = [...existingRecordedActions, actionWithMainFlag];
 
-        if (!removedSourceIds.has(action.id) && !currentStepSourceIds.has(action.id)) {
-          const generated = generateGuideFromRecording([action]);
+        if (!removedSourceIds.has(actionWithMainFlag.id) && !currentStepSourceIds.has(actionWithMainFlag.id)) {
+          const generated = generateGuideFromRecording([actionWithMainFlag]);
           const nextSteps = [...existingSteps, ...generated.steps].map((step, index) => ({ ...step, order: index + 1 }));
 
           await client.query(
@@ -692,7 +739,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
         }
       }
     } else {
-      const generated = generateGuideFromRecording([action], { title: recordingSession.title });
+      const generated = generateGuideFromRecording([actionWithMainFlag], { title: recordingSession.title });
       const guideResult = await client.query<{ id: string }>(
         `
           INSERT INTO guided_workflow_guides (
@@ -714,7 +761,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
           recordingSession.id,
           generated.title,
           generated.description,
-          JSON.stringify([action]),
+          JSON.stringify([actionWithMainFlag]),
           JSON.stringify(generated.steps)
         ]
       );
@@ -816,7 +863,7 @@ export async function updateGuidedWorkflow(id: string, input: {
   recordedActions?: RecordedAction[];
   steps?: GuideStep[];
 }, session: AdminSession) {
-  await getGuidedWorkflowById(id, session);
+  const currentGuide = await getGuidedWorkflowById(id, session);
   const fields: string[] = ["updated_by = $2", "updated_at = now()"];
   const params: unknown[] = [id, session.user.id];
 
@@ -846,8 +893,12 @@ export async function updateGuidedWorkflow(id: string, input: {
     fields.push("published_at = CASE WHEN " + `$${params.length}` + " = 'published' THEN now() ELSE published_at END");
   }
 
-  if (input.recordedActions) {
-    params.push(JSON.stringify(input.recordedActions));
+  const recordedActions = input.steps
+    ? applyGuideStepFlags(input.recordedActions ?? currentGuide.recordedActions, input.steps)
+    : input.recordedActions;
+
+  if (recordedActions) {
+    params.push(JSON.stringify(recordedActions));
     fields.push(`recorded_actions_json = $${params.length}::jsonb`);
   }
 
@@ -864,6 +915,21 @@ export async function updateGuidedWorkflow(id: string, input: {
     `,
     params
   );
+
+  if (input.steps && currentGuide.recordingSessionId && recordedActions) {
+    await Promise.all(recordedActions.map((action) =>
+      getPool().query(
+        `
+          UPDATE guided_workflow_recorded_actions
+          SET is_main_step = $3,
+              action_json = $4::jsonb
+          WHERE recording_session_id = $1
+            AND action_json->>'id' = $2
+        `,
+        [currentGuide.recordingSessionId, action.id, normalizeIsMainStep(action.isMainStep ?? action.guidePhase), JSON.stringify(action)]
+      )
+    ));
+  }
 
   return getGuidedWorkflowById(id, session);
 }

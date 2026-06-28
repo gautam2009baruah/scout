@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, Clipboard, Copy, Play, RefreshCw, Save, Search, Trash2 } from "lucide-react";
-import type { GuideStatus, GuideStep } from "@/shared/guideTypes";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Play, RefreshCw, Save, Search, Trash2 } from "lucide-react";
+import type { ContinueWhen, GuideStatus, GuideStep } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
 
 type CompanyOption = { id: string; name: string };
@@ -122,14 +122,20 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
           const guideResponse = await fetch(`/api/admin/guided-workflows/${body.session.guideId}`);
           const guideBody = await guideResponse.json().catch(() => null);
           if (!cancelled && guideBody?.guide) {
-            setItems((current) => current.some((guide) => guide.id === guideBody.guide.id)
-              ? current.map((guide) => guide.id === guideBody.guide.id ? guideBody.guide : guide)
-              : [guideBody.guide, ...current]);
-            setSelectedId((current) => current || guideBody.guide.id);
+            setItems((current) => {
+              const existing = current.find((guide) => guide.id === guideBody.guide.id);
+              if (existing && JSON.stringify(existing) === JSON.stringify(guideBody.guide)) {
+                return current;
+              }
+              return existing
+                ? current.map((guide) => guide.id === guideBody.guide.id ? guideBody.guide : guide)
+                : [guideBody.guide, ...current];
+            });
+            setSelectedId(guideBody.guide.id);
             setEditor((current) => {
-              const storedGuide = items.find((guide) => guide.id === guideBody.guide.id);
-              const hasLocalEdits = Boolean(storedGuide && editorHasChanges(current, storedGuide));
-              return (!selectedId || selectedId === guideBody.guide.id) && !hasLocalEdits ? editorFromGuide(guideBody.guide) : current;
+              const displayedGuide = items.find((guide) => guide.id === selectedId);
+              const hasLocalEdits = Boolean(displayedGuide && selectedId === guideBody.guide.id && editorHasChanges(current, displayedGuide));
+              return hasLocalEdits ? current : editorFromGuide(guideBody.guide);
             });
           }
         }
@@ -147,7 +153,7 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [selectedId, selectedSessionId]);
+  }, [items, selectedId, selectedSessionId]);
 
   function selectGuide(guide: GuidedWorkflowRow) {
     setSelectedId(guide.id);
@@ -551,12 +557,21 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
 }) {
   const [copiedKey, setCopiedKey] = useState("");
   const [configTab, setConfigTab] = useState<"recorder" | "snippet">("recorder");
+  const [openStepIds, setOpenStepIds] = useState<Set<string>>(() => new Set());
+  const stepIdsKey = editor.steps.map((step) => step.id).join("|");
 
   useEffect(() => {
     if (!selectedSession?.guideId) {
       setConfigTab("recorder");
     }
   }, [selectedSession?.guideId]);
+
+  useEffect(() => {
+    setOpenStepIds((current) => {
+      const validIds = new Set(editor.steps.map((step) => step.id));
+      return new Set(Array.from(current).filter((id) => validIds.has(id)));
+    });
+  }, [stepIdsKey]);
 
   if (!selectedSession) {
     return (
@@ -669,32 +684,181 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
             </p>
           ) : guideSteps.length === 0 ? (
             <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">This guide has no steps.</p>
-          ) : guideSteps.map((step, index) => (
-            <div className="rounded-lg border border-slate-200 p-4" key={step.id}>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="flex min-w-0 gap-3">
-                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-semibold text-white">{index + 1}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-950">Control identifier</p>
-                    <p className="mt-1 text-xs leading-5 text-slate-600">{controlIdentifierSummary(step)}</p>
+          ) : guideSteps.map((step, index) => {
+            const isOpen = openStepIds.has(step.id);
+            const purpose = step.stepPurpose === "navigation" ? "navigation" : "main";
+            const continueWhenType = step.continueWhen?.type ?? "manualNext";
+            const continueWhenValue = step.continueWhen?.type === "urlContains"
+              ? step.continueWhen.value
+              : step.continueWhen?.type === "elementVisible"
+              ? step.continueWhen.selector
+              : "";
+
+            return (
+              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white" key={step.id}>
+                <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-3">
+                  <button
+                    aria-expanded={isOpen}
+                    className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    onClick={() => setOpenStepIds((current) => {
+                      const next = new Set(current);
+                      if (next.has(step.id)) next.delete(step.id);
+                      else next.add(step.id);
+                      return next;
+                    })}
+                    type="button"
+                  >
+                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">{index + 1}</span>
+                    <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${isOpen ? "rotate-180" : ""}`} />
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-950">{step.message || step.title || "Untitled step"}</span>
+                  </button>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${purpose === "navigation" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
+                    {purpose === "navigation" ? "Navigation Step" : "Main Training Step"}
+                  </span>
+                  {purpose === "navigation" ? (
+                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800">
+                      {step.navigationMode === "autoClick" ? "Auto-click this control" : "Wait for user click"}
+                    </span>
+                  ) : null}
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${step.isMainStep === false ? "bg-slate-100 text-slate-700" : "bg-slate-950 text-white"}`}>
+                    {step.isMainStep === false ? "Entry step" : "Main step"}
+                  </span>
+                  <div className="flex gap-1">
+                    <button aria-label="Move step up" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === 0} onClick={() => moveStep(index, -1)} title="Move step up" type="button"><ArrowUp className="h-4 w-4" /></button>
+                    <button aria-label="Move step down" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === guideSteps.length - 1} onClick={() => moveStep(index, 1)} title="Move step down" type="button"><ArrowDown className="h-4 w-4" /></button>
+                    <button aria-label="Delete step" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={() => deleteStep(index)} title="Delete step" type="button"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
                 </div>
-                <div className="flex gap-1">
-                  <button aria-label="Move step up" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === 0} onClick={() => moveStep(index, -1)} title="Move step up" type="button"><ArrowUp className="h-4 w-4" /></button>
-                  <button aria-label="Move step down" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === guideSteps.length - 1} onClick={() => moveStep(index, 1)} title="Move step down" type="button"><ArrowDown className="h-4 w-4" /></button>
-                  <button aria-label="Delete step" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={() => deleteStep(index)} title="Delete step" type="button"><Trash2 className="h-3.5 w-3.5" /></button>
-                </div>
+
+                {isOpen ? (
+                  <div className="grid gap-4 p-4">
+                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Step description
+                        <input
+                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                          onChange={(event) => updateStep(index, { message: event.target.value, title: event.target.value })}
+                          value={step.message}
+                        />
+                      </label>
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Step purpose
+                        <select
+                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                          onChange={(event) => updateStep(index, {
+                            stepPurpose: event.target.value === "navigation" ? "navigation" : "main",
+                            navigationMode: event.target.value === "navigation" ? step.navigationMode ?? "waitForUser" : undefined,
+                          })}
+                          value={purpose}
+                        >
+                          <option value="main">Main Training Step</option>
+                          <option value="navigation">Navigation Step</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-950">Is main step</span>
+                        <span className="block text-xs text-slate-500">Uncheck for entry steps before the main guide flow.</span>
+                      </span>
+                      <input
+                        checked={step.isMainStep !== false}
+                        className="h-5 w-5 accent-slate-950"
+                        onChange={(event) => updateStep(index, { isMainStep: event.target.checked })}
+                        type="checkbox"
+                      />
+                    </label>
+
+                    <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
+                      {purpose === "navigation" ? (
+                        <label className="grid gap-1 text-xs font-medium text-amber-900">
+                          Navigation behavior
+                          <select className="h-10 rounded-lg border border-amber-200 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-amber-700" onChange={(event) => updateStep(index, { navigationMode: event.target.value === "autoClick" ? "autoClick" : "waitForUser" })} value={step.navigationMode ?? "waitForUser"}>
+                            <option value="waitForUser">Wait for user click</option>
+                            <option value="autoClick">Auto-click this control</option>
+                          </select>
+                        </label>
+                      ) : null}
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Continue when
+                        <select
+                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                          onChange={(event) => updateStep(index, {
+                            continueWhen: event.target.value === "urlContains"
+                              ? { type: "urlContains", value: continueWhenValue }
+                              : event.target.value === "elementVisible"
+                              ? { type: "elementVisible", selector: continueWhenValue }
+                              : { type: "manualNext" }
+                          })}
+                          value={continueWhenType}
+                        >
+                          <option value="manualNext">Manual next</option>
+                          <option value="urlContains">URL contains</option>
+                          <option value="elementVisible">Element visible</option>
+                        </select>
+                      </label>
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Condition value
+                        <input
+                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
+                          disabled={continueWhenType === "manualNext"}
+                          onChange={(event) => updateStep(index, {
+                            continueWhen: continueWhenType === "urlContains"
+                              ? { type: "urlContains", value: event.target.value }
+                              : continueWhenType === "elementVisible"
+                              ? { type: "elementVisible", selector: event.target.value }
+                              : { type: "manualNext" }
+                          })}
+                          placeholder={continueWhenType === "urlContains" ? "/target-page" : continueWhenType === "elementVisible" ? "[data-adoption-id='target']" : ""}
+                          value={continueWhenValue}
+                        />
+                      </label>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        URL match
+                        <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900" onChange={(event) => updateStep(index, { urlMatch: relativeUrl(event.target.value) })} value={relativeUrl(step.urlMatch)} />
+                      </label>
+                      <label className="grid gap-1 text-xs font-medium text-slate-600">
+                        Trigger
+                        <select
+                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                          onChange={(event) => updateStep(index, {
+                            trigger: event.target.value === "change"
+                              ? "change"
+                              : event.target.value === "blur"
+                              ? "blur"
+                              : event.target.value === "focus"
+                              ? "focus"
+                              : event.target.value === "input"
+                              ? "input"
+                              : event.target.value === "manualNext"
+                              ? "manualNext"
+                              : "click"
+                          })}
+                          value={step.trigger}
+                        >
+                          <option value="click">Click</option>
+                          <option value="change">Change</option>
+                          <option value="blur">Blur</option>
+                          <option value="focus">Focus</option>
+                          {step.trigger === "input" ? <option value="input">Input</option> : null}
+                          <option value="manualNext">Manual next</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-medium text-slate-600">Selector summary</p>
+                      <p className="mt-1 rounded-lg bg-white px-3 py-2 text-xs leading-5 text-slate-600">{controlIdentifierSummary(step)}</p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
-              <label className="mt-3 grid gap-1 text-xs font-medium text-slate-600">
-                Step description
-                <input
-                  className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
-                  onChange={(event) => updateStep(index, { message: event.target.value })}
-                  value={step.message}
-                />
-              </label>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -702,7 +866,30 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
 }
 
 function editorFromGuide(guide: GuidedWorkflowRow | null): EditorState {
-  return { title: guide?.title ?? "", description: guide?.description ?? "", status: guide?.status ?? "draft", steps: guide?.steps ?? [] };
+  return {
+    title: guide?.title ?? "",
+    description: guide?.description ?? "",
+    status: guide?.status ?? "draft",
+    steps: (guide?.steps ?? []).map((step) => ({
+      ...step,
+      isMainStep: step.isMainStep !== false,
+      continueWhen: normalizeContinueWhen(step.continueWhen)
+    }))
+  };
+}
+
+function normalizeContinueWhen(value: unknown): ContinueWhen {
+  if (value && typeof value === "object") {
+    const candidate = value as { type?: unknown; value?: unknown; selector?: unknown };
+    if (candidate.type === "urlContains") {
+      return { type: "urlContains", value: typeof candidate.value === "string" ? candidate.value : "" };
+    }
+    if (candidate.type === "elementVisible") {
+      return { type: "elementVisible", selector: typeof candidate.selector === "string" ? candidate.selector : "" };
+    }
+  }
+
+  return { type: "manualNext" };
 }
 
 function controlIdentifierSummary(step: GuideStep) {
@@ -715,6 +902,15 @@ function controlIdentifierSummary(step: GuideStep) {
   ].filter(Boolean);
 
   return parts.join(" | ") || "No control identifier captured.";
+}
+
+function relativeUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.pathname}${url.search}${url.hash}` || "/";
+  } catch {
+    return value || "/";
+  }
 }
 
 function normalizeSteps(steps: GuideStep[]) {

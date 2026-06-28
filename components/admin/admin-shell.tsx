@@ -70,7 +70,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                   ))}
                   {guidedWorkflowsModule ? (
                     <Link
-                      className={`flex h-11 items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition ${
+                      className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
                         isTrainingSetupActive
                           ? "bg-slate-950 text-white shadow-sm"
                           : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
@@ -150,7 +150,7 @@ function NavLink({
         isActive
           ? "bg-slate-950 text-white shadow-sm"
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-      } ${inset ? "text-[13px]" : ""}`}
+      }`}
       href={module.href}
     >
       <Icon className="h-4 w-4" />

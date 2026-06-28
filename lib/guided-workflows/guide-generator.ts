@@ -1,4 +1,4 @@
-import type { Guide, GuideStep, RecordedAction } from "@/shared/guideTypes";
+import type { Guide, GuideStep, GuideStepTrigger, RecordedAction } from "@/shared/guideTypes";
 
 function createId(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
@@ -63,9 +63,40 @@ function messageForAction(action: RecordedAction) {
   return `Click ${name} to continue.`;
 }
 
+function isGuideStepTrigger(value: unknown): value is GuideStepTrigger {
+  return value === "click"
+    || value === "change"
+    || value === "blur"
+    || value === "focus"
+    || value === "input"
+    || value === "manualNext";
+}
+
+function defaultTriggerForActionTarget(action: RecordedAction): GuideStep["trigger"] {
+  const tagName = (action.elementIdentity?.tagName ?? action.tagName ?? "").toLowerCase();
+  const role = (action.elementIdentity?.role ?? action.role ?? "").toLowerCase();
+  const inputType = (action.elementIdentity?.inputType ?? action.inputType ?? "text").toLowerCase();
+
+  if (tagName === "textarea") return "blur";
+  if (tagName === "select") return "change";
+
+  if (tagName === "input") {
+    if (["button", "submit", "reset", "image"].includes(inputType)) return "click";
+    if (["checkbox", "radio", "file", "range", "color", "date", "datetime-local", "month", "time", "week"].includes(inputType)) return "change";
+    return "blur";
+  }
+
+  if (["checkbox", "radio", "switch", "combobox", "listbox", "option", "slider"].includes(role)) return "change";
+  if (["button", "link", "menuitem", "tab"].includes(role)) return "click";
+
+  return "click";
+}
+
 function triggerForAction(action: RecordedAction): GuideStep["trigger"] {
-  if (action.type === "input") return "input";
-  if (action.type === "click" || action.type === "submit") return "click";
+  if (isGuideStepTrigger(action.trigger)) return action.trigger;
+  if (action.type === "input") return "blur";
+  if (action.type === "change") return "change";
+  if (action.type === "click" || action.type === "submit" || action.type === "manual-select") return defaultTriggerForActionTarget(action);
   return "manualNext";
 }
 
@@ -80,6 +111,15 @@ function isDuplicate(previous: RecordedAction | undefined, action: RecordedActio
     && Math.abs(action.timestamp - previous.timestamp) < 600;
 }
 
+function relativeUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.pathname}${url.search}${url.hash}` || "/";
+  } catch {
+    return value || "/";
+  }
+}
+
 export function generateGuideFromRecording(actions: RecordedAction[], input?: { title?: string; description?: string }): Guide {
   const now = new Date().toISOString();
   const cleanedActions = actions.filter((action, index) => !isDuplicate(actions[index - 1], action));
@@ -88,7 +128,7 @@ export function generateGuideFromRecording(actions: RecordedAction[], input?: { 
     .map((action, index): GuideStep => ({
       id: createId("step"),
       order: index + 1,
-      urlMatch: action.url,
+      urlMatch: relativeUrl(action.url),
       target: {
         selectorCandidates: action.selectorCandidates ?? [],
         fallbackText: bestElementName(action),
@@ -97,6 +137,10 @@ export function generateGuideFromRecording(actions: RecordedAction[], input?: { 
       },
       title: titleForAction(action),
       message: messageForAction(action),
+      stepPurpose: action.stepPurpose ?? "main",
+      isMainStep: typeof action.isMainStep === "boolean" ? action.isMainStep : action.guidePhase !== "entry",
+      navigationMode: action.stepPurpose === "navigation" ? action.navigationMode ?? "waitForUser" : undefined,
+      continueWhen: action.continueWhen ?? { type: "manualNext" },
       trigger: triggerForAction(action),
       actionSourceId: action.id
     }));
