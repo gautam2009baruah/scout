@@ -72,7 +72,7 @@ function mapGuide(row: {
   const recordedActions = row.recorded_actions_json ?? [];
   const actionsById = new Map(recordedActions.map((action) => [action.id, action]));
 
-  return {
+  return guideWithRuntimeStructure({
     id: row.id,
     companyId: row.company_id,
     companyName: row.company_name,
@@ -91,44 +91,86 @@ function mapGuide(row: {
         ...step,
         stepPurpose,
         navigationMode: stepPurpose === "navigation" ? step.navigationMode ?? source?.navigationMode ?? "waitForUser" : undefined,
-        continueWhen: step.continueWhen ?? source?.continueWhen ?? { type: "manualNext" },
-        trigger: normalizeGuideStepTrigger(step.trigger ?? source?.trigger),
-        isMainStep: normalizeIsMainStep(step.isMainStep ?? source?.isMainStep ?? source?.guidePhase)
+        trigger: stepPurpose === "navigation" ? "click" : normalizeGuideStepTrigger(step.trigger ?? source?.trigger)
       };
     }),
     createdByName: row.created_by_name,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
-  };
+  });
 }
 
 function normalizeGuideStepTrigger(value: unknown): GuideStepTrigger {
   return value === "change" || value === "blur" || value === "focus" || value === "input" || value === "manualNext" ? value : "click";
 }
 
-function normalizeIsMainStep(value: unknown): boolean {
-  if (typeof value === "boolean") return value;
-  if (value === "entry") return false;
-  return true;
+function normalizeGuideSteps(steps: GuideStep[]) {
+  return steps.map((step) => {
+    const stepPurpose = step.stepPurpose ?? "main";
+    const navigationMode = stepPurpose === "navigation" ? step.navigationMode ?? "waitForUser" : undefined;
+
+    return {
+      ...step,
+      type: step.type ?? (stepPurpose === "navigation" || step.trigger === "click" ? "click" : step.trigger === "manualNext" ? "manualInstruction" : step.trigger === "input" || step.trigger === "change" || step.trigger === "blur" || step.trigger === "focus" ? "input" : "highlight"),
+      stepPurpose,
+      navigationMode,
+      autoClick: step.autoClick ?? navigationMode === "autoClick",
+      trigger: stepPurpose === "navigation" ? "click" : normalizeGuideStepTrigger(step.trigger)
+    };
+  });
 }
 
-function applyGuideStepFlags(recordedActions: RecordedAction[], steps: GuideStep[]) {
-  const isMainStepByActionId = new Map<string, boolean>();
+function guideWithRuntimeStructure<TGuide extends Guide>(guide: TGuide) {
+  const steps = normalizeGuideSteps(guide.steps ?? []);
+  const entrySteps = steps.filter((step) => step.stepPurpose === "navigation");
+  const mainSteps = steps.filter((step) => step.stepPurpose !== "navigation");
+  const firstStep = steps[0];
+  const firstMainStep = mainSteps[0];
 
-  steps.forEach((step) => {
+  return {
+    ...guide,
+    steps,
+    startContext: guide.startContext ?? (firstStep ? { url: firstStep.urlMatch } : undefined),
+    goalContext: guide.goalContext ?? (firstMainStep ? { url: firstMainStep.urlMatch, target: firstMainStep.target, requiredElement: firstMainStep.target } : undefined),
+    entrySteps: guide.entrySteps ?? entrySteps,
+    mainSteps: guide.mainSteps ?? mainSteps
+  };
+}
+
+function applyGuideStepDetails(recordedActions: RecordedAction[], steps: GuideStep[]) {
+  const stepByActionId = new Map<string, GuideStep>();
+  const stepOrderByActionId = new Map<string, number>();
+
+  steps.forEach((step, index) => {
     if (!step.actionSourceId) return;
-    isMainStepByActionId.set(step.actionSourceId, normalizeIsMainStep(step.isMainStep));
+    stepByActionId.set(step.actionSourceId, step);
+    stepOrderByActionId.set(step.actionSourceId, index);
   });
 
-  return recordedActions.map((action) => ({
-    ...stripLegacyGuidePhase(action),
-    isMainStep: isMainStepByActionId.get(action.id) ?? normalizeIsMainStep(action.isMainStep ?? action.guidePhase)
-  }));
+  return recordedActions.map((action) => {
+    const step = stepByActionId.get(action.id);
+    return stripLegacyStepState({
+      ...action,
+      stepPurpose: step?.stepPurpose ?? action.stepPurpose ?? "main",
+      navigationMode: step?.stepPurpose === "navigation" ? step.navigationMode ?? action.navigationMode ?? "waitForUser" : undefined,
+      trigger: step?.stepPurpose === "navigation" ? undefined : step?.trigger ?? action.trigger
+    });
+  }).sort((left, right) => {
+    const leftOrder = stepOrderByActionId.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = stepOrderByActionId.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+
+    return leftOrder - rightOrder;
+  });
 }
 
-function stripLegacyGuidePhase(action: RecordedAction): RecordedAction {
-  const { guidePhase: _legacyGuidePhase, ...nextAction } = action;
-  return nextAction;
+function stripLegacyStepState(action: RecordedAction): RecordedAction {
+  const {
+    guidePhase: _legacyGuidePhase,
+    isMainStep: _legacyIsMainStep,
+    continueWhen: _legacyContinueWhen,
+    ...nextAction
+  } = action as RecordedAction & Record<string, unknown>;
+  return nextAction as RecordedAction;
 }
 
 async function assertCompanyAccess(companyId: string, session: AdminSession) {
@@ -586,9 +628,9 @@ export async function getGuidedWorkflowRecordingSessionById(id: string, session:
 
 export async function listRecordedActionsForSession(sessionId: string, session: AdminSession) {
   await getGuidedWorkflowRecordingSessionById(sessionId, session);
-  const result = await getPool().query<{ action_json: RecordedAction; is_main_step: boolean }>(
+  const result = await getPool().query<{ action_json: RecordedAction }>(
     `
-      SELECT action_json, is_main_step
+      SELECT action_json
       FROM guided_workflow_recorded_actions
       WHERE recording_session_id = $1
       ORDER BY action_index ASC
@@ -596,7 +638,7 @@ export async function listRecordedActionsForSession(sessionId: string, session: 
     [sessionId]
   );
 
-  return result.rows.map((row) => ({ ...row.action_json, isMainStep: normalizeIsMainStep(row.is_main_step) }));
+  return result.rows.map((row) => stripLegacyStepState(row.action_json));
 }
 
 export async function appendRecordedActionByToken(token: string, action: RecordedAction, origin?: string) {
@@ -658,20 +700,18 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
     }
 
     const nextIndex = Number(recordingSession.next_action_index);
-    const isMainStep = normalizeIsMainStep(action.isMainStep ?? action.guidePhase);
-    const actionWithMainFlag: RecordedAction = { ...stripLegacyGuidePhase(action), isMainStep };
+    const cleanAction: RecordedAction = stripLegacyStepState(action);
     await client.query(
       `
         INSERT INTO guided_workflow_recorded_actions (
           company_id,
           recording_session_id,
           action_index,
-          action_json,
-          is_main_step
+          action_json
         )
-        VALUES ($1, $2, $3, $4::jsonb, $5)
+        VALUES ($1, $2, $3, $4::jsonb)
       `,
-      [recordingSession.company_id, recordingSession.id, nextIndex, JSON.stringify(actionWithMainFlag), isMainStep]
+      [recordingSession.company_id, recordingSession.id, nextIndex, JSON.stringify(cleanAction)]
     );
     await client.query(
       `
@@ -709,10 +749,10 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
             .map((recordedAction) => recordedAction.id)
             .filter((actionId) => actionId && !currentStepSourceIds.has(actionId))
         );
-        const nextRecordedActions = [...existingRecordedActions, actionWithMainFlag];
+        const nextRecordedActions = [...existingRecordedActions, cleanAction];
 
-        if (!removedSourceIds.has(actionWithMainFlag.id) && !currentStepSourceIds.has(actionWithMainFlag.id)) {
-          const generated = generateGuideFromRecording([actionWithMainFlag]);
+        if (!removedSourceIds.has(cleanAction.id) && !currentStepSourceIds.has(cleanAction.id)) {
+          const generated = generateGuideFromRecording([cleanAction]);
           const nextSteps = [...existingSteps, ...generated.steps].map((step, index) => ({ ...step, order: index + 1 }));
 
           await client.query(
@@ -739,7 +779,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
         }
       }
     } else {
-      const generated = generateGuideFromRecording([actionWithMainFlag], { title: recordingSession.title });
+      const generated = generateGuideFromRecording([cleanAction], { title: recordingSession.title });
       const guideResult = await client.query<{ id: string }>(
         `
           INSERT INTO guided_workflow_guides (
@@ -761,7 +801,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
           recordingSession.id,
           generated.title,
           generated.description,
-          JSON.stringify([actionWithMainFlag]),
+          JSON.stringify([cleanAction]),
           JSON.stringify(generated.steps)
         ]
       );
@@ -894,7 +934,7 @@ export async function updateGuidedWorkflow(id: string, input: {
   }
 
   const recordedActions = input.steps
-    ? applyGuideStepFlags(input.recordedActions ?? currentGuide.recordedActions, input.steps)
+    ? applyGuideStepDetails(input.recordedActions ?? currentGuide.recordedActions, input.steps)
     : input.recordedActions;
 
   if (recordedActions) {
@@ -917,16 +957,41 @@ export async function updateGuidedWorkflow(id: string, input: {
   );
 
   if (input.steps && currentGuide.recordingSessionId && recordedActions) {
-    await Promise.all(recordedActions.map((action) =>
+    const actionRows = recordedActions
+      .map((action, index) => ({
+        action,
+        actionIndex: index
+      }))
+      .filter(({ action }) => Boolean(action.id));
+    const temporaryIndexOffset = actionRows.length + 100000;
+
+    await Promise.all(actionRows.map(({ action, actionIndex }) =>
       getPool().query(
         `
           UPDATE guided_workflow_recorded_actions
-          SET is_main_step = $3,
+          SET action_index = $3
+          WHERE recording_session_id = $1
+            AND action_json->>'id' = $2
+        `,
+        [currentGuide.recordingSessionId, action.id, temporaryIndexOffset + actionIndex]
+      )
+    ));
+
+    await Promise.all(actionRows.map(({ action, actionIndex }) =>
+      getPool().query(
+        `
+          UPDATE guided_workflow_recorded_actions
+          SET action_index = $3,
               action_json = $4::jsonb
           WHERE recording_session_id = $1
             AND action_json->>'id' = $2
         `,
-        [currentGuide.recordingSessionId, action.id, normalizeIsMainStep(action.isMainStep ?? action.guidePhase), JSON.stringify(action)]
+        [
+          currentGuide.recordingSessionId,
+          action.id,
+          actionIndex,
+          JSON.stringify(action)
+        ]
       )
     ));
   }
@@ -1097,13 +1162,15 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
     [input.targetAppId]
   );
 
-  return result.rows.map((row) => ({
-    id: row.id,
-    title: row.title,
-    description: row.description,
-    status: row.status,
-    createdAt: row.created_at.toISOString(),
-    updatedAt: row.updated_at.toISOString(),
-    steps: row.steps_json ?? []
-  }));
+  return result.rows.map((row) =>
+    guideWithRuntimeStructure({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+      steps: row.steps_json ?? []
+    })
+  );
 }

@@ -4,7 +4,7 @@ import {
   createManualSelectAction,
   defaultTriggerForElementIdentity,
 } from "./recorder";
-import type { ContinueWhen, GuidePageContext, GuideStepPurpose, GuideStepTrigger, NavigationStepMode, RecorderConfig, RecorderStatus, RecordingState } from "./types";
+import type { GuidePageContext, GuideStepPurpose, GuideStepTrigger, NavigationStepMode, RecorderConfig, RecorderStatus, RecordingState } from "./types";
 import { enterPickerMode, isPickerActive } from "./elementPicker";
 import { findElement } from "./elementFinder";
 
@@ -98,7 +98,6 @@ async function sendAction(action: ReturnType<typeof createRecordedAction>, skipC
 
   await ensureStartContext();
   const state = await getState();
-  const actionWithMainFlag = { ...action, isMainStep: action.isMainStep !== false };
 
   // Only check confirmation if recording is active
   if (!skipConfirmation && state.isRecording && !state.isPaused) {
@@ -112,12 +111,12 @@ async function sendAction(action: ReturnType<typeof createRecordedAction>, skipC
   const meta = await getRecorderMeta();
   await browserApi.sendMessage({
     type: "SCOUT_RECORDING_ACTION",
-    action: actionWithMainFlag,
+    action,
     recorderConfig: meta.recorderConfig,
   });
   window.setTimeout(async () => {
     const updated = await getState();
-    const saved = updated.actions.some((item) => item.id === actionWithMainFlag.id);
+    const saved = updated.actions.some((item) => item.id === action.id);
     showToast(saved ? `Step ${action.stepOrder ?? updated.actions.length} saved locally. Sync pending.` : "Step was not saved. Please try again.", saved ? "success" : "error");
     await renderToolbar();
   }, 300);
@@ -241,6 +240,41 @@ function escapeHtml(value: string) {
   }[char] ?? char));
 }
 
+function sanitizeGuideHtml(value: string) {
+  const template = document.createElement("template");
+  template.innerHTML = value;
+  const allowedTags = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A", "FONT", "SPAN"]);
+  template.content.querySelectorAll("*").forEach((element) => {
+    if (!allowedTags.has(element.tagName)) {
+      element.replaceWith(...Array.from(element.childNodes));
+      return;
+    }
+    Array.from(element.attributes).forEach((attribute) => {
+      const allowedHref = element.tagName === "A" && attribute.name === "href" && /^(https?:\/\/|\/|#scout-guide:)/i.test(attribute.value);
+      const allowedFont = element.tagName === "FONT" && ["color", "face"].includes(attribute.name);
+      const allowedStyle = element.tagName === "SPAN" && attribute.name === "style";
+      if (allowedStyle) {
+        const safeRules = attribute.value.split(";").map((rule) => rule.trim()).filter((rule) => /^(color|background-color|font-family)\s*:/i.test(rule) && !/url|expression|javascript/i.test(rule));
+        if (safeRules.length > 0) element.setAttribute("style", safeRules.join("; "));
+        else element.removeAttribute("style");
+      } else if (!allowedHref && !allowedFont) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+    if (element.tagName === "A") {
+      element.setAttribute("target", "_blank");
+      element.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+  return template.innerHTML.replace(/<div><br><\/div>/g, "<br>").trim();
+}
+
+function plainTextFromHtml(value: string) {
+  const template = document.createElement("template");
+  template.innerHTML = value;
+  return (template.content.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 function controlSummary(identity: NonNullable<typeof lastPickedIdentity>) {
   return identity.text || identity.labelText || identity.ariaLabel || identity.placeholder || identity.name || identity.id || identity.tagName;
 }
@@ -295,9 +329,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   action: "accept" | "reselect" | "cancel";
   description?: string;
   purpose: GuideStepPurpose;
-  isMainStep: boolean;
   navigationMode?: NavigationStepMode;
-  continueWhen?: ContinueWhen;
   trigger: GuideStepTrigger;
 }> {
   document.getElementById(pickerReviewDialogId)?.remove();
@@ -328,12 +360,24 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   `;
 
   dialog.innerHTML = `
+    <style>
+      #${pickerReviewDialogId}, #${pickerReviewDialogId} * { box-sizing: border-box; }
+      #${pickerReviewDialogId} { max-width: calc(100vw - 32px); }
+      #scout-picker-scroll-area, #scout-picker-description { overflow-x: hidden; }
+      #scout-picker-editor-toolbar { display: grid; gap: 5px; border: 1px solid #334155; border-bottom: 0; border-radius: 8px 8px 0 0; background: #0f172a; padding: 5px; }
+      #scout-picker-editor-toolbar .scout-picker-toolbar-row { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; width: 100%; }
+      #scout-picker-editor-toolbar button { flex: 0 0 auto; }
+      #scout-picker-font-name { flex: 1 1 116px; min-width: 92px; max-width: 100%; }
+      #scout-picker-link-url { flex: 1 1 190px; min-width: 0; max-width: 100%; }
+      #scout-picker-description ul { list-style: disc; margin: 4px 0 4px 20px; padding: 0; }
+      #scout-picker-description ol { list-style: decimal; margin: 4px 0 4px 20px; padding: 0; }
+      #scout-picker-description li { margin: 2px 0; }
+      #scout-picker-description a { color: #93c5fd; text-decoration: underline; }
+    </style>
     <div id="scout-picker-drag-handle" style="display:flex;justify-content:space-between;gap:10px;align-items:start;padding:14px 14px 10px;border-bottom:1px solid rgba(148,163,184,.18);cursor:move;user-select:none">
       <div style="min-width:0">
         <div style="font-weight:700;font-size:13px">Review selected control</div>
         ${sessionTitle ? `<div style="margin-top:3px;color:#93c5fd">Session: ${escapeHtml(sessionTitle)}</div>` : ""}
-        <div style="margin-top:3px;color:#f8fafc;font-weight:700">Step ${stepOrder}</div>
-        <div style="margin-top:4px;color:#cbd5e1">${escapeHtml(controlSummary(identity))}</div>
       </div>
       <div style="border-radius:999px;background:${identity.confidenceScore >= 0.75 ? "#064e3b" : "#78350f"};color:${identity.confidenceScore >= 0.75 ? "#d1fae5" : "#fef3c7"};padding:3px 8px;font-weight:700">${confidence}%</div>
     </div>
@@ -355,7 +399,31 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
     </div>
     <label style="display:block;margin-top:12px;color:#cbd5e1">
       <span style="display:block;margin-bottom:5px;font-weight:700">Step description shown to users</span>
-      <textarea id="scout-picker-description" rows="3" placeholder="Example: Click Save to finish the request." style="box-sizing:border-box;width:100%;resize:vertical;border:1px solid #334155;border-radius:8px;background:#020617;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none"></textarea>
+      <div id="scout-picker-editor-toolbar">
+        <div class="scout-picker-toolbar-row">
+          <button type="button" data-rich-command="bold" style="${modalButtonStyle("#1e293b")}">B</button>
+          <button type="button" data-rich-command="italic" style="${modalButtonStyle("#1e293b")}"><i>I</i></button>
+          <button type="button" data-rich-command="underline" style="${modalButtonStyle("#1e293b")}"><u>U</u></button>
+          <button type="button" data-rich-command="insertUnorderedList" style="${modalButtonStyle("#1e293b")}">List</button>
+          <button type="button" data-rich-command="insertOrderedList" style="${modalButtonStyle("#1e293b")}">1.</button>
+          <select id="scout-picker-font-name" style="border:1px solid #334155;border-radius:7px;background:#020617;color:#f8fafc;padding:6px;font:12px system-ui,sans-serif;outline:none">
+            <option value="">Font</option>
+            <option value="Arial">Arial</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Tahoma">Tahoma</option>
+            <option value="Verdana">Verdana</option>
+            <option value="Courier New">Courier New</option>
+          </select>
+          <input id="scout-picker-text-color" title="Text color" type="color" style="height:30px;width:34px;flex:0 0 34px;border:1px solid #334155;border-radius:7px;background:#020617;padding:2px" />
+          <input id="scout-picker-highlight-color" title="Highlight color" type="color" style="height:30px;width:34px;flex:0 0 34px;border:1px solid #334155;border-radius:7px;background:#020617;padding:2px" />
+        </div>
+        <div class="scout-picker-toolbar-row">
+          <input id="scout-picker-link-url" placeholder="https:// or /internal-url" style="border:1px solid #334155;border-radius:7px;background:#020617;color:#f8fafc;padding:6px;font:12px system-ui,sans-serif;outline:none" />
+          <button type="button" id="scout-picker-link-insert" style="${modalButtonStyle("#1d4ed8")}">Link</button>
+          <button type="button" data-rich-command="removeFormat" style="${modalButtonStyle("#334155")}">Clear</button>
+        </div>
+      </div>
+      <div id="scout-picker-description" contenteditable="true" data-placeholder="Example: Click Save to finish the request." style="box-sizing:border-box;width:100%;min-height:92px;max-height:180px;overflow:auto;border:1px solid #334155;border-radius:0 0 8px 8px;background:#020617;color:#f8fafc;padding:9px;font:12px/1.45 system-ui,sans-serif;outline:none"></div>
     </label>
     <label style="display:block;margin-top:12px;color:#cbd5e1">
       <span style="display:block;margin-bottom:5px;font-weight:700">Step purpose</span>
@@ -364,14 +432,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
         <option value="navigation">Navigation Step</option>
       </select>
     </label>
-    <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid #1e293b;border-radius:10px;padding:10px;background:#020617;color:#cbd5e1">
-      <span>
-        <span style="display:block;font-weight:700;color:#f8fafc">Is main step</span>
-        <span style="display:block;margin-top:3px;color:#94a3b8;line-height:1.35">Uncheck for entry steps before the main guide flow.</span>
-      </span>
-      <input id="scout-picker-is-main-step" type="checkbox" checked style="width:18px;height:18px;accent-color:#10b981" />
-    </label>
-    <label style="display:block;margin-top:12px;color:#cbd5e1">
+    <label id="scout-picker-trigger-field" style="display:block;margin-top:12px;color:#cbd5e1">
       <span style="display:block;margin-bottom:5px;font-weight:700">Trigger</span>
       <select id="scout-picker-trigger" style="box-sizing:border-box;width:100%;border:1px solid #334155;border-radius:8px;background:#020617;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
         <option value="click"${defaultTrigger === "click" ? " selected" : ""}>Click</option>
@@ -389,15 +450,6 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
       </select>
       <div style="margin-top:6px;color:#94a3b8;line-height:1.35">Use auto-click for entry/menu links that can safely move the user to the target page.</div>
     </div>
-    <div style="margin-top:12px;border:1px solid #1e293b;border-radius:10px;padding:10px;background:#020617;color:#cbd5e1">
-      <div style="font-weight:700;color:#f8fafc">Continue when</div>
-      <select id="scout-picker-continue-type" style="box-sizing:border-box;width:100%;margin-top:7px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
-        <option value="manualNext">Manual next</option>
-        <option value="urlContains">URL contains</option>
-        <option value="elementVisible">Element visible</option>
-      </select>
-      <input id="scout-picker-continue-value" placeholder="" style="box-sizing:border-box;width:100%;margin-top:7px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none;display:none" />
-    </div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 14px 14px;border-top:1px solid rgba(148,163,184,.18);background:#0f172a">
       <button id="scout-picker-cancel" style="${modalButtonStyle("#334155")}">Cancel</button>
@@ -409,60 +461,96 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   document.body.appendChild(dialog);
   const dragHandle = document.getElementById("scout-picker-drag-handle");
   if (dragHandle) attachDialogDrag(dialog, dragHandle);
+  let savedDescriptionRange: Range | null = null;
+  const rememberDescriptionSelection = () => {
+    const editor = document.getElementById("scout-picker-description") as HTMLElement | null;
+    const selection = window.getSelection();
+    if (editor && selection && selection.rangeCount > 0 && editor.contains(selection.anchorNode)) {
+      savedDescriptionRange = selection.getRangeAt(0).cloneRange();
+    }
+  };
+  const restoreDescriptionSelection = () => {
+    if (!savedDescriptionRange) return;
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(savedDescriptionRange);
+  };
+  const descriptionEditor = document.getElementById("scout-picker-description") as HTMLElement | null;
+  descriptionEditor?.addEventListener("mouseup", rememberDescriptionSelection);
+  descriptionEditor?.addEventListener("keyup", rememberDescriptionSelection);
+  descriptionEditor?.addEventListener("paste", () => window.setTimeout(rememberDescriptionSelection));
   const purposeSelect = document.getElementById("scout-picker-purpose") as HTMLSelectElement | null;
   const navigationControls = document.getElementById("scout-picker-navigation-controls");
+  const triggerField = document.getElementById("scout-picker-trigger-field");
+  dialog.querySelectorAll<HTMLButtonElement>("[data-rich-command]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const editor = document.getElementById("scout-picker-description") as HTMLElement | null;
+      editor?.focus();
+      restoreDescriptionSelection();
+      document.execCommand(button.dataset.richCommand ?? "", false);
+    });
+  });
+  document.getElementById("scout-picker-font-name")?.addEventListener("change", (event) => {
+    const value = (event.target as HTMLSelectElement).value;
+    if (!value) return;
+    descriptionEditor?.focus();
+    restoreDescriptionSelection();
+    document.execCommand("fontName", false, value);
+    (event.target as HTMLSelectElement).value = "";
+  });
+  document.getElementById("scout-picker-text-color")?.addEventListener("change", (event) => {
+    descriptionEditor?.focus();
+    restoreDescriptionSelection();
+    document.execCommand("foreColor", false, (event.target as HTMLInputElement).value);
+  });
+  document.getElementById("scout-picker-highlight-color")?.addEventListener("change", (event) => {
+    descriptionEditor?.focus();
+    restoreDescriptionSelection();
+    document.execCommand("hiliteColor", false, (event.target as HTMLInputElement).value);
+  });
+  document.getElementById("scout-picker-link-url")?.addEventListener("focus", rememberDescriptionSelection);
+  document.getElementById("scout-picker-link-url")?.addEventListener("mousedown", rememberDescriptionSelection);
+  document.getElementById("scout-picker-link-insert")?.addEventListener("click", () => {
+    const editor = document.getElementById("scout-picker-description") as HTMLElement | null;
+    const url = (document.getElementById("scout-picker-link-url") as HTMLInputElement | null)?.value.trim();
+    if (!url) return;
+    editor?.focus();
+    restoreDescriptionSelection();
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      document.execCommand("insertHTML", false, `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`);
+    } else {
+      document.execCommand("createLink", false, url);
+    }
+  });
   const syncNavigationControls = () => {
     if (navigationControls) {
       navigationControls.style.display = purposeSelect?.value === "navigation" ? "block" : "none";
     }
+    if (triggerField) {
+      triggerField.style.display = purposeSelect?.value === "navigation" ? "none" : "block";
+    }
   };
   purposeSelect?.addEventListener("change", syncNavigationControls);
   syncNavigationControls();
-  const continueTypeSelect = document.getElementById("scout-picker-continue-type") as HTMLSelectElement | null;
-  const continueValueInput = document.getElementById("scout-picker-continue-value") as HTMLInputElement | null;
-  const syncContinueValueInput = () => {
-    if (!continueTypeSelect || !continueValueInput) return;
-
-    if (continueTypeSelect.value === "manualNext") {
-      continueValueInput.value = "";
-      continueValueInput.style.display = "none";
-      continueValueInput.disabled = true;
-      continueValueInput.placeholder = "";
-      return;
-    }
-
-    continueValueInput.style.display = "block";
-    continueValueInput.disabled = false;
-    continueValueInput.placeholder = continueTypeSelect.value === "urlContains"
-      ? "Example: /control-panel/guided-workflows"
-      : "Example: [data-adoption-id='save-button']";
-  };
-  continueTypeSelect?.addEventListener("change", syncContinueValueInput);
-  syncContinueValueInput();
 
   return new Promise((resolve) => {
     const finish = (value: "accept" | "reselect" | "cancel") => {
-      const description = (document.getElementById("scout-picker-description") as HTMLTextAreaElement | null)?.value.trim();
+      const descriptionHtml = sanitizeGuideHtml((document.getElementById("scout-picker-description") as HTMLElement | null)?.innerHTML ?? "");
+      const description = plainTextFromHtml(descriptionHtml) ? descriptionHtml : undefined;
       const purposeValue = (document.getElementById("scout-picker-purpose") as HTMLSelectElement | null)?.value;
       const purpose: GuideStepPurpose = purposeValue === "navigation" ? "navigation" : "main";
-      const isMainStep = (document.getElementById("scout-picker-is-main-step") as HTMLInputElement | null)?.checked !== false;
       const navigationModeValue = (document.getElementById("scout-picker-navigation-mode") as HTMLSelectElement | null)?.value;
       const navigationMode: NavigationStepMode | undefined = purpose === "navigation" && navigationModeValue === "autoClick" ? "autoClick" : purpose === "navigation" ? "waitForUser" : undefined;
-      const continueType = (document.getElementById("scout-picker-continue-type") as HTMLSelectElement | null)?.value;
-      const continueValue = (document.getElementById("scout-picker-continue-value") as HTMLInputElement | null)?.value.trim() ?? "";
-      const continueWhen: ContinueWhen =
-        continueType === "urlContains" && continueValue
-          ? { type: "urlContains", value: continueValue }
-          : continueType === "elementVisible" && continueValue
-          ? { type: "elementVisible", selector: continueValue }
-          : { type: "manualNext" };
       const triggerValue = (document.getElementById("scout-picker-trigger") as HTMLSelectElement | null)?.value;
       const trigger: GuideStepTrigger =
-        triggerValue === "change" || triggerValue === "blur" || triggerValue === "focus" || triggerValue === "manualNext"
+        purpose === "navigation"
+          ? "click"
+          : triggerValue === "change" || triggerValue === "blur" || triggerValue === "focus" || triggerValue === "manualNext"
           ? triggerValue
           : "click";
       dialog.remove();
-      resolve({ action: value, description, purpose, isMainStep, navigationMode, continueWhen, trigger });
+      resolve({ action: value, description, purpose, navigationMode, trigger });
     };
 
     document.getElementById("scout-picker-accept")?.addEventListener("click", () => finish("accept"));
@@ -505,7 +593,7 @@ async function startPickerMode() {
     }
 
     if (reviewResult.action === "accept") {
-      const action = createManualSelectAction(identity, reviewResult.description, stepOrder, reviewResult.purpose, reviewResult.navigationMode, reviewResult.continueWhen, reviewResult.trigger, reviewResult.isMainStep);
+      const action = createManualSelectAction(identity, reviewResult.description, stepOrder, reviewResult.purpose, reviewResult.navigationMode, reviewResult.trigger);
       await sendAction(action, true);
     }
   }
@@ -625,13 +713,6 @@ async function previewCreatedSteps() {
     const description = action.stepDescription || action.elementText || action.labelText || action.ariaLabel || action.tagName || "Selected control";
     const purpose = action.stepPurpose === "navigation" ? "Navigation" : "Main";
     const mode = action.stepPurpose === "navigation" ? action.navigationMode === "autoClick" ? "Auto-click" : "Wait" : "";
-    const continueText = action.continueWhen?.type === "urlContains"
-      ? `URL contains: ${action.continueWhen.value}`
-      : action.continueWhen?.type === "elementVisible"
-      ? `Element visible: ${action.continueWhen.selector}`
-      : action.continueWhen?.type === "manualNext"
-      ? "Manual next"
-      : "";
     label.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${Math.max(8, rect.top + window.scrollY - 62)}px;max-width:320px;border-radius:12px;background:#0f172a;color:white;padding:8px 9px 9px;box-shadow:0 12px 32px rgba(15,23,42,.36);pointer-events:auto`;
     label.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px">
@@ -644,7 +725,6 @@ async function previewCreatedSteps() {
         ${mode ? `<span style="border-radius:999px;background:#1e3a8a;color:#dbeafe;padding:2px 7px;font-size:10px;font-weight:800">${escapeHtml(mode)}</span>` : ""}
       </div>
       <div style="margin-top:7px;color:#dbeafe;line-height:1.35">${escapeHtml(description)}</div>
-      ${continueText ? `<div style="margin-top:6px;border-top:1px solid rgba(148,163,184,.18);padding-top:6px;color:#cbd5e1;line-height:1.35"><strong style="color:#f8fafc">Continue:</strong> ${escapeHtml(continueText)}</div>` : ""}
     `;
     label.querySelector<HTMLButtonElement>("[data-scout-delete-step]")?.addEventListener("click", async (event) => {
       event.preventDefault();
@@ -794,7 +874,7 @@ async function clearRecorderConfig() {
 async function exportJson() {
   const state = await getState();
   const startContext = state.startContext ?? currentPageContext();
-  const firstMainStep = state.actions.find((action) => action.isMainStep !== false);
+  const firstMainStep = state.actions.find((action) => action.stepPurpose !== "navigation");
   const goalContext = firstMainStep
     ? {
       url: firstMainStep.url,
@@ -802,8 +882,8 @@ async function exportJson() {
       capturedAt: new Date(firstMainStep.timestamp).toISOString()
     }
     : startContext;
-  const entrySteps = state.actions.filter((action) => action.isMainStep === false);
-  const mainSteps = state.actions.filter((action) => action.isMainStep !== false);
+  const entrySteps = state.actions.filter((action) => action.stepPurpose === "navigation");
+  const mainSteps = state.actions.filter((action) => action.stepPurpose !== "navigation");
   const payload = {
     startContext,
     goalContext,

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Play, RefreshCw, Save, Search, Trash2 } from "lucide-react";
-import type { ContinueWhen, GuideStatus, GuideStep } from "@/shared/guideTypes";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, LinkIcon, Play, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
+import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
 
 type CompanyOption = { id: string; name: string };
@@ -558,7 +558,6 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
   const [copiedKey, setCopiedKey] = useState("");
   const [configTab, setConfigTab] = useState<"recorder" | "snippet">("recorder");
   const [openStepIds, setOpenStepIds] = useState<Set<string>>(() => new Set());
-  const stepIdsKey = editor.steps.map((step) => step.id).join("|");
 
   useEffect(() => {
     if (!selectedSession?.guideId) {
@@ -571,7 +570,7 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
       const validIds = new Set(editor.steps.map((step) => step.id));
       return new Set(Array.from(current).filter((id) => validIds.has(id)));
     });
-  }, [stepIdsKey]);
+  }, [editor.steps]);
 
   if (!selectedSession) {
     return (
@@ -687,12 +686,6 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
           ) : guideSteps.map((step, index) => {
             const isOpen = openStepIds.has(step.id);
             const purpose = step.stepPurpose === "navigation" ? "navigation" : "main";
-            const continueWhenType = step.continueWhen?.type ?? "manualNext";
-            const continueWhenValue = step.continueWhen?.type === "urlContains"
-              ? step.continueWhen.value
-              : step.continueWhen?.type === "elementVisible"
-              ? step.continueWhen.selector
-              : "";
 
             return (
               <div className="overflow-hidden rounded-lg border border-slate-200 bg-white" key={step.id}>
@@ -710,7 +703,7 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
                   >
                     <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">{index + 1}</span>
                     <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${isOpen ? "rotate-180" : ""}`} />
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-950">{step.message || step.title || "Untitled step"}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-950">{plainTextFromHtml(step.message || step.title) || "Untitled step"}</span>
                   </button>
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${purpose === "navigation" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
                     {purpose === "navigation" ? "Navigation Step" : "Main Training Step"}
@@ -720,9 +713,6 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
                       {step.navigationMode === "autoClick" ? "Auto-click this control" : "Wait for user click"}
                     </span>
                   ) : null}
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${step.isMainStep === false ? "bg-slate-100 text-slate-700" : "bg-slate-950 text-white"}`}>
-                    {step.isMainStep === false ? "Entry step" : "Main step"}
-                  </span>
                   <div className="flex gap-1">
                     <button aria-label="Move step up" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === 0} onClick={() => moveStep(index, -1)} title="Move step up" type="button"><ArrowUp className="h-4 w-4" /></button>
                     <button aria-label="Move step down" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === guideSteps.length - 1} onClick={() => moveStep(index, 1)} title="Move step down" type="button"><ArrowDown className="h-4 w-4" /></button>
@@ -732,128 +722,81 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
 
                 {isOpen ? (
                   <div className="grid gap-4 p-4">
-                    <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-                      <label className="grid gap-1 text-xs font-medium text-slate-600">
-                        Step description
-                        <input
-                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
-                          onChange={(event) => updateStep(index, { message: event.target.value, title: event.target.value })}
-                          value={step.message}
-                        />
-                      </label>
-                      <label className="grid gap-1 text-xs font-medium text-slate-600">
-                        Step purpose
-                        <select
-                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
-                          onChange={(event) => updateStep(index, {
-                            stepPurpose: event.target.value === "navigation" ? "navigation" : "main",
-                            navigationMode: event.target.value === "navigation" ? step.navigationMode ?? "waitForUser" : undefined,
-                          })}
-                          value={purpose}
-                        >
-                          <option value="main">Main Training Step</option>
-                          <option value="navigation">Navigation Step</option>
-                        </select>
-                      </label>
-                    </div>
-
-                    <label className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                      <span>
-                        <span className="block text-sm font-semibold text-slate-950">Is main step</span>
-                        <span className="block text-xs text-slate-500">Uncheck for entry steps before the main guide flow.</span>
-                      </span>
-                      <input
-                        checked={step.isMainStep !== false}
-                        className="h-5 w-5 accent-slate-950"
-                        onChange={(event) => updateStep(index, { isMainStep: event.target.checked })}
-                        type="checkbox"
-                      />
-                    </label>
-
-                    <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
-                      {purpose === "navigation" ? (
-                        <label className="grid gap-1 text-xs font-medium text-amber-900">
-                          Navigation behavior
-                          <select className="h-10 rounded-lg border border-amber-200 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-amber-700" onChange={(event) => updateStep(index, { navigationMode: event.target.value === "autoClick" ? "autoClick" : "waitForUser" })} value={step.navigationMode ?? "waitForUser"}>
-                            <option value="waitForUser">Wait for user click</option>
-                            <option value="autoClick">Auto-click this control</option>
+                    <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+                      <div className="grid content-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <label className="grid gap-1 text-xs font-medium text-slate-600">
+                          Step purpose
+                          <select
+                            className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                            onChange={(event) => updateStep(index, {
+                              stepPurpose: event.target.value === "navigation" ? "navigation" : "main",
+                              navigationMode: event.target.value === "navigation" ? step.navigationMode ?? "waitForUser" : undefined,
+                              trigger: event.target.value === "navigation" ? "click" : step.trigger
+                            })}
+                            value={purpose}
+                          >
+                            <option value="main">Main Training Step</option>
+                            <option value="navigation">Navigation Step</option>
                           </select>
                         </label>
-                      ) : null}
-                      <label className="grid gap-1 text-xs font-medium text-slate-600">
-                        Continue when
-                        <select
-                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
-                          onChange={(event) => updateStep(index, {
-                            continueWhen: event.target.value === "urlContains"
-                              ? { type: "urlContains", value: continueWhenValue }
-                              : event.target.value === "elementVisible"
-                              ? { type: "elementVisible", selector: continueWhenValue }
-                              : { type: "manualNext" }
-                          })}
-                          value={continueWhenType}
-                        >
-                          <option value="manualNext">Manual next</option>
-                          <option value="urlContains">URL contains</option>
-                          <option value="elementVisible">Element visible</option>
-                        </select>
-                      </label>
-                      <label className="grid gap-1 text-xs font-medium text-slate-600">
-                        Condition value
-                        <input
-                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900 disabled:bg-slate-100 disabled:text-slate-400"
-                          disabled={continueWhenType === "manualNext"}
-                          onChange={(event) => updateStep(index, {
-                            continueWhen: continueWhenType === "urlContains"
-                              ? { type: "urlContains", value: event.target.value }
-                              : continueWhenType === "elementVisible"
-                              ? { type: "elementVisible", selector: event.target.value }
-                              : { type: "manualNext" }
-                          })}
-                          placeholder={continueWhenType === "urlContains" ? "/target-page" : continueWhenType === "elementVisible" ? "[data-adoption-id='target']" : ""}
-                          value={continueWhenValue}
+                        <label className="grid gap-1 text-xs font-medium text-slate-600">
+                          URL match
+                          <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900" onChange={(event) => updateStep(index, { urlMatch: relativeUrl(event.target.value) })} value={relativeUrl(step.urlMatch)} />
+                        </label>
+                        {purpose === "navigation" ? (
+                          <label className="grid gap-1 text-xs font-medium text-slate-600">
+                            Navigation behavior
+                            <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900" onChange={(event) => updateStep(index, { navigationMode: event.target.value === "autoClick" ? "autoClick" : "waitForUser" })} value={step.navigationMode ?? "waitForUser"}>
+                              <option value="waitForUser">Wait for user click</option>
+                              <option value="autoClick">Auto-click this control</option>
+                            </select>
+                          </label>
+                        ) : null}
+                        {purpose === "main" ? (
+                          <label className="grid gap-1 text-xs font-medium text-slate-600">
+                            Trigger
+                            <select
+                              className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                              onChange={(event) => updateStep(index, {
+                                trigger: event.target.value === "change"
+                                  ? "change"
+                                  : event.target.value === "blur"
+                                  ? "blur"
+                                  : event.target.value === "focus"
+                                  ? "focus"
+                                  : event.target.value === "input"
+                                  ? "input"
+                                  : event.target.value === "manualNext"
+                                  ? "manualNext"
+                                  : "click"
+                              })}
+                              value={step.trigger}
+                            >
+                              <option value="click">Click</option>
+                              <option value="change">Change</option>
+                              <option value="blur">Blur</option>
+                              <option value="focus">Focus</option>
+                              {step.trigger === "input" ? <option value="input">Input</option> : null}
+                              <option value="manualNext">Manual next</option>
+                            </select>
+                          </label>
+                        ) : null}
+                      </div>
+
+                      <div className="grid gap-1 text-xs font-medium text-slate-600">
+                        <RichTextEditor
+                          guides={guides}
+                          label="Step description"
+                          onChange={(value) => updateStep(index, { message: value, title: plainTextFromHtml(value) || "Untitled step" })}
+                          value={step.message}
                         />
-                      </label>
+                      </div>
                     </div>
 
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <label className="grid gap-1 text-xs font-medium text-slate-600">
-                        URL match
-                        <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900" onChange={(event) => updateStep(index, { urlMatch: relativeUrl(event.target.value) })} value={relativeUrl(step.urlMatch)} />
-                      </label>
-                      <label className="grid gap-1 text-xs font-medium text-slate-600">
-                        Trigger
-                        <select
-                          className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
-                          onChange={(event) => updateStep(index, {
-                            trigger: event.target.value === "change"
-                              ? "change"
-                              : event.target.value === "blur"
-                              ? "blur"
-                              : event.target.value === "focus"
-                              ? "focus"
-                              : event.target.value === "input"
-                              ? "input"
-                              : event.target.value === "manualNext"
-                              ? "manualNext"
-                              : "click"
-                          })}
-                          value={step.trigger}
-                        >
-                          <option value="click">Click</option>
-                          <option value="change">Change</option>
-                          <option value="blur">Blur</option>
-                          <option value="focus">Focus</option>
-                          {step.trigger === "input" ? <option value="input">Input</option> : null}
-                          <option value="manualNext">Manual next</option>
-                        </select>
-                      </label>
-                    </div>
-
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs font-medium text-slate-600">Selector summary</p>
-                      <p className="mt-1 rounded-lg bg-white px-3 py-2 text-xs leading-5 text-slate-600">{controlIdentifierSummary(step)}</p>
-                    </div>
+                    <SelectorDetailsEditor
+                      onChange={(target) => updateStep(index, { target })}
+                      target={step.target}
+                    />
                   </div>
                 ) : null}
               </div>
@@ -870,26 +813,8 @@ function editorFromGuide(guide: GuidedWorkflowRow | null): EditorState {
     title: guide?.title ?? "",
     description: guide?.description ?? "",
     status: guide?.status ?? "draft",
-    steps: (guide?.steps ?? []).map((step) => ({
-      ...step,
-      isMainStep: step.isMainStep !== false,
-      continueWhen: normalizeContinueWhen(step.continueWhen)
-    }))
+    steps: guide?.steps ?? []
   };
-}
-
-function normalizeContinueWhen(value: unknown): ContinueWhen {
-  if (value && typeof value === "object") {
-    const candidate = value as { type?: unknown; value?: unknown; selector?: unknown };
-    if (candidate.type === "urlContains") {
-      return { type: "urlContains", value: typeof candidate.value === "string" ? candidate.value : "" };
-    }
-    if (candidate.type === "elementVisible") {
-      return { type: "elementVisible", selector: typeof candidate.selector === "string" ? candidate.selector : "" };
-    }
-  }
-
-  return { type: "manualNext" };
 }
 
 function controlIdentifierSummary(step: GuideStep) {
@@ -902,6 +827,19 @@ function controlIdentifierSummary(step: GuideStep) {
   ].filter(Boolean);
 
   return parts.join(" | ") || "No control identifier captured.";
+}
+
+function controlIdentifierText(target: TargetElement) {
+  const bestSelector = target.selectorCandidates?.[0];
+  const parts = [
+    target.labelText ? `Label: ${target.labelText}` : null,
+    target.accessibleName ? `Name: ${target.accessibleName}` : null,
+    target.tagName ? `Tag: ${target.tagName}` : null,
+    target.role ? `Role: ${target.role}` : null,
+    bestSelector ? `Best selector: ${bestSelector.type}` : null
+  ].filter(Boolean);
+
+  return parts.join(" | ") || "No control identity details captured.";
 }
 
 function relativeUrl(value: string) {
@@ -975,7 +913,7 @@ function downloadJson(filename: string, value: unknown) {
 function installSnippet(targetAppId: string) {
   const baseUrl = getScoutBaseUrl();
 
-  return `<script src="${baseUrl}/scout-adoption-player.js"></script>
+  return `<script src="${baseUrl}/scout-smart-adoption-player.js"></script>
 <script>
   ScoutAdoptionPlayer.init({
     scoutBaseUrl: "${baseUrl}",
@@ -990,6 +928,306 @@ function Panel({ children, title }: { children: ReactNode; title: string }) {
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
   return <label className="block"><span className="text-sm font-medium text-slate-700">{label}</span><div className="mt-2 [&_.input]:w-full [&_.input]:rounded-lg [&_.input]:border [&_.input]:border-slate-200 [&_.input]:bg-white [&_.input]:px-3 [&_.input]:text-sm [&_.input]:outline-none [&_.input:focus]:border-slate-900 [&_input.input]:h-10 [&_select.input]:h-10">{children}</div></label>;
+}
+
+function RichTextEditor({ guides, label, onChange, value }: { guides: GuidedWorkflowRow[]; label: string; onChange: (value: string) => void; value: string }) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const savedRangeRef = useRef<Range | null>(null);
+  const [linkUrl, setLinkUrl] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const workflowLinkOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return guides.filter((guide) => {
+      if (seen.has(guide.id)) return false;
+      seen.add(guide.id);
+      return true;
+    });
+  }, [guides]);
+
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value || "";
+    }
+  }, [value]);
+
+  function rememberSelection() {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0 && editorRef.current?.contains(selection.anchorNode)) {
+      savedRangeRef.current = selection.getRangeAt(0).cloneRange();
+    }
+  }
+
+  function restoreSelection() {
+    const range = savedRangeRef.current;
+    if (!range) return false;
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    return true;
+  }
+
+  function syncValue() {
+    onChange(sanitizeGuideHtml(editorRef.current?.innerHTML ?? ""));
+  }
+
+  function runCommand(command: string, valueArg?: string) {
+    editorRef.current?.focus();
+    restoreSelection();
+    document.execCommand(command, false, valueArg);
+    syncValue();
+  }
+
+  function insertLink(url: string, text?: string) {
+    const nextUrl = url.trim();
+    if (!nextUrl) return;
+    editorRef.current?.focus();
+    restoreSelection();
+    const displayText = text?.trim() || nextUrl;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      document.execCommand("insertHTML", false, `<a href="${escapeAttribute(nextUrl)}">${escapeHtmlForEditor(displayText)}</a>`);
+    } else {
+      document.execCommand("createLink", false, nextUrl);
+    }
+    syncValue();
+    setLinkUrl("");
+  }
+
+  return (
+    <div className="grid gap-1">
+      <div className="flex items-center justify-between gap-2">
+        <span>{label}</span>
+        <button className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-50" onClick={() => setPreviewOpen(true)} type="button">
+          <Eye className="h-3.5 w-3.5" /> Preview
+        </button>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-slate-300 bg-white">
+        <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 p-1.5">
+          <button className="rounded-md px-2 py-1 text-xs font-bold text-slate-700 hover:bg-white" onClick={() => runCommand("bold")} type="button">B</button>
+          <button className="rounded-md px-2 py-1 text-xs italic text-slate-700 hover:bg-white" onClick={() => runCommand("italic")} type="button">I</button>
+          <button className="rounded-md px-2 py-1 text-xs underline text-slate-700 hover:bg-white" onClick={() => runCommand("underline")} type="button">U</button>
+          <button className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-white" onClick={() => runCommand("insertUnorderedList")} type="button">Bullets</button>
+          <button className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-white" onClick={() => runCommand("insertOrderedList")} type="button">Numbers</button>
+          <select className="h-7 rounded-md border border-slate-200 bg-white px-2 text-xs font-normal text-slate-700 outline-none focus:border-slate-900" onChange={(event) => { runCommand("fontName", event.target.value); event.target.value = ""; }} defaultValue="">
+            <option value="" disabled>Font</option>
+            <option value="Arial">Arial</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Tahoma">Tahoma</option>
+            <option value="Verdana">Verdana</option>
+            <option value="Courier New">Courier New</option>
+          </select>
+          <input aria-label="Text color" className="h-7 w-9 rounded-md border border-slate-200 bg-white p-1" onChange={(event) => runCommand("foreColor", event.target.value)} type="color" />
+          <input aria-label="Highlight color" className="h-7 w-9 rounded-md border border-slate-200 bg-white p-1" onChange={(event) => runCommand("hiliteColor", event.target.value)} type="color" />
+          <span className="mx-1 h-5 w-px bg-slate-200" />
+          <input className="h-7 min-w-36 flex-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-normal outline-none focus:border-slate-900" onFocus={rememberSelection} onMouseDown={rememberSelection} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https:// or /internal-url" value={linkUrl} />
+          <button className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-900 px-2 text-xs font-semibold text-white" onClick={() => insertLink(linkUrl)} type="button"><LinkIcon className="h-3 w-3" /> Link</button>
+          <select className="h-7 max-w-48 rounded-md border border-slate-200 bg-white px-2 text-xs font-normal text-slate-700 outline-none focus:border-slate-900" onChange={(event) => {
+            const guide = guides.find((item) => item.id === event.target.value);
+            if (guide) insertLink(`#scout-guide:${guide.id}`, `Follow workflow: ${guide.title}`);
+            event.target.value = "";
+          }} defaultValue="">
+            <option value="" disabled>Link workflow</option>
+            {workflowLinkOptions.map((guide) => <option key={`workflow-link-${guide.id}`} value={guide.id}>{guide.title}</option>)}
+          </select>
+          <button className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-white" onClick={() => runCommand("removeFormat")} type="button">Clear</button>
+        </div>
+        <div
+          className="min-h-32 max-h-64 overflow-auto px-3 py-2 text-sm font-normal leading-6 text-slate-900 outline-none focus:ring-4 focus:ring-slate-900/10 [&_a]:text-blue-700 [&_a]:underline [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc"
+          contentEditable
+          onKeyUp={rememberSelection}
+          onMouseUp={rememberSelection}
+          onBlur={(event) => onChange(sanitizeGuideHtml(event.currentTarget.innerHTML))}
+          onInput={(event) => onChange(sanitizeGuideHtml(event.currentTarget.innerHTML))}
+          ref={editorRef}
+          role="textbox"
+          suppressContentEditableWarning
+        />
+      </div>
+      {previewOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4" onClick={() => setPreviewOpen(false)}>
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-4 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-slate-950">Step description preview</p>
+              <button className="rounded-md px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100" onClick={() => setPreviewOpen(false)} type="button">Close</button>
+            </div>
+            <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: sanitizeGuideHtml(value) || "<p>No description.</p>" }} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function sanitizeGuideHtml(value: string) {
+  if (typeof document === "undefined") return value;
+  const template = document.createElement("template");
+  template.innerHTML = value;
+  const allowedTags = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A", "FONT", "SPAN"]);
+  template.content.querySelectorAll("*").forEach((element) => {
+    if (!allowedTags.has(element.tagName)) {
+      element.replaceWith(...Array.from(element.childNodes));
+      return;
+    }
+    Array.from(element.attributes).forEach((attribute) => {
+      const allowedHref = element.tagName === "A" && attribute.name === "href" && /^(https?:\/\/|\/|#scout-guide:)/i.test(attribute.value);
+      const allowedFont = element.tagName === "FONT" && ["color", "face"].includes(attribute.name);
+      const allowedStyle = element.tagName === "SPAN" && attribute.name === "style";
+      if (allowedStyle) {
+        const safeRules = attribute.value.split(";").map((rule) => rule.trim()).filter((rule) => /^(color|background-color|font-family)\s*:/i.test(rule) && !/url|expression|javascript/i.test(rule));
+        if (safeRules.length > 0) element.setAttribute("style", safeRules.join("; "));
+        else element.removeAttribute("style");
+      } else if (!allowedHref && !allowedFont) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+    if (element.tagName === "A") {
+      element.setAttribute("target", "_blank");
+      element.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+  return template.innerHTML.replace(/<div><br><\/div>/g, "<br>").trim();
+}
+
+function plainTextFromHtml(value: string) {
+  if (typeof document === "undefined") return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const template = document.createElement("template");
+  template.innerHTML = value;
+  return (template.content.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+function escapeAttribute(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[char] ?? char));
+}
+
+function escapeHtmlForEditor(value: string) {
+  return escapeAttribute(value);
+}
+
+function SelectorDetailsEditor({ onChange, target }: { onChange: (target: TargetElement) => void; target: TargetElement }) {
+  const [open, setOpen] = useState(false);
+
+  function patchTarget(patch: Partial<TargetElement>) {
+    onChange({ ...target, ...patch });
+  }
+
+  function patchCandidate(index: number, patch: Partial<SelectorCandidate>) {
+    const selectorCandidates = (target.selectorCandidates ?? []).map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, ...patch } : candidate);
+    patchTarget({ selectorCandidates });
+  }
+
+  function addCandidate() {
+    patchTarget({
+      selectorCandidates: [
+        ...(target.selectorCandidates ?? []),
+        { type: "css", value: "", confidence: 0.5, reason: "Trainer-added selector" }
+      ]
+    });
+  }
+
+  function deleteCandidate(index: number) {
+    patchTarget({ selectorCandidates: (target.selectorCandidates ?? []).filter((_, candidateIndex) => candidateIndex !== index) });
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setOpen((current) => !current)} type="button">
+          <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`} />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-700">Control identification details</p>
+            <p className="mt-1 truncate text-[11px] text-slate-500">{controlIdentifierText(target)}</p>
+          </div>
+        </button>
+        {open ? (
+          <button className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 hover:bg-slate-50" onClick={addCandidate} type="button"><Plus className="h-3.5 w-3.5" /> Add selector</button>
+        ) : null}
+      </div>
+
+      {open ? (
+        <>
+          <div className="mt-3 border-t border-slate-200 pt-3">
+            <p className="text-[11px] text-slate-500">Fine tune how Scout finds this control during playback.</p>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <TargetTextField label="Fallback text" onChange={(value) => patchTarget({ fallbackText: value })} value={target.fallbackText} />
+            <TargetTextField label="Tag name" onChange={(value) => patchTarget({ tagName: value })} value={target.tagName} />
+            <TargetTextField label="Role" onChange={(value) => patchTarget({ role: value })} value={target.role} />
+            <TargetTextField label="Accessible name" onChange={(value) => patchTarget({ accessibleName: value })} value={target.accessibleName} />
+            <TargetTextField label="Label text" onChange={(value) => patchTarget({ labelText: value })} value={target.labelText} />
+            <TargetTextField label="Visible text" onChange={(value) => patchTarget({ text: value })} value={target.text} />
+            <TargetTextField label="ARIA label" onChange={(value) => patchTarget({ ariaLabel: value })} value={target.ariaLabel} />
+            <TargetTextField label="Placeholder" onChange={(value) => patchTarget({ placeholder: value })} value={target.placeholder} />
+            <TargetTextField label="Name" onChange={(value) => patchTarget({ name: value })} value={target.name} />
+            <TargetTextField label="Input type" onChange={(value) => patchTarget({ inputType: value })} value={target.inputType} />
+            <TargetTextField label="Selected option text" onChange={(value) => patchTarget({ selectedOptionText: value })} value={target.selectedOptionText} />
+            <TargetTextField label="Nearby heading" onChange={(value) => patchTarget({ nearbyHeading: value })} value={target.nearbyHeading} />
+            <TargetTextField label="Parent container text" onChange={(value) => patchTarget({ parentContainerText: value })} value={target.parentContainerText} />
+            <TargetTextField label="Previous sibling text" onChange={(value) => patchTarget({ previousSiblingText: value })} value={target.previousSiblingText} />
+            <TargetTextField label="Next sibling text" onChange={(value) => patchTarget({ nextSiblingText: value })} value={target.nextSiblingText} />
+            <TargetTextField label="Parent tag name" onChange={(value) => patchTarget({ parentTagName: value })} value={target.parentTagName} />
+            <TargetTextField label="Parent role" onChange={(value) => patchTarget({ parentRole: value })} value={target.parentRole} />
+            <TargetTextField label="Parent accessible name" onChange={(value) => patchTarget({ parentAccessibleName: value })} value={target.parentAccessibleName} />
+            <TargetTextField label="Parent text" onChange={(value) => patchTarget({ parentText: value })} value={target.parentText} />
+            <TargetTextField label="Form title" onChange={(value) => patchTarget({ formTitle: value })} value={target.formTitle} />
+            <TargetTextField label="Dialog title" onChange={(value) => patchTarget({ dialogTitle: value })} value={target.dialogTitle} />
+            <TargetTextField label="Card title" onChange={(value) => patchTarget({ cardTitle: value })} value={target.cardTitle} />
+            <TargetTextField label="CSS fallback" onChange={(value) => patchTarget({ cssFallback: value })} value={target.cssFallback} />
+            <TargetTextField label="XPath fallback" onChange={(value) => patchTarget({ xpathFallback: value })} value={target.xpathFallback} />
+          </div>
+
+          <div className="mt-4 grid gap-2">
+            <p className="text-xs font-semibold text-slate-700">Selector candidates</p>
+            {(target.selectorCandidates ?? []).map((candidate, index) => (
+              <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 lg:grid-cols-[150px_minmax(0,1fr)_110px_minmax(180px,.7fr)_32px]" key={`${candidate.type}-${index}`}>
+                <select className="h-9 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-slate-900" onChange={(event) => patchCandidate(index, { type: event.target.value as SelectorCandidateType })} value={candidate.type}>
+                  {selectorCandidateTypes.map((type) => <option key={type} value={type}>{humanizeKey(type)}</option>)}
+                </select>
+                <input className="h-9 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-slate-900" onChange={(event) => patchCandidate(index, { value: event.target.value })} placeholder="Selector value" value={candidate.value} />
+                <input className="h-9 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-slate-900" max={1} min={0} onChange={(event) => patchCandidate(index, { confidence: Number(event.target.value) })} step={0.01} type="number" value={candidate.confidence} />
+                <input className="h-9 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-slate-900" onChange={(event) => patchCandidate(index, { reason: event.target.value })} placeholder="Reason" value={candidate.reason} />
+                <button aria-label="Delete selector" className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-red-100 text-red-700 hover:bg-red-50" onClick={() => deleteCandidate(index)} type="button"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function TargetTextField({ label, onChange, value }: { label: string; onChange: (value: string | undefined) => void; value?: string }) {
+  return (
+    <label className="grid gap-1 text-[11px] font-semibold text-slate-600">
+      {label}
+      <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs font-normal text-slate-900 outline-none focus:border-slate-900" onChange={(event) => onChange(event.target.value || undefined)} value={value ?? ""} />
+    </label>
+  );
+}
+
+const selectorCandidateTypes: SelectorCandidateType[] = [
+  "data-adoption-id",
+  "data-testid",
+  "data-test",
+  "data-cy",
+  "id",
+  "name",
+  "aria-label",
+  "role-text",
+  "label-text",
+  "placeholder",
+  "text-context",
+  "css",
+  "xpath"
+];
+
+function humanizeKey(value: string) {
+  return value.replace(/[-_]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function IconAction({ children, disabled, label, onClick }: { children: ReactNode; disabled?: boolean; label: string; onClick: () => void }) {

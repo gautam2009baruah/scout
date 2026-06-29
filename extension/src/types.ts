@@ -5,7 +5,6 @@ export type {
   GuideStepTrigger,
   GuideStepPurpose,
   NavigationStepMode,
-  ContinueWhen,
   RecordedAction,
   RecordedActionType,
   SelectorCandidate,

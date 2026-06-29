@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { ScoutAdoptionLoader } from "@/components/scout-adoption-loader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,7 +15,6 @@ export default function RootLayout({
     <html lang="en">
       <body>
         {children}
-        <ScoutAdoptionLoader />
       </body>
     </html>
   );

@@ -12,28 +12,251 @@ function cssEscape(value: string): string {
  * Get visible text from an element (trimmed and limited)
  */
 function getVisibleText(element: Element): string {
+  if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
+    return "";
+  }
+
   return (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function ownTextWithoutInteractiveDescendants(element: Element, excludedDescendant?: Element): string {
+  const pieces: string[] = [];
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (excludedDescendant && excludedDescendant !== element && excludedDescendant.contains(parent)) return NodeFilter.FILTER_REJECT;
+      const interactiveAncestor = parent.closest("input, select, textarea, button, option, [contenteditable='true'], [role='button'], [role='link'], [role='combobox'], [role='listbox'], [role='option'], [role='menu'], [role='menuitem'], [role='checkbox'], [role='radio'], [role='switch'], [role='slider'], [role='textbox'], [role='tab']");
+      if (interactiveAncestor && interactiveAncestor !== element) return NodeFilter.FILTER_REJECT;
+      return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    }
+  });
+
+  let node = walker.nextNode();
+  while (node) {
+    pieces.push(node.textContent ?? "");
+    node = walker.nextNode();
+  }
+
+  return pieces.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function selectedControlDisplayText(element: HTMLElement): string | undefined {
+  if (element instanceof HTMLSelectElement) {
+    const selectedText = Array.from(element.selectedOptions).map((option) => option.textContent ?? "").join(" ");
+    return selectedText.replace(/\s+/g, " ").trim() || undefined;
+  }
+
+  const ariaValue = element.getAttribute("aria-valuetext");
+  if (ariaValue?.trim()) return ariaValue.trim();
+
+  const selected = element.querySelector("[aria-selected='true'], [data-selected='true'], .selected, [class*='selected']");
+  const selectedText = selected?.textContent?.replace(/\s+/g, " ").trim();
+  return selectedText || undefined;
+}
+
+function stripTrailingSelectedValue(labelText: string, control?: Element): string {
+  if (!(control instanceof HTMLElement)) return labelText;
+  const selectedText = selectedControlDisplayText(control);
+  if (!selectedText) return labelText;
+
+  const compactLabel = labelText.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const compactSelected = selectedText.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+  if (!compactSelected || !compactLabel.endsWith(compactSelected)) return labelText;
+
+  const words = labelText.split(/\s+/);
+  if (words.length > 1 && words[words.length - 1].toLowerCase().replace(/[^a-z0-9]+/g, "") === compactSelected) {
+    return words.slice(0, -1).join(" ").trim();
+  }
+
+  return labelText.slice(0, Math.max(0, labelText.length - selectedText.length)).replace(/\s+$/, "").trim();
+}
+
+function directChildContaining(label: HTMLLabelElement, control: Element): Element | null {
+  return Array.from(label.children).find((child) => child === control || child.contains(control)) ?? null;
+}
+
+function getLabelCaptionBeforeControl(label: HTMLLabelElement, control?: Element): string {
+  if (!control) return "";
+  const controlChild = directChildContaining(label, control);
+  if (!controlChild) return "";
+
+  const pieces: string[] = [];
+  let sibling = controlChild.previousElementSibling;
+  while (sibling) {
+    pieces.unshift(ownTextWithoutInteractiveDescendants(sibling));
+    sibling = sibling.previousElementSibling;
+  }
+
+  return pieces.join(" ").replace(/\s+/g, " ").trim();
+}
+
+function getLabelOwnText(label: HTMLLabelElement, control?: Element): string {
+  return stripTrailingSelectedValue(getLabelCaptionBeforeControl(label, control) || ownTextWithoutInteractiveDescendants(label, control), control);
+}
+
+function cleanText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function labelTextFromNativeControl(element: HTMLElement): string | undefined {
+  if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) {
+    return undefined;
+  }
+
+  const labels = element.labels ? Array.from(element.labels) : [];
+  for (const label of labels) {
+    const text = getWrappedLabelCaption(label, element);
+    if (text) return text;
+  }
+
+  return undefined;
+}
+
+function getWrappedLabelCaption(label: HTMLLabelElement, control: Element): string | undefined {
+  const parts: string[] = [];
+
+  for (const node of Array.from(label.childNodes)) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
+
+      if (element === control || element.contains(control)) {
+        continue;
+      }
+
+      if (
+        element.matches("span, p, strong, b, small")
+        || element.getAttribute("data-label") === "true"
+      ) {
+        const text = cleanText(element.textContent || "");
+        if (text) parts.push(text);
+      }
+    }
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = cleanText(node.textContent || "");
+      if (text) parts.push(text);
+    }
+  }
+
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+function getSelectedOptionText(element: HTMLElement): string | undefined {
+  if (!(element instanceof HTMLSelectElement)) return undefined;
+  return cleanText(element.selectedOptions[0]?.textContent || "") || undefined;
 }
 
 /**
  * Get label text associated with an input element
  */
 function getAssociatedLabelText(element: HTMLElement): string | undefined {
+  const nativeControlLabel = labelTextFromNativeControl(element);
+  if (nativeControlLabel) return nativeControlLabel;
+
   // Check for label[for="id"]
   if (element.id) {
     const label = document.querySelector<HTMLLabelElement>(
-      `label[for="${CSS.escape(element.id)}"]`
+      `label[for="${cssEscape(element.id)}"]`
     );
-    if (label) return label.innerText.trim();
+    if (label) return getLabelOwnText(label, element) || undefined;
   }
 
   // Check for wrapping label
   const wrappingLabel = element.closest("label");
   if (wrappingLabel) {
-    return wrappingLabel.textContent?.replace(/\s+/g, " ").trim();
+    return getLabelOwnText(wrappingLabel, element) || undefined;
   }
 
   return undefined;
+}
+
+function getAccessibleName(element: HTMLElement, labelText?: string): string | undefined {
+  const labelledBy = element.getAttribute("aria-labelledby");
+  if (labelledBy) {
+    const text = labelledBy
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent ?? "")
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text) return text.slice(0, 120);
+  }
+
+  return (
+    element.getAttribute("aria-label")
+    || labelText
+    || element.getAttribute("placeholder")
+    || getVisibleText(element)
+    || undefined
+  );
+}
+
+function textOf(element: Element | null | undefined, limit = 160): string | undefined {
+  if (!element) return undefined;
+  const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+  return text ? text.slice(0, limit) : undefined;
+}
+
+function previousSiblingText(element: Element): string | undefined {
+  let sibling = element.previousElementSibling;
+  while (sibling) {
+    const text = textOf(sibling, 120);
+    if (text) return text;
+    sibling = sibling.previousElementSibling;
+  }
+  return undefined;
+}
+
+function nextSiblingText(element: Element): string | undefined {
+  let sibling = element.nextElementSibling;
+  while (sibling) {
+    const text = textOf(sibling, 120);
+    if (text) return text;
+    sibling = sibling.nextElementSibling;
+  }
+  return undefined;
+}
+
+function nearestHeadingText(element: Element): string | undefined {
+  const container = element.closest("section, article, main, aside, form, dialog, [role='dialog'], [role='region'], [class*='card'], [class*='panel']");
+  const heading = container?.querySelector("h1, h2, h3, h4, h5, h6, [role='heading']");
+  return textOf(heading, 120);
+}
+
+function nearestContainerText(element: Element): string | undefined {
+  const container = element.closest("label, fieldset, section, article, form, dialog, [role='dialog'], [class*='card'], [class*='panel']");
+  if (!container) return undefined;
+  const clone = container.cloneNode(true) as Element;
+  clone.querySelectorAll("input, select, textarea, button, option, [contenteditable='true'], [role='combobox'], [role='listbox'], [role='option'], [role='menu'], [role='menuitem'], script, style").forEach((child) => child.remove());
+  return textOf(clone, 220);
+}
+
+function parentElementContext(element: Element) {
+  const parent = element.parentElement;
+  if (!parent) return {};
+  return {
+    parentTagName: parent.tagName.toLowerCase(),
+    parentRole: parent.getAttribute("role") || undefined,
+    parentAccessibleName: getAccessibleName(parent),
+    parentText: ownTextWithoutInteractiveDescendants(parent).slice(0, 180) || undefined
+  };
+}
+
+function formTitle(element: Element): string | undefined {
+  const form = element.closest("form, fieldset");
+  return textOf(form?.querySelector("legend, h1, h2, h3, h4, h5, h6"), 120);
+}
+
+function dialogTitle(element: Element): string | undefined {
+  const dialog = element.closest("dialog, [role='dialog'], [aria-modal='true']");
+  return textOf(dialog?.querySelector("h1, h2, h3, h4, h5, h6, [role='heading']"), 120);
+}
+
+function cardTitle(element: Element): string | undefined {
+  const card = element.closest("[data-card], [class*='card'], [class*='panel']");
+  return textOf(card?.querySelector("h1, h2, h3, h4, h5, h6, [role='heading']"), 120);
 }
 
 /**
@@ -337,11 +560,16 @@ export function buildElementIdentity(
   const htmlElement = element as HTMLElement;
   const visibleText = getVisibleText(element);
   const labelText = getAssociatedLabelText(htmlElement);
+  const selectedOptionText = getSelectedOptionText(htmlElement);
+  const accessibleName = getAccessibleName(htmlElement, labelText);
+  const parentContext = parentElementContext(element);
   const selectorCandidates = generateSelectorCandidates(
     element,
-    visibleText,
+    accessibleName || visibleText,
     labelText
   );
+  const cssFallback = selectorCandidates.find((candidate) => candidate.type === "css")?.value;
+  const xpathFallback = selectorCandidates.find((candidate) => candidate.type === "xpath")?.value;
 
   // Best confidence score from all candidates
   const confidenceScore = selectorCandidates[0]?.confidence ?? 0;
@@ -352,19 +580,33 @@ export function buildElementIdentity(
   return {
     tagName: element.tagName.toLowerCase(),
     role: element.getAttribute("role") || undefined,
+    accessibleName,
     text: visibleText || undefined,
     ariaLabel: element.getAttribute("aria-label") || undefined,
     labelText,
     placeholder: element.getAttribute("placeholder") || undefined,
     inputType: element instanceof HTMLInputElement ? element.type : undefined,
+    selectedOptionText,
     name: element.getAttribute("name") || undefined,
     id: element.id || undefined,
     dataAttributes: getDataAttributes(element),
+    nearbyHeading: nearestHeadingText(element),
+    parentContainerText: nearestContainerText(element),
+    previousSiblingText: previousSiblingText(element),
+    nextSiblingText: nextSiblingText(element),
+    ...parentContext,
+    formTitle: formTitle(element),
+    dialogTitle: dialogTitle(element),
+    cardTitle: cardTitle(element),
     url,
     path: window.location.pathname,
+    cssFallback,
+    xpathFallback,
     selectorCandidates,
     confidenceScore,
     needsUserConfirmation,
     boundingBox: getBoundingBox(element),
   };
 }
+
+export const buildControlFingerprint = buildElementIdentity;

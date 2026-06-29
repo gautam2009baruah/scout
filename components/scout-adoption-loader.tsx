@@ -5,7 +5,11 @@ import { useEffect } from "react";
 declare global {
   interface Window {
     ScoutAdoptionPlayer?: {
-      init(config: { scoutBaseUrl: string; targetAppId: string }): Promise<void>;
+      smartRuntime?: boolean;
+      init(config: { scoutBaseUrl?: string; targetAppId: string; autoShowLauncher?: boolean }): Promise<{
+        guides: unknown[];
+        play(guideId?: string): void;
+      }>;
     };
     ScoutAdoptionPlayerConfig?: {
       scoutBaseUrl: string;
@@ -28,12 +32,12 @@ export function ScoutAdoptionLoader() {
       return;
     }
 
-    if (document.querySelector<HTMLScriptElement>('script[src="http://localhost:3001/scout-adoption-player.js"]')) {
+    if (document.querySelector<HTMLScriptElement>('script[src="http://localhost:3001/scout-smart-adoption-player.js"]')) {
       return;
     }
 
     const script = document.createElement("script");
-    script.src = "http://localhost:3001/scout-adoption-player.js";
+    script.src = "http://localhost:3001/scout-smart-adoption-player.js";
     script.async = true;
     document.body.appendChild(script);
   }, []);

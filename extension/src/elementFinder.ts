@@ -4,23 +4,68 @@ import type { ElementIdentity, SelectorCandidate } from "./types";
  * Get visible text from an element
  */
 function getVisibleText(element: Element): string {
+  if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
+    return "";
+  }
+
   return (element.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+function cleanText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function getWrappedLabelCaption(label: HTMLLabelElement, control: Element): string | undefined {
+  const parts: string[] = [];
+
+  for (const node of Array.from(label.childNodes)) {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const element = node as Element;
+      if (element === control || element.contains(control)) continue;
+      if (element.matches("span, p, strong, b, small") || element.getAttribute("data-label") === "true") {
+        const text = cleanText(element.textContent || "");
+        if (text) parts.push(text);
+      }
+    }
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = cleanText(node.textContent || "");
+      if (text) parts.push(text);
+    }
+  }
+
+  return parts.length ? parts.join(" ") : undefined;
+}
+
+function labelTextFromNativeControl(element: HTMLElement): string | undefined {
+  if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) return undefined;
+
+  const labels = element.labels ? Array.from(element.labels) : [];
+  for (const label of labels) {
+    const text = getWrappedLabelCaption(label, element);
+    if (text) return text;
+  }
+
+  return undefined;
 }
 
 /**
  * Get label text associated with an element
  */
 function getAssociatedLabelText(element: HTMLElement): string | undefined {
+  const nativeControlLabel = labelTextFromNativeControl(element);
+  if (nativeControlLabel) return nativeControlLabel;
+
   if (element.id) {
     const label = document.querySelector<HTMLLabelElement>(
       `label[for="${CSS.escape(element.id)}"]`
     );
-    if (label) return label.innerText.trim();
+    if (label) return getWrappedLabelCaption(label, element);
   }
 
   const wrappingLabel = element.closest("label");
   if (wrappingLabel) {
-    return wrappingLabel.textContent?.replace(/\s+/g, " ").trim();
+    return getWrappedLabelCaption(wrappingLabel, element);
   }
 
   return undefined;
@@ -106,23 +151,17 @@ function tryFindByCandidate(
         // Find inputs by their associated label text
         const labels = Array.from(document.querySelectorAll("label"));
         for (const label of labels) {
-          const labelTextContent = label.textContent
-            ?.replace(/\s+/g, " ")
-            .trim();
-          if (
-            labelTextContent?.toLowerCase() ===
-            candidate.value.toLowerCase()
-          ) {
-            // Check for label[for] association
-            const forAttr = label.getAttribute("for");
-            if (forAttr) {
-              const target = document.getElementById(forAttr);
-              if (target) elements.push(target);
+          const controls = [
+            ...Array.from(label.querySelectorAll<HTMLElement>("input, select, textarea")),
+            ...Array.from(label.getAttribute("for") ? [document.getElementById(label.getAttribute("for") || "")].filter(Boolean) as HTMLElement[] : [])
+          ];
+
+          controls.forEach((control) => {
+            const labelTextContent = getWrappedLabelCaption(label, control);
+            if (labelTextContent?.toLowerCase() === candidate.value.toLowerCase()) {
+              elements.push(control);
             }
-            // Check for wrapping label
-            const input = label.querySelector("input, select, textarea");
-            if (input) elements.push(input);
-          }
+          });
         }
         break;
       }

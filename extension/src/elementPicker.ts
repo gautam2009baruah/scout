@@ -9,6 +9,20 @@ let pickerActive = false;
 let currentHighlightedElement: Element | null = null;
 let pickerResolve: ((identity: ElementIdentity | null) => void) | null = null;
 
+function controlElementFromTarget(target: Element): Element {
+  const label = target.closest("label");
+  if (target instanceof HTMLLabelElement) {
+    const nestedControl = target.querySelector("input, select, textarea, button, [role='combobox'], [role='button'], [role='textbox'], [tabindex]:not([tabindex='-1'])");
+    if (nestedControl) return nestedControl;
+  }
+
+  const directControl = target.closest("input, select, textarea, button, [role='combobox'], [role='button'], [role='textbox'], [role='switch'], [role='checkbox'], [role='radio'], [role='link'], [role='menuitem'], [tabindex]:not([tabindex='-1'])");
+  if (directControl) return directControl;
+
+  const labelControl = label?.querySelector("input, select, textarea, button, [role='combobox'], [role='button'], [role='textbox'], [tabindex]:not([tabindex='-1'])");
+  return labelControl ?? target;
+}
+
 /**
  * Create styles for picker mode
  */
@@ -201,8 +215,8 @@ function handleMouseMove(event: MouseEvent) {
     return;
   }
 
-  currentHighlightedElement = target;
-  updateHighlight(target);
+  currentHighlightedElement = controlElementFromTarget(target);
+  updateHighlight(currentHighlightedElement);
 }
 
 /**
@@ -230,7 +244,7 @@ function handleClick(event: MouseEvent) {
   }
 
   // Capture element identity
-  const identity = buildElementIdentity(target, window.location.href);
+  const identity = buildElementIdentity(controlElementFromTarget(target), window.location.href);
 
   // Exit picker mode
   exitPickerMode();

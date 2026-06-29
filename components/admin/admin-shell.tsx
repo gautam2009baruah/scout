@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Bell, Bot, Building2, ChevronDown, FolderTree, LayoutDashboard, MapPinned, Search, ShieldCheck, TableProperties, UserPlus, UsersRound } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
+import { ScoutChatbot } from "@/components/scout-chatbot";
 
 type AdminShellProps = {
   active: AdminModuleKey;
@@ -22,6 +23,7 @@ const moduleIcons = {
 } as const;
 
 const TRAINING_SETUP_HREF = "/control-panel/administration/training-setup";
+const CRS_TARGET_APP_ID = "6f302bb3-f665-458d-87f3-59809dca63d0";
 
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
   const visibleModules = new Map(session.modules.map((module) => [module.key, module]));
@@ -126,6 +128,23 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           </footer>
         </section>
       </div>
+      <ScoutChatbot
+        assistantName="Scout Assistant"
+        badge="Control Panel"
+        companyId={session.user.tenantId}
+        defaultOpen={false}
+        modeNotice="Ask a knowledgebase question or start a CRS guided workflow from this same chatbot."
+        placeholder="Ask or request a workflow..."
+        quickPrompts={["How can I create a rate?", "Show guided workflows"]}
+        targetAppId={CRS_TARGET_APP_ID}
+        targetAppName="CRS"
+        theme={{
+          brandColor: "#111827",
+          accentColor: "#0ea5e9"
+        }}
+        userId={session.user.id}
+        variant="floating"
+      />
     </main>
   );
 }

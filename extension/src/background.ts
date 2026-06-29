@@ -114,10 +114,7 @@ async function syncActionsToScout(configOverride?: RecorderConfig) {
 
   for (let pendingIndex = 0; pendingIndex < pending.length; pendingIndex++) {
     const action = pending[pendingIndex];
-    const isMainStep = typeof action.isMainStep === "boolean"
-      ? action.isMainStep
-      : action.guidePhase === "entry" ? false : true;
-    await postAction({ ...action, isMainStep }, config);
+    await postAction(action, config);
   }
 
   const nextStatus = await getRecorderStatus();

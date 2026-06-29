@@ -8,6 +8,10 @@ function compactText(value?: string) {
   return value?.replace(/\s+/g, " ").trim() ?? "";
 }
 
+function plainTextFromHtml(value?: string) {
+  return compactText(value?.replace(/<[^>]+>/g, " "));
+}
+
 function trainerDescription(action: RecordedAction) {
   return compactText(action.stepDescription);
 }
@@ -23,7 +27,7 @@ function bestElementName(action: RecordedAction) {
 
 function titleForAction(action: RecordedAction) {
   const description = trainerDescription(action);
-  if (description) return description;
+  if (description) return plainTextFromHtml(description) || "Guide step";
 
   const name = bestElementName(action);
 
@@ -132,15 +136,37 @@ export function generateGuideFromRecording(actions: RecordedAction[], input?: { 
       target: {
         selectorCandidates: action.selectorCandidates ?? [],
         fallbackText: bestElementName(action),
-        role: action.role,
-        tagName: action.tagName
+        role: action.elementIdentity?.role ?? action.role,
+        tagName: action.elementIdentity?.tagName ?? action.tagName,
+        accessibleName: action.elementIdentity?.accessibleName,
+        text: action.elementIdentity?.text ?? action.elementText,
+        ariaLabel: action.elementIdentity?.ariaLabel ?? action.ariaLabel,
+        labelText: action.elementIdentity?.labelText ?? action.labelText,
+        placeholder: action.elementIdentity?.placeholder,
+        inputType: action.elementIdentity?.inputType ?? action.inputType,
+        selectedOptionText: action.elementIdentity?.selectedOptionText ?? action.selectedOptionText,
+        name: action.elementIdentity?.name,
+        id: action.elementIdentity?.id,
+        dataAttributes: action.elementIdentity?.dataAttributes,
+        nearbyHeading: action.elementIdentity?.nearbyHeading,
+        parentContainerText: action.elementIdentity?.parentContainerText,
+        previousSiblingText: action.elementIdentity?.previousSiblingText,
+        nextSiblingText: action.elementIdentity?.nextSiblingText,
+        parentTagName: action.elementIdentity?.parentTagName,
+        parentRole: action.elementIdentity?.parentRole,
+        parentAccessibleName: action.elementIdentity?.parentAccessibleName,
+        parentText: action.elementIdentity?.parentText,
+        formTitle: action.elementIdentity?.formTitle,
+        dialogTitle: action.elementIdentity?.dialogTitle,
+        cardTitle: action.elementIdentity?.cardTitle,
+        cssFallback: action.elementIdentity?.cssFallback,
+        xpathFallback: action.elementIdentity?.xpathFallback,
+        boundingBox: action.elementIdentity?.boundingBox
       },
       title: titleForAction(action),
       message: messageForAction(action),
       stepPurpose: action.stepPurpose ?? "main",
-      isMainStep: typeof action.isMainStep === "boolean" ? action.isMainStep : action.guidePhase !== "entry",
       navigationMode: action.stepPurpose === "navigation" ? action.navigationMode ?? "waitForUser" : undefined,
-      continueWhen: action.continueWhen ?? { type: "manualNext" },
       trigger: triggerForAction(action),
       actionSourceId: action.id
     }));

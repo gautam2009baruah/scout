@@ -27,6 +27,8 @@ const capabilities = [
   }
 ];
 
+const CRS_TARGET_APP_ID = "6f302bb3-f665-458d-87f3-59809dca63d0";
+
 export default function Home() {
   return (
     <main className="min-h-screen overflow-hidden bg-[#f6f7fb] text-slate-950">
@@ -83,6 +85,8 @@ export default function Home() {
   position="bottom-right"
   assistantName="Acme Assistant"
   companyId="fb88ab9c-36e9-42dc-8df1-710ec6f6065f"
+  targetAppId="${CRS_TARGET_APP_ID}"
+  targetAppName="CRS"
   userId="9cf813e7-0cdb-4945-a585-31fbb9fdc719"
   theme={{ brandColor: "#111827", accentColor: "#0ea5e9" }}
 />`}</code>
@@ -95,14 +99,17 @@ export default function Home() {
               assistantName="Acme Assistant"
               badge="Widget"
               companyId="fb88ab9c-36e9-42dc-8df1-710ec6f6065f"
-              modeNotice={null}
-              placeholder="Ask the assistant..."
-              quickPrompts={[]}
+              modeNotice="Prototype mode: knowledgebase answers and guided workflow suggestions are mocked in this same chatbot for review."
+              placeholder="Ask or request a workflow..."
+              quickPrompts={["How can I create a rate?", "Show guided workflows"]}
               theme={{
                 brandColor: "#111827",
                 accentColor: "#0ea5e9"
               }}
+              targetAppId={CRS_TARGET_APP_ID}
+              targetAppName="CRS"
               userId="9cf813e7-0cdb-4945-a585-31fbb9fdc719"
+              variant="floating"
             />
           </div>
         </div>

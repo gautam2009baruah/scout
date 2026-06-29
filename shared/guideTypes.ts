@@ -1,10 +1,6 @@
 export type RecordedActionType = "click" | "input" | "navigation" | "submit" | "change" | "manual-select";
 export type GuideStepPurpose = "navigation" | "main";
 export type NavigationStepMode = "autoClick" | "waitForUser";
-export type ContinueWhen =
-  | { type: "urlContains"; value: string }
-  | { type: "elementVisible"; selector: string }
-  | { type: "manualNext" };
 
 export type SelectorCandidateType =
   | "data-adoption-id"
@@ -34,16 +30,31 @@ export type SelectorCandidate = {
 export type ElementIdentity = {
   tagName: string;
   role?: string;
+  accessibleName?: string;
   text?: string;
   ariaLabel?: string;
   labelText?: string;
   placeholder?: string;
   inputType?: string;
+  selectedOptionText?: string;
   name?: string;
   id?: string;
   dataAttributes: Record<string, string>;
+  nearbyHeading?: string;
+  parentContainerText?: string;
+  previousSiblingText?: string;
+  nextSiblingText?: string;
+  parentTagName?: string;
+  parentRole?: string;
+  parentAccessibleName?: string;
+  parentText?: string;
+  formTitle?: string;
+  dialogTitle?: string;
+  cardTitle?: string;
   url: string;
   path: string;
+  cssFallback?: string;
+  xpathFallback?: string;
   selectorCandidates: SelectorCandidate[];
   confidenceScore: number;
   needsUserConfirmation: boolean;
@@ -62,10 +73,7 @@ export type RecordedAction = {
   timestamp: number;
   stepOrder?: number;
   stepPurpose?: GuideStepPurpose;
-  isMainStep?: boolean;
-  guidePhase?: "entry" | "main";
   navigationMode?: NavigationStepMode;
-  continueWhen?: ContinueWhen;
   trigger?: GuideStepTrigger;
   elementIdentity?: ElementIdentity;
   stepDescription?: string;
@@ -78,6 +86,7 @@ export type RecordedAction = {
   role?: string;
   tagName?: string;
   inputType?: string;
+  selectedOptionText?: string;
   labelText?: string;
   nearbyText?: string;
   valueMasked?: string;
@@ -89,22 +98,56 @@ export type TargetElement = {
   fallbackText?: string;
   role?: string;
   tagName?: string;
+  accessibleName?: string;
+  text?: string;
+  ariaLabel?: string;
+  labelText?: string;
+  placeholder?: string;
+  inputType?: string;
+  selectedOptionText?: string;
+  name?: string;
+  id?: string;
+  dataAttributes?: Record<string, string>;
+  nearbyHeading?: string;
+  parentContainerText?: string;
+  previousSiblingText?: string;
+  nextSiblingText?: string;
+  parentTagName?: string;
+  parentRole?: string;
+  parentAccessibleName?: string;
+  parentText?: string;
+  formTitle?: string;
+  dialogTitle?: string;
+  cardTitle?: string;
+  cssFallback?: string;
+  xpathFallback?: string;
+  boundingBox?: ElementIdentity["boundingBox"];
 };
 
 export type GuideStep = {
   id: string;
   order: number;
+  type?: "highlight" | "click" | "input" | "waitForUrl" | "waitForElement" | "manualInstruction";
   urlMatch: string;
   target: TargetElement;
   title: string;
   message: string;
   stepPurpose?: GuideStepPurpose;
   navigationMode?: NavigationStepMode;
-  continueWhen?: ContinueWhen;
-  isMainStep?: boolean;
+  autoClick?: boolean;
   trigger: GuideStepTrigger;
   validation?: Record<string, unknown>;
   actionSourceId: string;
+};
+
+export type GuidePageContext = {
+  url: string;
+  title?: string;
+};
+
+export type GoalContext = GuidePageContext & {
+  target?: TargetElement;
+  requiredElement?: TargetElement;
 };
 
 export type Guide = {
@@ -114,5 +157,9 @@ export type Guide = {
   status: GuideStatus;
   createdAt: string;
   updatedAt: string;
+  startContext?: GuidePageContext;
+  goalContext?: GoalContext;
+  entrySteps?: GuideStep[];
+  mainSteps?: GuideStep[];
   steps: GuideStep[];
 };

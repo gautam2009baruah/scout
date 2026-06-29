@@ -1,4 +1,4 @@
-import type { RecordedAction, RecordedActionType, ElementIdentity, GuideStepPurpose, NavigationStepMode, ContinueWhen, GuideStepTrigger } from "./types";
+import type { RecordedAction, RecordedActionType, ElementIdentity, GuideStepPurpose, NavigationStepMode, GuideStepTrigger } from "./types";
 import { buildElementIdentity } from "./controlIdentity";
 
 const sensitiveNamePattern = /(password|token|secret|card|cvv|otp|ssn|account)/i;
@@ -105,7 +105,6 @@ export function createRecordedAction(
     maskedValue,
     originalEventType,
     trigger: defaultTriggerForElementIdentity(elementIdentity),
-    isMainStep: true,
     // Legacy fields for backward compatibility
     selectorCandidates: elementIdentity.selectorCandidates,
     elementText: elementIdentity.text,
@@ -113,6 +112,7 @@ export function createRecordedAction(
     role: elementIdentity.role,
     tagName: elementIdentity.tagName,
     inputType: field instanceof HTMLInputElement ? field.type : undefined,
+    selectedOptionText: elementIdentity.selectedOptionText,
     labelText: elementIdentity.labelText,
     valueMasked: maskedValue,
   };
@@ -127,9 +127,7 @@ export function createManualSelectAction(
   stepOrder?: number,
   stepPurpose: GuideStepPurpose = "main",
   navigationMode?: NavigationStepMode,
-  continueWhen?: ContinueWhen,
-  trigger: GuideStepTrigger = defaultTriggerForElementIdentity(elementIdentity),
-  isMainStep = true
+  trigger: GuideStepTrigger = defaultTriggerForElementIdentity(elementIdentity)
 ): RecordedAction {
   return {
     id: createId(),
@@ -139,9 +137,7 @@ export function createManualSelectAction(
     stepOrder,
     stepPurpose,
     navigationMode: stepPurpose === "navigation" ? navigationMode ?? "waitForUser" : undefined,
-    continueWhen,
-    trigger,
-    isMainStep,
+    trigger: stepPurpose === "navigation" ? undefined : trigger,
     elementIdentity,
     stepDescription: stepDescription?.trim() || undefined,
     originalEventType: "manual-picker",
@@ -152,6 +148,7 @@ export function createManualSelectAction(
     role: elementIdentity.role,
     tagName: elementIdentity.tagName,
     inputType: elementIdentity.inputType,
+    selectedOptionText: elementIdentity.selectedOptionText,
     labelText: elementIdentity.labelText,
   };
 }
