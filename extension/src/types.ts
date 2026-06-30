@@ -35,6 +35,7 @@ export type RecorderConfig = {
   recorderToken: string;
   sessionTitle?: string;
   recordingSessionId?: string;
+  topicId?: string;
   ingestPath?: string;
 };
 

@@ -27,7 +27,8 @@ const capabilities = [
   }
 ];
 
-const CRS_TARGET_APP_ID = "6f302bb3-f665-458d-87f3-59809dca63d0";
+const CRS_SCOUT_BASE_URL = "http://localhost:3000";
+const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 
 export default function Home() {
   return (
@@ -85,6 +86,7 @@ export default function Home() {
   position="bottom-right"
   assistantName="Acme Assistant"
   companyId="fb88ab9c-36e9-42dc-8df1-710ec6f6065f"
+  scoutBaseUrl="${CRS_SCOUT_BASE_URL}"
   targetAppId="${CRS_TARGET_APP_ID}"
   targetAppName="CRS"
   userId="9cf813e7-0cdb-4945-a585-31fbb9fdc719"
@@ -106,6 +108,7 @@ export default function Home() {
                 brandColor: "#111827",
                 accentColor: "#0ea5e9"
               }}
+              scoutBaseUrl={CRS_SCOUT_BASE_URL}
               targetAppId={CRS_TARGET_APP_ID}
               targetAppName="CRS"
               userId="9cf813e7-0cdb-4945-a585-31fbb9fdc719"

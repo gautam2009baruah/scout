@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, LinkIcon, Play, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, Play, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
+import type { Jodit as JoditInstance } from "jodit";
 import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
-import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
+import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
 
 type CompanyOption = { id: string; name: string };
 
@@ -61,6 +62,8 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     sessionTitle: "New training session"
   });
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(recordingSessions[0]?.id ?? null);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(recordingSessions[0]?.topics[0]?.id ?? null);
+  const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(() => new Set(recordingSessions.map((session) => session.id)));
   const [sessionDetails, setSessionDetails] = useState<SessionDetailsState>({ session: null, actions: [] });
   const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>({ status: "idle", message: "" });
   const firstCompanyId = companies[0]?.id ?? "";
@@ -71,11 +74,13 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
   const filteredSessions = useMemo(() => sessions.filter((session) => {
     const matchesCompany = session.companyId === filters.companyId;
     const matchesTargetApp = session.targetAppId === filters.targetAppId;
-    const matchesTitle = !filters.title.trim() || session.title.toLowerCase().includes(filters.title.trim().toLowerCase());
+    const filterTitle = filters.title.trim().toLowerCase();
+    const matchesTitle = !filterTitle || session.title.toLowerCase().includes(filterTitle) || session.topics.some((topic) => topic.title.toLowerCase().includes(filterTitle));
     return matchesCompany && matchesTargetApp && matchesTitle;
   }), [filters.companyId, filters.targetAppId, filters.title, sessions]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === selectedSessionId) ?? null, [sessions, selectedSessionId]);
-  const selectedRecorderConfig = selectedSession ? recorderConfigForSession(selectedSession) : null;
+  const selectedTopic = useMemo(() => sessions.flatMap((session) => session.topics).find((topic) => topic.id === selectedTopicId) ?? null, [sessions, selectedTopicId]);
+  const selectedRecorderConfig = selectedSession && selectedTopic ? recorderConfigForTopic(selectedTopic, selectedSession) : null;
 
   useEffect(() => {
     const nextApps = apps.filter((app) => app.companyId === draftFilters.companyId);
@@ -85,19 +90,23 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
   }, [apps, draftFilters.companyId, draftFilters.targetAppId]);
 
   useEffect(() => {
-    setSelectedSessionId((current) => (current && filteredSessions.some((session) => session.id === current) ? current : filteredSessions[0]?.id ?? null));
+    const allTopicIds = new Set(filteredSessions.flatMap((session) => session.topics.map((topic) => topic.id)));
+    const nextSession = filteredSessions[0] ?? null;
+    const nextTopic = filteredSessions.flatMap((session) => session.topics)[0] ?? null;
+    setSelectedTopicId((current) => (current && allTopicIds.has(current) ? current : nextTopic?.id ?? null));
+    setSelectedSessionId((current) => (current && filteredSessions.some((session) => session.id === current) ? current : nextSession?.id ?? null));
   }, [filteredSessions]);
 
   useEffect(() => {
-    if (!selectedSession?.guideId) return;
-    const guide = items.find((item) => item.id === selectedSession.guideId);
+    if (!selectedTopic?.guideId) return;
+    const guide = items.find((item) => item.id === selectedTopic.guideId);
     if (!guide || selectedId === guide.id) return;
     setSelectedId(guide.id);
     setEditor(editorFromGuide(guide));
-  }, [items, selectedId, selectedSession?.guideId]);
+  }, [items, selectedId, selectedTopic?.guideId]);
 
   useEffect(() => {
-    if (!selectedSessionId) {
+    if (!selectedTopicId) {
       setSessionDetails({ session: null, actions: [] });
       return;
     }
@@ -106,20 +115,20 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
 
     async function refreshSessionDetails() {
       try {
-        const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${selectedSessionId}`);
+        const response = await fetch(`/api/admin/guided-workflow-topics/${selectedTopicId}`);
         const body = await response.json().catch(() => null);
         if (cancelled) return;
 
         setSessionDetails({
-          session: body?.session ?? null,
+          session: selectedSession ?? null,
           actions: Array.isArray(body?.actions) ? body.actions : []
         });
-        if (body?.session) {
-          setSessions((current) => current.map((session) => session.id === body.session.id ? body.session : session));
+        if (body?.topic) {
+          setSessions((current) => current.map((session) => session.id === body.topic.recordingSessionId ? { ...session, topics: session.topics.map((topic) => topic.id === body.topic.id ? body.topic : topic) } : session));
         }
 
-        if (body?.session?.guideId) {
-          const guideResponse = await fetch(`/api/admin/guided-workflows/${body.session.guideId}`);
+        if (body?.topic?.guideId) {
+          const guideResponse = await fetch(`/api/admin/guided-workflows/${body.topic.guideId}`);
           const guideBody = await guideResponse.json().catch(() => null);
           if (!cancelled && guideBody?.guide) {
             setItems((current) => {
@@ -153,7 +162,7 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [items, selectedId, selectedSessionId]);
+  }, [items, selectedId, selectedSession, selectedTopicId]);
 
   function selectGuide(guide: GuidedWorkflowRow) {
     setSelectedId(guide.id);
@@ -242,22 +251,6 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     setState({ status: "success", message: "Recording session created. Copy the recorder config into the trainer extension." });
   }
 
-  async function updateSession(sessionId: string, status: GuidedWorkflowRecordingSessionRow["status"]) {
-    const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status })
-    });
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to update session." });
-      return;
-    }
-
-    setSessions((current) => current.map((session) => session.id === body.session.id ? body.session : session));
-  }
-
   function updateSessionTitleLocally(sessionId: string, title: string) {
     const trimmedValue = title.trim();
     setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, title: trimmedValue || session.title } : session));
@@ -309,17 +302,17 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     setState({ status: "success", message: "Recording session deleted." });
   }
 
-  async function convertSession(sessionId: string) {
-    const session = sessions.find((item) => item.id === sessionId);
-    if (session?.guideId && selected?.id === session.guideId) {
+  async function convertTopic(topicId: string) {
+    const topic = sessions.flatMap((session) => session.topics).find((item) => item.id === topicId);
+    if (topic?.guideId && selected?.id === topic.guideId) {
       await saveGuide(undefined, { silent: true });
     }
 
     setState({ status: "submitting", message: "" });
-    const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionId}`, {
+    const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${topic?.recordingSessionId ?? selectedSessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ convert: true })
+      body: JSON.stringify({ convert: true, topicId })
     });
     const body = await response.json().catch(() => null);
 
@@ -331,23 +324,23 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     setItems((current) => [body.guide, ...current]);
     setSelectedId(body.guide.id);
     setEditor(editorFromGuide(body.guide));
-    setSessions((current) => current.map((session) => session.id === sessionId ? { ...session, status: "converted", guideId: body.guide.id } : session));
-    setState({ status: "success", message: session?.guideId ? "Guide draft updated." : "Guide draft generated from the recording session." });
+    setSessions((current) => current.map((session) => session.id === topic?.recordingSessionId ? { ...session, topics: session.topics.map((item) => item.id === topicId ? { ...item, guideId: body.guide.id, status: body.guide.status } : item) } : session));
+    setState({ status: "success", message: topic?.guideId ? "Topic draft updated." : "Topic draft generated from the synced actions." });
   }
 
-  async function publishSessionGuide(session: GuidedWorkflowRecordingSessionRow) {
-    if (!session.guideId) {
-      setState({ status: "error", message: "Create a guide draft before publishing." });
+  async function publishTopicGuide(topic: GuidedWorkflowTopicRow) {
+    if (!topic.guideId) {
+      setState({ status: "error", message: "Create a topic draft before publishing." });
       return;
     }
 
-    if (selected?.id === session.guideId) {
+    if (selected?.id === topic.guideId) {
       await saveGuide("published");
       return;
     }
 
     setState({ status: "submitting", message: "" });
-    const response = await fetch(`/api/admin/guided-workflows/${session.guideId}`, {
+    const response = await fetch(`/api/admin/guided-workflows/${topic.guideId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "published" })
@@ -360,6 +353,10 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
     }
 
     setItems((current) => current.map((guide) => guide.id === body.guide.id ? body.guide : guide));
+    if (body.guide.topicId) {
+      setSessions((current) => current.map((session) => session.id === body.guide.recordingSessionId ? { ...session, topics: session.topics.map((topic) => topic.id === body.guide.topicId ? { ...topic, guideId: body.guide.id, status: body.guide.status } : topic) } : session));
+    }
+    setSessions((current) => current.map((session) => session.id === topic.recordingSessionId ? { ...session, topics: session.topics.map((item) => item.id === topic.id ? { ...item, status: body.guide.status } : item) } : session));
     setSelectedId(body.guide.id);
     setEditor(editorFromGuide(body.guide));
     setState({ status: "success", message: "Guide published. Refresh the target app to see it." });
@@ -456,7 +453,20 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
       ...current,
       actions: step.actionSourceId ? current.actions.filter((action) => action.id !== step.actionSourceId) : current.actions
     }));
-    setSessions((current) => current.map((session) => session.id === selectedSessionId ? { ...session, actionsCount: Math.max(0, session.actionsCount - 1) } : session));
+    if (selectedTopicId) {
+      setSessions((current) => current.map((session) => session.id === (body.guide.recordingSessionId ?? selectedSessionId)
+        ? {
+          ...session,
+          topics: session.topics.map((topic) => topic.id === selectedTopicId
+            ? {
+              ...topic,
+              actionsCount: step.actionSourceId ? Math.max(0, topic.actionsCount - 1) : topic.actionsCount,
+              status: body.guide.status
+            }
+            : topic)
+        }
+        : session));
+    }
     setState({ status: "success", message: "Step deleted." });
   }
 
@@ -504,20 +514,49 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
           ) : (
             <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
               {filteredSessions.map((session) => {
-                const active = selectedSessionId === session.id;
-                const displayStatus = workflowStatusForSession(session, items);
+                const collapsed = collapsedSessionIds.has(session.id);
                 return (
-                  <button
-                    className={`w-full rounded-lg border p-3 text-left transition ${active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
-                    key={session.id}
-                    onClick={() => setSelectedSessionId(session.id)}
-                    type="button"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="text-sm font-semibold">{session.title}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${active ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"}`}>{displayStatus}</span>
-                    </div>
-                  </button>
+                  <div className="rounded-lg border border-slate-200 bg-white p-2" key={session.id}>
+                    <button
+                      className="flex w-full items-center gap-2 text-left"
+                      onClick={() => setCollapsedSessionIds((current) => {
+                        const next = new Set(current);
+                        if (next.has(session.id)) next.delete(session.id);
+                        else next.add(session.id);
+                        return next;
+                      })}
+                      type="button"
+                    >
+                      <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${collapsed ? "-rotate-90" : ""}`} />
+                      <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{session.title}</span>
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{session.topics.length}</span>
+                    </button>
+                    {!collapsed ? (
+                      <div className="mt-2 grid gap-1 pl-6">
+                        {session.topics.length === 0 ? (
+                          <p className="text-xs text-slate-500">No topics yet.</p>
+                        ) : session.topics.map((topic) => {
+                          const active = selectedTopicId === topic.id;
+                          return (
+                            <button
+                              className={`w-full rounded-md border px-2 py-2 text-left transition ${active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                              key={topic.id}
+                              onClick={() => {
+                                setSelectedSessionId(session.id);
+                                setSelectedTopicId(topic.id);
+                              }}
+                              type="button"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="min-w-0 truncate text-xs font-semibold">{topic.title}</span>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${active ? "bg-white/15 text-white" : topic.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{topic.status}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
@@ -525,15 +564,16 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
         </Panel>
 
         <SessionDetailsPanel
-          convertSession={convertSession}
+          convertTopic={convertTopic}
           deleteSession={deleteSession}
           deleteStep={hardDeleteStep}
           editor={editor}
           guides={items}
           moveStep={moveStep}
-          publishSessionGuide={publishSessionGuide}
+          publishTopicGuide={publishTopicGuide}
           recorderConfig={selectedRecorderConfig}
           selectedSession={selectedSession}
+          selectedTopic={selectedTopic}
           sessionDetails={sessionDetails}
           updateStep={updateStep}
         />
@@ -542,16 +582,17 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
   );
 }
 
-function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor, guides, moveStep, publishSessionGuide, recorderConfig, selectedSession, sessionDetails, updateStep }: {
-  convertSession(sessionId: string): void;
+function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, guides, moveStep, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, updateStep }: {
+  convertTopic(topicId: string): void;
   deleteSession(sessionId: string): void;
   deleteStep(index: number): void;
   editor: EditorState;
   guides: GuidedWorkflowRow[];
   moveStep(index: number, direction: -1 | 1): void;
-  publishSessionGuide(session: GuidedWorkflowRecordingSessionRow): void;
-  recorderConfig: { scoutBaseUrl: string; recorderToken: string; sessionTitle: string; recordingSessionId: string; ingestPath: string } | null;
+  publishTopicGuide(topic: GuidedWorkflowTopicRow): void;
+  recorderConfig: { scoutBaseUrl: string; recorderToken: string; sessionTitle: string; recordingSessionId: string; topicId: string; ingestPath: string } | null;
   selectedSession: GuidedWorkflowRecordingSessionRow | null;
+  selectedTopic: GuidedWorkflowTopicRow | null;
   sessionDetails: SessionDetailsState;
   updateStep(index: number, patch: Partial<GuideStep>): void;
 }) {
@@ -560,10 +601,10 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
   const [openStepIds, setOpenStepIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
-    if (!selectedSession?.guideId) {
+    if (!selectedTopic?.guideId) {
       setConfigTab("recorder");
     }
-  }, [selectedSession?.guideId]);
+  }, [selectedTopic?.guideId]);
 
   useEffect(() => {
     setOpenStepIds((current) => {
@@ -572,18 +613,18 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
     });
   }, [editor.steps]);
 
-  if (!selectedSession) {
+  if (!selectedSession || !selectedTopic) {
     return (
       <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
-        Select a training session from the list to inspect the recorded steps.
+        Select a topic from the list to inspect the recorded steps.
       </section>
     );
   }
 
-  const sessionGuide = selectedSession.guideId ? guides.find((guide) => guide.id === selectedSession.guideId) ?? null : null;
+  const sessionGuide = selectedTopic.guideId ? guides.find((guide) => guide.id === selectedTopic.guideId) ?? null : null;
   const guidePublished = sessionGuide?.status === "published";
   const guideSteps = sessionGuide ? editor.steps : [];
-  const syncedActionCount = sessionDetails.session?.id === selectedSession.id ? sessionDetails.actions.length : selectedSession.actionsCount;
+  const syncedActionCount = selectedTopic.actionsCount;
   const guideDirty = Boolean(sessionGuide && editorHasChanges(editor, sessionGuide));
   const hasNewSyncedActions = Boolean(sessionGuide && syncedActionCount > sessionGuide.recordedActions.length);
   const canUpdateDraft = Boolean(sessionGuide && (guideDirty || hasNewSyncedActions));
@@ -609,7 +650,7 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
             <button
               className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
               disabled={!canUpdateDraft}
-              onClick={() => convertSession(selectedSession.id)}
+              onClick={() => convertTopic(selectedTopic.id)}
               type="button"
             >
               <RefreshCw className="h-4 w-4" />Save guide draft
@@ -617,7 +658,7 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
             <button
               className="inline-flex h-10 items-center gap-2 rounded-lg bg-emerald-800 px-4 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none"
               disabled={!canPublish}
-              onClick={() => publishSessionGuide(selectedSession)}
+              onClick={() => publishTopicGuide(selectedTopic)}
               type="button"
             >
               <Play className="h-4 w-4" />Publish
@@ -631,7 +672,7 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
         <p className="text-xs text-slate-500">
           {syncedActionCount === 0
               ? "Record and sync at least one action in this session to create a draft guide."
-            : selectedSession.guideId
+            : selectedTopic.guideId
               ? guideDirty ? "Save draft changes before publishing." : hasNewSyncedActions ? "New synced steps are waiting. Save the guide draft before publishing." : guidePublished ? "This session is published. Add or edit steps to enable another update." : "This draft is ready to publish."
               : "Synced steps are being converted into a draft guide."}
         </p>
@@ -703,7 +744,7 @@ function SessionDetailsPanel({ convertSession, deleteSession, deleteStep, editor
                   >
                     <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">{index + 1}</span>
                     <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${isOpen ? "rotate-180" : ""}`} />
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-950">{plainTextFromHtml(step.message || step.title) || "Untitled step"}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-950">{stepListPreview(step)}</span>
                   </button>
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${purpose === "navigation" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
                     {purpose === "navigation" ? "Navigation Step" : "Main Training Step"}
@@ -864,21 +905,23 @@ function editorHasChanges(editor: EditorState, guide: GuidedWorkflowRow) {
     || JSON.stringify(normalizeSteps(editor.steps)) !== JSON.stringify(normalizeSteps(guide.steps));
 }
 
-function workflowStatusForSession(session: GuidedWorkflowRecordingSessionRow, guides: GuidedWorkflowRow[]) {
-  const guide = session.guideId ? guides.find((item) => item.id === session.guideId) : null;
-  if (guide) return guide.status;
-  return "draft";
+function stepListPreview(step: GuideStep) {
+  const text = plainTextFromHtml(step.message || step.title || "").split(/\r?\n/)[0]?.trim() ?? "";
+  if (!text) return "Untitled step";
+  const words = text.split(/\s+/).filter(Boolean);
+  return words.length > 8 ? `${words.slice(0, 8).join(" ")} .....` : text;
 }
 
-function recorderConfigForSession(session: GuidedWorkflowRecordingSessionRow) {
-  const recorderToken = session.recorderConfig?.recorderToken;
+function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWorkflowRecordingSessionRow) {
+  const recorderToken = topic.recorderConfig?.recorderToken;
   if (!recorderToken) return null;
 
   return {
     scoutBaseUrl: getScoutBaseUrl(),
     recorderToken,
-    sessionTitle: session.title,
+    sessionTitle: `${session.title} / ${topic.title}`,
     recordingSessionId: session.id,
+    topicId: topic.id,
     ingestPath: "/api/guided-workflow-recorder/actions"
   };
 }
@@ -931,67 +974,121 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
 }
 
 function RichTextEditor({ guides, label, onChange, value }: { guides: GuidedWorkflowRow[]; label: string; onChange: (value: string) => void; value: string }) {
-  const editorRef = useRef<HTMLDivElement | null>(null);
-  const savedRangeRef = useRef<Range | null>(null);
-  const [linkUrl, setLinkUrl] = useState("");
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const joditRef = useRef<JoditInstance | null>(null);
+  const valueRef = useRef(value);
+  const guidesRef = useRef(guides);
+  const onChangeRef = useRef(onChange);
+  const applyingExternalValueRef = useRef(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const workflowLinkOptions = useMemo(() => {
-    const seen = new Set<string>();
-    return guides.filter((guide) => {
-      if (seen.has(guide.id)) return false;
-      seen.add(guide.id);
-      return true;
-    });
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    guidesRef.current = guides;
   }, [guides]);
 
   useEffect(() => {
-    if (editorRef.current && editorRef.current.innerHTML !== value) {
-      editorRef.current.innerHTML = value || "";
-    }
+    valueRef.current = value;
   }, [value]);
 
-  function rememberSelection() {
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0 && editorRef.current?.contains(selection.anchorNode)) {
-      savedRangeRef.current = selection.getRangeAt(0).cloneRange();
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function mountEditor() {
+      const element = editorRef.current;
+      if (!element || joditRef.current) return;
+
+      const { Jodit } = await import("jodit");
+      if (cancelled || !editorRef.current) return;
+
+      const editor = Jodit.make(element, {
+        height: 260,
+        minHeight: 160,
+        askBeforePasteHTML: false,
+        askBeforePasteFromWord: false,
+        defaultActionOnPaste: "insert_clear_html",
+        placeholder: "Write the step description...",
+        showCharsCounter: false,
+        showWordsCounter: false,
+        showXPathInStatusbar: false,
+        extraButtons: [
+          {
+            name: "scoutTrainingSessionLink",
+            icon: "link",
+            text: "Training link",
+            tooltip: "Insert training session link",
+            popup(editor: JoditInstance, _current: Node | null, close: () => void) {
+              const wrapper = document.createElement("div");
+              wrapper.style.cssText = "display:grid;gap:6px;min-width:220px;max-width:320px;max-height:260px;overflow:auto;padding:6px";
+
+              if (guidesRef.current.length === 0) {
+                const empty = document.createElement("div");
+                empty.textContent = "No training sessions available.";
+                empty.style.cssText = "padding:8px;color:#64748b;font:12px system-ui,sans-serif";
+                wrapper.appendChild(empty);
+                return wrapper;
+              }
+
+              guidesRef.current.forEach((guide) => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.textContent = guide.title || "Untitled training session";
+                button.style.cssText = "display:block;width:100%;border:0;border-radius:6px;background:#f8fafc;color:#0f172a;padding:7px 9px;text-align:left;font:12px system-ui,sans-serif;cursor:pointer";
+                button.addEventListener("click", () => {
+                  const href = `#scout-guide:${escapeAttribute(guide.id)}`;
+                  const label = escapeHtml(guide.title || "Training session");
+                  if (editor.s.isCollapsed()) {
+                    editor.s.insertHTML(`<a href="${href}">${label}</a>`);
+                  } else {
+                    editor.execCommand("createLink", false, href);
+                  }
+                  close();
+                });
+                wrapper.appendChild(button);
+              });
+
+              return wrapper;
+            }
+          }
+        ],
+        uploader: {
+          insertImageAsBase64URI: true
+        }
+      });
+
+      editor.value = valueRef.current || "";
+      editor.events.on("change", () => {
+        if (applyingExternalValueRef.current) return;
+        const html = editor.value;
+        valueRef.current = html;
+        onChangeRef.current(html);
+      });
+      joditRef.current = editor;
+      setReady(true);
     }
-  }
 
-  function restoreSelection() {
-    const range = savedRangeRef.current;
-    if (!range) return false;
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(range);
-    return true;
-  }
+    void mountEditor();
 
-  function syncValue() {
-    onChange(sanitizeGuideHtml(editorRef.current?.innerHTML ?? ""));
-  }
+    return () => {
+      cancelled = true;
+      joditRef.current?.destruct();
+      joditRef.current = null;
+    };
+  }, []);
 
-  function runCommand(command: string, valueArg?: string) {
-    editorRef.current?.focus();
-    restoreSelection();
-    document.execCommand(command, false, valueArg);
-    syncValue();
-  }
-
-  function insertLink(url: string, text?: string) {
-    const nextUrl = url.trim();
-    if (!nextUrl) return;
-    editorRef.current?.focus();
-    restoreSelection();
-    const displayText = text?.trim() || nextUrl;
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      document.execCommand("insertHTML", false, `<a href="${escapeAttribute(nextUrl)}">${escapeHtmlForEditor(displayText)}</a>`);
-    } else {
-      document.execCommand("createLink", false, nextUrl);
-    }
-    syncValue();
-    setLinkUrl("");
-  }
+  useEffect(() => {
+    const editor = joditRef.current;
+    if (!editor) return;
+    const nextValue = value || "";
+    if (editor.value === nextValue) return;
+    applyingExternalValueRef.current = true;
+    editor.value = nextValue;
+    applyingExternalValueRef.current = false;
+  }, [value]);
 
   return (
     <div className="grid gap-1">
@@ -1001,47 +1098,8 @@ function RichTextEditor({ guides, label, onChange, value }: { guides: GuidedWork
           <Eye className="h-3.5 w-3.5" /> Preview
         </button>
       </div>
-      <div className="overflow-hidden rounded-lg border border-slate-300 bg-white">
-        <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 bg-slate-50 p-1.5">
-          <button className="rounded-md px-2 py-1 text-xs font-bold text-slate-700 hover:bg-white" onClick={() => runCommand("bold")} type="button">B</button>
-          <button className="rounded-md px-2 py-1 text-xs italic text-slate-700 hover:bg-white" onClick={() => runCommand("italic")} type="button">I</button>
-          <button className="rounded-md px-2 py-1 text-xs underline text-slate-700 hover:bg-white" onClick={() => runCommand("underline")} type="button">U</button>
-          <button className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-white" onClick={() => runCommand("insertUnorderedList")} type="button">Bullets</button>
-          <button className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-white" onClick={() => runCommand("insertOrderedList")} type="button">Numbers</button>
-          <select className="h-7 rounded-md border border-slate-200 bg-white px-2 text-xs font-normal text-slate-700 outline-none focus:border-slate-900" onChange={(event) => { runCommand("fontName", event.target.value); event.target.value = ""; }} defaultValue="">
-            <option value="" disabled>Font</option>
-            <option value="Arial">Arial</option>
-            <option value="Georgia">Georgia</option>
-            <option value="Tahoma">Tahoma</option>
-            <option value="Verdana">Verdana</option>
-            <option value="Courier New">Courier New</option>
-          </select>
-          <input aria-label="Text color" className="h-7 w-9 rounded-md border border-slate-200 bg-white p-1" onChange={(event) => runCommand("foreColor", event.target.value)} type="color" />
-          <input aria-label="Highlight color" className="h-7 w-9 rounded-md border border-slate-200 bg-white p-1" onChange={(event) => runCommand("hiliteColor", event.target.value)} type="color" />
-          <span className="mx-1 h-5 w-px bg-slate-200" />
-          <input className="h-7 min-w-36 flex-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-normal outline-none focus:border-slate-900" onFocus={rememberSelection} onMouseDown={rememberSelection} onChange={(event) => setLinkUrl(event.target.value)} placeholder="https:// or /internal-url" value={linkUrl} />
-          <button className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-900 px-2 text-xs font-semibold text-white" onClick={() => insertLink(linkUrl)} type="button"><LinkIcon className="h-3 w-3" /> Link</button>
-          <select className="h-7 max-w-48 rounded-md border border-slate-200 bg-white px-2 text-xs font-normal text-slate-700 outline-none focus:border-slate-900" onChange={(event) => {
-            const guide = guides.find((item) => item.id === event.target.value);
-            if (guide) insertLink(`#scout-guide:${guide.id}`, `Follow workflow: ${guide.title}`);
-            event.target.value = "";
-          }} defaultValue="">
-            <option value="" disabled>Link workflow</option>
-            {workflowLinkOptions.map((guide) => <option key={`workflow-link-${guide.id}`} value={guide.id}>{guide.title}</option>)}
-          </select>
-          <button className="rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-white" onClick={() => runCommand("removeFormat")} type="button">Clear</button>
-        </div>
-        <div
-          className="min-h-32 max-h-64 overflow-auto px-3 py-2 text-sm font-normal leading-6 text-slate-900 outline-none focus:ring-4 focus:ring-slate-900/10 [&_a]:text-blue-700 [&_a]:underline [&_ol]:ml-5 [&_ol]:list-decimal [&_ul]:ml-5 [&_ul]:list-disc"
-          contentEditable
-          onKeyUp={rememberSelection}
-          onMouseUp={rememberSelection}
-          onBlur={(event) => onChange(sanitizeGuideHtml(event.currentTarget.innerHTML))}
-          onInput={(event) => onChange(sanitizeGuideHtml(event.currentTarget.innerHTML))}
-          ref={editorRef}
-          role="textbox"
-          suppressContentEditableWarning
-        />
+      <div className={`scout-editor-shell overflow-hidden rounded-lg border border-slate-300 bg-white ${ready ? "" : "opacity-70"}`}>
+        <textarea ref={editorRef} />
       </div>
       {previewOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4" onClick={() => setPreviewOpen(false)}>
@@ -1058,11 +1116,25 @@ function RichTextEditor({ guides, label, onChange, value }: { guides: GuidedWork
   );
 }
 
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[character] ?? character));
+}
+
+function escapeAttribute(value: string) {
+  return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
 function sanitizeGuideHtml(value: string) {
   if (typeof document === "undefined") return value;
   const template = document.createElement("template");
   template.innerHTML = value;
-  const allowedTags = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A", "FONT", "SPAN"]);
+  const allowedTags = new Set(["A", "B", "BLOCKQUOTE", "BR", "CODE", "COL", "COLGROUP", "DIV", "EM", "FONT", "H1", "H2", "H3", "H4", "H5", "H6", "I", "IMG", "LI", "OL", "P", "PRE", "S", "SPAN", "STRIKE", "STRONG", "SUB", "SUP", "TABLE", "TBODY", "TD", "TFOOT", "TH", "THEAD", "TR", "U", "UL"]);
   template.content.querySelectorAll("*").forEach((element) => {
     if (!allowedTags.has(element.tagName)) {
       element.replaceWith(...Array.from(element.childNodes));
@@ -1070,13 +1142,21 @@ function sanitizeGuideHtml(value: string) {
     }
     Array.from(element.attributes).forEach((attribute) => {
       const allowedHref = element.tagName === "A" && attribute.name === "href" && /^(https?:\/\/|\/|#scout-guide:)/i.test(attribute.value);
+      const allowedImageSrc = element.tagName === "IMG" && attribute.name === "src" && /^(https?:\/\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(attribute.value);
       const allowedFont = element.tagName === "FONT" && ["color", "face"].includes(attribute.name);
-      const allowedStyle = element.tagName === "SPAN" && attribute.name === "style";
+      const allowedStyle = attribute.name === "style";
+      const allowedClass = attribute.name === "class";
+      const allowedTableAttribute = ["border", "cellpadding", "cellspacing", "colspan", "rowspan", "scope"].includes(attribute.name);
+      const allowedMediaAttribute = element.tagName === "IMG" && ["alt", "height", "title", "width"].includes(attribute.name);
       if (allowedStyle) {
-        const safeRules = attribute.value.split(";").map((rule) => rule.trim()).filter((rule) => /^(color|background-color|font-family)\s*:/i.test(rule) && !/url|expression|javascript/i.test(rule));
+        const safeRules = attribute.value.split(";").map((rule) => rule.trim()).filter((rule) => /^(color|background-color|font-family|font-size|font-weight|font-style|text-align|text-decoration|width|height|border|border-collapse|vertical-align|padding|margin)\s*:/i.test(rule) && !/url|expression|javascript/i.test(rule));
         if (safeRules.length > 0) element.setAttribute("style", safeRules.join("; "));
         else element.removeAttribute("style");
-      } else if (!allowedHref && !allowedFont) {
+      } else if (allowedClass) {
+        const safeClasses = attribute.value.split(/\s+/).filter((className) => /^(ql-align-|ql-direction-rtl|ql-indent-|ql-size-|jodit-)/.test(className));
+        if (safeClasses.length > 0) element.setAttribute("class", safeClasses.join(" "));
+        else element.removeAttribute("class");
+      } else if (!allowedHref && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
         element.removeAttribute(attribute.name);
       }
     });
@@ -1088,25 +1168,28 @@ function sanitizeGuideHtml(value: string) {
   return template.innerHTML.replace(/<div><br><\/div>/g, "<br>").trim();
 }
 
+function decodeHtmlEntities(text: string) {
+  return text.replace(/&(#?)(x?)([0-9A-Za-z]+);/g, (_, hash, hex, code) => {
+    if (!hash) {
+      const entities: Record<string, string> = {
+        nbsp: " ",
+        lt: "<",
+        gt: ">",
+        amp: "&",
+        quot: '"',
+        apos: "'",
+      };
+      return entities[code] ?? " ";
+    }
+    const num = hex ? parseInt(code, 16) : parseInt(code, 10);
+    if (Number.isNaN(num)) return " ";
+    return String.fromCodePoint(num);
+  });
+}
+
 function plainTextFromHtml(value: string) {
-  if (typeof document === "undefined") return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  const template = document.createElement("template");
-  template.innerHTML = value;
-  return (template.content.textContent ?? "").replace(/\s+/g, " ").trim();
-}
-
-function escapeAttribute(value: string) {
-  return value.replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  }[char] ?? char));
-}
-
-function escapeHtmlForEditor(value: string) {
-  return escapeAttribute(value);
+  const text = value.replace(/<[^>]+>/g, " ");
+  return decodeHtmlEntities(text).replace(/\s+/g, " ").trim();
 }
 
 function SelectorDetailsEditor({ onChange, target }: { onChange: (target: TargetElement) => void; target: TargetElement }) {

@@ -53,13 +53,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     const { id } = await context.params;
 
     if (body?.convert === true) {
-      return NextResponse.json({ guide: await createGuideFromRecordingSession(id, auth.session) });
+      return NextResponse.json({ guide: await createGuideFromRecordingSession(String(body.topicId ?? id), auth.session) });
     }
 
     return NextResponse.json({
       session: await updateGuidedWorkflowRecordingSession(
         id,
-        { status: body?.status, title: body?.title },
+        { title: body?.title },
         auth.session
       )
     });

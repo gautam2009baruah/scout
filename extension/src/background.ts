@@ -56,6 +56,7 @@ async function postAction(action: RecordedAction, configOverride?: RecorderConfi
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         recorderToken: config.recorderToken,
+        topicId: config.topicId,
         action
       })
     });

@@ -19,8 +19,8 @@ declare global {
 }
 
 const config = {
-  scoutBaseUrl: "http://localhost:3001",
-  targetAppId: "9de764bc-205e-4476-b061-12d101b092da"
+  scoutBaseUrl: "http://localhost:3000",
+  targetAppId: "6141a508-4fea-48c0-a92f-7a7064164209"
 };
 
 export function ScoutAdoptionLoader() {
@@ -32,12 +32,12 @@ export function ScoutAdoptionLoader() {
       return;
     }
 
-    if (document.querySelector<HTMLScriptElement>('script[src="http://localhost:3001/scout-smart-adoption-player.js"]')) {
+    if (document.querySelector<HTMLScriptElement>('script[src="http://localhost:3000/scout-smart-adoption-player.js"]')) {
       return;
     }
 
     const script = document.createElement("script");
-    script.src = "http://localhost:3001/scout-smart-adoption-player.js";
+    script.src = "http://localhost:3000/scout-smart-adoption-player.js";
     script.async = true;
     document.body.appendChild(script);
   }, []);

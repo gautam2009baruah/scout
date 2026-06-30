@@ -18,14 +18,16 @@ function focusTarget(element: HTMLElement) {
 
 export class AdoptionPlayer {
   private guide: Guide;
+  private guideResolver?: (guideId: string) => Guide | null | undefined;
   private index = 0;
   private steps: GuideStep[] = [];
   private tooltip: HTMLElement | null = null;
   private highlighted: HTMLElement | null = null;
   private stopped = false;
 
-  constructor(guide: Guide) {
+  constructor(guide: Guide, options: { guideResolver?: (guideId: string) => Guide | null | undefined } = {}) {
     this.guide = guide;
+    this.guideResolver = options.guideResolver;
   }
 
   async start(options: { resetProgress?: boolean } = {}) {
@@ -128,7 +130,8 @@ export class AdoptionPlayer {
       controls: {
         onBack: () => this.previous(phase, onComplete),
         onNext: () => this.next(phase, onComplete),
-        onClose: () => this.stop()
+        onClose: () => this.stop(),
+        onGuideLink: (guideId) => this.openGuideLink(guideId)
       }
     });
 
@@ -161,7 +164,8 @@ export class AdoptionPlayer {
       controls: {
         onBack: () => this.previous(phase, onComplete),
         onNext: () => this.next(phase, onComplete),
-        onClose: () => this.stop()
+        onClose: () => this.stop(),
+        onGuideLink: (guideId) => this.openGuideLink(guideId)
       }
     });
   }
@@ -220,6 +224,13 @@ export class AdoptionPlayer {
     banner.className = "scout-adoption-recovery scout-adoption-missing";
     banner.textContent = message;
     document.body.appendChild(banner);
+  }
+
+  private openGuideLink(guideId: string) {
+    const linkedGuide = this.guideResolver?.(guideId);
+    if (!linkedGuide) return;
+    this.stop();
+    new AdoptionPlayer(linkedGuide, { guideResolver: this.guideResolver }).start();
   }
 }
 

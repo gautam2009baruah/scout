@@ -10,6 +10,7 @@ export type GuidedWorkflowRow = Guide & {
   targetAppId: string | null;
   targetAppName: string | null;
   recordingSessionId: string | null;
+  topicId: string | null;
   recordedActions: RecordedAction[];
   createdByName: string | null;
 };
@@ -32,15 +33,24 @@ export type GuidedWorkflowRecordingSessionRow = {
   companyName: string;
   targetAppId: string | null;
   targetAppName: string | null;
-  guideId: string | null;
-  recorderConfig: { recorderToken?: string } | null;
   title: string;
-  status: "ready" | "recording" | "paused" | "stopped" | "converted";
+  createdAt: string;
+  updatedAt: string;
+  topics: GuidedWorkflowTopicRow[];
+};
+
+export type GuidedWorkflowTopicRow = {
+  id: string;
+  companyId: string;
+  recordingSessionId: string;
+  guideId: string | null;
+  recorderConfig: { recorderToken?: string; topicId?: string } | null;
+  title: string;
+  status: GuideStatus;
+  sortOrder: number;
   actionsCount: number;
   createdAt: string;
   updatedAt: string;
-  startedAt: string | null;
-  stoppedAt: string | null;
 };
 
 export class GuidedWorkflowError extends Error {
@@ -65,6 +75,7 @@ function mapGuide(row: {
   target_app_id: string | null;
   target_app_name: string | null;
   recording_session_id: string | null;
+  topic_id: string | null;
   created_by_name: string | null;
   created_at: Date;
   updated_at: Date;
@@ -79,6 +90,7 @@ function mapGuide(row: {
     targetAppId: row.target_app_id,
     targetAppName: row.target_app_name,
     recordingSessionId: row.recording_session_id,
+    topicId: row.topic_id,
     title: row.title,
     description: row.description,
     status: row.status,
@@ -241,7 +253,8 @@ const guideSelect = `
     companies.name AS company_name,
     guided_workflow_guides.target_app_id,
     guided_workflow_target_apps.name AS target_app_name,
-    guided_workflow_guides.recording_session_id,
+    guided_workflow_topics.recording_session_id,
+    guided_workflow_guides.topic_id,
     guided_workflow_guides.title,
     guided_workflow_guides.description,
     guided_workflow_guides.status,
@@ -253,6 +266,7 @@ const guideSelect = `
   FROM guided_workflow_guides
   INNER JOIN companies ON companies.id = guided_workflow_guides.company_id
   LEFT JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = guided_workflow_guides.target_app_id
+  LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
   LEFT JOIN users ON users.id = guided_workflow_guides.created_by
 `;
 
@@ -278,17 +292,7 @@ const recordingSessionSelect = `
     companies.name AS company_name,
     guided_workflow_recording_sessions.target_app_id,
     guided_workflow_target_apps.name AS target_app_name,
-    guided_workflow_recording_sessions.guide_id,
-    guided_workflow_recording_sessions.recorder_config_json,
     guided_workflow_recording_sessions.title,
-    guided_workflow_recording_sessions.status,
-    (
-      SELECT COUNT(*)::int
-      FROM guided_workflow_recorded_actions
-      WHERE guided_workflow_recorded_actions.recording_session_id = guided_workflow_recording_sessions.id
-    ) AS actions_count,
-    guided_workflow_recording_sessions.started_at,
-    guided_workflow_recording_sessions.stopped_at,
     guided_workflow_recording_sessions.created_at,
     guided_workflow_recording_sessions.updated_at
   FROM guided_workflow_recording_sessions
@@ -334,29 +338,46 @@ function mapRecordingSession(row: {
   company_name: string;
   target_app_id: string | null;
   target_app_name: string | null;
-  guide_id: string | null;
-  recorder_config_json: { recorderToken?: string } | null;
   title: string;
-  status: GuidedWorkflowRecordingSessionRow["status"];
-  actions_count: number;
-  started_at: Date | null;
-  stopped_at: Date | null;
   created_at: Date;
   updated_at: Date;
-}): GuidedWorkflowRecordingSessionRow {
+}, topics: GuidedWorkflowTopicRow[] = []): GuidedWorkflowRecordingSessionRow {
   return {
     id: row.id,
     companyId: row.company_id,
     companyName: row.company_name,
     targetAppId: row.target_app_id,
     targetAppName: row.target_app_name,
+    title: row.title,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    topics
+  };
+}
+
+function mapTopic(row: {
+  id: string;
+  company_id: string;
+  recording_session_id: string;
+  guide_id: string | null;
+  recorder_config_json: { recorderToken?: string; topicId?: string } | null;
+  title: string;
+  status: GuideStatus | null;
+  sort_order: number;
+  actions_count: number;
+  created_at: Date;
+  updated_at: Date;
+}): GuidedWorkflowTopicRow {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    recordingSessionId: row.recording_session_id,
     guideId: row.guide_id,
     recorderConfig: row.recorder_config_json ?? null,
     title: row.title,
-    status: row.status,
+    status: row.status ?? "draft",
+    sortOrder: Number(row.sort_order),
     actionsCount: Number(row.actions_count),
-    startedAt: row.started_at?.toISOString() ?? null,
-    stoppedAt: row.stopped_at?.toISOString() ?? null,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   };
@@ -489,7 +510,62 @@ export async function listGuidedWorkflowRecordingSessions(session: AdminSession)
     )
   );
 
-  return result.rows.map(mapRecordingSession);
+  const topics = await listGuidedWorkflowTopics(session);
+  const topicsBySession = new Map<string, GuidedWorkflowTopicRow[]>();
+  topics.forEach((topic) => {
+    topicsBySession.set(topic.recordingSessionId, [...(topicsBySession.get(topic.recordingSessionId) ?? []), topic]);
+  });
+
+  return result.rows.map((row) => mapRecordingSession(row, topicsBySession.get(row.id) ?? []));
+}
+
+export async function listGuidedWorkflowTopics(session: AdminSession) {
+  const params: unknown[] = [];
+  const access = session.user.isAdminRole ? "" : `
+    AND (
+      guided_workflow_topics.company_id = $1
+      OR EXISTS (
+        SELECT 1
+        FROM user_company_roles
+        WHERE user_company_roles.user_id = $2
+          AND user_company_roles.company_id = guided_workflow_topics.company_id
+          AND user_company_roles.deleted_at IS NULL
+      )
+    )
+  `;
+
+  if (!session.user.isAdminRole) {
+    params.push(session.user.tenantId, session.user.id);
+  }
+
+  const result = await withPoolRetry(() =>
+    getPool().query(
+      `
+        SELECT
+          guided_workflow_topics.id,
+          guided_workflow_topics.company_id,
+          guided_workflow_topics.recording_session_id,
+          guided_workflow_topics.guide_id,
+          guided_workflow_topics.recorder_config_json,
+          guided_workflow_topics.title,
+          guided_workflow_guides.status,
+          guided_workflow_topics.sort_order,
+          guided_workflow_topics.actions_count,
+          guided_workflow_topics.created_at,
+          guided_workflow_topics.updated_at
+        FROM guided_workflow_topics
+        INNER JOIN guided_workflow_recording_sessions ON guided_workflow_recording_sessions.id = guided_workflow_topics.recording_session_id
+        INNER JOIN companies ON companies.id = guided_workflow_topics.company_id
+        LEFT JOIN guided_workflow_guides ON guided_workflow_guides.id = guided_workflow_topics.guide_id
+        WHERE companies.deleted_at IS NULL
+          ${access}
+        ORDER BY guided_workflow_topics.recording_session_id, guided_workflow_topics.sort_order ASC, guided_workflow_topics.created_at ASC
+      `,
+      params
+    )
+  );
+
+  return result.rows.map(mapTopic);
 }
 
 export async function createGuidedWorkflowRecordingSession(input: {
@@ -513,49 +589,33 @@ export async function createGuidedWorkflowRecordingSession(input: {
     }
   }
 
-  const recorderToken = createRecorderToken();
   const result = await getPool().query<{ id: string }>(
     `
       INSERT INTO guided_workflow_recording_sessions (
         company_id,
         target_app_id,
         title,
-        recorder_token_hash,
-        recorder_config_json,
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $6)
+      VALUES ($1, $2, $3, $4, $4)
       RETURNING id
     `,
-    [input.companyId, input.targetAppId || null, title, tokenHash(recorderToken), JSON.stringify({ recorderToken }), session.user.id]
+    [input.companyId, input.targetAppId || null, title, session.user.id]
   );
   const sessions = await listGuidedWorkflowRecordingSessions(session);
 
   return {
-    session: sessions.find((item) => item.id === result.rows[0].id)!,
-    recorderToken
+    session: sessions.find((item) => item.id === result.rows[0].id)!
   };
 }
 
 export async function updateGuidedWorkflowRecordingSession(id: string, input: {
-  status?: GuidedWorkflowRecordingSessionRow["status"];
   title?: string;
 }, session: AdminSession) {
   await getGuidedWorkflowRecordingSessionById(id, session);
   const fields = ["updated_by = $2", "updated_at = now()"];
   const params: unknown[] = [id, session.user.id];
-
-  if (input.status) {
-    if (!["ready", "recording", "paused", "stopped", "converted"].includes(input.status)) {
-      throw new GuidedWorkflowError("Invalid recording status.");
-    }
-
-    params.push(input.status);
-    fields.push(`status = $${params.length}::guided_workflow_recording_status`);
-    if (input.status === "recording") fields.push("started_at = COALESCE(started_at, now())");
-    if (input.status === "stopped") fields.push("stopped_at = now()");
-  }
 
   if (input.title !== undefined) {
     const title = input.title.trim();
@@ -572,15 +632,12 @@ export async function updateGuidedWorkflowRecordingSession(id: string, input: {
 }
 
 export async function deleteGuidedWorkflowRecordingSession(id: string, session: AdminSession) {
-  const recordingSession = await getGuidedWorkflowRecordingSessionById(id, session);
+  await getGuidedWorkflowRecordingSessionById(id, session);
   const client = await getPool().connect();
 
   try {
     await client.query("BEGIN");
-    await client.query("UPDATE guided_workflow_recording_sessions SET guide_id = NULL WHERE id = $1", [id]);
-    if (recordingSession.guideId) {
-      await client.query("DELETE FROM guided_workflow_guides WHERE id = $1", [recordingSession.guideId]);
-    }
+    await client.query("DELETE FROM guided_workflow_guides WHERE topic_id IN (SELECT id FROM guided_workflow_topics WHERE recording_session_id = $1)", [id]);
     await client.query("DELETE FROM guided_workflow_recording_sessions WHERE id = $1", [id]);
     await client.query("COMMIT");
   } catch (error) {
@@ -623,7 +680,118 @@ export async function getGuidedWorkflowRecordingSessionById(id: string, session:
     throw new GuidedWorkflowError("Recording session was not found.", 404);
   }
 
-  return mapRecordingSession(result.rows[0]);
+  const topics = await listGuidedWorkflowTopics(session);
+  return mapRecordingSession(result.rows[0], topics.filter((topic) => topic.recordingSessionId === id));
+}
+
+export async function getGuidedWorkflowTopicById(id: string, session: AdminSession) {
+  const topics = await listGuidedWorkflowTopics(session);
+  const topic = topics.find((item) => item.id === id);
+  if (!topic) {
+    throw new GuidedWorkflowError("Training topic was not found.", 404);
+  }
+  return topic;
+}
+
+export async function createGuidedWorkflowTopic(input: {
+  recordingSessionId: string;
+  title: string;
+}, session: AdminSession) {
+  const recordingSession = await getGuidedWorkflowRecordingSessionById(input.recordingSessionId, session);
+  const title = input.title.trim();
+
+  if (!title) {
+    throw new GuidedWorkflowError("Topic title is required.");
+  }
+
+  const recorderToken = createRecorderToken();
+  const orderResult = await getPool().query<{ next_order: number }>(
+    "SELECT COALESCE(MAX(sort_order) + 1, 0)::int AS next_order FROM guided_workflow_topics WHERE recording_session_id = $1",
+    [recordingSession.id]
+  );
+  const result = await getPool().query<{ id: string }>(
+    `
+      INSERT INTO guided_workflow_topics (
+        company_id,
+        recording_session_id,
+        title,
+        sort_order,
+        recorder_token_hash,
+        recorder_config_json,
+        created_by,
+        updated_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $7)
+      RETURNING id
+    `,
+    [
+      recordingSession.companyId,
+      recordingSession.id,
+      title,
+      orderResult.rows[0]?.next_order ?? 0,
+      tokenHash(recorderToken),
+      JSON.stringify({ recorderToken, topicId: "" }),
+      session.user.id
+    ]
+  );
+  await getPool().query(
+    `
+      UPDATE guided_workflow_topics
+      SET recorder_config_json = jsonb_set(recorder_config_json, '{topicId}', to_jsonb(id::text), true)
+      WHERE id = $1
+    `,
+    [result.rows[0].id]
+  );
+
+  return getGuidedWorkflowTopicById(result.rows[0].id, session);
+}
+
+export async function updateGuidedWorkflowTopic(id: string, input: {
+  title?: string;
+  move?: "up" | "down";
+}, session: AdminSession) {
+  const topic = await getGuidedWorkflowTopicById(id, session);
+
+  if (typeof input.title === "string") {
+    const title = input.title.trim();
+    if (!title) throw new GuidedWorkflowError("Topic title is required.");
+    await getPool().query(
+      "UPDATE guided_workflow_topics SET title = $2, updated_by = $3, updated_at = now() WHERE id = $1",
+      [id, title, session.user.id]
+    );
+  }
+
+  if (input.move) {
+    const direction = input.move === "up" ? -1 : 1;
+    const topics = (await listGuidedWorkflowTopics(session)).filter((item) => item.recordingSessionId === topic.recordingSessionId);
+    const index = topics.findIndex((item) => item.id === id);
+    const other = topics[index + direction];
+    if (other) {
+      await getPool().query("UPDATE guided_workflow_topics SET sort_order = $2, updated_at = now() WHERE id = $1", [topic.id, other.sortOrder]);
+      await getPool().query("UPDATE guided_workflow_topics SET sort_order = $2, updated_at = now() WHERE id = $1", [other.id, topic.sortOrder]);
+    }
+  }
+
+  return getGuidedWorkflowTopicById(id, session);
+}
+
+export async function deleteGuidedWorkflowTopic(id: string, session: AdminSession) {
+  const topic = await getGuidedWorkflowTopicById(id, session);
+  const client = await getPool().connect();
+
+  try {
+    await client.query("BEGIN");
+    if (topic.guideId) {
+      await client.query("DELETE FROM guided_workflow_guides WHERE id = $1", [topic.guideId]);
+    }
+    await client.query("DELETE FROM guided_workflow_topics WHERE id = $1", [id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listRecordedActionsForSession(sessionId: string, session: AdminSession) {
@@ -641,6 +809,21 @@ export async function listRecordedActionsForSession(sessionId: string, session: 
   return result.rows.map((row) => stripLegacyStepState(row.action_json));
 }
 
+export async function listRecordedActionsForTopic(topicId: string, session: AdminSession) {
+  await getGuidedWorkflowTopicById(topicId, session);
+  const result = await getPool().query<{ action_json: RecordedAction }>(
+    `
+      SELECT action_json
+      FROM guided_workflow_recorded_actions
+      WHERE topic_id = $1
+      ORDER BY action_index ASC
+    `,
+    [topicId]
+  );
+
+  return result.rows.map((row) => stripLegacyStepState(row.action_json));
+}
+
 export async function appendRecordedActionByToken(token: string, action: RecordedAction, origin?: string) {
   if (!token || !action || typeof action !== "object") {
     throw new GuidedWorkflowError("Recorder token and action are required.");
@@ -650,82 +833,82 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
 
   try {
     await client.query("BEGIN");
-    const sessionResult = await client.query<{
+    const topicResult = await client.query<{
       id: string;
       company_id: string;
+      recording_session_id: string;
       target_app_id: string | null;
       guide_id: string | null;
       title: string;
-      status: GuidedWorkflowRecordingSessionRow["status"];
       actions_count: number;
       next_action_index: number;
       allowed_origins_json: string[] | null;
     }>(
       `
         SELECT
-          guided_workflow_recording_sessions.id,
-          guided_workflow_recording_sessions.company_id,
+          guided_workflow_topics.id,
+          guided_workflow_topics.company_id,
+          guided_workflow_topics.recording_session_id,
           guided_workflow_recording_sessions.target_app_id,
-          guided_workflow_recording_sessions.guide_id,
-          guided_workflow_recording_sessions.title,
-          guided_workflow_recording_sessions.status,
+          guided_workflow_topics.guide_id,
+          guided_workflow_topics.title,
           (
             SELECT COUNT(*)::int
             FROM guided_workflow_recorded_actions
-            WHERE guided_workflow_recorded_actions.recording_session_id = guided_workflow_recording_sessions.id
+            WHERE guided_workflow_recorded_actions.topic_id = guided_workflow_topics.id
           ) AS actions_count,
           (
             SELECT COALESCE(MAX(action_index) + 1, 0)::int
             FROM guided_workflow_recorded_actions
-            WHERE guided_workflow_recorded_actions.recording_session_id = guided_workflow_recording_sessions.id
+            WHERE guided_workflow_recorded_actions.topic_id = guided_workflow_topics.id
           ) AS next_action_index,
           guided_workflow_target_apps.allowed_origins_json
-        FROM guided_workflow_recording_sessions
+        FROM guided_workflow_topics
+        INNER JOIN guided_workflow_recording_sessions ON guided_workflow_recording_sessions.id = guided_workflow_topics.recording_session_id
         LEFT JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = guided_workflow_recording_sessions.target_app_id
-        WHERE guided_workflow_recording_sessions.recorder_token_hash = $1
-        FOR UPDATE OF guided_workflow_recording_sessions
+        WHERE guided_workflow_topics.recorder_token_hash = $1
+        FOR UPDATE OF guided_workflow_topics
       `,
       [tokenHash(token)]
     );
-    const recordingSession = sessionResult.rows[0];
+    const topic = topicResult.rows[0];
 
-    if (!recordingSession) {
-      throw new GuidedWorkflowError("Recording session was not found.", 404);
+    if (!topic) {
+      throw new GuidedWorkflowError("Training topic was not found.", 404);
     }
 
-    const allowedOrigins = recordingSession.allowed_origins_json ?? [];
+    const allowedOrigins = topic.allowed_origins_json ?? [];
 
     if (origin && allowedOrigins.length > 0 && !allowedOrigins.includes(origin)) {
       throw new GuidedWorkflowError("This origin is not allowed for the recording session.", 403);
     }
 
-    const nextIndex = Number(recordingSession.next_action_index);
+    const nextIndex = Number(topic.next_action_index);
     const cleanAction: RecordedAction = stripLegacyStepState(action);
     await client.query(
       `
         INSERT INTO guided_workflow_recorded_actions (
           company_id,
           recording_session_id,
+          topic_id,
           action_index,
           action_json
         )
-        VALUES ($1, $2, $3, $4::jsonb)
+        VALUES ($1, $2, $3, $4, $5::jsonb)
       `,
-      [recordingSession.company_id, recordingSession.id, nextIndex, JSON.stringify(cleanAction)]
+      [topic.company_id, topic.recording_session_id, topic.id, nextIndex, JSON.stringify(cleanAction)]
     );
     await client.query(
       `
-        UPDATE guided_workflow_recording_sessions
-        SET status = CASE WHEN status = 'ready' THEN 'recording' ELSE status END,
-            started_at = COALESCE(started_at, now()),
-            actions_count = actions_count + 1,
+        UPDATE guided_workflow_topics
+        SET actions_count = actions_count + 1,
             updated_at = now()
         WHERE id = $1
       `,
-      [recordingSession.id]
+      [topic.id]
     );
 
-    if (recordingSession.guide_id) {
+    if (topic.guide_id) {
       const guideResult = await client.query<{
         recorded_actions_json: RecordedAction[] | null;
         steps_json: GuideStep[] | null;
@@ -736,7 +919,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
           WHERE id = $1
           FOR UPDATE
         `,
-        [recordingSession.guide_id]
+        [topic.guide_id]
       );
       const guide = guideResult.rows[0];
 
@@ -764,7 +947,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
                   updated_at = now()
               WHERE id = $1
             `,
-            [recordingSession.guide_id, JSON.stringify(nextRecordedActions), JSON.stringify(nextSteps)]
+            [topic.guide_id, JSON.stringify(nextRecordedActions), JSON.stringify(nextSteps)]
           );
         } else {
           await client.query(
@@ -774,18 +957,18 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
                   updated_at = now()
               WHERE id = $1
             `,
-            [recordingSession.guide_id, JSON.stringify(nextRecordedActions)]
+            [topic.guide_id, JSON.stringify(nextRecordedActions)]
           );
         }
       }
     } else {
-      const generated = generateGuideFromRecording([cleanAction], { title: recordingSession.title });
+      const generated = generateGuideFromRecording([cleanAction], { title: topic.title });
       const guideResult = await client.query<{ id: string }>(
         `
           INSERT INTO guided_workflow_guides (
             company_id,
             target_app_id,
-            recording_session_id,
+            topic_id,
             title,
             description,
             status,
@@ -796,9 +979,9 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
           RETURNING id
         `,
         [
-          recordingSession.company_id,
-          recordingSession.target_app_id,
-          recordingSession.id,
+          topic.company_id,
+          topic.target_app_id,
+          topic.id,
           generated.title,
           generated.description,
           JSON.stringify([cleanAction]),
@@ -807,12 +990,12 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
       );
       await client.query(
         `
-          UPDATE guided_workflow_recording_sessions
+          UPDATE guided_workflow_topics
           SET guide_id = $2,
               updated_at = now()
           WHERE id = $1
         `,
-        [recordingSession.id, guideResult.rows[0].id]
+        [topic.id, guideResult.rows[0].id]
       );
     }
     await client.query("COMMIT");
@@ -849,7 +1032,7 @@ export async function getGuidedWorkflowById(id: string, session: AdminSession) {
 export async function createGuidedWorkflow(input: {
   companyId: string;
   targetAppId?: string | null;
-  recordingSessionId?: string | null;
+  topicId?: string | null;
   title?: string;
   description?: string;
   status?: GuideStatus;
@@ -868,7 +1051,7 @@ export async function createGuidedWorkflow(input: {
       INSERT INTO guided_workflow_guides (
         company_id,
         target_app_id,
-        recording_session_id,
+        topic_id,
         title,
         description,
         status,
@@ -883,7 +1066,7 @@ export async function createGuidedWorkflow(input: {
     [
       input.companyId,
       input.targetAppId || null,
-      input.recordingSessionId || null,
+      input.topicId || null,
       generated.title,
       generated.description,
       input.status ?? "draft",
@@ -956,7 +1139,7 @@ export async function updateGuidedWorkflow(id: string, input: {
     params
   );
 
-  if (input.steps && currentGuide.recordingSessionId && recordedActions) {
+  if (input.steps && currentGuide.topicId && recordedActions) {
     const actionRows = recordedActions
       .map((action, index) => ({
         action,
@@ -970,10 +1153,10 @@ export async function updateGuidedWorkflow(id: string, input: {
         `
           UPDATE guided_workflow_recorded_actions
           SET action_index = $3
-          WHERE recording_session_id = $1
+          WHERE topic_id = $1
             AND action_json->>'id' = $2
         `,
-        [currentGuide.recordingSessionId, action.id, temporaryIndexOffset + actionIndex]
+        [currentGuide.topicId, action.id, temporaryIndexOffset + actionIndex]
       )
     ));
 
@@ -983,11 +1166,11 @@ export async function updateGuidedWorkflow(id: string, input: {
           UPDATE guided_workflow_recorded_actions
           SET action_index = $3,
               action_json = $4::jsonb
-          WHERE recording_session_id = $1
+          WHERE topic_id = $1
             AND action_json->>'id' = $2
         `,
         [
-          currentGuide.recordingSessionId,
+          currentGuide.topicId,
           action.id,
           actionIndex,
           JSON.stringify(action)
@@ -1017,13 +1200,13 @@ export async function deleteRecordedActionForGuideStep(guideId: string, stepId: 
   await getPool().query(
     `
       DELETE FROM guided_workflow_recorded_actions
-      WHERE recording_session_id = $1
+      WHERE topic_id = $1
         AND action_json->>'id' = $2
     `,
-    [guide.recordingSessionId, step.actionSourceId]
+    [guide.topicId, step.actionSourceId]
   );
 
-  return updateGuidedWorkflow(
+  const updatedGuide = await updateGuidedWorkflow(
     guide.id,
     {
       recordedActions: nextRecordedActions,
@@ -1032,6 +1215,25 @@ export async function deleteRecordedActionForGuideStep(guideId: string, stepId: 
     },
     session
   );
+
+  if (guide.topicId) {
+    await getPool().query(
+      `
+        UPDATE guided_workflow_topics
+        SET actions_count = (
+              SELECT COUNT(*)::int
+              FROM guided_workflow_recorded_actions
+              WHERE guided_workflow_recorded_actions.topic_id = guided_workflow_topics.id
+            ),
+            updated_by = $2,
+            updated_at = now()
+        WHERE id = $1
+      `,
+      [guide.topicId, session.user.id]
+    );
+  }
+
+  return updatedGuide;
 }
 
 export async function regenerateGuidedWorkflow(id: string, session: AdminSession) {
@@ -1044,16 +1246,17 @@ export async function regenerateGuidedWorkflow(id: string, session: AdminSession
   return updateGuidedWorkflow(id, { steps: generated.steps, status: "draft" }, session);
 }
 
-export async function createGuideFromRecordingSession(sessionId: string, session: AdminSession) {
-  const recordingSession = await getGuidedWorkflowRecordingSessionById(sessionId, session);
-  const actions = await listRecordedActionsForSession(sessionId, session);
+export async function createGuideFromRecordingSession(topicId: string, session: AdminSession) {
+  const topic = await getGuidedWorkflowTopicById(topicId, session);
+  const recordingSession = await getGuidedWorkflowRecordingSessionById(topic.recordingSessionId, session);
+  const actions = await listRecordedActionsForTopic(topicId, session);
 
   if (actions.length === 0) {
     throw new GuidedWorkflowError("Recording session has no actions yet.");
   }
 
-  if (recordingSession.guideId) {
-    const currentGuide = await getGuidedWorkflowById(recordingSession.guideId, session);
+  if (topic.guideId) {
+    const currentGuide = await getGuidedWorkflowById(topic.guideId, session);
     const currentStepSourceIds = new Set(currentGuide.steps.map((step) => step.actionSourceId).filter(Boolean));
     const removedSourceIds = new Set(
       currentGuide.recordedActions
@@ -1079,13 +1282,12 @@ export async function createGuideFromRecordingSession(sessionId: string, session
 
     await getPool().query(
       `
-        UPDATE guided_workflow_recording_sessions
-        SET status = 'converted',
-            updated_by = $2,
+        UPDATE guided_workflow_topics
+        SET updated_by = $2,
             updated_at = now()
         WHERE id = $1
       `,
-      [recordingSession.id, session.user.id]
+      [topic.id, session.user.id]
     );
 
     return guide;
@@ -1095,8 +1297,8 @@ export async function createGuideFromRecordingSession(sessionId: string, session
     {
       companyId: recordingSession.companyId,
       targetAppId: recordingSession.targetAppId,
-      recordingSessionId: recordingSession.id,
-      title: recordingSession.title,
+      topicId: topic.id,
+      title: topic.title,
       recordedActions: actions
     },
     session
@@ -1104,15 +1306,13 @@ export async function createGuideFromRecordingSession(sessionId: string, session
 
   await getPool().query(
     `
-      UPDATE guided_workflow_recording_sessions
-      SET status = 'converted',
-          guide_id = $2,
-          stopped_at = COALESCE(stopped_at, now()),
+      UPDATE guided_workflow_topics
+      SET guide_id = $2,
           updated_by = $3,
           updated_at = now()
       WHERE id = $1
     `,
-    [recordingSession.id, guide.id, session.user.id]
+    [topic.id, guide.id, session.user.id]
   );
 
   return guide;

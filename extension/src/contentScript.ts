@@ -15,6 +15,22 @@ const toastId = "scout-recorder-toast";
 const previewOverlayId = "scout-recorder-preview";
 const recorderBuild = "202606241500";
 declare const chrome: any;
+declare const SCOUT_JODIT_CSS: string | undefined;
+
+type ScoutJoditInstance = {
+  destruct(): void;
+  events: { on(eventName: "change", handler: () => void): void };
+  value: string;
+};
+type ScoutJoditConstructor = {
+  make(element: Element | string, options: Record<string, unknown>): ScoutJoditInstance;
+};
+
+declare global {
+  interface Window {
+    Jodit?: ScoutJoditConstructor;
+  }
+}
 
 const emptyRecordingState: RecordingState = { isRecording: false, isPaused: false, actions: [] };
 
@@ -243,7 +259,7 @@ function escapeHtml(value: string) {
 function sanitizeGuideHtml(value: string) {
   const template = document.createElement("template");
   template.innerHTML = value;
-  const allowedTags = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A", "FONT", "SPAN"]);
+  const allowedTags = new Set(["A", "B", "BLOCKQUOTE", "BR", "CODE", "COL", "COLGROUP", "DIV", "EM", "FONT", "H1", "H2", "H3", "H4", "H5", "H6", "I", "IMG", "LI", "OL", "P", "PRE", "S", "SPAN", "STRIKE", "STRONG", "SUB", "SUP", "TABLE", "TBODY", "TD", "TFOOT", "TH", "THEAD", "TR", "U", "UL"]);
   template.content.querySelectorAll("*").forEach((element) => {
     if (!allowedTags.has(element.tagName)) {
       element.replaceWith(...Array.from(element.childNodes));
@@ -251,13 +267,21 @@ function sanitizeGuideHtml(value: string) {
     }
     Array.from(element.attributes).forEach((attribute) => {
       const allowedHref = element.tagName === "A" && attribute.name === "href" && /^(https?:\/\/|\/|#scout-guide:)/i.test(attribute.value);
+      const allowedImageSrc = element.tagName === "IMG" && attribute.name === "src" && /^(https?:\/\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(attribute.value);
       const allowedFont = element.tagName === "FONT" && ["color", "face"].includes(attribute.name);
-      const allowedStyle = element.tagName === "SPAN" && attribute.name === "style";
+      const allowedStyle = attribute.name === "style";
+      const allowedClass = attribute.name === "class";
+      const allowedTableAttribute = ["border", "cellpadding", "cellspacing", "colspan", "rowspan", "scope"].includes(attribute.name);
+      const allowedMediaAttribute = element.tagName === "IMG" && ["alt", "height", "title", "width"].includes(attribute.name);
       if (allowedStyle) {
-        const safeRules = attribute.value.split(";").map((rule) => rule.trim()).filter((rule) => /^(color|background-color|font-family)\s*:/i.test(rule) && !/url|expression|javascript/i.test(rule));
+        const safeRules = attribute.value.split(";").map((rule) => rule.trim()).filter((rule) => /^(color|background-color|font-family|font-size|font-weight|font-style|text-align|text-decoration|width|height|border|border-collapse|vertical-align|padding|margin)\s*:/i.test(rule) && !/url|expression|javascript/i.test(rule));
         if (safeRules.length > 0) element.setAttribute("style", safeRules.join("; "));
         else element.removeAttribute("style");
-      } else if (!allowedHref && !allowedFont) {
+      } else if (allowedClass) {
+        const safeClasses = attribute.value.split(/\s+/).filter((className) => /^(ql-align-|ql-direction-rtl|ql-indent-|ql-size-|jodit-)/.test(className));
+        if (safeClasses.length > 0) element.setAttribute("class", safeClasses.join(" "));
+        else element.removeAttribute("class");
+      } else if (!allowedHref && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
         element.removeAttribute(attribute.name);
       }
     });
@@ -281,6 +305,52 @@ function controlSummary(identity: NonNullable<typeof lastPickedIdentity>) {
 
 function modalButtonStyle(background: string, color = "white") {
   return `padding:7px 10px;background:${background};color:${color};border:none;border-radius:7px;cursor:pointer;font:12px system-ui,sans-serif;font-weight:600`;
+}
+
+function ensurePickerEditorStyles() {
+  if (document.getElementById("scout-picker-editor-styles")) return;
+  const style = document.createElement("style");
+  style.id = "scout-picker-editor-styles";
+  style.textContent = `
+    ${typeof SCOUT_JODIT_CSS === "string" ? SCOUT_JODIT_CSS : ""}
+    #${pickerReviewDialogId} .jodit-container {
+      border-color: #334155;
+      color: #0f172a;
+      max-width: 100%;
+    }
+    #${pickerReviewDialogId} .jodit-workplace {
+      min-height: 130px;
+      max-height: 230px;
+    }
+    #${pickerReviewDialogId} .jodit-wysiwyg {
+      font: 12px/1.45 system-ui, sans-serif;
+    }
+    #${pickerReviewDialogId} .jodit-wysiwyg a {
+      color: #93c5fd;
+      text-decoration: underline;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function createPickerRichTextEditor(container: Element | null) {
+  const JoditEditor = window.Jodit;
+  if (!container || !JoditEditor) return null;
+
+  return JoditEditor.make(container, {
+    askBeforePasteHTML: false,
+    askBeforePasteFromWord: false,
+    defaultActionOnPaste: "insert_clear_html",
+    height: 260,
+    minHeight: 150,
+    placeholder: "Example: Click Save to finish the request.",
+    showCharsCounter: false,
+    showWordsCounter: false,
+    showXPathInStatusbar: false,
+    uploader: {
+      insertImageAsBase64URI: true
+    }
+  });
 }
 
 function isRecorderConfigured(config: RecorderConfig | undefined) {
@@ -339,6 +409,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   const bestSelector = identity.selectorCandidates[0];
   const confidence = Math.round(identity.confidenceScore * 100);
   const defaultTrigger = defaultTriggerForElementIdentity(identity);
+  ensurePickerEditorStyles();
   const dialog = document.createElement("div");
   dialog.id = pickerReviewDialogId;
   dialog.style.cssText = `
@@ -363,16 +434,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
     <style>
       #${pickerReviewDialogId}, #${pickerReviewDialogId} * { box-sizing: border-box; }
       #${pickerReviewDialogId} { max-width: calc(100vw - 32px); }
-      #scout-picker-scroll-area, #scout-picker-description { overflow-x: hidden; }
-      #scout-picker-editor-toolbar { display: grid; gap: 5px; border: 1px solid #334155; border-bottom: 0; border-radius: 8px 8px 0 0; background: #0f172a; padding: 5px; }
-      #scout-picker-editor-toolbar .scout-picker-toolbar-row { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; width: 100%; }
-      #scout-picker-editor-toolbar button { flex: 0 0 auto; }
-      #scout-picker-font-name { flex: 1 1 116px; min-width: 92px; max-width: 100%; }
-      #scout-picker-link-url { flex: 1 1 190px; min-width: 0; max-width: 100%; }
-      #scout-picker-description ul { list-style: disc; margin: 4px 0 4px 20px; padding: 0; }
-      #scout-picker-description ol { list-style: decimal; margin: 4px 0 4px 20px; padding: 0; }
-      #scout-picker-description li { margin: 2px 0; }
-      #scout-picker-description a { color: #93c5fd; text-decoration: underline; }
+      #scout-picker-scroll-area { overflow-x: hidden; }
     </style>
     <div id="scout-picker-drag-handle" style="display:flex;justify-content:space-between;gap:10px;align-items:start;padding:14px 14px 10px;border-bottom:1px solid rgba(148,163,184,.18);cursor:move;user-select:none">
       <div style="min-width:0">
@@ -397,34 +459,10 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
       ${identity.role ? `<div>Role: ${escapeHtml(identity.role)}</div>` : ""}
       ${identity.labelText ? `<div>Label: ${escapeHtml(identity.labelText)}</div>` : ""}
     </div>
-    <label style="display:block;margin-top:12px;color:#cbd5e1">
+    <div style="display:block;margin-top:12px;color:#cbd5e1">
       <span style="display:block;margin-bottom:5px;font-weight:700">Step description shown to users</span>
-      <div id="scout-picker-editor-toolbar">
-        <div class="scout-picker-toolbar-row">
-          <button type="button" data-rich-command="bold" style="${modalButtonStyle("#1e293b")}">B</button>
-          <button type="button" data-rich-command="italic" style="${modalButtonStyle("#1e293b")}"><i>I</i></button>
-          <button type="button" data-rich-command="underline" style="${modalButtonStyle("#1e293b")}"><u>U</u></button>
-          <button type="button" data-rich-command="insertUnorderedList" style="${modalButtonStyle("#1e293b")}">List</button>
-          <button type="button" data-rich-command="insertOrderedList" style="${modalButtonStyle("#1e293b")}">1.</button>
-          <select id="scout-picker-font-name" style="border:1px solid #334155;border-radius:7px;background:#020617;color:#f8fafc;padding:6px;font:12px system-ui,sans-serif;outline:none">
-            <option value="">Font</option>
-            <option value="Arial">Arial</option>
-            <option value="Georgia">Georgia</option>
-            <option value="Tahoma">Tahoma</option>
-            <option value="Verdana">Verdana</option>
-            <option value="Courier New">Courier New</option>
-          </select>
-          <input id="scout-picker-text-color" title="Text color" type="color" style="height:30px;width:34px;flex:0 0 34px;border:1px solid #334155;border-radius:7px;background:#020617;padding:2px" />
-          <input id="scout-picker-highlight-color" title="Highlight color" type="color" style="height:30px;width:34px;flex:0 0 34px;border:1px solid #334155;border-radius:7px;background:#020617;padding:2px" />
-        </div>
-        <div class="scout-picker-toolbar-row">
-          <input id="scout-picker-link-url" placeholder="https:// or /internal-url" style="border:1px solid #334155;border-radius:7px;background:#020617;color:#f8fafc;padding:6px;font:12px system-ui,sans-serif;outline:none" />
-          <button type="button" id="scout-picker-link-insert" style="${modalButtonStyle("#1d4ed8")}">Link</button>
-          <button type="button" data-rich-command="removeFormat" style="${modalButtonStyle("#334155")}">Clear</button>
-        </div>
-      </div>
-      <div id="scout-picker-description" contenteditable="true" data-placeholder="Example: Click Save to finish the request." style="box-sizing:border-box;width:100%;min-height:92px;max-height:180px;overflow:auto;border:1px solid #334155;border-radius:0 0 8px 8px;background:#020617;color:#f8fafc;padding:9px;font:12px/1.45 system-ui,sans-serif;outline:none"></div>
-    </label>
+      <textarea id="scout-picker-description"></textarea>
+    </div>
     <label style="display:block;margin-top:12px;color:#cbd5e1">
       <span style="display:block;margin-bottom:5px;font-weight:700">Step purpose</span>
       <select id="scout-picker-purpose" style="box-sizing:border-box;width:100%;border:1px solid #334155;border-radius:8px;background:#020617;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
@@ -461,68 +499,10 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   document.body.appendChild(dialog);
   const dragHandle = document.getElementById("scout-picker-drag-handle");
   if (dragHandle) attachDialogDrag(dialog, dragHandle);
-  let savedDescriptionRange: Range | null = null;
-  const rememberDescriptionSelection = () => {
-    const editor = document.getElementById("scout-picker-description") as HTMLElement | null;
-    const selection = window.getSelection();
-    if (editor && selection && selection.rangeCount > 0 && editor.contains(selection.anchorNode)) {
-      savedDescriptionRange = selection.getRangeAt(0).cloneRange();
-    }
-  };
-  const restoreDescriptionSelection = () => {
-    if (!savedDescriptionRange) return;
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    selection?.addRange(savedDescriptionRange);
-  };
-  const descriptionEditor = document.getElementById("scout-picker-description") as HTMLElement | null;
-  descriptionEditor?.addEventListener("mouseup", rememberDescriptionSelection);
-  descriptionEditor?.addEventListener("keyup", rememberDescriptionSelection);
-  descriptionEditor?.addEventListener("paste", () => window.setTimeout(rememberDescriptionSelection));
+  const descriptionEditor = createPickerRichTextEditor(document.getElementById("scout-picker-description"));
   const purposeSelect = document.getElementById("scout-picker-purpose") as HTMLSelectElement | null;
   const navigationControls = document.getElementById("scout-picker-navigation-controls");
   const triggerField = document.getElementById("scout-picker-trigger-field");
-  dialog.querySelectorAll<HTMLButtonElement>("[data-rich-command]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const editor = document.getElementById("scout-picker-description") as HTMLElement | null;
-      editor?.focus();
-      restoreDescriptionSelection();
-      document.execCommand(button.dataset.richCommand ?? "", false);
-    });
-  });
-  document.getElementById("scout-picker-font-name")?.addEventListener("change", (event) => {
-    const value = (event.target as HTMLSelectElement).value;
-    if (!value) return;
-    descriptionEditor?.focus();
-    restoreDescriptionSelection();
-    document.execCommand("fontName", false, value);
-    (event.target as HTMLSelectElement).value = "";
-  });
-  document.getElementById("scout-picker-text-color")?.addEventListener("change", (event) => {
-    descriptionEditor?.focus();
-    restoreDescriptionSelection();
-    document.execCommand("foreColor", false, (event.target as HTMLInputElement).value);
-  });
-  document.getElementById("scout-picker-highlight-color")?.addEventListener("change", (event) => {
-    descriptionEditor?.focus();
-    restoreDescriptionSelection();
-    document.execCommand("hiliteColor", false, (event.target as HTMLInputElement).value);
-  });
-  document.getElementById("scout-picker-link-url")?.addEventListener("focus", rememberDescriptionSelection);
-  document.getElementById("scout-picker-link-url")?.addEventListener("mousedown", rememberDescriptionSelection);
-  document.getElementById("scout-picker-link-insert")?.addEventListener("click", () => {
-    const editor = document.getElementById("scout-picker-description") as HTMLElement | null;
-    const url = (document.getElementById("scout-picker-link-url") as HTMLInputElement | null)?.value.trim();
-    if (!url) return;
-    editor?.focus();
-    restoreDescriptionSelection();
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      document.execCommand("insertHTML", false, `<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`);
-    } else {
-      document.execCommand("createLink", false, url);
-    }
-  });
   const syncNavigationControls = () => {
     if (navigationControls) {
       navigationControls.style.display = purposeSelect?.value === "navigation" ? "block" : "none";
@@ -536,7 +516,8 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
 
   return new Promise((resolve) => {
     const finish = (value: "accept" | "reselect" | "cancel") => {
-      const descriptionHtml = sanitizeGuideHtml((document.getElementById("scout-picker-description") as HTMLElement | null)?.innerHTML ?? "");
+      const rawDescriptionHtml = descriptionEditor?.value ?? "";
+      const descriptionHtml = sanitizeGuideHtml(rawDescriptionHtml);
       const description = plainTextFromHtml(descriptionHtml) ? descriptionHtml : undefined;
       const purposeValue = (document.getElementById("scout-picker-purpose") as HTMLSelectElement | null)?.value;
       const purpose: GuideStepPurpose = purposeValue === "navigation" ? "navigation" : "main";
@@ -550,6 +531,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
           ? triggerValue
           : "click";
       dialog.remove();
+      descriptionEditor?.destruct();
       resolve({ action: value, description, purpose, navigationMode, trigger });
     };
 

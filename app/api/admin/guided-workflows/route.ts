@@ -46,6 +46,7 @@ export async function POST(request: Request) {
     const guide = await createGuidedWorkflow(
       {
         companyId: String(body.companyId ?? body.company_id ?? ""),
+        topicId: typeof body.topicId === "string" ? body.topicId : undefined,
         title: typeof body.title === "string" ? body.title : undefined,
         description: typeof body.description === "string" ? body.description : undefined,
         recordedActions: Array.isArray(body.recordedActions) ? body.recordedActions : Array.isArray(body.recorded_actions) ? body.recorded_actions : [],

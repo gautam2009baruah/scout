@@ -5,6 +5,7 @@ import ts from "typescript";
 const root = process.cwd();
 const extensionRoot = path.join(root, "extension");
 const src = path.join(extensionRoot, "src");
+const joditRoot = path.join(root, "node_modules", "jodit", "es2021");
 const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
 const outputs = ["chrome", "edge"].map((browser) => path.join(extensionRoot, "dist", `${browser}-${stamp}`));
 
@@ -46,6 +47,13 @@ const contentScript = await bundle([
   "browserApi.ts",
   "contentScript.ts"
 ]);
+const joditScript = await readFile(path.join(joditRoot, "jodit.fat.min.js"), "utf8");
+const joditCss = await readFile(path.join(joditRoot, "jodit.fat.min.css"), "utf8");
+const contentScriptWithEditor = [
+  joditScript,
+  `\nconst SCOUT_JODIT_CSS = ${JSON.stringify(joditCss)};\n`,
+  contentScript
+].join("\n");
 const manifest = await readFile(path.join(extensionRoot, "manifest.json"), "utf8");
 
 for (const output of outputs) {
@@ -53,7 +61,7 @@ for (const output of outputs) {
   await mkdir(output, { recursive: true });
   await writeFile(path.join(output, "manifest.json"), manifest);
   await writeFile(path.join(output, "background.js"), background);
-  await writeFile(path.join(output, "contentScript.js"), contentScript);
+  await writeFile(path.join(output, "contentScript.js"), contentScriptWithEditor);
 }
 
 console.log("Built extension bundles:");

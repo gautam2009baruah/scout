@@ -2,6 +2,7 @@ export type TooltipControls = {
   onBack(): void;
   onNext(): void;
   onClose(): void;
+  onGuideLink?(guideId: string): void;
 };
 
 type AnchoredTooltip = HTMLElement & {
@@ -21,18 +22,24 @@ export function createTooltip(input: {
   tooltip.innerHTML = `
     <div class="scout-adoption-tooltip__arrow"></div>
     <button type="button" class="scout-adoption-tooltip__close" data-action="close" aria-label="Close guide">&times;</button>
-    <div class="scout-adoption-tooltip__title"></div>
     <div class="scout-adoption-tooltip__message"></div>
     <div class="scout-adoption-tooltip__footer">
       <span>${input.index + 1} / ${input.total}</span>
       <div>
-        <button type="button" data-action="back">Back</button>
+        ${input.index > 0 ? '<button type="button" data-action="back">Back</button>' : ""}
         <button type="button" data-action="next">${input.index + 1 === input.total ? "Done" : "Next"}</button>
       </div>
     </div>
   `;
-  tooltip.querySelector(".scout-adoption-tooltip__title")!.textContent = input.title;
   tooltip.querySelector(".scout-adoption-tooltip__message")!.innerHTML = sanitizeGuideHtml(input.message);
+  tooltip.querySelectorAll<HTMLAnchorElement>('a[href^="#scout-guide:"]').forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const guideId = link.getAttribute("href")?.replace(/^#scout-guide:/, "");
+      if (!guideId || !input.controls.onGuideLink) return;
+      event.preventDefault();
+      input.controls.onGuideLink(guideId);
+    });
+  });
   tooltip.querySelector('[data-action="back"]')?.addEventListener("click", input.controls.onBack);
   tooltip.querySelector('[data-action="next"]')?.addEventListener("click", input.controls.onNext);
   tooltip.querySelector('[data-action="close"]')?.addEventListener("click", input.controls.onClose);
@@ -45,7 +52,7 @@ export function createTooltip(input: {
 function sanitizeGuideHtml(value: string) {
   const template = document.createElement("template");
   template.innerHTML = value;
-  const allowedTags = new Set(["B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "A", "FONT", "SPAN"]);
+  const allowedTags = new Set(["A", "B", "BLOCKQUOTE", "BR", "CODE", "COL", "COLGROUP", "DIV", "EM", "FONT", "H1", "H2", "H3", "H4", "H5", "H6", "I", "IMG", "LI", "OL", "P", "PRE", "S", "SPAN", "STRIKE", "STRONG", "SUB", "SUP", "TABLE", "TBODY", "TD", "TFOOT", "TH", "THEAD", "TR", "U", "UL"]);
   template.content.querySelectorAll("*").forEach((element) => {
     if (!allowedTags.has(element.tagName)) {
       element.replaceWith(...Array.from(element.childNodes));
@@ -53,19 +60,30 @@ function sanitizeGuideHtml(value: string) {
     }
     Array.from(element.attributes).forEach((attribute) => {
       const allowedHref = element.tagName === "A" && attribute.name === "href" && /^(https?:\/\/|\/|#scout-guide:)/i.test(attribute.value);
+      const allowedImageSrc = element.tagName === "IMG" && attribute.name === "src" && /^(https?:\/\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(attribute.value);
       const allowedFont = element.tagName === "FONT" && ["color", "face"].includes(attribute.name);
-      const allowedStyle = element.tagName === "SPAN" && attribute.name === "style";
+      const allowedStyle = attribute.name === "style";
+      const allowedClass = attribute.name === "class";
+      const allowedTableAttribute = ["border", "cellpadding", "cellspacing", "colspan", "rowspan", "scope"].includes(attribute.name);
+      const allowedMediaAttribute = element.tagName === "IMG" && ["alt", "height", "title", "width"].includes(attribute.name);
       if (allowedStyle) {
-        const safeRules = attribute.value.split(";").map((rule) => rule.trim()).filter((rule) => /^(color|background-color|font-family)\s*:/i.test(rule) && !/url|expression|javascript/i.test(rule));
+        const safeRules = attribute.value.split(";").map((rule) => rule.trim()).filter((rule) => /^(color|background-color|font-family|font-size|font-weight|font-style|text-align|text-decoration|width|height|border|border-collapse|vertical-align|padding|margin)\s*:/i.test(rule) && !/url|expression|javascript/i.test(rule));
         if (safeRules.length > 0) element.setAttribute("style", safeRules.join("; "));
         else element.removeAttribute("style");
-      } else if (!allowedHref && !allowedFont) {
+      } else if (allowedClass) {
+        const safeClasses = attribute.value.split(/\s+/).filter((className) => /^(ql-align-|ql-direction-rtl|ql-indent-|ql-size-|jodit-)/.test(className));
+        if (safeClasses.length > 0) element.setAttribute("class", safeClasses.join(" "));
+        else element.removeAttribute("class");
+      } else if (!allowedHref && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
         element.removeAttribute(attribute.name);
       }
     });
     if (element.tagName === "A") {
-      element.setAttribute("target", "_blank");
-      element.setAttribute("rel", "noopener noreferrer");
+      const href = element.getAttribute("href") ?? "";
+      if (!href.startsWith("#scout-guide:")) {
+        element.setAttribute("target", "_blank");
+        element.setAttribute("rel", "noopener noreferrer");
+      }
     }
   });
   return template.innerHTML;
@@ -83,8 +101,26 @@ export function injectTooltipStyles() {
     .scout-adoption-tooltip__title { max-width: 238px; padding-right: 20px; font-weight: 750; font-size: 13px; margin-bottom: 4px; }
     .scout-adoption-tooltip__message { max-width: 252px; color: #475569; font-size: 12.5px; }
     .scout-adoption-tooltip__message p, .scout-adoption-tooltip__message div { margin: 0 0 4px; }
+    .scout-adoption-tooltip__message h1, .scout-adoption-tooltip__message h2, .scout-adoption-tooltip__message h3 { margin: 0 0 5px; font-weight: 750; line-height: 1.2; }
+    .scout-adoption-tooltip__message h1 { font-size: 17px; }
+    .scout-adoption-tooltip__message h2 { font-size: 15px; }
+    .scout-adoption-tooltip__message h3 { font-size: 13.5px; }
+    .scout-adoption-tooltip__message blockquote { margin: 4px 0; border-left: 3px solid #cbd5e1; padding-left: 8px; color: #64748b; }
+    .scout-adoption-tooltip__message pre { overflow: auto; border-radius: 6px; background: #f1f5f9; padding: 6px; font-size: 11px; }
+    .scout-adoption-tooltip__message img { max-width: 100%; height: auto; border-radius: 6px; }
+    .scout-adoption-tooltip__message table { max-width: 100%; border-collapse: collapse; font-size: 11px; }
+    .scout-adoption-tooltip__message th, .scout-adoption-tooltip__message td { border: 1px solid #cbd5e1; padding: 3px 5px; }
     .scout-adoption-tooltip__message ul, .scout-adoption-tooltip__message ol { margin: 4px 0 0 18px; padding: 0; }
     .scout-adoption-tooltip__message li { margin: 2px 0; }
+    .scout-adoption-tooltip__message .ql-align-center { text-align: center; }
+    .scout-adoption-tooltip__message .ql-align-right { text-align: right; }
+    .scout-adoption-tooltip__message .ql-align-justify { text-align: justify; }
+    .scout-adoption-tooltip__message .ql-size-small { font-size: .75em; }
+    .scout-adoption-tooltip__message .ql-size-large { font-size: 1.35em; }
+    .scout-adoption-tooltip__message .ql-size-huge { font-size: 1.8em; }
+    .scout-adoption-tooltip__message .ql-indent-1 { padding-left: 1.5em; }
+    .scout-adoption-tooltip__message .ql-indent-2 { padding-left: 3em; }
+    .scout-adoption-tooltip__message .ql-indent-3 { padding-left: 4.5em; }
     .scout-adoption-tooltip__footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: #64748b; font-size: 11.5px; }
     .scout-adoption-tooltip button:not(.scout-adoption-tooltip__close) { margin-left: 6px; border: 1px solid #dbe3ee; border-radius: 999px; background: #fff; padding: 5px 9px; color: #0f172a; cursor: pointer; font: 600 12px system-ui, sans-serif; }
     .scout-adoption-tooltip button[data-action="next"] { border-color: #0f172a; background: #0f172a; color: #fff; }

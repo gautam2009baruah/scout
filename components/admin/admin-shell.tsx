@@ -23,7 +23,8 @@ const moduleIcons = {
 } as const;
 
 const TRAINING_SETUP_HREF = "/control-panel/administration/training-setup";
-const CRS_TARGET_APP_ID = "6f302bb3-f665-458d-87f3-59809dca63d0";
+const CRS_SCOUT_BASE_URL = "http://localhost:3000";
+const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
   const visibleModules = new Map(session.modules.map((module) => [module.key, module]));
@@ -136,6 +137,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         modeNotice="Ask a knowledgebase question or start a CRS guided workflow from this same chatbot."
         placeholder="Ask or request a workflow..."
         quickPrompts={["How can I create a rate?", "Show guided workflows"]}
+        scoutBaseUrl={CRS_SCOUT_BASE_URL}
         targetAppId={CRS_TARGET_APP_ID}
         targetAppName="CRS"
         theme={{
