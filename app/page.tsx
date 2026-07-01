@@ -99,11 +99,8 @@ export default function Home() {
           <div className="flex items-center justify-center lg:justify-end">
             <ScoutChatbot
               assistantName="Acme Assistant"
-              badge="Widget"
               companyId="fb88ab9c-36e9-42dc-8df1-710ec6f6065f"
-              modeNotice="Prototype mode: knowledgebase answers and guided workflow suggestions are mocked in this same chatbot for review."
               placeholder="Ask or request a workflow..."
-              quickPrompts={["How can I create a rate?", "Show guided workflows"]}
               theme={{
                 brandColor: "#111827",
                 accentColor: "#0ea5e9"

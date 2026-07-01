@@ -53,6 +53,21 @@ export type GuidedWorkflowTopicRow = {
   updatedAt: string;
 };
 
+export type PlayerTrainingSession = {
+  id: string;
+  title: string;
+  topics: Array<{
+    id: string;
+    title: string;
+    guideId: string;
+    description: string;
+    status: GuideStatus;
+    actionsCount: number;
+    steps: number;
+    updatedAt: string;
+  }>;
+};
+
 export class GuidedWorkflowError extends Error {
   statusCode: number;
 
@@ -860,7 +875,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
           (
             SELECT COALESCE(MAX(action_index) + 1, 0)::int
             FROM guided_workflow_recorded_actions
-            WHERE guided_workflow_recorded_actions.topic_id = guided_workflow_topics.id
+            WHERE guided_workflow_recorded_actions.recording_session_id = guided_workflow_topics.recording_session_id
           ) AS next_action_index,
           guided_workflow_target_apps.allowed_origins_json
         FROM guided_workflow_topics
@@ -1373,4 +1388,71 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
       steps: row.steps_json ?? []
     })
   );
+}
+
+export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId: string; origin?: string }): Promise<PlayerTrainingSession[]> {
+  await getPublishedGuidesForPlayer(input);
+
+  const result = await getPool().query<{
+    session_id: string;
+    session_title: string;
+    topic_id: string;
+    topic_title: string;
+    guide_id: string;
+    guide_description: string;
+    guide_status: GuideStatus;
+    actions_count: number;
+    steps_json: GuideStep[];
+    guide_updated_at: Date;
+    topic_sort_order: number;
+  }>(
+    `
+      SELECT
+        guided_workflow_recording_sessions.id AS session_id,
+        guided_workflow_recording_sessions.title AS session_title,
+        guided_workflow_topics.id AS topic_id,
+        guided_workflow_topics.title AS topic_title,
+        guided_workflow_guides.id AS guide_id,
+        guided_workflow_guides.description AS guide_description,
+        guided_workflow_guides.status AS guide_status,
+        guided_workflow_topics.actions_count,
+        guided_workflow_guides.steps_json,
+        guided_workflow_guides.updated_at AS guide_updated_at,
+        guided_workflow_topics.sort_order AS topic_sort_order
+      FROM guided_workflow_recording_sessions
+      INNER JOIN guided_workflow_topics
+        ON guided_workflow_topics.recording_session_id = guided_workflow_recording_sessions.id
+      INNER JOIN guided_workflow_guides
+        ON guided_workflow_guides.id = guided_workflow_topics.guide_id
+      WHERE guided_workflow_recording_sessions.target_app_id = $1
+        AND guided_workflow_guides.target_app_id = $1
+        AND guided_workflow_guides.status = 'published'
+      ORDER BY guided_workflow_recording_sessions.updated_at DESC, guided_workflow_topics.sort_order ASC, guided_workflow_topics.created_at ASC
+    `,
+    [input.targetAppId]
+  );
+
+  const sessions = new Map<string, PlayerTrainingSession>();
+
+  result.rows.forEach((row) => {
+    const session = sessions.get(row.session_id) ?? {
+      id: row.session_id,
+      title: row.session_title,
+      topics: []
+    };
+
+    session.topics.push({
+      id: row.topic_id,
+      title: row.topic_title,
+      guideId: row.guide_id,
+      description: row.guide_description,
+      status: row.guide_status,
+      actionsCount: Number(row.actions_count),
+      steps: row.steps_json?.length ?? 0,
+      updatedAt: row.guide_updated_at.toISOString()
+    });
+    sessions.set(row.session_id, session);
+  });
+
+  return Array.from(sessions.values());
 }

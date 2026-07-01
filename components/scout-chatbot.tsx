@@ -6,19 +6,11 @@ import {
   Bot,
   Check,
   ChevronDown,
-  Clock3,
+  ChevronRight,
   Grip,
-  ListChecks,
-  Maximize2,
   MessageCircle,
-  Mic,
-  Minus,
-  Paperclip,
   Play,
-  RotateCcw,
-  Search,
-  Settings,
-  Sparkles,
+  Undo2,
   UserRound,
   X
 } from "lucide-react";
@@ -29,7 +21,6 @@ import {
   PointerEvent as ReactPointerEvent,
   ReactNode,
   useEffect,
-  useMemo,
   useRef,
   useState
 } from "react";
@@ -50,6 +41,16 @@ export type ScoutWorkflowSession = {
   description: string;
   estimatedTime: string;
   steps: number;
+  topics?: ScoutWorkflowTopic[];
+};
+
+export type ScoutWorkflowTopic = {
+  id: string;
+  title: string;
+  guideId: string;
+  description: string;
+  estimatedTime: string;
+  steps: number;
 };
 
 type PlayerGuide = {
@@ -57,6 +58,23 @@ type PlayerGuide = {
   title: string;
   description: string;
   steps: unknown[];
+};
+
+type PlayerTrainingSession = {
+  id: string;
+  title: string;
+  topics: PlayerTrainingTopic[];
+};
+
+type PlayerTrainingTopic = {
+  id: string;
+  title: string;
+  guideId: string;
+  description: string;
+  status: "draft" | "published";
+  actionsCount: number;
+  steps: number;
+  updatedAt: string;
 };
 
 type ScoutAdoptionPlayerHandle = {
@@ -130,20 +148,13 @@ type ChatPosition = {
   top: number;
 };
 
-const defaultPrompts = [
-  "How can I create a rate?",
-  "Show guided workflows",
-  "Find policy for rate approvals"
-];
+type ChatTab = "qa" | "workflows";
 
 const defaultReplies = [
   "I am ready for your API. Pass an async onSendMessage handler and I will render the response inside this same polished widget.",
   "This component is portable: configure brand color, welcome copy, launcher position, quick prompts, and message handling from props.",
   "For a customer install, mount the component once near the root of their app and pass user or session context to your backend handler."
 ];
-
-const defaultWelcome =
-  "Hi, I am Scout. I can help users find answers, draft replies, and move through workflows without leaving your app.";
 
 const initialChatSize: ChatSize = {
   width: 440,
@@ -153,6 +164,11 @@ const initialChatSize: ChatSize = {
 const initialChatPosition: ChatPosition = {
   left: 20,
   top: 20
+};
+
+const launcherSize: ChatSize = {
+  width: 56,
+  height: 56
 };
 
 const mockWorkflowSessions: ScoutWorkflowSession[] = [
@@ -174,53 +190,38 @@ const mockWorkflowSessions: ScoutWorkflowSession[] = [
 
 export function ScoutChatbot({
   assistantName = "Scout Assistant",
-  badge = "Beta",
   chatEndpoint = "/chat/query",
   className,
   companyId,
   conversationId,
-  defaultMinimized = false,
   defaultOpen = true,
   initialMessages,
   launcherLabel = "Open chat",
-  modeNotice = "Frontend demo mode: responses are mocked locally until your backend API is connected.",
   onConversationChange,
   onOpenChange,
   onSendMessage,
   placeholder = "Ask anything...",
   position = "bottom-right",
-  quickPrompts = defaultPrompts,
   showHeaderActions = true,
   scoutBaseUrl = "",
-  subtitle = "Online now",
   targetAppId,
   targetAppName,
   theme,
   userId,
   userLabel = "You",
-  variant = "inline",
-  welcomeMessage = defaultWelcome
+  variant = "inline"
 }: ScoutChatbotProps) {
+  const messageStorageKey = getMessageStorageKey({ companyId, conversationId, userId, variant });
   const [isOpen, setIsOpen] = useState(defaultOpen);
-  const [isMinimized, setIsMinimized] = useState(defaultMinimized);
   const [messages, setMessages] = useState<RenderedMessage[]>(() =>
-    normalizeMessages(
-      initialMessages?.length
-        ? initialMessages
-        : [
-            {
-              role: "assistant",
-              text: welcomeMessage,
-              time: "09:41"
-            }
-          ]
-    )
+    readStoredMessages(messageStorageKey) ?? normalizeMessages(initialMessages ?? [])
   );
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [showWorkflows, setShowWorkflows] = useState(false);
+  const [activeTab, setActiveTab] = useState<ChatTab>("qa");
   const [activeWorkflow, setActiveWorkflow] = useState<ScoutWorkflowSession | null>(null);
   const [workflowSessions, setWorkflowSessions] = useState<ScoutWorkflowSession[]>(mockWorkflowSessions);
+  const [expandedWorkflowSessions, setExpandedWorkflowSessions] = useState<Set<string>>(() => new Set());
   const [workflowsState, setWorkflowsState] = useState<{ status: "idle" | "loading" | "ready" | "error"; message: string }>({
     status: "idle",
     message: ""
@@ -240,14 +241,6 @@ export function ScoutChatbot({
     "--scout-focus": `${theme?.accentColor ?? "#0ea5e9"}24`
   };
 
-  const statusText = useMemo(() => {
-    if (isTyping) {
-      return `${assistantName} is typing`;
-    }
-
-    return subtitle;
-  }, [assistantName, isTyping, subtitle]);
-
   useEffect(() => {
     setHasMounted(true);
 
@@ -257,8 +250,13 @@ export function ScoutChatbot({
 
     const nextSize = getDefaultChatSize();
     setPanelSize(nextSize);
-    setPanelPosition(defaultOpen ? getDefaultChatPosition(position, nextSize) : getBottomRightChatPosition({ width: 64, height: 64 }));
+    setPanelPosition(defaultOpen ? getDefaultChatPosition(position, nextSize) : getBottomRightChatPosition(launcherSize));
   }, [defaultOpen, position, variant]);
+
+  useEffect(() => {
+    nextMessageId.current = messages.length + 1;
+    writeStoredMessages(messageStorageKey, messages);
+  }, [messageStorageKey, messages]);
 
   useEffect(() => {
     if (!targetAppId) {
@@ -285,12 +283,14 @@ export function ScoutChatbot({
         }
 
         const guides = Array.isArray(body?.guides) ? body.guides as PlayerGuide[] : [];
+        const sessions = Array.isArray(body?.sessions) ? body.sessions as PlayerTrainingSession[] : [];
 
         if (!ignore) {
-          setWorkflowSessions(guides.map(workflowFromGuide));
+          setWorkflowSessions(sessions.length > 0 ? sessions.map(workflowSessionFromPlayerSession) : guides.map(workflowFromGuide));
+          setExpandedWorkflowSessions(new Set());
           setWorkflowsState({
             status: "ready",
-            message: guides.length === 0 ? `No published guided workflows found${targetAppName ? ` for ${targetAppName}` : ""}.` : ""
+            message: sessions.length === 0 && guides.length === 0 ? `No published guided workflows found${targetAppName ? ` for ${targetAppName}` : ""}.` : ""
           });
         }
       } catch (error) {
@@ -323,31 +323,30 @@ export function ScoutChatbot({
     const nextSize = clampChatSize(panelSize);
     setPanelSize(nextSize);
     setPanelPosition(getBottomRightChatPosition(nextSize));
-    setIsMinimized(false);
     setOpen(true);
   }
 
   function closeFloatingChat() {
-    setIsMinimized(false);
-    setPanelPosition(getBottomRightChatPosition({ width: 64, height: 64 }));
+    setPanelPosition(getBottomRightChatPosition(launcherSize));
     setOpen(false);
-  }
-
-  function toggleMinimized() {
-    const nextMinimized = !isMinimized;
-    setIsMinimized(nextMinimized);
-
-    if (variant === "floating") {
-      const nextSize = nextMinimized ? getMinimizedChatSize(panelSize) : panelSize;
-      setPanelPosition(getBottomRightChatPosition(nextSize));
-    }
   }
 
   function restoreFloatingLayout() {
     const nextSize = getDefaultChatSize();
     setPanelSize(nextSize);
     setPanelPosition(getDefaultChatPosition(position, nextSize));
-    setIsMinimized(false);
+  }
+
+  function toggleWorkflowSession(sessionId: string) {
+    setExpandedWorkflowSessions((current) => {
+      const next = new Set(current);
+      if (next.has(sessionId)) {
+        next.delete(sessionId);
+      } else {
+        next.add(sessionId);
+      }
+      return next;
+    });
   }
 
   function handleHeaderPointerDown(event: ReactPointerEvent<HTMLElement>) {
@@ -357,8 +356,7 @@ export function ScoutChatbot({
 
     const startX = event.clientX;
     const startY = event.clientY;
-    const currentSize = isMinimized ? getMinimizedChatSize(panelSize) : panelSize;
-    const startPosition = clampChatPosition(panelPosition, currentSize);
+    const startPosition = clampChatPosition(panelPosition, panelSize);
     document.body.classList.add("select-none");
 
     function move(moveEvent: PointerEvent) {
@@ -368,7 +366,7 @@ export function ScoutChatbot({
             left: startPosition.left + moveEvent.clientX - startX,
             top: startPosition.top + moveEvent.clientY - startY
           },
-          currentSize
+          panelSize
         )
       );
     }
@@ -384,7 +382,7 @@ export function ScoutChatbot({
   }
 
   function handleResizePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (variant !== "floating" || isMinimized) {
+    if (variant !== "floating") {
       return;
     }
 
@@ -474,15 +472,20 @@ export function ScoutChatbot({
 
   async function startWorkflow(workflow: ScoutWorkflowSession) {
     setActiveWorkflow(workflow);
-    setShowWorkflows(false);
+    setActiveTab("workflows");
 
-    let startedPlayer = false;
+    await delay(1300);
+
+    if (variant === "floating") {
+      closeFloatingChat();
+    } else {
+      setOpen(false);
+    }
 
     if (targetAppId) {
       try {
         const player = await getPlayerHandle({ scoutBaseUrl, targetAppId }, playerHandleRef);
         player.play(workflow.id);
-        startedPlayer = true;
       } catch (error) {
         setWorkflowsState({
           status: "error",
@@ -490,18 +493,16 @@ export function ScoutChatbot({
         });
       }
     }
+  }
 
-    setMessages((current) => [
-      ...current,
-      createRenderedMessage({
-        id: `local-${nextMessageId.current++}`,
-        role: "assistant",
-        text: startedPlayer
-          ? `Starting guided workflow: ${workflow.title}.`
-          : `Selected guided workflow: ${workflow.title}.`,
-        time: formatTime()
-      })
-    ]);
+  async function startWorkflowTopic(topic: ScoutWorkflowTopic) {
+    await startWorkflow({
+      id: topic.guideId,
+      title: topic.title,
+      description: topic.description,
+      estimatedTime: topic.estimatedTime,
+      steps: topic.steps
+    });
   }
 
   async function sendChatQuery(question: string) {
@@ -548,17 +549,17 @@ export function ScoutChatbot({
   const launcher = (
     <button
       aria-label={launcherLabel}
-      className="group flex h-16 w-16 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white shadow-chat-panel transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+      className="group flex h-14 w-14 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white shadow-chat-panel transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
       onClick={variant === "floating" ? openFloatingChat : () => setOpen(true)}
       style={cssVars}
       type="button"
     >
-      <MessageCircle className="h-7 w-7 transition group-hover:scale-105" />
+      <MessageCircle className="h-6 w-6 transition group-hover:scale-105" />
     </button>
   );
 
   if (!isOpen) {
-    const launcherPosition = hasMounted ? getBottomRightChatPosition({ width: 64, height: 64 }) : initialChatPosition;
+    const launcherPosition = hasMounted ? getBottomRightChatPosition(launcherSize) : initialChatPosition;
 
     return variant === "floating" ? (
       <div
@@ -566,8 +567,8 @@ export function ScoutChatbot({
         style={{
           left: launcherPosition.left,
           top: launcherPosition.top,
-          width: 64,
-          height: 64
+          width: launcherSize.width,
+          height: launcherSize.height
         }}
       >
         {launcher}
@@ -577,7 +578,7 @@ export function ScoutChatbot({
     );
   }
 
-  const floatingSize = isMinimized ? getMinimizedChatSize(panelSize) : panelSize;
+  const floatingSize = panelSize;
   const floatingPosition = hasMounted ? clampChatPosition(panelPosition, floatingSize) : panelPosition;
 
   const panel = (
@@ -586,57 +587,36 @@ export function ScoutChatbot({
       className={cn(
         "relative flex w-full flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[var(--scout-surface)] shadow-chat-panel ring-1 ring-slate-950/5 animate-slide-up",
         variant === "floating" ? "h-full max-w-none" : "max-w-[440px]",
-        isMinimized ? (variant === "floating" ? "min-h-0" : "max-h-[112px]") : variant === "floating" ? "min-h-0" : "min-h-[680px]",
+        variant === "floating" ? "min-h-0" : "min-h-[680px]",
         className
       )}
       style={cssVars}
     >
       <header
         className={cn(
-          "border-b border-slate-100 bg-[var(--scout-brand)] px-5 py-4 text-white",
+          "border-b border-slate-100 bg-[var(--scout-brand)] px-4 py-2 text-white",
           variant === "floating" && "cursor-move touch-none"
         )}
         onPointerDown={handleHeaderPointerDown}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-[var(--scout-brand)]">
-              <Bot className="h-6 w-6" />
-              <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full border-2 border-[var(--scout-brand)] bg-emerald-400" />
+          <div className="flex h-7 min-w-0 flex-1 items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 ring-1 ring-white/15">
+              <MessageCircle className="h-4 w-4 text-white" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h2 className="truncate text-base font-semibold">{assistantName}</h2>
-                {badge && (
-                  <span className="rounded-full bg-white/12 px-2 py-0.5 text-[11px] font-medium text-slate-200">
-                    {badge}
-                  </span>
-                )}
-              </div>
-              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-300">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                {statusText}
-              </p>
+            <div className="flex items-center gap-1.5" aria-hidden="true">
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+              <span className="h-1.5 w-6 rounded-full bg-white/30" />
+              <span className="h-1.5 w-3 rounded-full bg-emerald-300" />
             </div>
           </div>
 
           <div className="flex items-center gap-1">
-            {showHeaderActions && (
-              <IconButton label="Search conversations">
-                <Search className="h-4 w-4" />
-              </IconButton>
-            )}
-            {variant === "floating" && (
+            {showHeaderActions && variant === "floating" && (
               <IconButton label="Restore size and position" onClick={restoreFloatingLayout}>
-                <RotateCcw className="h-4 w-4" />
+                <Undo2 className="h-4 w-4" />
               </IconButton>
             )}
-            <IconButton
-              label={isMinimized ? "Expand chat" : "Minimize chat"}
-              onClick={toggleMinimized}
-            >
-              {isMinimized ? <ChevronDown className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
-            </IconButton>
             <IconButton label="Close chat" onClick={variant === "floating" ? closeFloatingChat : () => setOpen(false)}>
               <X className="h-4 w-4" />
             </IconButton>
@@ -644,150 +624,162 @@ export function ScoutChatbot({
         </div>
       </header>
 
-      {!isMinimized && (
-        <>
-          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-5 py-3">
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
-              <Clock3 className="h-4 w-4 text-slate-400" />
-              Knowledgebase + guided workflows
-            </div>
-            {showHeaderActions && (
-              <div className="flex items-center gap-2">
-                <button
-                  className={cn(
-                    "inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
-                    showWorkflows
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:text-slate-950"
-                  )}
-                  onClick={() => setShowWorkflows((value) => !value)}
-                  type="button"
-                >
-                  <ListChecks className="h-4 w-4" />
-                  Workflows
-                </button>
-                <UtilityButton label="Open settings">
-                  <Settings className="h-4 w-4" />
-                </UtilityButton>
-                <UtilityButton label="Restore size and position" onClick={restoreFloatingLayout}>
-                  <Maximize2 className="h-4 w-4" />
-                </UtilityButton>
-              </div>
-            )}
-          </div>
-
-          <div className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5">
-            {activeWorkflow && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">Player started</p>
-                    <p className="mt-1 text-emerald-800">{activeWorkflow.title} is ready to guide the user.</p>
-                  </div>
-                  <button
-                    className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800"
-                    onClick={() => setActiveWorkflow(null)}
-                    type="button"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {showWorkflows && (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-slate-950">
-                    {targetAppName ? `${targetAppName} guided workflows` : "Guided workflow sessions"}
-                  </p>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-500">{workflowSessions.length}</span>
-                </div>
-                {workflowsState.status === "loading" ? (
-                  <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500">Loading workflows...</p>
-                ) : workflowsState.message ? (
-                  <p className={cn(
-                    "rounded-lg border px-3 py-2 text-sm",
-                    workflowsState.status === "error" ? "border-red-100 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-500"
-                  )}>
-                    {workflowsState.message}
-                  </p>
-                ) : null}
-                <div className="mt-2 grid gap-1.5">
-                  {workflowSessions.map((workflow) => (
-                    <WorkflowCard key={workflow.id} onStart={startWorkflow} workflow={workflow} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {modeNotice && (
-              <div className="rounded-lg border border-sky-100 bg-sky-50 px-4 py-3 text-sm leading-6 text-slate-700">
-                <div className="mb-1 flex items-center gap-2 font-semibold text-slate-950">
-                  <Sparkles className="h-4 w-4 text-[var(--scout-accent)]" />
-                  Integration mode
-                </div>
-                {modeNotice}
-              </div>
-            )}
-
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} onStartWorkflow={startWorkflow} userLabel={userLabel} />
-            ))}
-
-            {isTyping && <TypingIndicator />}
-          </div>
-
-          <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
-            {quickPrompts.length > 0 && (
-              <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-                {quickPrompts.map((prompt) => (
-                  <button
-                    className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
-                    key={prompt}
-                    onClick={() => sendMessage(prompt)}
-                    type="button"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <form
-              className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-sm focus-within:border-sky-300 focus-within:ring-4 focus-within:ring-[var(--scout-focus)]"
-              onSubmit={handleSubmit}
+      <>
+          <div className="grid grid-cols-2 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-500">
+            <button
+              aria-selected={activeTab === "qa"}
+              className={cn(
+                "h-11 border-b-2 transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
+                activeTab === "qa" ? "border-[var(--scout-brand)] bg-white text-slate-950" : "border-transparent hover:bg-white/70 hover:text-slate-800"
+              )}
+              onClick={() => setActiveTab("qa")}
+              role="tab"
+              type="button"
             >
-              <textarea
-                ref={inputRef}
-                aria-label={`Message ${assistantName}`}
-                className="max-h-28 min-h-[54px] w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-6 text-slate-900 outline-none placeholder:text-slate-400"
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={placeholder}
-                rows={2}
-                value={input}
-              />
-              <div className="flex items-center justify-between gap-3 px-1 pb-1">
-                <div className="flex items-center gap-1">
-                  <ComposerButton label="Attach file">
-                    <Paperclip className="h-4 w-4" />
-                  </ComposerButton>
-                  <ComposerButton label="Voice input">
-                    <Mic className="h-4 w-4" />
-                  </ComposerButton>
-                </div>
-                <button
-                  aria-label="Send message"
-                  className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:translate-y-0"
-                  disabled={!input.trim() || isTyping}
-                  type="submit"
-                >
-                  <ArrowUp className="h-4 w-4" />
-                </button>
-              </div>
-            </form>
+              Q&A
+            </button>
+            <button
+              aria-selected={activeTab === "workflows"}
+              className={cn(
+                "h-11 border-b-2 transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
+                activeTab === "workflows" ? "border-[var(--scout-brand)] bg-white text-slate-950" : "border-transparent hover:bg-white/70 hover:text-slate-800"
+              )}
+              onClick={() => setActiveTab("workflows")}
+              role="tab"
+              type="button"
+            >
+              Guided workflows
+            </button>
           </div>
+
+          {activeTab === "qa" ? (
+            <>
+              <div className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5">
+                {messages.map((message) => (
+                  <MessageBubble key={message.id} message={message} onStartWorkflow={startWorkflow} userLabel={userLabel} />
+                ))}
+
+                {isTyping && <TypingIndicator />}
+              </div>
+
+              <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
+                <form
+                  className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-sm focus-within:border-sky-300 focus-within:ring-4 focus-within:ring-[var(--scout-focus)]"
+                  onSubmit={handleSubmit}
+                >
+                  <textarea
+                    ref={inputRef}
+                    aria-label={`Message ${assistantName}`}
+                    className="h-11 max-h-11 min-h-11 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-5 text-slate-900 outline-none placeholder:text-slate-400"
+                    onChange={(event) => setInput(event.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={placeholder}
+                    rows={1}
+                    value={input}
+                  />
+                  <div className="flex items-center justify-end gap-3 px-1 pb-0.5">
+                    <button
+                      aria-label="Send message"
+                      className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:translate-y-0"
+                      disabled={!input.trim() || isTyping}
+                      type="submit"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </>
+          ) : (
+            <div className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-slate-50 px-4 py-4">
+              {activeWorkflow && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">Player started</p>
+                      <p className="mt-1 text-emerald-800">{activeWorkflow.title} is ready to guide the user.</p>
+                    </div>
+                    <button
+                      className="rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-800"
+                      onClick={() => setActiveWorkflow(null)}
+                      type="button"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {workflowsState.status === "loading" ? (
+                <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500">Loading workflows...</p>
+              ) : workflowsState.message ? (
+                <p className={cn(
+                  "rounded-lg border px-3 py-2 text-sm",
+                  workflowsState.status === "error" ? "border-red-100 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-500"
+                )}>
+                  {workflowsState.message}
+                </p>
+              ) : null}
+
+              <div className="grid gap-2">
+                {workflowSessions.map((session) => {
+                  const isExpanded = expandedWorkflowSessions.has(session.id);
+                  const topics = session.topics ?? [];
+
+                  return (
+                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white" key={session.id}>
+                      <button
+                        className="flex min-h-11 w-full items-center justify-between gap-3 px-3 text-left text-sm font-semibold text-slate-950 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                        onClick={() => toggleWorkflowSession(session.id)}
+                        type="button"
+                      >
+                        <span className="min-w-0 truncate">{session.title}</span>
+                        <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-500">
+                          {topics.length} topics
+                          {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </span>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="border-t border-slate-100 bg-slate-50/70 p-2">
+                          {topics.length > 0 ? (
+                            <div className="grid gap-1.5">
+                              {topics.map((topic) => (
+                                <button
+                                  className="flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                                  key={topic.id}
+                                  onClick={() => startWorkflowTopic(topic)}
+                                  type="button"
+                                >
+                                  <span className="min-w-0 truncate font-medium text-slate-800">{topic.title}</span>
+                                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                                    <Play className="h-3 w-3 fill-current" />
+                                    {topic.steps} steps
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <button
+                              className="flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                              onClick={() => startWorkflow(session)}
+                              type="button"
+                            >
+                              <span className="min-w-0 truncate font-medium text-slate-800">{session.title}</span>
+                              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                                <Play className="h-3 w-3 fill-current" />
+                                {session.steps} steps
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {variant === "floating" && (
             <button
@@ -801,7 +793,6 @@ export function ScoutChatbot({
             </button>
           )}
         </>
-      )}
     </section>
   );
 
@@ -936,41 +927,6 @@ function IconButton({
   );
 }
 
-function UtilityButton({
-  children,
-  label,
-  onClick
-}: {
-  children: ReactNode;
-  label: string;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      aria-label={label}
-      className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-950 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
-      onClick={onClick}
-      title={label}
-      type="button"
-    >
-      {children}
-    </button>
-  );
-}
-
-function ComposerButton({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <button
-      aria-label={label}
-      className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
-      title={label}
-      type="button"
-    >
-      {children}
-    </button>
-  );
-}
-
 function normalizeMessages(messages: ScoutChatMessage[]): RenderedMessage[] {
   return messages.map((message, index) =>
     createRenderedMessage({
@@ -989,6 +945,52 @@ function createRenderedMessage(message: ScoutChatMessage & { id: string; time: s
     time: message.time,
     workflowSuggestion: message.workflowSuggestion
   };
+}
+
+function getMessageStorageKey({
+  companyId,
+  conversationId,
+  userId,
+  variant
+}: {
+  companyId?: string;
+  conversationId?: string;
+  userId?: string;
+  variant: ScoutChatbotProps["variant"];
+}) {
+  return [
+    "scout-chatbot",
+    "messages",
+    companyId || "company",
+    userId || "user",
+    conversationId || variant || "default"
+  ].join(":");
+}
+
+function readStoredMessages(key: string): RenderedMessage[] | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? normalizeMessages(parsed) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredMessages(key: string, messages: RenderedMessage[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(messages));
+  } catch {
+    // Ignore storage failures; the chat should keep working without persistence.
+  }
 }
 
 function createMockWorkflowReply(message: string, workflows: ScoutWorkflowSession[]): ScoutChatMessage | undefined {
@@ -1055,8 +1057,32 @@ function workflowFromGuide(guide: PlayerGuide): ScoutWorkflowSession {
   };
 }
 
+function workflowSessionFromPlayerSession(session: PlayerTrainingSession): ScoutWorkflowSession {
+  const topics = session.topics.map((topic) => ({
+    id: topic.id,
+    title: topic.title,
+    guideId: topic.guideId,
+    description: topic.description,
+    estimatedTime: estimateWorkflowDuration(topic.steps),
+    steps: topic.steps
+  }));
+
+  return {
+    id: session.id,
+    title: session.title,
+    description: `${topics.length} published ${topics.length === 1 ? "topic" : "topics"}`,
+    estimatedTime: estimateWorkflowDuration(topics.reduce((total, topic) => total + topic.steps, 0)),
+    steps: topics.reduce((total, topic) => total + topic.steps, 0),
+    topics
+  };
+}
+
 function estimateWorkflowDuration(stepCount: number) {
   return `${Math.max(1, Math.ceil(stepCount / 3))} min`;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 async function getPlayerHandle(
@@ -1161,13 +1187,6 @@ function getBottomRightChatPosition(size: ChatSize): ChatPosition {
     },
     size
   );
-}
-
-function getMinimizedChatSize(size: ChatSize): ChatSize {
-  return {
-    width: size.width,
-    height: 76
-  };
 }
 
 function clampChatSize(size: ChatSize): ChatSize {

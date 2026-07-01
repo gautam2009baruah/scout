@@ -131,12 +131,9 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       </div>
       <ScoutChatbot
         assistantName="Scout Assistant"
-        badge="Control Panel"
         companyId={session.user.tenantId}
         defaultOpen={false}
-        modeNotice="Ask a knowledgebase question or start a CRS guided workflow from this same chatbot."
         placeholder="Ask or request a workflow..."
-        quickPrompts={["How can I create a rate?", "Show guided workflows"]}
         scoutBaseUrl={CRS_SCOUT_BASE_URL}
         targetAppId={CRS_TARGET_APP_ID}
         targetAppName="CRS"
