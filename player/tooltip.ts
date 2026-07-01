@@ -167,6 +167,7 @@ export function injectTooltipStyles() {
     .scout-adoption-tooltip[data-placement="right"] .scout-adoption-tooltip__arrow { left: -7px; top: var(--arrow-top, 20px); border-right: 0; border-top: 0; }
     .scout-adoption-tooltip[data-placement="left"] .scout-adoption-tooltip__arrow { right: -7px; top: var(--arrow-top, 20px); border-left: 0; border-bottom: 0; }
     .scout-adoption-missing { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 2147483647; border-radius: 8px; background: #020617; color: #fff; padding: 12px 14px; font: 14px system-ui, sans-serif; }
+    .scout-adoption-recovery-toast { top: max(16px, env(safe-area-inset-top)); bottom: auto; max-width: min(420px, calc(100vw - 32px)); text-align: center; pointer-events: none; box-shadow: 0 18px 52px rgb(15 23 42 / .24); }
   `;
   document.head.appendChild(style);
 }

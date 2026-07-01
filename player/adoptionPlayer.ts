@@ -432,12 +432,12 @@ export class AdoptionPlayer {
     suggestion.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     suggestion.classList.add("scout-adoption-highlight");
     this.highlighted = suggestion;
-    this.showRecoveryMessage(`I found ${suggestion.innerText || suggestion.getAttribute("aria-label") || "a matching control"}. Click it to continue.`);
+    this.showRecoveryMessage(`I highlighted ${suggestion.innerText || suggestion.getAttribute("aria-label") || "the matching control"}. Click the highlighted control to continue.`);
   }
 
   private showRecoveryMessage(message: string) {
     const banner = document.createElement("div");
-    banner.className = "scout-adoption-recovery scout-adoption-missing";
+    banner.className = "scout-adoption-recovery scout-adoption-missing scout-adoption-recovery-toast";
     banner.textContent = message;
     document.body.appendChild(banner);
   }

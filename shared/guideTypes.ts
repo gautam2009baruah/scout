@@ -94,6 +94,7 @@ export type RecordedAction = {
 };
 
 export type TargetElement = {
+  elementIdentity?: ElementIdentity;
   selectorCandidates: SelectorCandidate[];
   fallbackText?: string;
   role?: string;

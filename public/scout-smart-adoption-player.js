@@ -569,6 +569,7 @@
       .scout-adoption-tooltip[data-placement="left"] .scout-adoption-tooltip__arrow { right: -7px; top: var(--arrow-top, 20px); border-left: 0; border-bottom: 0; }
       .scout-adoption-missing { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 2147483647; max-width: min(620px, calc(100vw - 32px)); border-radius: 8px; background: #020617; color: #fff; padding: 12px 14px; font: 14px system-ui, sans-serif; box-shadow: 0 18px 52px rgb(15 23 42 / .28); }
       .scout-adoption-missing button { margin-left: 8px; border: 1px solid #475569; border-radius: 6px; background: #fff; padding: 5px 8px; color: #020617; cursor: pointer; }
+      .scout-adoption-recovery-toast { top: max(16px, env(safe-area-inset-top)); bottom: auto; max-width: min(420px, calc(100vw - 32px)); text-align: center; pointer-events: none; }
     `;
     document.head.appendChild(style);
   }
@@ -1081,13 +1082,13 @@
       control.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
       control.classList.add("scout-adoption-highlight");
       this.highlighted = control;
-      this.showRecovery(`I found ${control.innerText || control.getAttribute("aria-label") || "a matching control"}. Click it to continue.`);
+      this.showRecovery(`I highlighted ${control.innerText || control.getAttribute("aria-label") || "the matching control"}. Click the highlighted control to continue.`);
     }
 
     showRecovery(message) {
       document.querySelector(".scout-adoption-recovery")?.remove();
       const banner = document.createElement("div");
-      banner.className = "scout-adoption-missing scout-adoption-recovery";
+      banner.className = "scout-adoption-missing scout-adoption-recovery scout-adoption-recovery-toast";
       banner.textContent = message;
       document.body.appendChild(banner);
     }
