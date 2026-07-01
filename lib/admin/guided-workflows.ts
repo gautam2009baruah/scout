@@ -122,6 +122,7 @@ function mapGuide(row: {
 
       return {
         ...step,
+        enabled: step.enabled !== false,
         stepPurpose,
         navigationMode: stepPurpose === "navigation" ? step.navigationMode ?? source?.navigationMode ?? "waitForUser" : undefined,
         trigger: stepPurpose === "navigation" ? "click" : normalizeGuideStepTrigger(step.trigger ?? source?.trigger)
@@ -144,6 +145,7 @@ function normalizeGuideSteps(steps: GuideStep[]) {
 
     return {
       ...step,
+      enabled: step.enabled !== false,
       type: step.type ?? (stepPurpose === "navigation" || step.trigger === "click" ? "click" : step.trigger === "manualNext" ? "manualInstruction" : step.trigger === "input" || step.trigger === "change" || step.trigger === "blur" || step.trigger === "focus" ? "input" : "highlight"),
       stepPurpose,
       navigationMode,
@@ -155,9 +157,10 @@ function normalizeGuideSteps(steps: GuideStep[]) {
 
 function guideWithRuntimeStructure<TGuide extends Guide>(guide: TGuide) {
   const steps = normalizeGuideSteps(guide.steps ?? []);
-  const entrySteps = steps.filter((step) => step.stepPurpose === "navigation");
-  const mainSteps = steps.filter((step) => step.stepPurpose !== "navigation");
-  const firstStep = steps[0];
+  const enabledSteps = steps.filter((step) => step.enabled !== false);
+  const entrySteps = enabledSteps.filter((step) => step.stepPurpose === "navigation");
+  const mainSteps = enabledSteps.filter((step) => step.stepPurpose !== "navigation");
+  const firstStep = enabledSteps[0];
   const firstMainStep = mainSteps[0];
 
   return {
@@ -1485,11 +1488,15 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
       preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
       preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
       actionsCount: Number(row.actions_count),
-      steps: row.steps_json?.length ?? 0,
+      steps: countEnabledSteps(row.steps_json ?? []),
       updatedAt: row.guide_updated_at.toISOString()
     });
     sessions.set(row.session_id, session);
   });
 
   return Array.from(sessions.values());
+}
+
+function countEnabledSteps(steps: GuideStep[]) {
+  return steps.filter((step) => step.enabled !== false).length;
 }

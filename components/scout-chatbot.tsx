@@ -61,7 +61,7 @@ type PlayerGuide = {
   id: string;
   title: string;
   description: string;
-  steps: unknown[];
+  steps: Array<{ enabled?: boolean }>;
   preWorkflowConfirmationHtml?: string;
   preWorkflowConfirmationEnabled?: boolean;
 };
@@ -1078,15 +1078,21 @@ function resolveReply(reply: ScoutChatMessage | string | void): ScoutChatMessage
 }
 
 function workflowFromGuide(guide: PlayerGuide): ScoutWorkflowSession {
+  const enabledStepCount = countEnabledSteps(guide.steps);
+
   return {
     id: guide.id,
     title: guide.title,
     description: guide.description,
-    estimatedTime: estimateWorkflowDuration(guide.steps.length),
-    steps: guide.steps.length,
+    estimatedTime: estimateWorkflowDuration(enabledStepCount),
+    steps: enabledStepCount,
     preWorkflowConfirmationHtml: guide.preWorkflowConfirmationHtml,
     preWorkflowConfirmationEnabled: guide.preWorkflowConfirmationEnabled
   };
+}
+
+function countEnabledSteps(steps: PlayerGuide["steps"]) {
+  return steps.filter((step) => step.enabled !== false).length;
 }
 
 function workflowSessionFromPlayerSession(session: PlayerTrainingSession): ScoutWorkflowSession {

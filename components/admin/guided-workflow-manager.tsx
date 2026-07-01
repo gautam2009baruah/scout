@@ -92,7 +92,7 @@ export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManag
         title: editor.title,
         description: editor.description,
         status: nextStatus ?? editor.status,
-        steps: editor.steps.map((step, index) => ({ ...step, order: index + 1 }))
+        steps: editor.steps.map((step, index) => ({ ...step, enabled: step.enabled !== false, order: index + 1 }))
       })
     });
     const body = await response.json().catch(() => null);
@@ -215,7 +215,7 @@ export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManag
             >
               <span className="block font-semibold">{guide.title}</span>
               <span className={`mt-1 block text-xs ${selected?.id === guide.id ? "text-slate-300" : "text-slate-500"}`}>
-                {guide.companyName} · {guide.status} · {guide.steps.length} steps
+                {guide.companyName} · {guide.status} · {countEnabledSteps(guide.steps)} steps
               </span>
             </button>
           ))}
@@ -255,9 +255,21 @@ export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManag
               {editor.steps.length === 0 ? (
                 <p className="rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">No steps generated yet. Paste recorder JSON and generate a draft.</p>
               ) : editor.steps.map((step, index) => (
-                <div className="rounded-lg border border-slate-200 p-4" key={step.id}>
+                <div className={`rounded-lg border border-slate-200 p-4 ${isStepEnabled(step) ? "" : "opacity-60"}`} key={step.id}>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-semibold text-slate-950">Step {index + 1}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        aria-label={isStepEnabled(step) ? "Disable this step during playback" : "Enable this step during playback"}
+                        aria-pressed={isStepEnabled(step)}
+                        className={`relative h-6 w-11 shrink-0 rounded-full transition focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 ${isStepEnabled(step) ? "bg-emerald-500" : "bg-slate-300"}`}
+                        onClick={() => updateStep(index, { enabled: !isStepEnabled(step) })}
+                        title="Enable or disable this step during playback without deleting it."
+                        type="button"
+                      >
+                        <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${isStepEnabled(step) ? "left-6" : "left-1"}`} />
+                      </button>
+                      <span className="text-sm font-semibold text-slate-950">Step {isStepEnabled(step) ? enabledStepNumber(editor.steps, index) : "-"}</span>
+                    </div>
                     <div className="flex gap-1">
                       <IconAction disabled={index === 0} label="Move up" onClick={() => moveStep(index, -1)}><ArrowUp className="h-4 w-4" /></IconAction>
                       <IconAction disabled={index === editor.steps.length - 1} label="Move down" onClick={() => moveStep(index, 1)}><ArrowDown className="h-4 w-4" /></IconAction>
@@ -302,8 +314,20 @@ function editorFromGuide(guide: GuidedWorkflowRow | null): EditorState {
     title: guide?.title ?? "",
     description: guide?.description ?? "",
     status: guide?.status ?? "draft",
-    steps: guide?.steps ?? []
+    steps: (guide?.steps ?? []).map((step) => ({ ...step, enabled: step.enabled !== false }))
   };
+}
+
+function isStepEnabled(step: GuideStep) {
+  return step.enabled !== false;
+}
+
+function enabledStepNumber(steps: GuideStep[], index: number) {
+  return steps.slice(0, index + 1).filter(isStepEnabled).length;
+}
+
+function countEnabledSteps(steps: GuideStep[]) {
+  return steps.filter(isStepEnabled).length;
 }
 
 function Field({ children, label }: { children: React.ReactNode; label: string }) {

@@ -388,7 +388,7 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
         status: nextStatus ?? editor.status,
         preWorkflowConfirmationHtml: editor.preWorkflowConfirmationHtml,
         preWorkflowConfirmationEnabled: editor.preWorkflowConfirmationEnabled,
-        steps: editor.steps.map((step, index) => ({ ...step, order: index + 1 }))
+        steps: editor.steps.map((step, index) => ({ ...step, enabled: step.enabled !== false, order: index + 1 }))
       })
     });
     const body = await response.json().catch(() => null);
@@ -785,10 +785,22 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
           ) : guideSteps.map((step, index) => {
             const isOpen = openStepIds.has(step.id);
             const purpose = step.stepPurpose === "navigation" ? "navigation" : "main";
+            const enabled = isStepEnabled(step);
+            const activeNumber = enabled ? enabledStepNumber(guideSteps, index) : null;
 
             return (
-              <div className="overflow-hidden rounded-lg border border-slate-200 bg-white" key={step.id}>
+              <div className={`overflow-hidden rounded-lg border bg-white ${enabled ? "border-slate-200" : "border-slate-200 opacity-60"}`} key={step.id}>
                 <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50 px-3 py-3">
+                  <button
+                    aria-label={enabled ? "Disable this step during playback" : "Enable this step during playback"}
+                    aria-pressed={enabled}
+                    className={`relative h-6 w-11 shrink-0 rounded-full transition focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 ${enabled ? "bg-emerald-500" : "bg-slate-300"}`}
+                    onClick={() => updateStep(index, { enabled: !enabled })}
+                    title="Enable or disable this step during playback without deleting it."
+                    type="button"
+                  >
+                    <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${enabled ? "left-6" : "left-1"}`} />
+                  </button>
                   <button
                     aria-expanded={isOpen}
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
@@ -800,7 +812,7 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
                     })}
                     type="button"
                   >
-                    <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white">{index + 1}</span>
+                    <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${enabled ? "bg-slate-950 text-white" : "bg-slate-200 text-slate-500"}`}>{activeNumber ?? "-"}</span>
                     <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${isOpen ? "rotate-180" : ""}`} />
                     <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-950">{stepListPreview(step)}</span>
                   </button>
@@ -965,8 +977,16 @@ function editorFromGuide(guide: GuidedWorkflowRow | null): EditorState {
     status: guide?.status ?? "draft",
     preWorkflowConfirmationHtml: guide?.preWorkflowConfirmationHtml ?? "",
     preWorkflowConfirmationEnabled: Boolean(guide?.preWorkflowConfirmationEnabled && guide?.preWorkflowConfirmationHtml?.trim()),
-    steps: guide?.steps ?? []
+    steps: (guide?.steps ?? []).map((step) => ({ ...step, enabled: step.enabled !== false }))
   };
+}
+
+function isStepEnabled(step: GuideStep) {
+  return step.enabled !== false;
+}
+
+function enabledStepNumber(steps: GuideStep[], index: number) {
+  return steps.slice(0, index + 1).filter(isStepEnabled).length;
 }
 
 function controlIdentifierSummary(step: GuideStep) {
@@ -1006,6 +1026,7 @@ function relativeUrl(value: string) {
 function normalizeSteps(steps: GuideStep[]) {
   return steps.map((step, index) => ({
     ...step,
+    enabled: step.enabled !== false,
     order: index + 1
   }));
 }

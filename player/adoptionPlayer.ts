@@ -290,7 +290,7 @@ function stepsForGuide(guide: Guide, main: boolean) {
     ? guide.entrySteps
     : (guide.steps ?? []).filter((step) => main ? step.stepPurpose !== "navigation" : step.stepPurpose === "navigation");
 
-  return source.map((step) => {
+  return source.filter((step) => step.enabled !== false).map((step) => {
     const stepPurpose = step.stepPurpose ?? "main";
     const navigationMode = stepPurpose === "navigation" ? step.navigationMode ?? "waitForUser" : undefined;
 

@@ -132,6 +132,7 @@ export function generateGuideFromRecording(actions: RecordedAction[], input?: { 
     .map((action, index): GuideStep => ({
       id: createId("step"),
       order: index + 1,
+      enabled: true,
       urlMatch: relativeUrl(action.url),
       target: {
         selectorCandidates: action.selectorCandidates ?? [],

@@ -127,6 +127,7 @@ export type TargetElement = {
 export type GuideStep = {
   id: string;
   order: number;
+  enabled?: boolean;
   type?: "highlight" | "click" | "input" | "waitForUrl" | "waitForElement" | "manualInstruction";
   urlMatch: string;
   target: TargetElement;
