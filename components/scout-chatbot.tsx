@@ -41,6 +41,8 @@ export type ScoutWorkflowSession = {
   description: string;
   estimatedTime: string;
   steps: number;
+  preWorkflowConfirmationHtml?: string;
+  preWorkflowConfirmationEnabled?: boolean;
   topics?: ScoutWorkflowTopic[];
 };
 
@@ -51,6 +53,8 @@ export type ScoutWorkflowTopic = {
   description: string;
   estimatedTime: string;
   steps: number;
+  preWorkflowConfirmationHtml?: string;
+  preWorkflowConfirmationEnabled?: boolean;
 };
 
 type PlayerGuide = {
@@ -58,6 +62,8 @@ type PlayerGuide = {
   title: string;
   description: string;
   steps: unknown[];
+  preWorkflowConfirmationHtml?: string;
+  preWorkflowConfirmationEnabled?: boolean;
 };
 
 type PlayerTrainingSession = {
@@ -74,18 +80,24 @@ type PlayerTrainingTopic = {
   status: "draft" | "published";
   actionsCount: number;
   steps: number;
+  preWorkflowConfirmationHtml?: string;
+  preWorkflowConfirmationEnabled?: boolean;
   updatedAt: string;
 };
 
 type ScoutAdoptionPlayerHandle = {
+  version?: string;
   guides: unknown[];
   play(guideId?: string): void;
 };
+
+const SCOUT_PLAYER_VERSION = "20260701-tooltip-rect-guard";
 
 declare global {
   interface Window {
     ScoutAdoptionPlayer?: {
       smartRuntime?: boolean;
+      version?: string;
       init(config: { scoutBaseUrl?: string; targetAppId: string; autoShowLauncher?: boolean }): Promise<ScoutAdoptionPlayerHandle>;
     };
   }
@@ -219,6 +231,7 @@ export function ScoutChatbot({
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [activeTab, setActiveTab] = useState<ChatTab>("qa");
+  const [isMinimizing, setIsMinimizing] = useState(false);
   const [activeWorkflow, setActiveWorkflow] = useState<ScoutWorkflowSession | null>(null);
   const [workflowSessions, setWorkflowSessions] = useState<ScoutWorkflowSession[]>(mockWorkflowSessions);
   const [expandedWorkflowSessions, setExpandedWorkflowSessions] = useState<Set<string>>(() => new Set());
@@ -292,6 +305,7 @@ export function ScoutChatbot({
             status: "ready",
             message: sessions.length === 0 && guides.length === 0 ? `No published guided workflows found${targetAppName ? ` for ${targetAppName}` : ""}.` : ""
           });
+          void getPlayerHandle({ scoutBaseUrl, targetAppId: workflowTargetAppId }, playerHandleRef).catch(() => undefined);
         }
       } catch (error) {
         if (controller.signal.aborted || ignore) {
@@ -320,6 +334,7 @@ export function ScoutChatbot({
   }
 
   function openFloatingChat() {
+    setIsMinimizing(false);
     const nextSize = clampChatSize(panelSize);
     setPanelSize(nextSize);
     setPanelPosition(getBottomRightChatPosition(nextSize));
@@ -327,6 +342,16 @@ export function ScoutChatbot({
   }
 
   function closeFloatingChat() {
+    if (variant === "floating" && isOpen) {
+      setIsMinimizing(true);
+      setPanelPosition(getBottomRightChatPosition(launcherSize));
+      window.setTimeout(() => {
+        setOpen(false);
+        setIsMinimizing(false);
+      }, 220);
+      return;
+    }
+
     setPanelPosition(getBottomRightChatPosition(launcherSize));
     setOpen(false);
   }
@@ -473,8 +498,11 @@ export function ScoutChatbot({
   async function startWorkflow(workflow: ScoutWorkflowSession) {
     setActiveWorkflow(workflow);
     setActiveTab("workflows");
+    const hasPreWorkflowConfirmation = Boolean(workflow.preWorkflowConfirmationEnabled && workflow.preWorkflowConfirmationHtml?.trim());
 
-    await delay(1300);
+    if (!hasPreWorkflowConfirmation) {
+      await delay(1300);
+    }
 
     if (variant === "floating") {
       closeFloatingChat();
@@ -558,7 +586,7 @@ export function ScoutChatbot({
     </button>
   );
 
-  if (!isOpen) {
+  if (!isOpen && !isMinimizing) {
     const launcherPosition = hasMounted ? getBottomRightChatPosition(launcherSize) : initialChatPosition;
 
     return variant === "floating" ? (
@@ -578,14 +606,15 @@ export function ScoutChatbot({
     );
   }
 
-  const floatingSize = panelSize;
+  const floatingSize = isMinimizing ? launcherSize : panelSize;
   const floatingPosition = hasMounted ? clampChatPosition(panelPosition, floatingSize) : panelPosition;
 
   const panel = (
     <section
       aria-label={`${assistantName} chat widget`}
       className={cn(
-        "relative flex w-full flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[var(--scout-surface)] shadow-chat-panel ring-1 ring-slate-950/5 animate-slide-up",
+        "relative flex w-full flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[var(--scout-surface)] shadow-chat-panel ring-1 ring-slate-950/5 animate-slide-up transition duration-200 ease-out",
+        isMinimizing && "scale-75 opacity-0",
         variant === "floating" ? "h-full max-w-none" : "max-w-[440px]",
         variant === "floating" ? "min-h-0" : "min-h-[680px]",
         className
@@ -799,12 +828,13 @@ export function ScoutChatbot({
   return variant === "floating" ? (
     <div
       className="fixed z-50"
-      style={{
-        left: floatingPosition.left,
-        top: floatingPosition.top,
-        width: floatingSize.width,
-        height: floatingSize.height
-      }}
+        style={{
+          left: floatingPosition.left,
+          top: floatingPosition.top,
+          width: floatingSize.width,
+          height: floatingSize.height,
+          transition: "left 220ms ease, top 220ms ease, width 220ms ease, height 220ms ease"
+        }}
     >
       {panel}
     </div>
@@ -1053,7 +1083,9 @@ function workflowFromGuide(guide: PlayerGuide): ScoutWorkflowSession {
     title: guide.title,
     description: guide.description,
     estimatedTime: estimateWorkflowDuration(guide.steps.length),
-    steps: guide.steps.length
+    steps: guide.steps.length,
+    preWorkflowConfirmationHtml: guide.preWorkflowConfirmationHtml,
+    preWorkflowConfirmationEnabled: guide.preWorkflowConfirmationEnabled
   };
 }
 
@@ -1064,7 +1096,9 @@ function workflowSessionFromPlayerSession(session: PlayerTrainingSession): Scout
     guideId: topic.guideId,
     description: topic.description,
     estimatedTime: estimateWorkflowDuration(topic.steps),
-    steps: topic.steps
+    steps: topic.steps,
+    preWorkflowConfirmationHtml: topic.preWorkflowConfirmationHtml,
+    preWorkflowConfirmationEnabled: topic.preWorkflowConfirmationEnabled
   }));
 
   return {
@@ -1089,9 +1123,10 @@ async function getPlayerHandle(
   config: { scoutBaseUrl: string; targetAppId: string },
   handleRef: { current: ScoutAdoptionPlayerHandle | null }
 ) {
-  if (handleRef.current) {
+  if (handleRef.current?.version === SCOUT_PLAYER_VERSION) {
     return handleRef.current;
   }
+  handleRef.current = null;
 
   await ensurePlayerScript(config.scoutBaseUrl);
 
@@ -1109,14 +1144,17 @@ async function getPlayerHandle(
 }
 
 function ensurePlayerScript(scoutBaseUrl: string) {
-  if (window.ScoutAdoptionPlayer?.smartRuntime) {
+  if (window.ScoutAdoptionPlayer?.smartRuntime && window.ScoutAdoptionPlayer.version === SCOUT_PLAYER_VERSION) {
     return Promise.resolve();
   }
 
-  const source = new URL("/scout-smart-adoption-player.js", scoutBaseUrl || window.location.origin).toString();
-  const existing = document.querySelector<HTMLScriptElement>(`script[src="${source}"]`);
+  const sourceUrl = new URL("/scout-smart-adoption-player.js", scoutBaseUrl || window.location.origin);
+  sourceUrl.searchParams.set("v", SCOUT_PLAYER_VERSION);
+  const source = sourceUrl.toString();
+  const existing = document.querySelector<HTMLScriptElement>(`script[data-scout-player-version="${SCOUT_PLAYER_VERSION}"]`);
 
   if (existing) {
+    if (existing.dataset.loaded === "true") return Promise.resolve();
     return new Promise<void>((resolve, reject) => {
       existing.addEventListener("load", () => resolve(), { once: true });
       existing.addEventListener("error", () => reject(new Error("Unable to load guided workflow player.")), { once: true });
@@ -1127,7 +1165,11 @@ function ensurePlayerScript(scoutBaseUrl: string) {
     const script = document.createElement("script");
     script.src = source;
     script.async = true;
-    script.addEventListener("load", () => resolve(), { once: true });
+    script.dataset.scoutPlayerVersion = SCOUT_PLAYER_VERSION;
+    script.addEventListener("load", () => {
+      script.dataset.loaded = "true";
+      resolve();
+    }, { once: true });
     script.addEventListener("error", () => reject(new Error("Unable to load guided workflow player.")), { once: true });
     document.body.appendChild(script);
   });

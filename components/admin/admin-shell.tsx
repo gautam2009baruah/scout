@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Bell, Bot, Building2, ChevronDown, FolderTree, LayoutDashboard, MapPinned, Search, ShieldCheck, TableProperties, UserPlus, UsersRound } from "lucide-react";
+import { Bell, Bot, Building2, ChevronDown, FolderTree, LayoutDashboard, MapPinned, SlidersHorizontal, TableProperties, UsersRound } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
 import { ScoutChatbot } from "@/components/scout-chatbot";
+import { UserMenu } from "./user-menu";
 
 type AdminShellProps = {
   active: AdminModuleKey;
@@ -44,13 +45,10 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       <div className="flex min-h-screen">
         <aside className="hidden w-72 border-r border-slate-200 bg-white px-4 py-5 lg:block">
           <div className="flex items-center gap-3 px-2">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
-              <ShieldCheck className="h-5 w-5" />
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
+              <SlidersHorizontal className="h-5 w-5" />
             </span>
-            <div>
-              <p className="text-sm font-semibold text-slate-950">Scout Admin</p>
-              <p className="text-xs text-slate-500">Control plane</p>
-            </div>
+            <p className="text-base font-semibold text-slate-950">Control Panel</p>
           </div>
 
           <nav className="mt-8 space-y-1">
@@ -101,21 +99,10 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                 <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{title}</h1>
               </div>
               <div className="flex items-center gap-2">
-                <div className="hidden h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 shadow-sm sm:flex">
-                  <Search className="h-4 w-4 text-slate-400" />
-                  <input
-                    className="w-48 border-0 bg-transparent text-sm outline-none placeholder:text-slate-400"
-                    placeholder="Search admin"
-                    type="search"
-                  />
-                </div>
                 <button aria-label="Notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 hover:text-slate-950">
                   <Bell className="h-4 w-4" />
                 </button>
-                <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">
-                  <UserPlus className="h-4 w-4" />
-                  {session.user.name}
-                </button>
+                <UserMenu name={session.user.name} />
               </div>
             </div>
           </header>

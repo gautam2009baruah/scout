@@ -15,35 +15,54 @@ export function createTooltip(input: {
   index: number;
   total: number;
   target: HTMLElement;
+  hideStepCount?: boolean;
+  primaryLabel?: string;
   controls: TooltipControls;
 }) {
   const tooltip = document.createElement("div") as AnchoredTooltip;
+  const overlay = input.target === document.body ? document.createElement("div") : null;
+  if (overlay) {
+    overlay.className = "scout-adoption-overlay";
+    document.body.appendChild(overlay);
+  }
   tooltip.className = "scout-adoption-tooltip";
   tooltip.innerHTML = `
     <div class="scout-adoption-tooltip__arrow"></div>
     <button type="button" class="scout-adoption-tooltip__close" data-action="close" aria-label="Close guide">&times;</button>
     <div class="scout-adoption-tooltip__message"></div>
     <div class="scout-adoption-tooltip__footer">
-      <span>${input.index + 1} / ${input.total}</span>
+      <span>${input.hideStepCount ? "" : `${input.index + 1} / ${input.total}`}</span>
       <div>
         ${input.index > 0 ? '<button type="button" data-action="back">Back</button>' : ""}
-        <button type="button" data-action="next">${input.index + 1 === input.total ? "Done" : "Next"}</button>
+        <button type="button" data-action="next">${input.primaryLabel ?? (input.index + 1 === input.total ? "Done" : "Next")}</button>
       </div>
     </div>
   `;
+  tooltip.addEventListener("pointerdown", (event) => event.stopPropagation());
+  tooltip.addEventListener("click", (event) => event.stopPropagation());
   tooltip.querySelector(".scout-adoption-tooltip__message")!.innerHTML = sanitizeGuideHtml(input.message);
-  tooltip.querySelectorAll<HTMLAnchorElement>('a[href^="#scout-guide:"]').forEach((link) => {
+  tooltip.querySelectorAll<HTMLAnchorElement>(".scout-adoption-tooltip__message a[href]").forEach((link) => {
+    link.addEventListener("pointerdown", (event) => event.stopPropagation());
     link.addEventListener("click", (event) => {
-      const guideId = link.getAttribute("href")?.replace(/^#scout-guide:/, "");
-      if (!guideId || !input.controls.onGuideLink) return;
       event.preventDefault();
-      input.controls.onGuideLink(guideId);
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      const href = link.getAttribute("href") ?? "";
+      const guideId = link.dataset.scoutGuideId || href.replace(/^#scout-guide:/, "");
+      if (href.startsWith("#scout-guide:") && guideId && input.controls.onGuideLink) {
+        input.controls.onGuideLink(guideId);
+        return;
+      }
+      window.open(href, "_blank", "noopener,noreferrer");
     });
   });
   tooltip.querySelector('[data-action="back"]')?.addEventListener("click", input.controls.onBack);
   tooltip.querySelector('[data-action="next"]')?.addEventListener("click", input.controls.onNext);
   tooltip.querySelector('[data-action="close"]')?.addEventListener("click", input.controls.onClose);
   document.body.appendChild(tooltip);
+  if (overlay) {
+    tooltip.__scoutCleanup = () => overlay.remove();
+  }
   attachAnchoredPositioning(tooltip, input.target);
 
   return tooltip;
@@ -59,7 +78,9 @@ function sanitizeGuideHtml(value: string) {
       return;
     }
     Array.from(element.attributes).forEach((attribute) => {
-      const allowedHref = element.tagName === "A" && attribute.name === "href" && /^(https?:\/\/|\/|#scout-guide:)/i.test(attribute.value);
+      const safeHref = element.tagName === "A" && attribute.name === "href" ? normalizeSafeHref(attribute.value) : "";
+      const allowedHref = Boolean(safeHref);
+      const allowedGuideId = element.tagName === "A" && attribute.name === "data-scout-guide-id" && /^[a-z0-9-]+$/i.test(attribute.value);
       const allowedImageSrc = element.tagName === "IMG" && attribute.name === "src" && /^(https?:\/\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(attribute.value);
       const allowedFont = element.tagName === "FONT" && ["color", "face"].includes(attribute.name);
       const allowedStyle = attribute.name === "style";
@@ -74,7 +95,9 @@ function sanitizeGuideHtml(value: string) {
         const safeClasses = attribute.value.split(/\s+/).filter((className) => /^(ql-align-|ql-direction-rtl|ql-indent-|ql-size-|jodit-)/.test(className));
         if (safeClasses.length > 0) element.setAttribute("class", safeClasses.join(" "));
         else element.removeAttribute("class");
-      } else if (!allowedHref && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
+      } else if (allowedHref && safeHref) {
+        element.setAttribute("href", safeHref);
+      } else if (!allowedHref && !allowedGuideId && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
         element.removeAttribute(attribute.name);
       }
     });
@@ -89,12 +112,23 @@ function sanitizeGuideHtml(value: string) {
   return template.innerHTML;
 }
 
+function normalizeSafeHref(value: string) {
+  const href = value.trim();
+  if (!href) return "";
+  if (/^(https?:\/\/|\/|#scout-guide:)/i.test(href)) return href;
+  if (/^(www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})(?:[/:?#].*)?$/i.test(href) && !/\s/.test(href)) {
+    return `https://${href}`;
+  }
+  return "";
+}
+
 export function injectTooltipStyles() {
   if (document.getElementById("scout-adoption-player-style")) return;
   const style = document.createElement("style");
   style.id = "scout-adoption-player-style";
   style.textContent = `
     .scout-adoption-highlight { outline: 3px solid #0ea5e9 !important; outline-offset: 4px !important; border-radius: 6px !important; }
+    .scout-adoption-overlay { position: fixed; inset: 0; z-index: 2147483646; background: rgb(15 23 42 / .52); box-shadow: inset 0 0 140px rgb(15 23 42 / .46); }
     .scout-adoption-tooltip { position: fixed; z-index: 2147483647; width: max-content; max-width: min(292px, calc(100vw - 32px)); border: 1px solid rgba(14, 165, 233, .22); border-radius: 14px; background: rgba(255,255,255,.98); box-shadow: 0 18px 48px rgb(15 23 42 / .20), 0 2px 10px rgb(15 23 42 / .08); padding: 12px 14px 11px; color: #0f172a; font: 13px/1.4 system-ui, sans-serif; backdrop-filter: blur(10px); }
     .scout-adoption-tooltip__close { position: absolute; top: 7px; right: 8px; width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: #64748b !important; padding: 0 !important; margin: 0 !important; font: 18px/1 system-ui, sans-serif !important; cursor: pointer; }
     .scout-adoption-tooltip__close:hover { background: #f1f5f9 !important; color: #0f172a !important; }
@@ -125,6 +159,9 @@ export function injectTooltipStyles() {
     .scout-adoption-tooltip button:not(.scout-adoption-tooltip__close) { margin-left: 6px; border: 1px solid #dbe3ee; border-radius: 999px; background: #fff; padding: 5px 9px; color: #0f172a; cursor: pointer; font: 600 12px system-ui, sans-serif; }
     .scout-adoption-tooltip button[data-action="next"] { border-color: #0f172a; background: #0f172a; color: #fff; }
     .scout-adoption-tooltip__arrow { position: absolute; width: 12px; height: 12px; background: rgba(255,255,255,.98); border: 1px solid rgba(14, 165, 233, .22); transform: rotate(45deg); }
+    .scout-adoption-tooltip[data-floating="center"] { max-width: min(420px, calc(100vw - 32px)); padding: 18px 18px 15px; box-shadow: 0 30px 80px rgb(15 23 42 / .28), 0 8px 22px rgb(15 23 42 / .14); }
+    .scout-adoption-tooltip[data-floating="center"] .scout-adoption-tooltip__arrow { display: none; }
+    .scout-adoption-tooltip[data-floating="center"] .scout-adoption-tooltip__message { max-width: 360px; font-size: 13px; }
     .scout-adoption-tooltip[data-placement="bottom"] .scout-adoption-tooltip__arrow { top: -7px; left: var(--arrow-left, 22px); border-right: 0; border-bottom: 0; }
     .scout-adoption-tooltip[data-placement="top"] .scout-adoption-tooltip__arrow { bottom: -7px; left: var(--arrow-left, 22px); border-left: 0; border-top: 0; }
     .scout-adoption-tooltip[data-placement="right"] .scout-adoption-tooltip__arrow { left: -7px; top: var(--arrow-top, 20px); border-right: 0; border-top: 0; }
@@ -161,7 +198,9 @@ function attachAnchoredPositioning(tooltip: AnchoredTooltip, target: HTMLElement
   observer?.observe(tooltip);
   followDuringSmoothScroll();
 
+  const previousCleanup = tooltip.__scoutCleanup;
   tooltip.__scoutCleanup = () => {
+    previousCleanup?.();
     window.removeEventListener("scroll", schedule, true);
     window.removeEventListener("resize", schedule);
     observer?.disconnect();
@@ -172,8 +211,10 @@ function attachAnchoredPositioning(tooltip: AnchoredTooltip, target: HTMLElement
 export function positionTooltip(tooltip: HTMLElement, target: HTMLElement) {
   if (target === document.body) {
     tooltip.dataset.placement = "bottom";
-    tooltip.style.top = "20px";
-    tooltip.style.left = "20px";
+    tooltip.dataset.floating = "center";
+    tooltip.style.top = "50%";
+    tooltip.style.left = "50%";
+    tooltip.style.transform = "translate(-50%, -50%)";
     return;
   }
 
@@ -206,6 +247,8 @@ export function positionTooltip(tooltip: HTMLElement, target: HTMLElement) {
 
   tooltip.style.top = `${top}px`;
   tooltip.style.left = `${left}px`;
+  tooltip.style.transform = "";
+  delete tooltip.dataset.floating;
   tooltip.dataset.placement = placement;
   const targetCenterX = rect.left + rect.width / 2;
   const targetCenterY = rect.top + rect.height / 2;

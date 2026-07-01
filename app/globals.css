@@ -84,3 +84,9 @@ textarea {
   color: #1d4ed8;
   text-decoration: underline;
 }
+
+.jodit-popup,
+.jodit-dialog,
+.jodit-ui-popup {
+  z-index: 2147483000 !important;
+}

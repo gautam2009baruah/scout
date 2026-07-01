@@ -1,5 +1,6 @@
 (function () {
   const DEFAULTS = { scoutBaseUrl: "", targetAppId: "", autoShowLauncher: true };
+  const PLAYER_VERSION = "20260701-tooltip-rect-guard";
   const GOAL_TIMEOUT_MS = 45000;
   const AUTO_CLICK_PREVIEW_MS = 350;
   const LOCATION_EVENT = "scout:locationchange";
@@ -528,6 +529,7 @@
       .scout-adoption-menu { position: fixed; right: 20px; bottom: 72px; z-index: 2147483646; width: min(320px, calc(100vw - 40px)); border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; box-shadow: 0 18px 52px rgb(15 23 42 / .22); padding: 8px; font: 14px system-ui, sans-serif; }
       .scout-adoption-menu button { display: block; width: 100%; border: 0; border-radius: 6px; background: transparent; padding: 10px; text-align: left; color: #0f172a; cursor: pointer; }
       .scout-adoption-highlight { outline: 3px solid #0ea5e9 !important; outline-offset: 4px !important; border-radius: 6px !important; }
+      .scout-adoption-overlay { position: fixed; inset: 0; z-index: 2147483646; background: rgb(15 23 42 / .52); box-shadow: inset 0 0 140px rgb(15 23 42 / .46); }
       .scout-adoption-tooltip { position: fixed; z-index: 2147483647; width: max-content; max-width: min(292px, calc(100vw - 32px)); border: 1px solid rgba(14, 165, 233, .22); border-radius: 14px; background: rgba(255,255,255,.98); box-shadow: 0 18px 48px rgb(15 23 42 / .20), 0 2px 10px rgb(15 23 42 / .08); padding: 12px 14px 11px; color: #0f172a; font: 13px/1.4 system-ui, sans-serif; backdrop-filter: blur(10px); }
       .scout-adoption-tooltip__close { position: absolute; top: 7px; right: 8px; width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: #64748b !important; padding: 0 !important; margin: 0 !important; font: 18px/1 system-ui, sans-serif !important; cursor: pointer; }
       .scout-adoption-tooltip__close:hover { background: #f1f5f9 !important; color: #0f172a !important; }
@@ -558,6 +560,9 @@
       .scout-adoption-footer button { margin-left: 6px; border: 1px solid #dbe3ee; border-radius: 999px; background: #fff; padding: 5px 9px; color: #0f172a; cursor: pointer; font: 600 12px system-ui, sans-serif; }
       .scout-adoption-footer button[data-next] { border-color: #0f172a; background: #0f172a; color: #fff; }
       .scout-adoption-tooltip__arrow { position: absolute; width: 12px; height: 12px; background: rgba(255,255,255,.98); border: 1px solid rgba(14, 165, 233, .22); transform: rotate(45deg); }
+      .scout-adoption-tooltip[data-floating="center"] { max-width: min(420px, calc(100vw - 32px)); padding: 18px 18px 15px; box-shadow: 0 30px 80px rgb(15 23 42 / .28), 0 8px 22px rgb(15 23 42 / .14); }
+      .scout-adoption-tooltip[data-floating="center"] .scout-adoption-tooltip__arrow { display: none; }
+      .scout-adoption-tooltip[data-floating="center"] .scout-adoption-tooltip__message { max-width: 360px; font-size: 13px; }
       .scout-adoption-tooltip[data-placement="bottom"] .scout-adoption-tooltip__arrow { top: -7px; left: var(--arrow-left, 22px); border-right: 0; border-bottom: 0; }
       .scout-adoption-tooltip[data-placement="top"] .scout-adoption-tooltip__arrow { bottom: -7px; left: var(--arrow-left, 22px); border-left: 0; border-top: 0; }
       .scout-adoption-tooltip[data-placement="right"] .scout-adoption-tooltip__arrow { left: -7px; top: var(--arrow-top, 20px); border-right: 0; border-top: 0; }
@@ -569,6 +574,11 @@
   }
 
   function createTooltip(input) {
+    const overlay = input.target === document.body ? document.createElement("div") : null;
+    if (overlay) {
+      overlay.className = "scout-adoption-overlay";
+      document.body.appendChild(overlay);
+    }
     const tooltip = document.createElement("div");
     tooltip.className = "scout-adoption-tooltip";
     tooltip.innerHTML = `
@@ -576,26 +586,38 @@
       <button type="button" class="scout-adoption-tooltip__close" data-close aria-label="Close guide">&times;</button>
       <div class="scout-adoption-tooltip__message"></div>
       <div class="scout-adoption-footer">
-        <span>${input.index + 1} / ${input.total}</span>
+        <span>${input.hideStepCount ? "" : `${input.index + 1} / ${input.total}`}</span>
         <span>
           ${input.index > 0 ? "<button type=\"button\" data-back>Back</button>" : ""}
-          <button type="button" data-next>${input.index + 1 === input.total ? "Done" : "Next"}</button>
+          <button type="button" data-next>${input.primaryLabel || (input.index + 1 === input.total ? "Done" : "Next")}</button>
         </span>
       </div>
     `;
+    tooltip.addEventListener("pointerdown", (event) => event.stopPropagation());
+    tooltip.addEventListener("click", (event) => event.stopPropagation());
     tooltip.querySelector(".scout-adoption-tooltip__message").innerHTML = sanitizeGuideHtml(input.message || "");
-    tooltip.querySelectorAll('a[href^="#scout-guide:"]').forEach((link) => {
+    tooltip.querySelectorAll(".scout-adoption-tooltip__message a[href]").forEach((link) => {
+      link.addEventListener("pointerdown", (event) => event.stopPropagation());
       link.addEventListener("click", (event) => {
-        const guideId = (link.getAttribute("href") || "").replace(/^#scout-guide:/, "");
-        if (!guideId || !input.onGuideLink) return;
         event.preventDefault();
-        input.onGuideLink(guideId);
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        const href = link.getAttribute("href") || "";
+        const guideId = link.dataset.scoutGuideId || href.replace(/^#scout-guide:/, "");
+        if (href.startsWith("#scout-guide:") && guideId && input.onGuideLink) {
+          input.onGuideLink(guideId);
+          return;
+        }
+        window.open(href, "_blank", "noopener,noreferrer");
       });
     });
     tooltip.querySelector("[data-back]")?.addEventListener("click", input.onBack);
     tooltip.querySelector("[data-next]").addEventListener("click", input.onNext);
     tooltip.querySelector("[data-close]").addEventListener("click", input.onClose);
     document.body.appendChild(tooltip);
+    if (overlay) {
+      tooltip.__scoutCleanup = () => overlay.remove();
+    }
     attachAnchoredPositioning(tooltip, input.target);
     return tooltip;
   }
@@ -610,7 +632,9 @@
         return;
       }
       Array.from(element.attributes).forEach((attribute) => {
-        const allowedHref = element.tagName === "A" && attribute.name === "href" && /^(https?:\/\/|\/|#scout-guide:)/i.test(attribute.value);
+        const safeHref = element.tagName === "A" && attribute.name === "href" ? normalizeSafeHref(attribute.value) : "";
+        const allowedHref = Boolean(safeHref);
+        const allowedGuideId = element.tagName === "A" && attribute.name === "data-scout-guide-id" && /^[a-z0-9-]+$/i.test(attribute.value);
         const allowedImageSrc = element.tagName === "IMG" && attribute.name === "src" && /^(https?:\/\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(attribute.value);
         const allowedFont = element.tagName === "FONT" && ["color", "face"].includes(attribute.name);
         const allowedStyle = attribute.name === "style";
@@ -625,7 +649,9 @@
           const safeClasses = attribute.value.split(/\s+/).filter((className) => /^(ql-align-|ql-direction-rtl|ql-indent-|ql-size-|jodit-)/.test(className));
           if (safeClasses.length > 0) element.setAttribute("class", safeClasses.join(" "));
           else element.removeAttribute("class");
-        } else if (!allowedHref && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
+        } else if (allowedHref && safeHref) {
+          element.setAttribute("href", safeHref);
+        } else if (!allowedHref && !allowedGuideId && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
           element.removeAttribute(attribute.name);
         }
       });
@@ -638,6 +664,16 @@
       }
     });
     return template.innerHTML;
+  }
+
+  function normalizeSafeHref(value) {
+    const href = String(value || "").trim();
+    if (!href) return "";
+    if (/^(https?:\/\/|\/|#scout-guide:)/i.test(href)) return href;
+    if (/^(www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})(?:[/:?#].*)?$/i.test(href) && !/\s/.test(href)) {
+      return `https://${href}`;
+    }
+    return "";
   }
 
   function attachAnchoredPositioning(tooltip, target) {
@@ -667,7 +703,9 @@
     observer?.observe(tooltip);
     followDuringSmoothScroll();
 
+    const previousCleanup = tooltip.__scoutCleanup;
     tooltip.__scoutCleanup = () => {
+      if (previousCleanup) previousCleanup();
       window.removeEventListener("scroll", schedule, true);
       window.removeEventListener("resize", schedule);
       observer?.disconnect();
@@ -678,8 +716,10 @@
   function positionTooltip(tooltip, target) {
     if (target === document.body) {
       tooltip.dataset.placement = "bottom";
-      tooltip.style.top = "20px";
-      tooltip.style.left = "20px";
+      tooltip.dataset.floating = "center";
+      tooltip.style.top = "50%";
+      tooltip.style.left = "50%";
+      tooltip.style.transform = "translate(-50%, -50%)";
       return;
     }
     const gap = 14;
@@ -708,6 +748,8 @@
     left = Math.min(window.innerWidth - width - margin, Math.max(margin, left));
     tooltip.style.top = `${top}px`;
     tooltip.style.left = `${left}px`;
+    tooltip.style.transform = "";
+    delete tooltip.dataset.floating;
     tooltip.dataset.placement = placement;
     const targetCenterX = rect.left + rect.width / 2;
     const targetCenterY = rect.top + rect.height / 2;
@@ -799,6 +841,20 @@
     return source.map(normalizeStep);
   }
 
+  function preWorkflowConfirmationStep(guide) {
+    return {
+      id: `${guide.id}-pre-workflow-confirmation`,
+      order: 0,
+      type: "manualInstruction",
+      urlMatch: guide.startContext?.url || "",
+      target: { selectorCandidates: [] },
+      title: "Before you begin",
+      message: guide.preWorkflowConfirmationHtml || "",
+      trigger: "manualNext",
+      actionSourceId: `${guide.id}:pre-workflow-confirmation`
+    };
+  }
+
   function hasTargetIdentity(step) {
     const target = step && step.target;
     return Boolean(target && (
@@ -845,6 +901,17 @@
     }, 120);
   }
 
+  function isScoutPlayerEvent(event) {
+    if (event.target instanceof Element && event.target.closest(".scout-adoption-tooltip, .scout-adoption-overlay, .scout-adoption-missing, .scout-adoption-recovery")) return true;
+    if ("clientX" in event && "clientY" in event) {
+      return Array.from(document.querySelectorAll(".scout-adoption-tooltip")).some((tooltip) => {
+        const rect = tooltip.getBoundingClientRect();
+        return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+    }
+    return false;
+  }
+
   class Player {
     constructor(guide, guideResolver) {
       this.guide = guide;
@@ -855,12 +922,21 @@
       this.tooltip = null;
       this.highlighted = null;
       this.stopped = false;
+      this.preWorkflowConfirmationShown = false;
     }
 
     start(options) {
       injectStyles();
       this.stopped = false;
-      if (!options || options.resetProgress !== false) this.resetProgress();
+      if (!options || options.resetProgress !== false) {
+        this.resetProgress();
+        this.preWorkflowConfirmationShown = false;
+      }
+      if (!this.preWorkflowConfirmationShown && this.guide.preWorkflowConfirmationEnabled && String(this.guide.preWorkflowConfirmationHtml || "").trim()) {
+        this.preWorkflowConfirmationShown = true;
+        this.runSteps([preWorkflowConfirmationStep(this.guide)], "pre", () => this.start({ resetProgress: false }));
+        return;
+      }
       const entrySteps = guideSteps(this.guide, false);
       const mainSteps = guideSteps(this.guide, true);
       const goalContext = resolveGoalContext(this.guide, mainSteps);
@@ -880,6 +956,7 @@
     }
 
     resetProgress() {
+      localStorage.removeItem(this.storageKey("pre"));
       localStorage.removeItem(this.storageKey("entry"));
       localStorage.removeItem(this.storageKey("main"));
     }
@@ -897,6 +974,7 @@
 
     stop() {
       this.stopped = true;
+      this.preWorkflowConfirmationShown = false;
       this.clear();
       this.resetProgress();
     }
@@ -953,7 +1031,12 @@
           if (!this.stopped) this.next(onComplete);
           return;
         }
-        target.addEventListener("click", () => this.next(onComplete), { once: true });
+        const advanceOnClick = (event) => {
+          if (isScoutPlayerEvent(event)) return;
+          target.removeEventListener("click", advanceOnClick);
+          this.next(onComplete);
+        };
+        target.addEventListener("click", advanceOnClick);
       }
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
@@ -969,6 +1052,8 @@
         index: this.index,
         total: this.steps.length,
         target: document.body,
+        hideStepCount: this.phase === "pre",
+        primaryLabel: this.phase === "pre" ? "Start" : undefined,
         onBack: () => this.previous(onComplete),
         onNext: () => this.next(onComplete),
         onClose: () => this.stop(),
@@ -1077,6 +1162,7 @@
 
   window.ScoutAdoptionPlayer = {
     smartRuntime: true,
+    version: PLAYER_VERSION,
     async init(options) {
       const config = Object.assign({}, DEFAULTS, options || {});
       if (!config.targetAppId) throw new Error("targetAppId is required.");
@@ -1084,6 +1170,7 @@
       const guideResolver = (guideId) => guides.find((item) => item.id === guideId);
       if (config.autoShowLauncher && guides.length > 0) showLauncher(guides, guideResolver);
       return {
+        version: PLAYER_VERSION,
         guides,
         detectContext,
         play(guideId) {

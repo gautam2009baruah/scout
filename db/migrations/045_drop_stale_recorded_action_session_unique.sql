@@ -16,7 +16,7 @@ BEGIN
         INNER JOIN pg_attribute att
           ON att.attrelid = con.conrelid
          AND att.attnum = keys.attnum
-      ) = ARRAY['recording_session_id', 'action_index']
+      ) = ARRAY['recording_session_id', 'action_index']::name[]
   LOOP
     EXECUTE format('ALTER TABLE guided_workflow_recorded_actions DROP CONSTRAINT IF EXISTS %I', stale_constraint);
   END LOOP;

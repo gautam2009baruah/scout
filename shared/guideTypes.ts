@@ -159,6 +159,8 @@ export type Guide = {
   updatedAt: string;
   startContext?: GuidePageContext;
   goalContext?: GoalContext;
+  preWorkflowConfirmationHtml?: string;
+  preWorkflowConfirmationEnabled?: boolean;
   entrySteps?: GuideStep[];
   mainSteps?: GuideStep[];
   steps: GuideStep[];

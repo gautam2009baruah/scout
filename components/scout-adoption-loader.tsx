@@ -2,11 +2,15 @@
 
 import { useEffect } from "react";
 
+const SCOUT_PLAYER_VERSION = "20260701-tooltip-rect-guard";
+
 declare global {
   interface Window {
     ScoutAdoptionPlayer?: {
       smartRuntime?: boolean;
+      version?: string;
       init(config: { scoutBaseUrl?: string; targetAppId: string; autoShowLauncher?: boolean }): Promise<{
+        version?: string;
         guides: unknown[];
         play(guideId?: string): void;
       }>;
@@ -27,18 +31,19 @@ export function ScoutAdoptionLoader() {
   useEffect(() => {
     window.ScoutAdoptionPlayerConfig = config;
 
-    if (window.ScoutAdoptionPlayer) {
+    if (window.ScoutAdoptionPlayer?.version === SCOUT_PLAYER_VERSION) {
       void window.ScoutAdoptionPlayer.init(config);
       return;
     }
 
-    if (document.querySelector<HTMLScriptElement>('script[src="http://localhost:3000/scout-smart-adoption-player.js"]')) {
+    if (document.querySelector<HTMLScriptElement>(`script[data-scout-player-version="${SCOUT_PLAYER_VERSION}"]`)) {
       return;
     }
 
     const script = document.createElement("script");
-    script.src = "http://localhost:3000/scout-smart-adoption-player.js";
+    script.src = `http://localhost:3000/scout-smart-adoption-player.js?v=${SCOUT_PLAYER_VERSION}`;
     script.async = true;
+    script.dataset.scoutPlayerVersion = SCOUT_PLAYER_VERSION;
     document.body.appendChild(script);
   }, []);
 

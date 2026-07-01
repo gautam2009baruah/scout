@@ -1,0 +1,72 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { LogOut, UserPlus } from "lucide-react";
+
+export function UserMenu({ name }: { name: string }) {
+  const [open, setOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointerDown(event: MouseEvent | TouchEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  async function logout() {
+    setLoggingOut(true);
+    try {
+      await fetch("/api/admin/auth/logout", { method: "POST" });
+    } finally {
+      window.location.href = "/control-panel/login";
+    }
+  }
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        aria-expanded={open}
+        className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
+      >
+        <UserPlus className="h-4 w-4" />
+        {name}
+      </button>
+      {open ? (
+        <div className="absolute right-0 top-12 z-20 w-44 rounded-lg border border-slate-200 bg-white p-2 shadow-xl">
+          <button
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={loggingOut}
+            onClick={logout}
+            type="button"
+          >
+            <LogOut className="h-4 w-4" />
+            {loggingOut ? "Logging out..." : "Log out"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}

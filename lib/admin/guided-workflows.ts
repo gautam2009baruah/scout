@@ -64,6 +64,8 @@ export type PlayerTrainingSession = {
     status: GuideStatus;
     actionsCount: number;
     steps: number;
+    preWorkflowConfirmationHtml?: string;
+    preWorkflowConfirmationEnabled?: boolean;
     updatedAt: string;
   }>;
 };
@@ -87,6 +89,8 @@ function mapGuide(row: {
   status: GuideStatus;
   recorded_actions_json: RecordedAction[];
   steps_json: GuideStep[];
+  pre_workflow_confirmation_html: string;
+  pre_workflow_confirmation_enabled: boolean;
   target_app_id: string | null;
   target_app_name: string | null;
   recording_session_id: string | null;
@@ -109,6 +113,8 @@ function mapGuide(row: {
     title: row.title,
     description: row.description,
     status: row.status,
+    preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
+    preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
     recordedActions,
     steps: (row.steps_json ?? []).map((step) => {
       const source = actionsById.get(step.actionSourceId);
@@ -275,6 +281,8 @@ const guideSelect = `
     guided_workflow_guides.status,
     guided_workflow_guides.recorded_actions_json,
     guided_workflow_guides.steps_json,
+    guided_workflow_guides.pre_workflow_confirmation_html,
+    guided_workflow_guides.pre_workflow_confirmation_enabled,
     users.name AS created_by_name,
     guided_workflow_guides.created_at,
     guided_workflow_guides.updated_at
@@ -1051,6 +1059,8 @@ export async function createGuidedWorkflow(input: {
   title?: string;
   description?: string;
   status?: GuideStatus;
+  preWorkflowConfirmationHtml?: string;
+  preWorkflowConfirmationEnabled?: boolean;
   recordedActions?: RecordedAction[];
   steps?: GuideStep[];
 }, session: AdminSession) {
@@ -1070,12 +1080,14 @@ export async function createGuidedWorkflow(input: {
         title,
         description,
         status,
+        pre_workflow_confirmation_html,
+        pre_workflow_confirmation_enabled,
         recorded_actions_json,
         steps_json,
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $11)
       RETURNING id
     `,
     [
@@ -1085,6 +1097,8 @@ export async function createGuidedWorkflow(input: {
       generated.title,
       generated.description,
       input.status ?? "draft",
+      input.preWorkflowConfirmationHtml?.trim() ?? "",
+      Boolean(input.preWorkflowConfirmationEnabled && input.preWorkflowConfirmationHtml?.trim()),
       JSON.stringify(input.recordedActions ?? []),
       JSON.stringify(steps),
       session.user.id
@@ -1098,6 +1112,8 @@ export async function updateGuidedWorkflow(id: string, input: {
   title?: string;
   description?: string;
   status?: GuideStatus;
+  preWorkflowConfirmationHtml?: string;
+  preWorkflowConfirmationEnabled?: boolean;
   recordedActions?: RecordedAction[];
   steps?: GuideStep[];
 }, session: AdminSession) {
@@ -1129,6 +1145,17 @@ export async function updateGuidedWorkflow(id: string, input: {
     params.push(input.status);
     fields.push(`status = $${params.length}`);
     fields.push("published_at = CASE WHEN " + `$${params.length}` + " = 'published' THEN now() ELSE published_at END");
+  }
+
+  if (typeof input.preWorkflowConfirmationHtml === "string") {
+    const html = input.preWorkflowConfirmationHtml.trim();
+    params.push(html);
+    fields.push(`pre_workflow_confirmation_html = $${params.length}`);
+  }
+
+  if (typeof input.preWorkflowConfirmationEnabled === "boolean") {
+    params.push(Boolean(input.preWorkflowConfirmationEnabled && (input.preWorkflowConfirmationHtml ?? currentGuide.preWorkflowConfirmationHtml ?? "").trim()));
+    fields.push(`pre_workflow_confirmation_enabled = $${params.length}`);
   }
 
   const recordedActions = input.steps
@@ -1364,11 +1391,13 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
     description: string;
     status: GuideStatus;
     steps_json: GuideStep[];
+    pre_workflow_confirmation_html: string;
+    pre_workflow_confirmation_enabled: boolean;
     created_at: Date;
     updated_at: Date;
   }>(
     `
-      SELECT id, title, description, status, steps_json, created_at, updated_at
+      SELECT id, title, description, status, steps_json, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, created_at, updated_at
       FROM guided_workflow_guides
       WHERE target_app_id = $1
         AND status = 'published'
@@ -1383,6 +1412,8 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
       title: row.title,
       description: row.description,
       status: row.status,
+      preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
+      preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
       steps: row.steps_json ?? []
@@ -1401,6 +1432,8 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
     guide_id: string;
     guide_description: string;
     guide_status: GuideStatus;
+    pre_workflow_confirmation_html: string;
+    pre_workflow_confirmation_enabled: boolean;
     actions_count: number;
     steps_json: GuideStep[];
     guide_updated_at: Date;
@@ -1415,6 +1448,8 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
         guided_workflow_guides.id AS guide_id,
         guided_workflow_guides.description AS guide_description,
         guided_workflow_guides.status AS guide_status,
+        guided_workflow_guides.pre_workflow_confirmation_html,
+        guided_workflow_guides.pre_workflow_confirmation_enabled,
         guided_workflow_topics.actions_count,
         guided_workflow_guides.steps_json,
         guided_workflow_guides.updated_at AS guide_updated_at,
@@ -1447,6 +1482,8 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
       guideId: row.guide_id,
       description: row.guide_description,
       status: row.guide_status,
+      preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
+      preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
       actionsCount: Number(row.actions_count),
       steps: row.steps_json?.length ?? 0,
       updatedAt: row.guide_updated_at.toISOString()

@@ -50,6 +50,17 @@
     return null;
   }
 
+  function isScoutPlayerEvent(event) {
+    if (event.target instanceof Element && event.target.closest(".scout-adoption-tooltip, .scout-adoption-missing")) return true;
+    if ("clientX" in event && "clientY" in event) {
+      return Array.from(document.querySelectorAll(".scout-adoption-tooltip")).some((tooltip) => {
+        const rect = tooltip.getBoundingClientRect();
+        return event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+      });
+    }
+    return false;
+  }
+
   function injectStyles() {
     if (document.getElementById("scout-adoption-player-style")) return;
     const style = document.createElement("style");
@@ -120,7 +131,14 @@
       this.highlighted = target;
       this.tooltip = this.createTooltip(step, target);
 
-      if (step.trigger === "click") target.addEventListener("click", () => this.next(), { once: true });
+      if (step.trigger === "click") {
+        const advanceOnClick = (event) => {
+          if (isScoutPlayerEvent(event)) return;
+          target.removeEventListener("click", advanceOnClick);
+          this.next();
+        };
+        target.addEventListener("click", advanceOnClick);
+      }
       if (step.trigger === "input") target.addEventListener("input", () => this.next(), { once: true });
     }
 
@@ -139,6 +157,8 @@
           </span>
         </div>
       `;
+      tooltip.addEventListener("pointerdown", (event) => event.stopPropagation());
+      tooltip.addEventListener("click", (event) => event.stopPropagation());
       tooltip.querySelector("h3").textContent = step.title || `Step ${this.index + 1}`;
       tooltip.querySelector("p").textContent = step.message || "";
       tooltip.querySelector("[data-back]").addEventListener("click", () => this.previous());

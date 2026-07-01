@@ -4,6 +4,7 @@ import { createTooltip, injectTooltipStyles } from "./tooltip";
 
 const GOAL_TIMEOUT_MS = 45000;
 const AUTO_CLICK_PREVIEW_MS = 350;
+type PlayerPhase = "pre" | "entry" | "main";
 
 function focusTarget(element: HTMLElement) {
   if (!element.matches("input, select, textarea, button, a[href], [tabindex]:not([tabindex='-1']), [role='button'], [role='link'], [role='combobox'], [role='textbox']")) return;
@@ -16,6 +17,18 @@ function focusTarget(element: HTMLElement) {
   }, 120);
 }
 
+function isScoutPlayerEvent(event: Event) {
+  if (event.target instanceof Element && event.target.closest(".scout-adoption-tooltip, .scout-adoption-overlay, .scout-adoption-missing, .scout-adoption-recovery")) return true;
+  if ("clientX" in event && "clientY" in event) {
+    const pointer = event as MouseEvent;
+    return Array.from(document.querySelectorAll(".scout-adoption-tooltip")).some((tooltip) => {
+      const rect = tooltip.getBoundingClientRect();
+      return pointer.clientX >= rect.left && pointer.clientX <= rect.right && pointer.clientY >= rect.top && pointer.clientY <= rect.bottom;
+    });
+  }
+  return false;
+}
+
 export class AdoptionPlayer {
   private guide: Guide;
   private guideResolver?: (guideId: string) => Guide | null | undefined;
@@ -24,6 +37,7 @@ export class AdoptionPlayer {
   private tooltip: HTMLElement | null = null;
   private highlighted: HTMLElement | null = null;
   private stopped = false;
+  private preWorkflowConfirmationShown = false;
 
   constructor(guide: Guide, options: { guideResolver?: (guideId: string) => Guide | null | undefined } = {}) {
     this.guide = guide;
@@ -35,7 +49,15 @@ export class AdoptionPlayer {
     this.stopped = false;
     if (options.resetProgress !== false) {
       this.resetProgress();
+      this.preWorkflowConfirmationShown = false;
     }
+
+    if (!this.preWorkflowConfirmationShown && this.guide.preWorkflowConfirmationEnabled && this.guide.preWorkflowConfirmationHtml?.trim()) {
+      this.preWorkflowConfirmationShown = true;
+      this.runSteps([preWorkflowConfirmationStep(this.guide)], "pre", () => this.start({ resetProgress: false }));
+      return;
+    }
+
     const mainSteps = stepsForGuide(this.guide, true);
     const entrySteps = stepsForGuide(this.guide, false);
     const goalContext = resolveGoalContext(this.guide, mainSteps);
@@ -60,6 +82,7 @@ export class AdoptionPlayer {
 
   stop() {
     this.stopped = true;
+    this.preWorkflowConfirmationShown = false;
     this.clear();
     this.resetProgress();
   }
@@ -69,6 +92,7 @@ export class AdoptionPlayer {
   }
 
   private resetProgress() {
+    localStorage.removeItem(this.storageKey("pre"));
     localStorage.removeItem(this.storageKey("entry"));
     localStorage.removeItem(this.storageKey("main"));
   }
@@ -87,13 +111,13 @@ export class AdoptionPlayer {
     this.highlighted = null;
   }
 
-  private runSteps(steps: GuideStep[], phase: "entry" | "main", onComplete?: () => void | Promise<void>) {
+  private runSteps(steps: GuideStep[], phase: PlayerPhase, onComplete?: () => void | Promise<void>) {
     this.steps = steps;
     this.index = Number(localStorage.getItem(this.storageKey(phase)) ?? 0);
     this.render(phase, onComplete);
   }
 
-  private async render(phase: "entry" | "main", onComplete?: () => void | Promise<void>) {
+  private async render(phase: PlayerPhase, onComplete?: () => void | Promise<void>) {
     this.clear();
     const step = this.currentStep();
 
@@ -144,7 +168,12 @@ export class AdoptionPlayer {
         return;
       }
 
-      target.addEventListener("click", () => this.next(phase, onComplete), { once: true });
+      const advanceOnClick = (event: MouseEvent) => {
+        if (isScoutPlayerEvent(event)) return;
+        target.removeEventListener("click", advanceOnClick);
+        this.next(phase, onComplete);
+      };
+      target.addEventListener("click", advanceOnClick);
     }
 
     if (step.type === "input" || step.trigger === "input" || step.trigger === "change" || step.trigger === "blur" || step.trigger === "focus") {
@@ -153,7 +182,7 @@ export class AdoptionPlayer {
     }
   }
 
-  private showManualInstruction(step: GuideStep, phase: "entry" | "main" = "main", onComplete?: () => void | Promise<void>) {
+  private showManualInstruction(step: GuideStep, phase: PlayerPhase = "main", onComplete?: () => void | Promise<void>) {
     const anchor = document.body;
     this.tooltip = createTooltip({
       title: step.title,
@@ -161,6 +190,8 @@ export class AdoptionPlayer {
       index: this.index,
       total: this.steps.length,
       target: anchor,
+      hideStepCount: phase === "pre",
+      primaryLabel: phase === "pre" ? "Start" : undefined,
       controls: {
         onBack: () => this.previous(phase, onComplete),
         onNext: () => this.next(phase, onComplete),
@@ -170,7 +201,7 @@ export class AdoptionPlayer {
     });
   }
 
-  private showMissing(step: GuideStep, phase: "entry" | "main", onComplete?: () => void | Promise<void>) {
+  private showMissing(step: GuideStep, phase: PlayerPhase, onComplete?: () => void | Promise<void>) {
     const banner = document.createElement("div");
     banner.className = "scout-adoption-missing";
     banner.innerHTML = `Element not found on this page <button type="button" data-action="retry">Retry</button> <button type="button" data-action="skip">Skip</button> <button type="button" data-action="stop">Stop</button> <button type="button" data-action="recover">Try Smart Recovery</button>`;
@@ -181,13 +212,13 @@ export class AdoptionPlayer {
     document.body.appendChild(banner);
   }
 
-  private previous(phase: "entry" | "main", onComplete?: () => void | Promise<void>) {
+  private previous(phase: PlayerPhase, onComplete?: () => void | Promise<void>) {
     this.index = Math.max(0, this.index - 1);
     localStorage.setItem(this.storageKey(phase), String(this.index));
     this.render(phase, onComplete);
   }
 
-  private next(phase: "entry" | "main", onComplete?: () => void | Promise<void>) {
+  private next(phase: PlayerPhase, onComplete?: () => void | Promise<void>) {
     this.index += 1;
     localStorage.setItem(this.storageKey(phase), String(this.index));
     this.render(phase, onComplete);
@@ -275,6 +306,20 @@ function stepsForGuide(guide: Guide, main: boolean) {
   });
 }
 
+function preWorkflowConfirmationStep(guide: Guide): GuideStep {
+  return {
+    id: `${guide.id}-pre-workflow-confirmation`,
+    order: 0,
+    type: "manualInstruction",
+    urlMatch: guide.startContext?.url ?? "",
+    target: emptyTarget(),
+    title: "Before you begin",
+    message: guide.preWorkflowConfirmationHtml ?? "",
+    trigger: "manualNext",
+    actionSourceId: `${guide.id}:pre-workflow-confirmation`
+  };
+}
+
 function hasTargetIdentity(step: GuideStep) {
   const target = step.target;
   if (!target) return false;
@@ -288,6 +333,12 @@ function hasTargetIdentity(step: GuideStep) {
       || target.cssFallback
       || target.xpathFallback
   );
+}
+
+function emptyTarget() {
+  return {
+    selectorCandidates: []
+  };
 }
 
 function resolveGoalContext(guide: Guide, mainSteps: GuideStep[]): GoalContext | undefined {

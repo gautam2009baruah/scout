@@ -19,6 +19,8 @@ type EditorState = {
   title: string;
   description: string;
   status: GuideStatus;
+  preWorkflowConfirmationHtml: string;
+  preWorkflowConfirmationEnabled: boolean;
   steps: GuideStep[];
 };
 
@@ -305,7 +307,17 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
   async function convertTopic(topicId: string) {
     const topic = sessions.flatMap((session) => session.topics).find((item) => item.id === topicId);
     if (topic?.guideId && selected?.id === topic.guideId) {
-      await saveGuide(undefined, { silent: true });
+      const guideDirty = editorHasChanges(editor, selected);
+      const hasNewSyncedActions = topic.actionsCount > selected.recordedActions.length;
+
+      if (guideDirty && !hasNewSyncedActions) {
+        await saveGuide("draft");
+        return;
+      }
+
+      if (guideDirty) {
+        await saveGuide("draft", { silent: true });
+      }
     }
 
     setState({ status: "submitting", message: "" });
@@ -374,6 +386,8 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
         title: editor.title,
         description: editor.description,
         status: nextStatus ?? editor.status,
+        preWorkflowConfirmationHtml: editor.preWorkflowConfirmationHtml,
+        preWorkflowConfirmationEnabled: editor.preWorkflowConfirmationEnabled,
         steps: editor.steps.map((step, index) => ({ ...step, order: index + 1 }))
       })
     });
@@ -416,6 +430,15 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
 
   function updateStep(index: number, patch: Partial<GuideStep>) {
     setEditor((current) => ({ ...current, steps: current.steps.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step) }));
+  }
+
+  function updatePreWorkflowConfirmation(html: string, enabled: boolean) {
+    setEditor((current) => ({
+      ...current,
+      status: "draft",
+      preWorkflowConfirmationHtml: html,
+      preWorkflowConfirmationEnabled: Boolean(enabled && html.trim())
+    }));
   }
 
   function moveStep(index: number, direction: -1 | 1) {
@@ -575,6 +598,8 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
           selectedSession={selectedSession}
           selectedTopic={selectedTopic}
           sessionDetails={sessionDetails}
+          trainingSessions={filteredSessions}
+          updatePreWorkflowConfirmation={updatePreWorkflowConfirmation}
           updateStep={updateStep}
         />
       </section>
@@ -582,7 +607,7 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
   );
 }
 
-function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, guides, moveStep, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, updateStep }: {
+function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, guides, moveStep, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
   convertTopic(topicId: string): void;
   deleteSession(sessionId: string): void;
   deleteStep(index: number): void;
@@ -594,11 +619,15 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
   selectedSession: GuidedWorkflowRecordingSessionRow | null;
   selectedTopic: GuidedWorkflowTopicRow | null;
   sessionDetails: SessionDetailsState;
+  trainingSessions: GuidedWorkflowRecordingSessionRow[];
+  updatePreWorkflowConfirmation(html: string, enabled: boolean): void;
   updateStep(index: number, patch: Partial<GuideStep>): void;
 }) {
   const [copiedKey, setCopiedKey] = useState("");
   const [configTab, setConfigTab] = useState<"recorder" | "snippet">("recorder");
   const [openStepIds, setOpenStepIds] = useState<Set<string>>(() => new Set());
+  const [introEditorOpen, setIntroEditorOpen] = useState(false);
+  const [introDraft, setIntroDraft] = useState("");
 
   useEffect(() => {
     if (!selectedTopic?.guideId) {
@@ -629,6 +658,10 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
   const hasNewSyncedActions = Boolean(sessionGuide && syncedActionCount > sessionGuide.recordedActions.length);
   const canUpdateDraft = Boolean(sessionGuide && (guideDirty || hasNewSyncedActions));
   const canPublish = Boolean(sessionGuide && sessionGuide.status === "draft" && guideSteps.length > 0 && !guideDirty && !hasNewSyncedActions);
+  const workflowConfirmationHtml = editor.preWorkflowConfirmationHtml ?? "";
+  const hasWorkflowConfirmation = Boolean(workflowConfirmationHtml.trim());
+  const workflowConfirmationEnabled = Boolean(editor.preWorkflowConfirmationEnabled && hasWorkflowConfirmation);
+  const canCreateWorkflowConfirmation = Boolean(sessionGuide);
 
   async function copyText(key: string, value: string) {
     await navigator.clipboard.writeText(value);
@@ -642,6 +675,7 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-lg font-semibold text-slate-950">{selectedSession.title}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-700">{selectedTopic.title}</p>
             <p className="mt-2 text-sm text-slate-500">
               <span className="font-medium text-slate-700">Synced actions:</span> {syncedActionCount} • <span className="font-medium text-slate-700">Created:</span> {formatDate(selectedSession.createdAt)}
             </p>
@@ -715,6 +749,30 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
             <div>
               <p className="text-sm font-semibold text-slate-950">Guide steps</p>
               <p className="mt-1 text-xs text-slate-500">Edit descriptions, delete mistakes, and reorder steps before publishing.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <label className={`inline-flex items-center gap-2 text-xs font-semibold ${hasWorkflowConfirmation ? "text-slate-700" : "text-slate-400"}`}>
+                <input
+                  checked={workflowConfirmationEnabled}
+                  className="h-4 w-4 rounded border-slate-300 text-slate-950"
+                  disabled={!hasWorkflowConfirmation}
+                  onChange={(event) => updatePreWorkflowConfirmation(workflowConfirmationHtml, event.target.checked)}
+                  type="checkbox"
+                />
+                Show before workflow
+              </label>
+              <button
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!canCreateWorkflowConfirmation}
+                onClick={() => {
+                  setIntroDraft(workflowConfirmationHtml);
+                  setIntroEditorOpen(true);
+                }}
+                type="button"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {hasWorkflowConfirmation ? "Edit start message" : "Create start message"}
+              </button>
             </div>
           </div>
 
@@ -826,9 +884,9 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
 
                       <div className="grid gap-1 text-xs font-medium text-slate-600">
                         <RichTextEditor
-                          guides={guides}
                           label="Step description"
                           onChange={(value) => updateStep(index, { message: value, title: plainTextFromHtml(value) || "Untitled step" })}
+                          trainingSessions={trainingSessions}
                           value={step.message}
                         />
                       </div>
@@ -845,6 +903,57 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
           })}
         </div>
       </div>
+      {introEditorOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4" onClick={() => setIntroEditorOpen(false)}>
+          <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-slate-950">Workflow start confirmation</p>
+                <p className="mt-1 text-sm text-slate-500">This message appears once before the guided workflow starts. The user must click Next before any guided step begins.</p>
+              </div>
+              <button className="rounded-md px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100" onClick={() => setIntroEditorOpen(false)} type="button">Close</button>
+            </div>
+            <RichTextEditor
+              label="Confirmation content"
+              onChange={setIntroDraft}
+              placeholder="Before you begin: Describe what the user should know before the guided workflow starts."
+              trainingSessions={trainingSessions}
+              value={introDraft}
+            />
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+              <button
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={!hasWorkflowConfirmation}
+                onClick={() => {
+                  updatePreWorkflowConfirmation("", false);
+                  setIntroDraft("");
+                  setIntroEditorOpen(false);
+                }}
+                type="button"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete confirmation
+              </button>
+              <div className="flex justify-end gap-2">
+                <button className="inline-flex h-10 items-center rounded-lg border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setIntroEditorOpen(false)} type="button">
+                  Cancel
+                </button>
+                <button
+                  className="inline-flex h-10 items-center rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!introDraft.trim()}
+                  onClick={() => {
+                    updatePreWorkflowConfirmation(introDraft, true);
+                    setIntroEditorOpen(false);
+                  }}
+                  type="button"
+                >
+                  Save confirmation
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -854,6 +963,8 @@ function editorFromGuide(guide: GuidedWorkflowRow | null): EditorState {
     title: guide?.title ?? "",
     description: guide?.description ?? "",
     status: guide?.status ?? "draft",
+    preWorkflowConfirmationHtml: guide?.preWorkflowConfirmationHtml ?? "",
+    preWorkflowConfirmationEnabled: Boolean(guide?.preWorkflowConfirmationEnabled && guide?.preWorkflowConfirmationHtml?.trim()),
     steps: guide?.steps ?? []
   };
 }
@@ -902,6 +1013,8 @@ function normalizeSteps(steps: GuideStep[]) {
 function editorHasChanges(editor: EditorState, guide: GuidedWorkflowRow) {
   return editor.title !== guide.title
     || editor.description !== guide.description
+    || editor.preWorkflowConfirmationHtml !== (guide.preWorkflowConfirmationHtml ?? "")
+    || editor.preWorkflowConfirmationEnabled !== Boolean(guide.preWorkflowConfirmationEnabled && guide.preWorkflowConfirmationHtml?.trim())
     || JSON.stringify(normalizeSteps(editor.steps)) !== JSON.stringify(normalizeSteps(guide.steps));
 }
 
@@ -955,8 +1068,9 @@ function downloadJson(filename: string, value: unknown) {
 
 function installSnippet(targetAppId: string) {
   const baseUrl = getScoutBaseUrl();
+  const playerVersion = "20260701-tooltip-rect-guard";
 
-  return `<script src="${baseUrl}/scout-smart-adoption-player.js"></script>
+  return `<script src="${baseUrl}/scout-smart-adoption-player.js?v=${playerVersion}"></script>
 <script>
   ScoutAdoptionPlayer.init({
     scoutBaseUrl: "${baseUrl}",
@@ -973,19 +1087,20 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
   return <label className="block"><span className="text-sm font-medium text-slate-700">{label}</span><div className="mt-2 [&_.input]:w-full [&_.input]:rounded-lg [&_.input]:border [&_.input]:border-slate-200 [&_.input]:bg-white [&_.input]:px-3 [&_.input]:text-sm [&_.input]:outline-none [&_.input:focus]:border-slate-900 [&_input.input]:h-10 [&_select.input]:h-10">{children}</div></label>;
 }
 
-function RichTextEditor({ guides, label, onChange, value }: { guides: GuidedWorkflowRow[]; label: string; onChange: (value: string) => void; value: string }) {
+function RichTextEditor({ label, onChange, placeholder = "Write the step description...", trainingSessions, value }: { label: string; onChange: (value: string) => void; placeholder?: string; trainingSessions: GuidedWorkflowRecordingSessionRow[]; value: string }) {
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const joditRef = useRef<JoditInstance | null>(null);
   const valueRef = useRef(value);
-  const guidesRef = useRef(guides);
+  const trainingSessionsRef = useRef(trainingSessions);
   const onChangeRef = useRef(onChange);
+  const placeholderRef = useRef(placeholder);
   const applyingExternalValueRef = useRef(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    guidesRef.current = guides;
-  }, [guides]);
+    trainingSessionsRef.current = trainingSessions;
+  }, [trainingSessions]);
 
   useEffect(() => {
     valueRef.current = value;
@@ -994,6 +1109,10 @@ function RichTextEditor({ guides, label, onChange, value }: { guides: GuidedWork
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useEffect(() => {
+    placeholderRef.current = placeholder;
+  }, [placeholder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1011,7 +1130,16 @@ function RichTextEditor({ guides, label, onChange, value }: { guides: GuidedWork
         askBeforePasteHTML: false,
         askBeforePasteFromWord: false,
         defaultActionOnPaste: "insert_clear_html",
-        placeholder: "Write the step description...",
+        placeholder: placeholderRef.current,
+        toolbarAdaptive: false,
+        buttons: [
+          "bold", "italic", "underline", "strikethrough", "|",
+          "ul", "ol", "|",
+          "font", "fontsize", "brush", "paragraph", "|",
+          "align", "outdent", "indent", "|",
+          "link", "image", "table", "|",
+          "undo", "redo", "eraser", "source", "fullsize"
+        ],
         showCharsCounter: false,
         showWordsCounter: false,
         showXPathInStatusbar: false,
@@ -1024,31 +1152,49 @@ function RichTextEditor({ guides, label, onChange, value }: { guides: GuidedWork
             popup(editor: JoditInstance, _current: Node | null, close: () => void) {
               const wrapper = document.createElement("div");
               wrapper.style.cssText = "display:grid;gap:6px;min-width:220px;max-width:320px;max-height:260px;overflow:auto;padding:6px";
+              const selectedTextAtOpen = editor.s.sel?.toString() ?? "";
+              (editor.s as { save?: () => void }).save?.();
 
-              if (guidesRef.current.length === 0) {
+              const sessionsWithTopics = trainingSessionsRef.current
+                .map((session) => ({
+                  ...session,
+                  topics: session.topics.filter((topic) => topic.guideId && topic.status === "published")
+                }))
+                .filter((session) => session.topics.length > 0);
+
+              if (sessionsWithTopics.length === 0) {
                 const empty = document.createElement("div");
-                empty.textContent = "No training sessions available.";
+                empty.textContent = "No published topics available.";
                 empty.style.cssText = "padding:8px;color:#64748b;font:12px system-ui,sans-serif";
                 wrapper.appendChild(empty);
                 return wrapper;
               }
 
-              guidesRef.current.forEach((guide) => {
-                const button = document.createElement("button");
-                button.type = "button";
-                button.textContent = guide.title || "Untitled training session";
-                button.style.cssText = "display:block;width:100%;border:0;border-radius:6px;background:#f8fafc;color:#0f172a;padding:7px 9px;text-align:left;font:12px system-ui,sans-serif;cursor:pointer";
-                button.addEventListener("click", () => {
-                  const href = `#scout-guide:${escapeAttribute(guide.id)}`;
-                  const label = escapeHtml(guide.title || "Training session");
-                  if (editor.s.isCollapsed()) {
-                    editor.s.insertHTML(`<a href="${href}">${label}</a>`);
-                  } else {
-                    editor.execCommand("createLink", false, href);
-                  }
-                  close();
+              sessionsWithTopics.forEach((session) => {
+                const group = document.createElement("div");
+                const heading = document.createElement("div");
+                heading.textContent = session.title || "Untitled session";
+                heading.style.cssText = "padding:7px 8px 3px;color:#475569;font:700 11px system-ui,sans-serif;text-transform:uppercase;letter-spacing:.03em";
+                group.appendChild(heading);
+
+                session.topics.forEach((topic) => {
+                  const button = document.createElement("button");
+                  button.type = "button";
+                  button.textContent = topic.title || "Untitled topic";
+                  button.style.cssText = "display:block;width:100%;border:0;border-radius:6px;background:#f8fafc;color:#0f172a;padding:7px 9px;text-align:left;font:12px system-ui,sans-serif;cursor:pointer";
+                  button.addEventListener("click", () => {
+                    const guideId = escapeAttribute(topic.guideId || "");
+                    const href = `#scout-guide:${guideId}`;
+                    (editor.s as { restore?: () => void }).restore?.();
+                    const selectedText = editor.s.sel?.toString() || selectedTextAtOpen;
+                    const label = escapeHtml(selectedText || topic.title || "Training topic");
+                    editor.s.insertHTML(`<a href="${href}" data-scout-guide-id="${guideId}">${label}</a>`);
+                    close();
+                  });
+                  group.appendChild(button);
                 });
-                wrapper.appendChild(button);
+
+                wrapper.appendChild(group);
               });
 
               return wrapper;
@@ -1141,7 +1287,9 @@ function sanitizeGuideHtml(value: string) {
       return;
     }
     Array.from(element.attributes).forEach((attribute) => {
-      const allowedHref = element.tagName === "A" && attribute.name === "href" && /^(https?:\/\/|\/|#scout-guide:)/i.test(attribute.value);
+      const safeHref = element.tagName === "A" && attribute.name === "href" ? normalizeSafeHref(attribute.value) : "";
+      const allowedHref = Boolean(safeHref);
+      const allowedGuideId = element.tagName === "A" && attribute.name === "data-scout-guide-id" && /^[a-z0-9-]+$/i.test(attribute.value);
       const allowedImageSrc = element.tagName === "IMG" && attribute.name === "src" && /^(https?:\/\/|data:image\/(?:png|jpe?g|gif|webp);base64,)/i.test(attribute.value);
       const allowedFont = element.tagName === "FONT" && ["color", "face"].includes(attribute.name);
       const allowedStyle = attribute.name === "style";
@@ -1156,16 +1304,31 @@ function sanitizeGuideHtml(value: string) {
         const safeClasses = attribute.value.split(/\s+/).filter((className) => /^(ql-align-|ql-direction-rtl|ql-indent-|ql-size-|jodit-)/.test(className));
         if (safeClasses.length > 0) element.setAttribute("class", safeClasses.join(" "));
         else element.removeAttribute("class");
-      } else if (!allowedHref && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
+      } else if (allowedHref && safeHref) {
+        element.setAttribute("href", safeHref);
+      } else if (!allowedHref && !allowedGuideId && !allowedImageSrc && !allowedFont && !allowedTableAttribute && !allowedMediaAttribute) {
         element.removeAttribute(attribute.name);
       }
     });
     if (element.tagName === "A") {
-      element.setAttribute("target", "_blank");
-      element.setAttribute("rel", "noopener noreferrer");
+      const href = element.getAttribute("href") ?? "";
+      if (!href.startsWith("#scout-guide:")) {
+        element.setAttribute("target", "_blank");
+        element.setAttribute("rel", "noopener noreferrer");
+      }
     }
   });
   return template.innerHTML.replace(/<div><br><\/div>/g, "<br>").trim();
+}
+
+function normalizeSafeHref(value: string) {
+  const href = value.trim();
+  if (!href) return "";
+  if (/^(https?:\/\/|\/|#scout-guide:)/i.test(href)) return href;
+  if (/^(www\.|[a-z0-9][a-z0-9.-]*\.[a-z]{2,})(?:[/:?#].*)?$/i.test(href) && !/\s/.test(href)) {
+    return `https://${href}`;
+  }
+  return "";
 }
 
 function decodeHtmlEntities(text: string) {
