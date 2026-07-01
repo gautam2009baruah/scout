@@ -36,16 +36,17 @@ export default function HealingSuggestionReviewer() {
   const [error, setError] = useState<string | null>(null);
   const [editModal, setEditModal] = useState<EditModalData | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected">("pending");
 
   useEffect(() => {
     loadSuggestions();
-  }, []);
+  }, [statusFilter]);
 
   async function loadSuggestions() {
     try {
       setLoading(true);
       setError(null);
-      const response = await fetch("/api/guided-workflow-player/healing-suggestions?status=pending");
+      const response = await fetch(`/api/guided-workflow-player/healing-suggestions?status=${statusFilter}`);
       if (!response.ok) {
         throw new Error(`Failed to load suggestions: ${response.statusText}`);
       }
@@ -153,13 +154,49 @@ export default function HealingSuggestionReviewer() {
         <p className="text-gray-600 mt-1">
           Review and approve healing suggestions from automated workflow playback
         </p>
+        
+        {/* Status Filter Tabs */}
+        <div className="mt-4 flex gap-2 border-b border-gray-200">
+          <button
+            onClick={() => setStatusFilter("pending")}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              statusFilter === "pending"
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Pending
+          </button>
+          <button
+            onClick={() => setStatusFilter("approved")}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              statusFilter === "approved"
+                ? "border-green-600 text-green-600"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Approved
+          </button>
+          <button
+            onClick={() => setStatusFilter("rejected")}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              statusFilter === "rejected"
+                ? "border-red-600 text-red-600"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Rejected
+          </button>
+        </div>
       </div>
 
       {suggestions.length === 0 ? (
         <div className="text-center py-12 bg-gray-50 rounded-lg">
-          <p className="text-gray-600 text-lg">No pending healing suggestions</p>
+          <p className="text-gray-600 text-lg">No {statusFilter} healing suggestions</p>
           <p className="text-gray-500 text-sm mt-2">
-            Suggestions will appear here when workflows encounter missing controls during playback
+            {statusFilter === "pending"
+              ? "Suggestions will appear here when workflows encounter missing controls during playback"
+              : `No ${statusFilter} suggestions found`}
           </p>
         </div>
       ) : (
@@ -174,29 +211,44 @@ export default function HealingSuggestionReviewer() {
                       Step {suggestion.step_order} • ID: {suggestion.step_id}
                     </p>
                   </div>
-                  <div className="flex gap-2 ml-4">
-                    <button
-                      onClick={() => openEditModal(suggestion)}
-                      disabled={processingId === suggestion.id}
-                      className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleApprove(suggestion.id)}
-                      disabled={processingId === suggestion.id}
-                      className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {processingId === suggestion.id ? "Processing..." : "Approve"}
-                    </button>
-                    <button
-                      onClick={() => handleReject(suggestion.id)}
-                      disabled={processingId === suggestion.id}
-                      className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-                    >
-                      Reject
-                    </button>
-                  </div>
+                  {statusFilter === "pending" && (
+                    <div className="flex gap-2 ml-4">
+                      <button
+                        onClick={() => openEditModal(suggestion)}
+                        disabled={processingId === suggestion.id}
+                        className="px-3 py-1 text-sm bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleApprove(suggestion.id)}
+                        disabled={processingId === suggestion.id}
+                        className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                      >
+                        {processingId === suggestion.id ? "Processing..." : "Approve"}
+                      </button>
+                      <button
+                        onClick={() => handleReject(suggestion.id)}
+                        disabled={processingId === suggestion.id}
+                        className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                  {statusFilter !== "pending" && (
+                    <div className="ml-4">
+                      <span
+                        className={`px-3 py-1 text-sm font-medium rounded ${
+                          statusFilter === "approved"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {statusFilter === "approved" ? "Approved" : "Rejected"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

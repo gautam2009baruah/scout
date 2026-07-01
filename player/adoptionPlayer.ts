@@ -419,7 +419,7 @@ export class AdoptionPlayer {
     }
   }
 
-  private trySmartRecovery(step: GuideStep) {
+  private async trySmartRecovery(step: GuideStep, phase: PlayerPhase = "main", onComplete?: () => void | Promise<void>) {
     document.querySelector(".scout-adoption-recovery")?.remove();
     const targetText = [step.title, step.message, step.target?.fallbackText, this.guide.title].filter(Boolean) as string[];
     const suggestion = findVisibleControlByText(targetText.flatMap((text) => text.split(/\s+/).filter((word) => word.length > 3)));
@@ -432,7 +432,146 @@ export class AdoptionPlayer {
     suggestion.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     suggestion.classList.add("scout-adoption-highlight");
     this.highlighted = suggestion;
-    this.showRecoveryMessage(`I highlighted ${suggestion.innerText || suggestion.getAttribute("aria-label") || "the matching control"}. Click the highlighted control to continue.`);
+
+    // Show confirmation dialog for user to accept/reject the found control
+    this.showSmartRecoveryConfirmation(step, suggestion, phase, onComplete);
+  }
+
+  private async showSmartRecoveryConfirmation(
+    step: GuideStep,
+    foundElement: HTMLElement,
+    phase: PlayerPhase,
+    onComplete?: () => void | Promise<void>
+  ) {
+    const displayText = foundElement.innerText?.slice(0, 100) || foundElement.getAttribute("aria-label") || "a matching control";
+    
+    const banner = document.createElement("div");
+    banner.className = "scout-adoption-recovery";
+    banner.innerHTML = `
+      <div style="background: white; border: 2px solid #f59e0b; padding: 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-width: 500px;">
+        <h3 style="margin: 0 0 8px 0; color: #f59e0b;">Smart Recovery Match Found</h3>
+        <p style="margin: 0 0 8px 0; font-size: 14px;">
+          <strong>Found control:</strong> ${displayText}
+        </p>
+        <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">
+          Accept this control to continue and save for trainer review?
+        </p>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" data-action="accept" style="flex: 1; padding: 8px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Accept
+          </button>
+          <button type="button" data-action="reject" style="flex: 1; padding: 8px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Reject
+          </button>
+          <button type="button" data-action="skip" style="padding: 8px 16px; background: #6b7280; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Skip Step
+          </button>
+        </div>
+      </div>
+    `;
+    
+    banner.querySelector('[data-action="accept"]')?.addEventListener("click", async () => {
+      banner.remove();
+      await this.acceptSmartRecovery(step, foundElement, phase, onComplete);
+    });
+    
+    banner.querySelector('[data-action="reject"]')?.addEventListener("click", async () => {
+      banner.remove();
+      await this.rejectSmartRecovery(step, foundElement);
+      this.highlighted?.classList.remove("scout-adoption-highlight");
+      this.showRecoveryMessage("Recovery suggestion rejected. Please retry or skip this step.");
+    });
+    
+    banner.querySelector('[data-action="skip"]')?.addEventListener("click", () => {
+      banner.remove();
+      this.highlighted?.classList.remove("scout-adoption-highlight");
+      this.next(phase, onComplete);
+    });
+    
+    document.body.appendChild(banner);
+  }
+
+  private async acceptSmartRecovery(
+    step: GuideStep,
+    foundElement: HTMLElement,
+    phase: PlayerPhase,
+    onComplete?: () => void | Promise<void>
+  ) {
+    try {
+      // Dynamic import to capture element metadata and save suggestion
+      const { buildElementIdentity } = await import("./elementMetadataCapture");
+      const { saveHealingSuggestion } = await import("./healingResolver");
+
+      // Build element identity from the found control
+      const proposedIdentity = buildElementIdentity(foundElement);
+      
+      // Build proposed selector candidates
+      const proposedCandidates = buildSelectorsFromElement(foundElement);
+
+      // Create a healing result structure
+      const healingResult = {
+        element: foundElement,
+        confidence: 75, // Smart recovery gets medium confidence
+        source: "rule-based" as const,
+        reason: "Found via smart text-based recovery",
+        originalIdentity: step.target?.elementIdentity || ({} as any),
+        proposedSelectorCandidates: proposedCandidates,
+        shouldAutoApply: false,
+        needsConfirmation: false,
+      };
+
+      // Save the healing suggestion
+      await saveHealingSuggestion(
+        this.guide.id,
+        step.id,
+        step.order,
+        healingResult,
+        window.location.href,
+        document.title
+      );
+
+      this.showRecoveryMessage("Accepted! Saved for trainer review. Continuing...");
+      await delay(1000);
+      
+      // Continue with the found element
+      this.continueWithHealedElement(step, foundElement, phase, onComplete);
+    } catch (error) {
+      console.error("[Smart Recovery] Failed to save acceptance:", error);
+      this.showRecoveryMessage("Failed to save suggestion, but continuing with found control...");
+      await delay(1000);
+      this.continueWithHealedElement(step, foundElement, phase, onComplete);
+    }
+  }
+
+  private async rejectSmartRecovery(step: GuideStep, foundElement: HTMLElement) {
+    try {
+      // Save rejection as a healing suggestion with rejected status
+      const response = await fetch("/api/guided-workflow-player/healing-suggestions/reject-recovery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workflowId: this.guide.id,
+          stepId: step.id,
+          stepOrder: step.order,
+          rejectedElement: {
+            tagName: foundElement.tagName.toLowerCase(),
+            text: foundElement.innerText?.slice(0, 200),
+            ariaLabel: foundElement.getAttribute("aria-label"),
+            id: foundElement.id,
+            className: foundElement.className,
+          },
+          pageUrl: window.location.href,
+          pageTitle: document.title,
+          reason: "User rejected smart recovery suggestion",
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("[Smart Recovery] Failed to save rejection");
+      }
+    } catch (error) {
+      console.error("[Smart Recovery] Error saving rejection:", error);
+    }
   }
 
   private showRecoveryMessage(message: string) {
