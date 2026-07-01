@@ -201,14 +201,14 @@ export class AdoptionPlayer {
     });
   }
 
-  private showMissing(step: GuideStep, phase: PlayerPhase, onComplete?: () => void | Promise<void>) {
+  private async showMissing(step: GuideStep, phase: PlayerPhase, onComplete?: () => void | Promise<void>) {
     const banner = document.createElement("div");
     banner.className = "scout-adoption-missing";
-    banner.innerHTML = `Element not found on this page <button type="button" data-action="retry">Retry</button> <button type="button" data-action="skip">Skip</button> <button type="button" data-action="stop">Stop</button> <button type="button" data-action="recover">Try Smart Recovery</button>`;
+    banner.innerHTML = `Element not found on this page <button type="button" data-action="retry">Retry</button> <button type="button" data-action="skip">Skip</button> <button type="button" data-action="stop">Stop</button> <button type="button" data-action="heal">Try Self-Healing</button>`;
     banner.querySelector('[data-action="retry"]')?.addEventListener("click", () => this.render(phase, onComplete));
     banner.querySelector('[data-action="skip"]')?.addEventListener("click", () => this.next(phase, onComplete));
     banner.querySelector('[data-action="stop"]')?.addEventListener("click", () => this.stop());
-    banner.querySelector('[data-action="recover"]')?.addEventListener("click", () => this.trySmartRecovery(step));
+    banner.querySelector('[data-action="heal"]')?.addEventListener("click", () => this.attemptSelfHealing(step, phase, onComplete));
     document.body.appendChild(banner);
   }
 
@@ -231,6 +231,191 @@ export class AdoptionPlayer {
 
     if (!reachedGoal) {
       this.trySmartRecovery(contextToStep(goalContext, this.guide.title));
+    }
+  }
+
+  private async attemptSelfHealing(step: GuideStep, phase: PlayerPhase, onComplete?: () => void | Promise<void>) {
+    document.querySelector(".scout-adoption-recovery")?.remove();
+    
+    if (!step.target?.elementIdentity && !hasTargetIdentity(step)) {
+      this.showRecoveryMessage("Cannot attempt self-healing: no element identity available");
+      return;
+    }
+
+    this.showRecoveryMessage("Attempting to find matching control...");
+
+    try {
+      // Dynamic import to avoid bundling in main bundle
+      const { attemptSelfHealing, isSensitiveStep, saveHealingSuggestion } = await import("./healingResolver");
+
+      const identity = step.target?.elementIdentity;
+      if (!identity) {
+        this.showRecoveryMessage("Cannot heal: missing element identity metadata");
+        return;
+      }
+
+      const stepIntent = step.title + (step.message ? ` - ${step.message}` : "");
+      const sensitive = isSensitiveStep(step.title, step.message);
+
+      const healingResult = await attemptSelfHealing(identity, stepIntent, sensitive);
+
+      if (!healingResult.element) {
+        this.showRecoveryMessage(healingResult.reason || "No matching control found");
+        return;
+      }
+
+      // Save the healing suggestion for trainer review
+      await saveHealingSuggestion(
+        this.guide.id,
+        step.id,
+        step.order,
+        healingResult,
+        window.location.href,
+        document.title
+      );
+
+      // Show the matched element with confidence
+      healingResult.element.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      healingResult.element.classList.add("scout-adoption-highlight");
+      this.highlighted = healingResult.element;
+
+      const confidenceDisplay = Math.round(healingResult.confidence);
+      const sourceDisplay = healingResult.source === "ai-assisted" ? "AI" : "Rule-based";
+
+      if (healingResult.shouldAutoApply && !healingResult.needsConfirmation) {
+        this.showRecoveryMessage(
+          `Found match (${confidenceDisplay}% confidence, ${sourceDisplay}). Continuing automatically...`
+        );
+        // Create a temporary updated step with the healed element
+        const healedStep = {
+          ...step,
+          target: {
+            ...step.target,
+            _healedElement: healingResult.element,
+          },
+        };
+        await delay(1500);
+        this.continueWithHealedElement(healedStep, healingResult.element, phase, onComplete);
+      } else {
+        this.showHealingConfirmation(
+          step,
+          healingResult.element,
+          confidenceDisplay,
+          sourceDisplay,
+          healingResult.reason,
+          phase,
+          onComplete
+        );
+      }
+    } catch (error) {
+      console.error("[Self-Healing] Error:", error);
+      this.showRecoveryMessage(`Self-healing failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }
+
+  private showHealingConfirmation(
+    step: GuideStep,
+    healedElement: HTMLElement,
+    confidence: number,
+    source: string,
+    reason: string,
+    phase: PlayerPhase,
+    onComplete?: () => void | Promise<void>
+  ) {
+    const banner = document.createElement("div");
+    banner.className = "scout-adoption-recovery";
+    banner.innerHTML = `
+      <div style="background: white; border: 2px solid #0066cc; padding: 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-width: 500px;">
+        <h3 style="margin: 0 0 8px 0; color: #0066cc;">Self-Healing Match Found</h3>
+        <p style="margin: 0 0 8px 0; font-size: 14px;">
+          <strong>Confidence:</strong> ${confidence}%<br>
+          <strong>Source:</strong> ${source}<br>
+          <strong>Reason:</strong> ${reason}
+        </p>
+        <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">
+          Element highlighted. Continue with this control?
+        </p>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" data-action="accept" style="flex: 1; padding: 8px; background: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Continue
+          </button>
+          <button type="button" data-action="reject" style="flex: 1; padding: 8px; background: #666; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Skip Step
+          </button>
+          <button type="button" data-action="stop" style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
+            Stop
+          </button>
+        </div>
+      </div>
+    `;
+    
+    banner.querySelector('[data-action="accept"]')?.addEventListener("click", () => {
+      banner.remove();
+      this.continueWithHealedElement(step, healedElement, phase, onComplete);
+    });
+    
+    banner.querySelector('[data-action="reject"]')?.addEventListener("click", () => {
+      banner.remove();
+      this.highlighted?.classList.remove("scout-adoption-highlight");
+      this.next(phase, onComplete);
+    });
+    
+    banner.querySelector('[data-action="stop"]')?.addEventListener("click", () => {
+      banner.remove();
+      this.stop();
+    });
+    
+    document.body.appendChild(banner);
+  }
+
+  private continueWithHealedElement(
+    step: GuideStep,
+    element: HTMLElement,
+    phase: PlayerPhase,
+    onComplete?: () => void | Promise<void>
+  ) {
+    // Render tooltip for the healed element
+    this.clear();
+    element.classList.add("scout-adoption-highlight");
+    focusTarget(element);
+    this.highlighted = element;
+    
+    this.tooltip = createTooltip({
+      title: step.title,
+      message: step.message,
+      index: this.index,
+      total: this.steps.length,
+      target: element,
+      controls: {
+        onBack: () => this.previous(phase, onComplete),
+        onNext: () => this.next(phase, onComplete),
+        onClose: () => this.stop(),
+        onGuideLink: (guideId) => this.openGuideLink(guideId)
+      }
+    });
+
+    // Set up interaction handlers
+    if (step.type === "click" || step.trigger === "click") {
+      if (step.autoClick === true && isSafeAutoClickTarget(element)) {
+        setTimeout(() => {
+          if (this.stopped) return;
+          element.click();
+          if (!this.stopped) this.next(phase, onComplete);
+        }, AUTO_CLICK_PREVIEW_MS);
+        return;
+      }
+
+      const advanceOnClick = (event: MouseEvent) => {
+        if (isScoutPlayerEvent(event)) return;
+        element.removeEventListener("click", advanceOnClick);
+        this.next(phase, onComplete);
+      };
+      element.addEventListener("click", advanceOnClick);
+    }
+
+    if (step.type === "input" || step.trigger === "input" || step.trigger === "change" || step.trigger === "blur" || step.trigger === "focus") {
+      const eventName = step.trigger === "change" || step.trigger === "blur" || step.trigger === "focus" ? step.trigger : "input";
+      element.addEventListener(eventName, () => this.next(phase, onComplete), { once: true });
     }
   }
 
