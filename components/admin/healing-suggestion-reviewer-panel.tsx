@@ -248,10 +248,18 @@ function SuggestionCard({ index, onApprove, onDelete, onEdit, onReject, processi
 
   return (
     <article className="rounded-lg border border-slate-200 bg-white shadow-sm">
-      <button
-        className="flex w-full items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100"
-        onClick={() => setExpanded(!expanded)}
-        type="button"
+      <div
+        aria-expanded={expanded}
+        className="flex w-full cursor-pointer items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100"
+        onClick={() => setExpanded((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setExpanded((current) => !current);
+          }
+        }}
+        role="button"
+        tabIndex={0}
       >
         {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />}
         <div className="flex-1 min-w-0">
@@ -284,7 +292,7 @@ function SuggestionCard({ index, onApprove, onDelete, onEdit, onReject, processi
             <Badge tone={statusFilter === "approved" ? "emerald" : "red"}>{statusFilter}</Badge>
           )}
         </div>
-      </button>
+      </div>
       {expanded && (
         <div className="grid gap-4 p-4 text-sm">
           {identity && <ControlIdentityDetails identity={identity} />}
@@ -293,8 +301,6 @@ function SuggestionCard({ index, onApprove, onDelete, onEdit, onReject, processi
             <span>Attempts: {suggestion.playback_attempt_count}</span>
             <span>{formatDateTimeUTC(suggestion.last_playback_attempt_at)}</span>
           </div>
-        </div>
-      )}
         </div>
       )}
     </article>
@@ -457,7 +463,21 @@ function EditModal({ data, onClose, onSave, processing }: {
 
 function IconButton({ children, disabled, label, onClick, tone }: { children: React.ReactNode; disabled?: boolean; label: string; onClick(): void; tone?: "approve" | "reject" | "delete" }) {
   const toneClass = tone === "approve" ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50" : tone === "reject" ? "border-red-200 text-red-700 hover:bg-red-50" : tone === "delete" ? "border-red-300 text-red-800 hover:bg-red-100" : "border-slate-300 text-slate-700 hover:bg-slate-50";
-  return <button aria-label={label} className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border bg-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${toneClass}`} disabled={disabled} onClick={onClick} title={label} type="button">{children}</button>;
+  return (
+    <button
+      aria-label={label}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border bg-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${toneClass}`}
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      title={label}
+      type="button"
+    >
+      {children}
+    </button>
+  );
 }
 
 function Badge({ children, tone }: { children: React.ReactNode; tone: "emerald" | "amber" | "red" | "blue" | "slate" }) {

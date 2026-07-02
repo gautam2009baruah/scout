@@ -103,14 +103,47 @@ async function handleApprove(request: NextRequest) {
     const proposedIdentity = suggestion.proposed_element_identity 
       ? (typeof suggestion.proposed_element_identity === "string" ? JSON.parse(suggestion.proposed_element_identity) : suggestion.proposed_element_identity)
       : null;
-    
+
+    const existingTarget = steps[stepIndex].target ?? {};
+
     steps[stepIndex].target = {
-      ...steps[stepIndex].target,
+      ...existingTarget,
       selectorCandidates,
-      elementIdentity: proposedIdentity || {
-        ...steps[stepIndex].target?.elementIdentity,
-        selectorCandidates,
-      },
+      ...(proposedIdentity
+        ? {
+            elementIdentity: proposedIdentity,
+            role: proposedIdentity.role,
+            tagName: proposedIdentity.tagName,
+            accessibleName: proposedIdentity.accessibleName,
+            text: proposedIdentity.text,
+            ariaLabel: proposedIdentity.ariaLabel,
+            labelText: proposedIdentity.labelText,
+            placeholder: proposedIdentity.placeholder,
+            inputType: proposedIdentity.inputType,
+            selectedOptionText: proposedIdentity.selectedOptionText,
+            name: proposedIdentity.name,
+            id: proposedIdentity.id,
+            dataAttributes: proposedIdentity.dataAttributes,
+            nearbyHeading: proposedIdentity.nearbyHeading,
+            parentContainerText: proposedIdentity.parentContainerText,
+            previousSiblingText: proposedIdentity.previousSiblingText,
+            nextSiblingText: proposedIdentity.nextSiblingText,
+            parentTagName: proposedIdentity.parentTagName,
+            parentRole: proposedIdentity.parentRole,
+            parentAccessibleName: proposedIdentity.parentAccessibleName,
+            parentText: proposedIdentity.parentText,
+            formTitle: proposedIdentity.formTitle,
+            dialogTitle: proposedIdentity.dialogTitle,
+            cardTitle: proposedIdentity.cardTitle,
+            cssFallback: proposedIdentity.cssFallback,
+            xpathFallback: proposedIdentity.xpathFallback,
+            boundingBox: proposedIdentity.boundingBox,
+          }
+        : {
+            elementIdentity: existingTarget.elementIdentity
+              ? { ...existingTarget.elementIdentity, selectorCandidates }
+              : undefined,
+          }),
     };
 
     // Update the existing workflow (replace the step)

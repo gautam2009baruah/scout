@@ -1,1 +1,747 @@
 [browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Uncaught TypeError: suggestion.confidence_score.toFixed is not a function
+    at <unknown> (components/admin/healing-suggestion-reviewer.tsx:268:52)
+    at Array.map (<anonymous>)
+    at HealingSuggestionReviewer (components/admin/healing-suggestion-reviewer.tsx:204:24)
+    at HealingSuggestionsPage (app\control-panel\guided-workflows\healing-suggestions\page.tsx:4:10)
+  266 |                       }`}
+  267 |                     >
+> 268 |                       {suggestion.confidence_score.toFixed(1)}%
+      |                                                    ^
+  269 |                     </span>
+  270 |                   </div>
+  271 |                   <div>
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[Healing Review API] Error: SyntaxError: Unexpected token 'o', "[object Obj"... is not valid JSON
+    at JSON.parse (<anonymous>)
+    at handleApprove (app\api\guided-workflow-player\healing-suggestions\review\route.ts:81:24)
+    at async POST (app\api\guided-workflow-player\healing-suggestions\review\route.ts:24:14)
+  79 |
+  80 |     // Parse the steps
+> 81 |     const steps = JSON.parse(originalWorkflow.steps_json);
+     |                        ^
+  82 |
+  83 |     // Find the step to update
+  84 |     const stepIndex = steps.findIndex((s: { id: string }) => s.id === suggestion.step_id);
+[Healing Review API] Error: error: invalid input syntax for type uuid: "current-user-id"
+    at async handleReject (app\api\guided-workflow-player\healing-suggestions\review\route.ts:208:5)
+    at async POST (app\api\guided-workflow-player\healing-suggestions\review\route.ts:26:14)
+  206 |
+  207 |     // Update the suggestion status
+> 208 |     await client.query(
+      |     ^
+  209 |       `UPDATE guided_workflow_healing_suggestions 
+  210 |        SET 
+  211 |          status = 'rejected', {
+  length: 147,
+  severity: 'ERROR',
+  code: '22P02',
+  detail: undefined,
+  hint: undefined,
+  position: undefined,
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: "unnamed portal parameter $1 = '...'",
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'uuid.c',
+  line: '133',
+  routine: 'string_to_uuid'
+}
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+⨯ ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  [90m296 |[0m         </div>
+  [90m297 |[0m       )}
+[31m[1m>[0m [90m298 |[0m         </div>
+  [90m    |[0m           [31m[1m^^^[0m
+  [90m299 |[0m       )}
+  [90m300 |[0m     </article>
+  [90m301 |[0m   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+
+⨯ ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  [90m296 |[0m         </div>
+  [90m297 |[0m       )}
+[31m[1m>[0m [90m298 |[0m         </div>
+  [90m    |[0m           [31m[1m^^^[0m
+  [90m299 |[0m       )}
+  [90m300 |[0m     </article>
+  [90m301 |[0m   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+
+⨯ ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  [90m296 |[0m         </div>
+  [90m297 |[0m       )}
+[31m[1m>[0m [90m298 |[0m         </div>
+  [90m    |[0m           [31m[1m^^^[0m
+  [90m299 |[0m       )}
+  [90m300 |[0m     </article>
+  [90m301 |[0m   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+
+⨯ ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  [90m296 |[0m         </div>
+  [90m297 |[0m       )}
+[31m[1m>[0m [90m298 |[0m         </div>
+  [90m    |[0m           [31m[1m^^^[0m
+  [90m299 |[0m       )}
+  [90m300 |[0m     </article>
+  [90m301 |[0m   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+
+⨯ ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  [90m296 |[0m         </div>
+  [90m297 |[0m       )}
+[31m[1m>[0m [90m298 |[0m         </div>
+  [90m    |[0m           [31m[1m^^^[0m
+  [90m299 |[0m       )}
+  [90m300 |[0m     </article>
+  [90m301 |[0m   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+
+⨯ ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  [90m296 |[0m         </div>
+  [90m297 |[0m       )}
+[31m[1m>[0m [90m298 |[0m         </div>
+  [90m    |[0m           [31m[1m^^^[0m
+  [90m299 |[0m       )}
+  [90m300 |[0m     </article>
+  [90m301 |[0m   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+
+[browser] Uncaught Error: ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+
+    at <unknown> (Error: ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11)
+    at <unknown> (Error: (./components/admin/healing-suggestion-reviewer-panel.tsx:298:11)
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/administration/training-setup/page.tsx 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/login/page.tsx 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import trace:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/page.tsx 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] ./components/admin/healing-suggestion-reviewer-panel.tsx:298:11
+Expected corresponding JSX closing tag for <article>
+  296 |         </div>
+  297 |       )}
+> 298 |         </div>
+      |           ^^^
+  299 |       )}
+  300 |     </article>
+  301 |   );
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Server Component:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx
+    ./components/admin/index.ts
+    ./app/control-panel/guided-workflows/page.tsx
+
+  Client Component Browser:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Client Component Browser]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./components/admin/healing-suggestion-reviewer-panel.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Client Component SSR]
+    ./components/admin/guided-workflow-console.tsx [Server Component]
+    ./app/control-panel/guided-workflows/page.tsx [Server Component] 
+[browser] In HTML, <button> cannot be a descendant of <button>.
+This will cause a hydration error.
+
+  ...
+    <div className="flex min-h...">
+      <aside>
+      <section className="flex min-h...">
+        <header>
+        <div className="flex-1 px-...">
+          <GuidedWorkflowManager companies={[...]} guides={[...]} recordingSessions={[...]} targetApps={[...]}>
+            <div className="grid gap-6">
+              <section>
+              <section className="grid gap-6...">
+                <Panel>
+                <SessionDetailsPanel convertTopic={function convertTopic} deleteSession={function deleteSession} ...>
+                  <section className="rounded-lg...">
+                    <div>
+                    <div className="fixed inse..." onClick={function onClick}>
+                      <div className="max-h-[88v..." onClick={function onClick}>
+                        <HealingSuggestionReviewerPanel embedded={true} onClose={function onClose} stepId="step_5lrkh..." ...>
+                          <div className="grid gap-4">
+                            <div>
+                            <div>
+                            <div className="grid gap-3">
+                              <SuggestionCard index={1} onApprove={function onApprove} onDelete={function onDelete} ...>
+                                <article className="rounded-lg...">
+>                                 <button
+>                                   className="flex w-full items-center gap-3 border-b border-slate-100 bg-slate-50 px..."
+>                                   onClick={function onClick}
+>                                   type="button"
+>                                 >
+                                    <ChevronRight>
+                                    <div>
+                                    <div className="flex gap-1" onClick={function onClick}>
+                                      <Badge>
+                                      <Badge>
+                                      <IconButton disabled={false} label="Edit" onClick={function onEdit}>
+>                                       <button
+>                                         aria-label="Edit"
+>                                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border..."
+>                                         disabled={false}
+>                                         onClick={function onEdit}
+>                                         title="Edit"
+>                                         type="button"
+>                                       >
+                                      ...
+        ...
+ 
+[browser] <button> cannot contain a nested <button>.
+See this log for the ancestor stack trace. 
+[browser] In HTML, <button> cannot be a descendant of <button>.
+This will cause a hydration error.
+
+  ...
+    <div className="flex min-h...">
+      <aside>
+      <section className="flex min-h...">
+        <header>
+        <div className="flex-1 px-...">
+          <GuidedWorkflowManager companies={[...]} guides={[...]} recordingSessions={[...]} targetApps={[...]}>
+            <div className="grid gap-6">
+              <section>
+              <section className="grid gap-6...">
+                <Panel>
+                <SessionDetailsPanel convertTopic={function convertTopic} deleteSession={function deleteSession} ...>
+                  <section className="rounded-lg...">
+                    <div>
+                    <div className="fixed inse..." onClick={function onClick}>
+                      <div className="max-h-[88v..." onClick={function onClick}>
+                        <HealingSuggestionReviewerPanel embedded={true} onClose={function onClose} stepId="step_5lrkh..." ...>
+                          <div className="grid gap-4">
+                            <div>
+                            <div>
+                            <div className="grid gap-3">
+                              <SuggestionCard index={1} onApprove={function onApprove} onDelete={function onDelete} ...>
+                                <article className="rounded-lg...">
+>                                 <button
+>                                   className="flex w-full items-center gap-3 border-b border-slate-100 bg-slate-50 px..."
+>                                   onClick={function onClick}
+>                                   type="button"
+>                                 >
+                                    <ChevronRight>
+                                    <div>
+                                    <div className="flex gap-1" onClick={function onClick}>
+                                      <Badge>
+                                      <Badge>
+                                      <IconButton disabled={false} label="Edit" onClick={function onEdit}>
+>                                       <button
+>                                         aria-label="Edit"
+>                                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border..."
+>                                         disabled={false}
+>                                         onClick={function onEdit}
+>                                         title="Edit"
+>                                         type="button"
+>                                       >
+                                      ...
+        ...
+ 
+[browser] <button> cannot contain a nested <button>.
+See this log for the ancestor stack trace. 
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
