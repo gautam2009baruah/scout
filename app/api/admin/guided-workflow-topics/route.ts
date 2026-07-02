@@ -38,7 +38,8 @@ export async function POST(request: Request) {
     const topic = await createGuidedWorkflowTopic(
       {
         recordingSessionId: String(body.recordingSessionId ?? ""),
-        title: String(body.title ?? "")
+        title: String(body.title ?? ""),
+        analyticsLoggingEnabled: typeof body.analyticsLoggingEnabled === "boolean" ? body.analyticsLoggingEnabled : undefined
       },
       auth.session
     );

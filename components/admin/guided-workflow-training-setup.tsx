@@ -316,6 +316,25 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
     if (Array.isArray(topicsBody?.sessions)) setSessions(topicsBody.sessions);
   }
 
+  async function toggleTopicAnalytics(topic: GuidedWorkflowTopicRow) {
+    const response = await fetch(`/api/admin/guided-workflow-topics/${topic.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ analyticsLoggingEnabled: !topic.analyticsLoggingEnabled })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to update logging." });
+      return;
+    }
+
+    setSessions((current) => current.map((session) => session.id === body.topic.recordingSessionId
+      ? { ...session, topics: session.topics.map((item) => item.id === body.topic.id ? body.topic : item) }
+      : session));
+    setState({ status: "success", message: body.topic.analyticsLoggingEnabled ? "Playback logging enabled." : "Playback logging disabled." });
+  }
+
   async function copyText(key: string, value: string) {
     await navigator.clipboard.writeText(value);
     setCopiedKey(key);
@@ -519,6 +538,16 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
                         <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${topic.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{topic.status}</span>
                       </td>
                       <td className="px-4 py-3 text-right text-sm font-medium">
+                        <button
+                          aria-label={topic.analyticsLoggingEnabled ? "Disable playback logging" : "Enable playback logging"}
+                          aria-pressed={topic.analyticsLoggingEnabled}
+                          className={`mr-2 relative inline-flex h-6 w-11 align-middle rounded-full transition focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 ${topic.analyticsLoggingEnabled ? "bg-emerald-500" : "bg-slate-300"}`}
+                          onClick={() => toggleTopicAnalytics(topic)}
+                          title="Enable or disable workflow playback analytics logging for this topic."
+                          type="button"
+                        >
+                          <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${topic.analyticsLoggingEnabled ? "left-6" : "left-1"}`} />
+                        </button>
                         <button aria-label="Recorder config" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setConfigTopicId(topic.id)} type="button"><Clipboard className="h-4 w-4" /></button>
                       <button aria-label="Edit topic" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setTopicDialog({ mode: "edit", sessionId: session.id, topic, title: topic.title })} type="button"><Edit3 className="h-4 w-4" /></button>
                         <button aria-label="Delete topic" className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:text-red-800" onClick={() => deleteTopic(topic)} type="button"><Trash2 className="h-4 w-4" /></button>

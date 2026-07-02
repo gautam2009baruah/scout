@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
-import type { ElementIdentity, SelectorCandidate } from "@/shared/guideTypes";
+import type { ElementIdentity, SelectorCandidate, TargetElement } from "@/shared/guideTypes";
 
 type HealingSuggestionRequest = {
   workflowId: string;
@@ -8,6 +8,7 @@ type HealingSuggestionRequest = {
   stepOrder: number;
   originalIdentity: ElementIdentity;
   proposedElementIdentity?: ElementIdentity;
+  proposedTarget?: TargetElement;
   proposedSelectorCandidates: SelectorCandidate[];
   confidenceScore: number;
   healingSource: "rule-based" | "ai-assisted";
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
       stepOrder,
       originalIdentity,
       proposedElementIdentity,
+      proposedTarget,
       proposedSelectorCandidates,
       confidenceScore,
       healingSource,
@@ -57,7 +59,7 @@ export async function POST(request: NextRequest) {
     // Check if a pending suggestion already exists for this step
     const existingResult = await getPool().query(
       `SELECT id FROM guided_workflow_healing_suggestions 
-       WHERE workflow_id = $1 AND step_id = $2 AND status = 'pending'`,
+       WHERE workflow_id = $1 AND step_id = $2 AND status = 'pending' AND deleted_at IS NULL`,
       [workflowId, stepId]
     );
 
@@ -84,7 +86,7 @@ export async function POST(request: NextRequest) {
           healingSource,
           healingReason,
           JSON.stringify(proposedSelectorCandidates),
-          proposedElementIdentity ? JSON.stringify(proposedElementIdentity) : null,
+          proposedTarget ? JSON.stringify(proposedTarget) : proposedElementIdentity ? JSON.stringify(proposedElementIdentity) : null,
           aiProvider || null,
           aiModel || null,
           pageUrl,
@@ -120,7 +122,7 @@ export async function POST(request: NextRequest) {
         JSON.stringify(originalIdentity.selectorCandidates || []),
         JSON.stringify(originalIdentity),
         JSON.stringify(proposedSelectorCandidates),
-        proposedElementIdentity ? JSON.stringify(proposedElementIdentity) : null,
+        proposedTarget ? JSON.stringify(proposedTarget) : proposedElementIdentity ? JSON.stringify(proposedElementIdentity) : null,
         confidenceScore,
         healingSource,
         healingReason,
@@ -160,58 +162,85 @@ export async function GET(request: NextRequest) {
     const workflowId = searchParams.get("workflowId");
     const stepId = searchParams.get("stepId");
     const status = searchParams.get("status") || "pending";
+    const companyId = searchParams.get("companyId");
+    const targetAppId = searchParams.get("targetAppId");
+    const recordingSessionId = searchParams.get("recordingSessionId");
+    const topicId = searchParams.get("topicId");
+    const page = Math.max(1, Number(searchParams.get("page") || "1") || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || "10") || 10));
+    const offset = (page - 1) * pageSize;
 
-    let query = `
-      SELECT 
-        s.id,
-        s.workflow_id,
-        s.step_id,
-        s.step_order,
-        s.original_selector_candidates,
-        s.original_element_identity,
-        s.proposed_selector_candidates,
-        s.proposed_element_identity,
-        s.confidence_score,
-        s.healing_source,
-        s.healing_reason,
-        s.ai_provider,
-        s.ai_model,
-        s.page_url,
-        s.page_title,
-        s.status,
-        s.reviewed_by,
-        s.reviewed_at,
-        s.created_at,
-        s.playback_attempt_count,
-        s.last_playback_attempt_at,
-        w.title as workflow_title,
-        u.email as reviewed_by_email,
-        t.title as topic_title,
-        rs.title as session_title
+    const selectClause = `
+      SELECT
+        s.id, s.company_id, s.workflow_id, s.step_id, s.step_order,
+        s.original_selector_candidates, s.original_element_identity,
+        s.proposed_selector_candidates, s.proposed_element_identity,
+        s.confidence_score, s.healing_source, s.healing_reason,
+        s.ai_provider, s.ai_model, s.page_url, s.page_title,
+        s.status, s.reviewed_by, s.reviewed_at, s.created_at,
+        s.playback_attempt_count, s.last_playback_attempt_at,
+        w.title as workflow_title, w.target_app_id, w.topic_id,
+        t.recording_session_id, c.name as company_name, ta.name as target_app_name,
+        u.email as reviewed_by_email, t.title as topic_title, rs.title as session_title
+    `;
+    let fromWhereClause = `
       FROM guided_workflow_healing_suggestions s
       JOIN guided_workflow_guides w ON s.workflow_id = w.id
+      JOIN companies c ON s.company_id = c.id
+      LEFT JOIN guided_workflow_target_apps ta ON w.target_app_id = ta.id
       LEFT JOIN users u ON s.reviewed_by = u.id
       LEFT JOIN guided_workflow_topics t ON w.topic_id = t.id
       LEFT JOIN guided_workflow_recording_sessions rs ON t.recording_session_id = rs.id
       WHERE s.status = $1
+        AND s.deleted_at IS NULL
     `;
     const params: unknown[] = [status];
 
     if (workflowId) {
       params.push(workflowId);
-      query += ` AND s.workflow_id = $${params.length}`;
+      fromWhereClause += ` AND s.workflow_id = $${params.length}`;
     }
 
     if (stepId) {
       params.push(stepId);
-      query += ` AND s.step_id = $${params.length}`;
+      fromWhereClause += ` AND s.step_id = $${params.length}`;
     }
 
-    query += ` ORDER BY s.created_at DESC LIMIT 100`;
+    if (companyId) {
+      params.push(companyId);
+      fromWhereClause += ` AND s.company_id = $${params.length}`;
+    }
 
-    const result = await getPool().query(query, params);
+    if (targetAppId) {
+      params.push(targetAppId);
+      fromWhereClause += ` AND w.target_app_id = $${params.length}`;
+    }
 
-    return NextResponse.json({ suggestions: result.rows });
+    if (recordingSessionId) {
+      params.push(recordingSessionId);
+      fromWhereClause += ` AND t.recording_session_id = $${params.length}`;
+    }
+
+    if (topicId && topicId !== "all") {
+      params.push(topicId);
+      fromWhereClause += ` AND w.topic_id = $${params.length}`;
+    }
+
+    const countResult = await getPool().query(`SELECT COUNT(*)::int AS total ${fromWhereClause}`, params);
+    const dataParams = [...params, pageSize, offset];
+    const result = await getPool().query(
+      `${selectClause} ${fromWhereClause} ORDER BY s.created_at DESC LIMIT $${dataParams.length - 1} OFFSET $${dataParams.length}`,
+      dataParams
+    );
+
+    return NextResponse.json({
+      suggestions: result.rows,
+      pagination: {
+        page,
+        pageSize,
+        total: countResult.rows[0]?.total ?? 0,
+      },
+    });
   } catch (error) {
     console.error("[Healing Suggestions API] Error:", error);
     return NextResponse.json(

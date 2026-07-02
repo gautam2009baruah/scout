@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
-import type { SelectorCandidate } from "@/shared/guideTypes";
+import type { SelectorCandidate, TargetElement } from "@/shared/guideTypes";
 
 type ApproveRequest = {
   suggestionId: string;
   editedSelectorCandidates?: SelectorCandidate[];
+  editedTarget?: TargetElement;
   versionNotes?: string;
 };
 
@@ -48,7 +49,7 @@ async function handleApprove(request: NextRequest) {
   const session = await getCurrentAdminSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body: ApproveRequest = await request.json();
-  const { suggestionId, editedSelectorCandidates, versionNotes } = body;
+  const { suggestionId, editedSelectorCandidates, editedTarget, versionNotes } = body;
   const userId = session.user.id;
 
   if (!suggestionId) {
@@ -73,7 +74,7 @@ async function handleApprove(request: NextRequest) {
         w.company_id
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
-       WHERE s.id = $1 AND s.status = 'pending'`,
+       WHERE s.id = $1 AND s.status = 'pending' AND s.deleted_at IS NULL`,
       [suggestionId]
     );
 
@@ -96,61 +97,22 @@ async function handleApprove(request: NextRequest) {
       return NextResponse.json({ error: "Step not found in workflow" }, { status: 404 });
     }
 
-    // Update the step with healed selector candidates
     const selectorCandidates = editedSelectorCandidates || (typeof suggestion.proposed_selector_candidates === "string" ? JSON.parse(suggestion.proposed_selector_candidates) : suggestion.proposed_selector_candidates);
-    
-    // Update all ElementIdentity properties if available
-    const proposedIdentity = suggestion.proposed_element_identity 
+
+    const proposedTargetOrIdentity = suggestion.proposed_element_identity
       ? (typeof suggestion.proposed_element_identity === "string" ? JSON.parse(suggestion.proposed_element_identity) : suggestion.proposed_element_identity)
       : null;
+    const replacementTarget = editedTarget || targetFromSuggestionPayload(proposedTargetOrIdentity, selectorCandidates);
 
-    const existingTarget = steps[stepIndex].target ?? {};
-
-    steps[stepIndex].target = {
-      ...existingTarget,
-      selectorCandidates,
-      ...(proposedIdentity
-        ? {
-            elementIdentity: proposedIdentity,
-            role: proposedIdentity.role,
-            tagName: proposedIdentity.tagName,
-            accessibleName: proposedIdentity.accessibleName,
-            text: proposedIdentity.text,
-            ariaLabel: proposedIdentity.ariaLabel,
-            labelText: proposedIdentity.labelText,
-            placeholder: proposedIdentity.placeholder,
-            inputType: proposedIdentity.inputType,
-            selectedOptionText: proposedIdentity.selectedOptionText,
-            name: proposedIdentity.name,
-            id: proposedIdentity.id,
-            dataAttributes: proposedIdentity.dataAttributes,
-            nearbyHeading: proposedIdentity.nearbyHeading,
-            parentContainerText: proposedIdentity.parentContainerText,
-            previousSiblingText: proposedIdentity.previousSiblingText,
-            nextSiblingText: proposedIdentity.nextSiblingText,
-            parentTagName: proposedIdentity.parentTagName,
-            parentRole: proposedIdentity.parentRole,
-            parentAccessibleName: proposedIdentity.parentAccessibleName,
-            parentText: proposedIdentity.parentText,
-            formTitle: proposedIdentity.formTitle,
-            dialogTitle: proposedIdentity.dialogTitle,
-            cardTitle: proposedIdentity.cardTitle,
-            cssFallback: proposedIdentity.cssFallback,
-            xpathFallback: proposedIdentity.xpathFallback,
-            boundingBox: proposedIdentity.boundingBox,
-          }
-        : {
-            elementIdentity: existingTarget.elementIdentity
-              ? { ...existingTarget.elementIdentity, selectorCandidates }
-              : undefined,
-          }),
-    };
+    // Replace the old control details entirely so stale selectors/properties cannot survive approval.
+    steps[stepIndex].target = replacementTarget;
 
     // Update the existing workflow (replace the step)
     await client.query(
       `UPDATE guided_workflow_guides 
        SET 
          steps_json = $1,
+         status = 'draft',
          updated_by = $2,
          updated_at = now()
        WHERE id = $3`,
@@ -192,7 +154,7 @@ async function handleApprove(request: NextRequest) {
     return NextResponse.json({
       success: true,
       workflowId: suggestion.workflow_id,
-      message: "Healing suggestion approved and workflow updated",
+      message: "Healing suggestion approved and workflow moved to draft for publishing",
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -200,6 +162,45 @@ async function handleApprove(request: NextRequest) {
   } finally {
     client.release();
   }
+}
+
+function targetFromSuggestionPayload(value: unknown, selectorCandidates: SelectorCandidate[]): TargetElement {
+  const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const nestedIdentity = source.elementIdentity && typeof source.elementIdentity === "object" ? source.elementIdentity as Record<string, unknown> : null;
+  const identity = nestedIdentity || source;
+  const stringField = (key: string) => typeof source[key] === "string" ? source[key] as string : typeof identity[key] === "string" ? identity[key] as string : undefined;
+
+  return {
+    elementIdentity: nestedIdentity ? nestedIdentity as TargetElement["elementIdentity"] : source as TargetElement["elementIdentity"],
+    selectorCandidates,
+    fallbackText: stringField("fallbackText") || stringField("text") || stringField("accessibleName") || stringField("labelText") || stringField("ariaLabel") || stringField("placeholder"),
+    role: stringField("role"),
+    tagName: stringField("tagName"),
+    accessibleName: stringField("accessibleName"),
+    text: stringField("text"),
+    ariaLabel: stringField("ariaLabel"),
+    labelText: stringField("labelText"),
+    placeholder: stringField("placeholder"),
+    inputType: stringField("inputType"),
+    selectedOptionText: stringField("selectedOptionText"),
+    name: stringField("name"),
+    id: stringField("id"),
+    dataAttributes: (source.dataAttributes || identity.dataAttributes) as TargetElement["dataAttributes"],
+    nearbyHeading: stringField("nearbyHeading"),
+    parentContainerText: stringField("parentContainerText"),
+    previousSiblingText: stringField("previousSiblingText"),
+    nextSiblingText: stringField("nextSiblingText"),
+    parentTagName: stringField("parentTagName"),
+    parentRole: stringField("parentRole"),
+    parentAccessibleName: stringField("parentAccessibleName"),
+    parentText: stringField("parentText"),
+    formTitle: stringField("formTitle"),
+    dialogTitle: stringField("dialogTitle"),
+    cardTitle: stringField("cardTitle"),
+    cssFallback: stringField("cssFallback"),
+    xpathFallback: stringField("xpathFallback"),
+    boundingBox: (source.boundingBox || identity.boundingBox) as TargetElement["boundingBox"],
+  };
 }
 
 async function handleReject(request: NextRequest) {
@@ -223,7 +224,7 @@ async function handleReject(request: NextRequest) {
       `SELECT s.*, w.company_id
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
-       WHERE s.id = $1 AND s.status = 'pending'`,
+       WHERE s.id = $1 AND s.status = 'pending' AND s.deleted_at IS NULL`,
       [suggestionId]
     );
 
@@ -300,7 +301,7 @@ async function handleDelete(request: NextRequest) {
       `SELECT s.*, w.company_id
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
-       WHERE s.id = $1`,
+       WHERE s.id = $1 AND s.deleted_at IS NULL`,
       [suggestionId]
     );
 
@@ -330,17 +331,21 @@ async function handleDelete(request: NextRequest) {
       ]
     );
 
-    // Hard delete the suggestion
+    // Soft delete the suggestion so it is hidden everywhere but retained for auditability.
     await client.query(
-      `DELETE FROM guided_workflow_healing_suggestions WHERE id = $1`,
-      [suggestionId]
+      `UPDATE guided_workflow_healing_suggestions
+       SET deleted_at = now(),
+           deleted_by = $1,
+           updated_at = now()
+       WHERE id = $2`,
+      [userId, suggestionId]
     );
 
     await client.query("COMMIT");
 
     return NextResponse.json({
       success: true,
-      message: "Healing suggestion permanently deleted",
+      message: "Healing suggestion deleted",
     });
   } catch (error) {
     await client.query("ROLLBACK");

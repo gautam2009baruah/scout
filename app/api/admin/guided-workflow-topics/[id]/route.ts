@@ -56,6 +56,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         id,
         {
           title: typeof body?.title === "string" ? body.title : undefined,
+          analyticsLoggingEnabled: typeof body?.analyticsLoggingEnabled === "boolean" ? body.analyticsLoggingEnabled : undefined,
           move: body?.move === "up" || body?.move === "down" ? body.move : undefined
         },
         auth.session

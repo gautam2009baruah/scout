@@ -1,5 +1,5 @@
 (function () {
-  const DEFAULTS = { scoutBaseUrl: "", targetAppId: "", autoShowLauncher: true };
+  const DEFAULTS = { scoutBaseUrl: "", targetAppId: "", autoShowLauncher: true, userId: "" };
   const PLAYER_VERSION = "20260701-tooltip-rect-guard";
   const GOAL_TIMEOUT_MS = 45000;
   const AUTO_CLICK_PREVIEW_MS = 350;
@@ -26,6 +26,41 @@
 
   function escapeCss(value) {
     return window.CSS && CSS.escape ? CSS.escape(value) : String(value).replace(/["\\]/g, "\\$&");
+  }
+
+  function randomId() {
+    if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+      const value = Math.random() * 16 | 0;
+      return (char === "x" ? value : (value & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  function createAnalytics(config) {
+    const queue = [];
+    let timer = null;
+    const endpoint = new URL("/api/guided-workflow-player/analytics", config.scoutBaseUrl || window.location.origin).toString();
+    const flush = () => {
+      timer = null;
+      if (queue.length === 0) return;
+      const events = queue.splice(0, queue.length);
+      const body = JSON.stringify({ events });
+      try {
+        if (navigator.sendBeacon) {
+          const ok = navigator.sendBeacon(endpoint, new Blob([body], { type: "application/json" }));
+          if (ok) return;
+        }
+      } catch {}
+      fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+    };
+    return {
+      emit(event) {
+        if (!event || event.analyticsLoggingEnabled === false) return;
+        queue.push({ ...event, userId: config.userId || undefined });
+        if (!timer) timer = window.setTimeout(flush, 250);
+      },
+      flush
+    };
   }
 
   function normalizeUrl(value) {
@@ -349,7 +384,29 @@
     }
   }
 
-  function identityTerms(target, guideTitle) {
+  function plainTextFromHtml(value) {
+    const element = document.createElement("div");
+    element.innerHTML = String(value || "");
+    return readableText(element.textContent || element.innerText || value || "");
+  }
+
+  function searchTermsFromText(value) {
+    const text = plainTextFromHtml(value);
+    const stopWords = new Set(["this", "that", "then", "with", "from", "into", "your", "you", "click", "select", "choose", "enter", "type", "field", "button", "control", "step", "next"]);
+    const phrases = [];
+    if (text) phrases.push(text);
+    text.split(/[,.;:!?()\[\]{}<>/\\|]+/).forEach((part) => {
+      const phrase = readableText(part);
+      if (phrase.length > 3 && phrase.length <= 80) phrases.push(phrase);
+    });
+    text.split(/\s+/).forEach((word) => {
+      const clean = readableText(word).replace(/[^a-zA-Z0-9_-]/g, "");
+      if (clean.length > 3 && !stopWords.has(clean.toLowerCase())) phrases.push(clean);
+    });
+    return Array.from(new Set(phrases));
+  }
+
+  function identityTerms(target, guideTitle, step) {
     const terms = [];
     if (target) {
       if (target.accessibleName) terms.push(target.accessibleName);
@@ -360,6 +417,10 @@
       if (target.placeholder) terms.push(target.placeholder);
       if (target.role) terms.push(target.role);
       if (target.tagName) terms.push(target.tagName);
+    }
+    if (step) {
+      terms.push(...searchTermsFromText(step.title));
+      terms.push(...searchTermsFromText(step.message));
     }
     if (guideTitle) terms.push(guideTitle);
     return terms.map(readableText).filter(Boolean);
@@ -513,11 +574,49 @@
   function findVisibleControlByTerms(terms) {
     const normalized = terms.map(compactText).filter((term) => term.length > 3);
     const controls = Array.from(document.querySelectorAll("a, button, [role='button'], [role='link'], [role='menuitem'], input, select, textarea"));
-    return controls.find((control) => {
+    const matches = controls.map((control) => {
       if (!isVisible(control)) return false;
       const text = compactText(directElementText(control));
-      return normalized.some((term) => text.includes(term));
-    }) || null;
+      const score = normalized.reduce((total, term) => total + (text === term ? 4 : text.includes(term) ? 2 : term.includes(text) && text.length > 3 ? 1 : 0), 0);
+      return score > 0 ? { control, score } : null;
+    }).filter(Boolean).sort((first, second) => second.score - first.score);
+    return matches[0]?.control || null;
+  }
+
+  function buildTargetFromElement(element) {
+    const elementIdentity = buildElementIdentity(element);
+    const selectorCandidates = elementIdentity.selectorCandidates || buildSelectorCandidates(element);
+    return {
+      elementIdentity,
+      selectorCandidates,
+      fallbackText: elementIdentity.text || elementIdentity.accessibleName || elementIdentity.labelText || elementIdentity.ariaLabel || elementIdentity.placeholder,
+      role: elementIdentity.role,
+      tagName: elementIdentity.tagName,
+      accessibleName: elementIdentity.accessibleName,
+      text: elementIdentity.text,
+      ariaLabel: elementIdentity.ariaLabel,
+      labelText: elementIdentity.labelText,
+      placeholder: elementIdentity.placeholder,
+      inputType: elementIdentity.inputType,
+      selectedOptionText: elementIdentity.selectedOptionText,
+      name: elementIdentity.name,
+      id: elementIdentity.id,
+      dataAttributes: elementIdentity.dataAttributes,
+      nearbyHeading: elementIdentity.nearbyHeading,
+      parentContainerText: elementIdentity.parentContainerText,
+      previousSiblingText: elementIdentity.previousSiblingText,
+      nextSiblingText: elementIdentity.nextSiblingText,
+      parentTagName: elementIdentity.parentTagName,
+      parentRole: elementIdentity.parentRole,
+      parentAccessibleName: elementIdentity.parentAccessibleName,
+      parentText: elementIdentity.parentText,
+      formTitle: elementIdentity.formTitle,
+      dialogTitle: elementIdentity.dialogTitle,
+      cardTitle: elementIdentity.cardTitle,
+      cssFallback: elementIdentity.cssFallback,
+      xpathFallback: elementIdentity.xpathFallback,
+      boundingBox: elementIdentity.boundingBox
+    };
   }
 
   function injectStyles() {
@@ -1051,9 +1150,10 @@
   }
 
   class Player {
-    constructor(guide, guideResolver) {
+    constructor(guide, guideResolver, analytics) {
       this.guide = guide;
       this.guideResolver = guideResolver;
+      this.analytics = analytics;
       this.index = 0;
       this.steps = [];
       this.phase = "main";
@@ -1061,6 +1161,29 @@
       this.highlighted = null;
       this.stopped = false;
       this.preWorkflowConfirmationShown = false;
+      this.executionId = randomId();
+      this.executionStartedAt = 0;
+      this.stepExecutionIds = {};
+      this.stepStartedAt = {};
+      this.workflowFinished = false;
+    }
+
+    emitAnalytics(event) {
+      if (this.guide.analyticsLoggingEnabled === false) return;
+      this.analytics?.emit({
+        executionId: this.executionId,
+        workflowId: this.guide.id,
+        workflowVersionId: this.guide.id,
+        workflowVersion: this.guide.version || 1,
+        analyticsLoggingEnabled: this.guide.analyticsLoggingEnabled !== false,
+        ...event
+      });
+    }
+
+    stepExecutionId(step) {
+      if (!step?.id) return undefined;
+      this.stepExecutionIds[step.id] = this.stepExecutionIds[step.id] || randomId();
+      return this.stepExecutionIds[step.id];
     }
 
     start(options) {
@@ -1069,6 +1192,12 @@
       if (!options || options.resetProgress !== false) {
         this.resetProgress();
         this.preWorkflowConfirmationShown = false;
+        this.executionId = randomId();
+        this.executionStartedAt = performance.now();
+        this.workflowFinished = false;
+        this.stepExecutionIds = {};
+        this.stepStartedAt = {};
+        this.emitAnalytics({ eventType: "workflow_start", status: "started" });
       }
       if (!this.preWorkflowConfirmationShown && this.guide.preWorkflowConfirmationEnabled && String(this.guide.preWorkflowConfirmationHtml || "").trim()) {
         this.preWorkflowConfirmationShown = true;
@@ -1113,6 +1242,9 @@
     }
 
     stop() {
+      if (!this.workflowFinished && this.executionStartedAt) {
+        this.emitAnalytics({ eventType: "workflow_abandoned", status: "abandoned", durationMs: Math.round(performance.now() - this.executionStartedAt) });
+      }
       this.stopped = true;
       this.preWorkflowConfirmationShown = false;
       this.clear();
@@ -1132,9 +1264,25 @@
       if (this.stopped) return;
       if (!step) {
         localStorage.removeItem(this.storageKey(this.phase));
+        if (!onComplete && this.phase === "main" && !this.workflowFinished) {
+          this.workflowFinished = true;
+          this.emitAnalytics({ eventType: "workflow_completed", status: "completed", durationMs: Math.round(performance.now() - this.executionStartedAt) });
+          this.analytics?.flush?.();
+        }
         if (onComplete) await onComplete();
         return;
       }
+
+      const stepExecutionId = this.stepExecutionId(step);
+      this.stepStartedAt[step.id] = performance.now();
+      this.emitAnalytics({
+        eventType: "step_start",
+        stepExecutionId,
+        stepId: step.id,
+        stepOrder: step.order || this.index + 1,
+        actionType: step.trigger || step.type,
+        status: "started"
+      });
 
       if (step.type === "manualInstruction" && !hasTargetIdentity(step)) {
         this.showInstruction(step, onComplete);
@@ -1202,6 +1350,24 @@
     }
 
     showMissing(step, onComplete) {
+      this.emitAnalytics({
+        eventType: "step_failed",
+        stepExecutionId: this.stepExecutionId(step),
+        stepId: step.id,
+        stepOrder: step.order || this.index + 1,
+        actionType: step.trigger || step.type,
+        status: "failed",
+        errorMessage: "Control not found",
+        durationMs: Math.round(performance.now() - (this.stepStartedAt[step.id] || performance.now()))
+      });
+      this.emitAnalytics({
+        eventType: "healing_attempted",
+        stepExecutionId: this.stepExecutionId(step),
+        stepId: step.id,
+        stepOrder: step.order || this.index + 1,
+        actionType: step.trigger || step.type,
+        healingUsed: true
+      });
       this.showAutoRecoveryLoading();
       window.setTimeout(() => this.trySmartRecovery(step, onComplete), 250);
     }
@@ -1216,7 +1382,17 @@
     }
 
     trySmartRecovery(step, onComplete) {
-      const control = findVisibleControlByTerms(identityTerms(step.target, this.guide.title).concat(String(step.title || "").split(/\s+/)));
+      this.emitAnalytics({
+        eventType: "ai_provider_called",
+        stepExecutionId: this.stepExecutionId(step),
+        stepId: step.id,
+        stepOrder: step.order || this.index + 1,
+        actionType: step.trigger || step.type,
+        healingUsed: true,
+        aiUsed: true,
+        metadata: { provider: "scout-runtime", mode: "auto-heal" }
+      });
+      const control = findVisibleControlByTerms(identityTerms(step.target, this.guide.title, step));
       if (!control) {
         this.showManualSelectionPrompt(step, onComplete);
         return;
@@ -1344,8 +1520,9 @@
     }
 
     async acceptSmartRecovery(step, control, onComplete) {
-      const proposedSelectorCandidates = buildSelectorCandidates(control);
-      const proposedElementIdentity = buildElementIdentity(control);
+      const proposedTarget = buildTargetFromElement(control);
+      const proposedSelectorCandidates = proposedTarget.selectorCandidates;
+      const proposedElementIdentity = proposedTarget.elementIdentity;
       const originalIdentity = {
         ...(step.target || {}),
         selectorCandidates: step.target?.selectorCandidates || []
@@ -1361,15 +1538,25 @@
             stepOrder: step.order || this.index + 1,
             originalIdentity,
             proposedElementIdentity,
+            proposedTarget,
             proposedSelectorCandidates,
             confidenceScore: 75,
             healingSource: "rule-based",
-            healingReason: "Accepted smart text-based recovery match",
+            healingReason: "User accepted AI auto-healing suggestion",
             pageUrl: window.location.href,
             pageTitle: document.title
           })
         });
         if (!response.ok) throw new Error(response.statusText);
+        this.emitAnalytics({
+          eventType: "healing_succeeded",
+          stepExecutionId: this.stepExecutionId(step),
+          stepId: step.id,
+          stepOrder: step.order || this.index + 1,
+          actionType: step.trigger || step.type,
+          healingUsed: true,
+          aiUsed: true
+        });
         this.showRecovery("Accepted. Saved for trainer review. Continuing...");
       } catch (error) {
         console.error("[Scout Smart Recovery] Failed to save accepted match", error);
@@ -1400,7 +1587,7 @@
             userAction: "reject",
             pageUrl: window.location.href,
             pageTitle: document.title,
-            reason: "AI auto-healing found a control, but the user rejected it"
+            reason: "User rejected AI auto-healing suggestion"
           })
         });
       } catch (error) {
@@ -1543,7 +1730,7 @@
       const guide = this.guideResolver ? this.guideResolver(guideId) : null;
       if (!guide) return;
       this.stop();
-      new Player(guide, this.guideResolver).start();
+      new Player(guide, this.guideResolver, this.analytics).start();
     }
 
     previous(onComplete) {
@@ -1553,6 +1740,18 @@
     }
 
     next(onComplete) {
+      const step = this.steps[this.index];
+      if (step) {
+        this.emitAnalytics({
+          eventType: "step_completed",
+          stepExecutionId: this.stepExecutionId(step),
+          stepId: step.id,
+          stepOrder: step.order || this.index + 1,
+          actionType: step.trigger || step.type,
+          status: "completed",
+          durationMs: Math.round(performance.now() - (this.stepStartedAt[step.id] || performance.now()))
+        });
+      }
       this.index += 1;
       localStorage.setItem(this.storageKey(this.phase), String(this.index));
       this.render(onComplete);
@@ -1565,6 +1764,7 @@
       }
       const ok = await waitForCondition(() => detectContext(goalContext).isOnGoalContext, GOAL_TIMEOUT_MS);
       if (!ok) {
+        this.emitAnalytics({ eventType: "workflow_failed", status: "failed", durationMs: Math.round(performance.now() - this.executionStartedAt), errorMessage: "Goal context was not reached" });
         this.trySmartRecovery({ title: this.guide.title, message: "Navigate to the target page to continue.", target: contextTarget(goalContext) || {} });
         return;
       }
@@ -1581,7 +1781,7 @@
     return payload.guides || [];
   }
 
-  function showLauncher(guides, guideResolver) {
+  function showLauncher(guides, guideResolver, analytics) {
     injectStyles();
     const launcher = document.createElement("button");
     launcher.className = "scout-adoption-launcher";
@@ -1598,7 +1798,7 @@
         item.textContent = guide.title;
         item.addEventListener("click", () => {
           menu.remove();
-          new Player(guide, guideResolver).start();
+          new Player(guide, guideResolver, analytics).start();
         });
         menu.appendChild(item);
       });
@@ -1615,14 +1815,15 @@
       if (!config.targetAppId) throw new Error("targetAppId is required.");
       const guides = await loadGuides(config);
       const guideResolver = (guideId) => guides.find((item) => item.id === guideId);
-      if (config.autoShowLauncher && guides.length > 0) showLauncher(guides, guideResolver);
+      const analytics = createAnalytics(config);
+      if (config.autoShowLauncher && guides.length > 0) showLauncher(guides, guideResolver, analytics);
       return {
         version: PLAYER_VERSION,
         guides,
         detectContext,
         play(guideId) {
           const guide = guides.find((item) => item.id === guideId) || guides[0];
-          if (guide) new Player(guide, guideResolver).start();
+          if (guide) new Player(guide, guideResolver, analytics).start();
         }
       };
     }
