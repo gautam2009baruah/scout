@@ -7,6 +7,7 @@ type HealingSuggestionRequest = {
   stepId: string;
   stepOrder: number;
   originalIdentity: ElementIdentity;
+  proposedElementIdentity?: ElementIdentity;
   proposedSelectorCandidates: SelectorCandidate[];
   confidenceScore: number;
   healingSource: "rule-based" | "ai-assisted";
@@ -26,6 +27,7 @@ export async function POST(request: NextRequest) {
       stepId,
       stepOrder,
       originalIdentity,
+      proposedElementIdentity,
       proposedSelectorCandidates,
       confidenceScore,
       healingSource,
@@ -70,17 +72,19 @@ export async function POST(request: NextRequest) {
            healing_source = $2,
            healing_reason = $3,
            proposed_selector_candidates = $4,
-           ai_provider = $5,
-           ai_model = $6,
-           page_url = $7,
-           page_title = $8,
+           proposed_element_identity = $5,
+           ai_provider = $6,
+           ai_model = $7,
+           page_url = $8,
+           page_title = $9,
            updated_at = now()
-         WHERE id = $9`,
+         WHERE id = $10`,
         [
           confidenceScore,
           healingSource,
           healingReason,
           JSON.stringify(proposedSelectorCandidates),
+          proposedElementIdentity ? JSON.stringify(proposedElementIdentity) : null,
           aiProvider || null,
           aiModel || null,
           pageUrl,
@@ -104,9 +108,9 @@ export async function POST(request: NextRequest) {
     const insertResult = await getPool().query(
       `INSERT INTO guided_workflow_healing_suggestions 
        (company_id, workflow_id, step_id, step_order, original_selector_candidates, original_element_identity,
-        proposed_selector_candidates, confidence_score, healing_source, healing_reason, 
+        proposed_selector_candidates, proposed_element_identity, confidence_score, healing_source, healing_reason, 
         ai_provider, ai_model, page_url, page_title, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending')
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending')
        RETURNING id`,
       [
         companyId,
@@ -116,6 +120,7 @@ export async function POST(request: NextRequest) {
         JSON.stringify(originalIdentity.selectorCandidates || []),
         JSON.stringify(originalIdentity),
         JSON.stringify(proposedSelectorCandidates),
+        proposedElementIdentity ? JSON.stringify(proposedElementIdentity) : null,
         confidenceScore,
         healingSource,
         healingReason,
@@ -153,6 +158,7 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const workflowId = searchParams.get("workflowId");
+    const stepId = searchParams.get("stepId");
     const status = searchParams.get("status") || "pending";
 
     let query = `
@@ -188,8 +194,13 @@ export async function GET(request: NextRequest) {
     const params: unknown[] = [status];
 
     if (workflowId) {
-      query += ` AND s.workflow_id = $2`;
       params.push(workflowId);
+      query += ` AND s.workflow_id = $${params.length}`;
+    }
+
+    if (stepId) {
+      params.push(stepId);
+      query += ` AND s.step_id = $${params.length}`;
     }
 
     query += ` ORDER BY s.created_at DESC LIMIT 100`;

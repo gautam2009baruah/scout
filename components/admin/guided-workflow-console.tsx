@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, Play, Plus, RefreshCw, Save, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
 import type { Jodit as JoditInstance } from "jodit";
 import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
+import HealingSuggestionReviewer from "./healing-suggestion-reviewer-panel";
 
 type CompanyOption = { id: string; name: string };
 
@@ -37,6 +38,11 @@ type SessionDetailsState = {
     nearbyText?: string | null;
     tagName?: string | null;
   }>;
+};
+
+type HealingSuggestionSummary = {
+  id: string;
+  step_id: string;
 };
 
 function getScoutBaseUrl() {
@@ -628,6 +634,8 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
   const [openStepIds, setOpenStepIds] = useState<Set<string>>(() => new Set());
   const [introEditorOpen, setIntroEditorOpen] = useState(false);
   const [introDraft, setIntroDraft] = useState("");
+  const [healingReviewStepId, setHealingReviewStepId] = useState<string | null>(null);
+  const [pendingHealingCounts, setPendingHealingCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!selectedTopic?.guideId) {
@@ -641,6 +649,39 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
       return new Set(Array.from(current).filter((id) => validIds.has(id)));
     });
   }, [editor.steps]);
+
+  useEffect(() => {
+    if (!selectedTopic?.guideId) {
+      setPendingHealingCounts({});
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadPendingHealingCounts() {
+      try {
+        const params = new URLSearchParams({ status: "pending", workflowId: selectedTopic?.guideId ?? "" });
+        const response = await fetch(`/api/guided-workflow-player/healing-suggestions?${params.toString()}`);
+        const body = await response.json().catch(() => null);
+        if (cancelled) return;
+        const counts: Record<string, number> = {};
+        (Array.isArray(body?.suggestions) ? body.suggestions : []).forEach((suggestion: HealingSuggestionSummary) => {
+          counts[suggestion.step_id] = (counts[suggestion.step_id] ?? 0) + 1;
+        });
+        setPendingHealingCounts(counts);
+      } catch {
+        if (!cancelled) setPendingHealingCounts({});
+      }
+    }
+
+    void loadPendingHealingCounts();
+    const intervalId = window.setInterval(() => void loadPendingHealingCounts(), 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [selectedTopic?.guideId]);
 
   if (!selectedSession || !selectedTopic) {
     return (
@@ -787,6 +828,7 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
             const purpose = step.stepPurpose === "navigation" ? "navigation" : "main";
             const enabled = isStepEnabled(step);
             const activeNumber = enabled ? enabledStepNumber(guideSteps, index) : null;
+            const pendingHealingCount = pendingHealingCounts[step.id] ?? 0;
 
             return (
               <div className={`overflow-hidden rounded-lg border bg-white ${enabled ? "border-slate-200" : "border-slate-200 opacity-60"}`} key={step.id}>
@@ -825,6 +867,18 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
                     </span>
                   ) : null}
                   <div className="flex gap-1">
+                    {pendingHealingCount > 0 ? (
+                      <button
+                        aria-label={`${pendingHealingCount} pending self-healing ${pendingHealingCount === 1 ? "review" : "reviews"}`}
+                        className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-700 shadow-sm hover:bg-amber-100"
+                        onClick={() => setHealingReviewStepId(step.id)}
+                        title={`${pendingHealingCount} pending self-healing ${pendingHealingCount === 1 ? "review" : "reviews"}`}
+                        type="button"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-bold text-white">{pendingHealingCount}</span>
+                      </button>
+                    ) : null}
                     <button aria-label="Move step up" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === 0} onClick={() => moveStep(index, -1)} title="Move step up" type="button"><ArrowUp className="h-4 w-4" /></button>
                     <button aria-label="Move step down" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40" disabled={index === guideSteps.length - 1} onClick={() => moveStep(index, 1)} title="Move step down" type="button"><ArrowDown className="h-4 w-4" /></button>
                     <button aria-label="Delete step" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={() => deleteStep(index)} title="Delete step" type="button"><Trash2 className="h-3.5 w-3.5" /></button>
@@ -963,6 +1017,28 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {healingReviewStepId && sessionGuide ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onClick={() => setHealingReviewStepId(null)}>
+          <div className="max-h-[88vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-base font-semibold text-slate-950">Workflow Self-Healing Suggestions</p>
+                <p className="mt-1 text-sm text-slate-500">Review pending user playback decisions for this step.</p>
+              </div>
+              <button
+                aria-label="Close self-healing review"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                onClick={() => setHealingReviewStepId(null)}
+                title="Close self-healing review"
+                type="button"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <HealingSuggestionReviewer embedded stepId={healingReviewStepId} workflowId={sessionGuide.id} />
           </div>
         </div>
       ) : null}

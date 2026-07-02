@@ -1,5 +1,5 @@
-import HealingSuggestionReviewer from "@/components/admin/healing-suggestion-reviewer";
+import { redirect } from "next/navigation";
 
 export default function HealingSuggestionsPage() {
-  return <HealingSuggestionReviewer />;
+  redirect("/control-panel/guided-workflows");
 }

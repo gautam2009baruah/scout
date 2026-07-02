@@ -499,7 +499,7 @@ export class AdoptionPlayer {
   ) {
     try {
       // Dynamic import to capture element metadata and save suggestion
-      const { buildElementIdentity } = await import("./elementMetadataCapture");
+      const { buildElementIdentity, buildSelectorsFromElement } = await import("./elementMetadataCapture");
       const { saveHealingSuggestion } = await import("./healingResolver");
 
       // Build element identity from the found control

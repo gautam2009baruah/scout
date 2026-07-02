@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/exhaustive-deps */
+
 import React, { useEffect, useState } from "react";
 import type { SelectorCandidate } from "@/shared/guideTypes";
 
@@ -12,7 +14,7 @@ type HealingSuggestion = {
   original_selector_candidates: SelectorCandidate[];
   original_element_identity: any;
   proposed_selector_candidates: SelectorCandidate[];
-  confidence_score: number;
+  confidence_score: number | string;
   healing_source: "rule-based" | "ai-assisted";
   healing_reason: string;
   ai_provider?: string;
@@ -254,20 +256,26 @@ export default function HealingSuggestionReviewer() {
 
               <div className="p-4 space-y-3">
                 <div className="grid grid-cols-2 gap-4 text-sm">
+                  {(() => {
+                    const confidenceScore = numericConfidence(suggestion.confidence_score);
+
+                    return (
                   <div>
                     <span className="font-semibold text-gray-700">Confidence:</span>{" "}
                     <span
                       className={`font-bold ${
-                        suggestion.confidence_score >= 95
+                        confidenceScore >= 95
                           ? "text-green-600"
-                          : suggestion.confidence_score >= 75
+                          : confidenceScore >= 75
                           ? "text-yellow-600"
                           : "text-orange-600"
                       }`}
                     >
-                      {suggestion.confidence_score.toFixed(1)}%
+                      {confidenceScore.toFixed(1)}%
                     </span>
                   </div>
+                    );
+                  })()}
                   <div>
                     <span className="font-semibold text-gray-700">Source:</span>{" "}
                     <span className="text-gray-900">
@@ -338,6 +346,11 @@ export default function HealingSuggestionReviewer() {
       )}
     </div>
   );
+}
+
+function numericConfidence(value: HealingSuggestion["confidence_score"]) {
+  const score = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(score) ? score : 0;
 }
 
 function EditModal({

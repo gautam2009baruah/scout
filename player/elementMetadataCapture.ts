@@ -1,4 +1,4 @@
-import type { ElementIdentity } from "@/shared/guideTypes";
+import type { ElementIdentity, SelectorCandidate, SelectorCandidateType } from "@/shared/guideTypes";
 
 /**
  * Build a complete ElementIdentity object from an HTML element
@@ -178,11 +178,11 @@ export function buildElementIdentity(element: HTMLElement): ElementIdentity {
 /**
  * Build selector candidates from an element
  */
-export function buildSelectorsFromElement(element: HTMLElement) {
-  const candidates: Array<{ type: string; value: string; confidence: number; reason: string }> = [];
+export function buildSelectorsFromElement(element: HTMLElement): SelectorCandidate[] {
+  const candidates: SelectorCandidate[] = [];
 
   // Data attributes (highest priority)
-  const dataAttrs = [
+  const dataAttrs: SelectorCandidateType[] = [
     "data-adoption-id",
     "data-testid",
     "data-test",

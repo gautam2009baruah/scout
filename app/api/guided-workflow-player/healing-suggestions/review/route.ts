@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 import type { SelectorCandidate } from "@/shared/guideTypes";
 
 type ApproveRequest = {
   suggestionId: string;
-  userId: string;
   editedSelectorCandidates?: SelectorCandidate[];
   versionNotes?: string;
 };
 
 type RejectRequest = {
   suggestionId: string;
-  userId: string;
   reason?: string;
 };
 
@@ -40,10 +39,13 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleApprove(request: NextRequest) {
+  const session = await getCurrentAdminSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body: ApproveRequest = await request.json();
-  const { suggestionId, userId, editedSelectorCandidates, versionNotes } = body;
+  const { suggestionId, editedSelectorCandidates, versionNotes } = body;
+  const userId = session.user.id;
 
-  if (!suggestionId || !userId) {
+  if (!suggestionId) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
@@ -78,7 +80,7 @@ async function handleApprove(request: NextRequest) {
     const originalWorkflow = suggestion;
 
     // Parse the steps
-    const steps = JSON.parse(originalWorkflow.steps_json);
+    const steps = typeof originalWorkflow.steps_json === "string" ? JSON.parse(originalWorkflow.steps_json) : originalWorkflow.steps_json;
 
     // Find the step to update
     const stepIndex = steps.findIndex((s: { id: string }) => s.id === suggestion.step_id);
@@ -89,7 +91,7 @@ async function handleApprove(request: NextRequest) {
     }
 
     // Update the step with healed selector candidates
-    const selectorCandidates = editedSelectorCandidates || JSON.parse(suggestion.proposed_selector_candidates);
+    const selectorCandidates = editedSelectorCandidates || (typeof suggestion.proposed_selector_candidates === "string" ? JSON.parse(suggestion.proposed_selector_candidates) : suggestion.proposed_selector_candidates);
     steps[stepIndex].target = {
       ...steps[stepIndex].target,
       selectorCandidates,
@@ -176,10 +178,13 @@ async function handleApprove(request: NextRequest) {
 }
 
 async function handleReject(request: NextRequest) {
+  const session = await getCurrentAdminSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body: RejectRequest = await request.json();
-  const { suggestionId, userId, reason } = body;
+  const { suggestionId, reason } = body;
+  const userId = session.user.id;
 
-  if (!suggestionId || !userId) {
+  if (!suggestionId) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 

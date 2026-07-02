@@ -529,6 +529,7 @@
       .scout-adoption-menu { position: fixed; right: 20px; bottom: 72px; z-index: 2147483646; width: min(320px, calc(100vw - 40px)); border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; box-shadow: 0 18px 52px rgb(15 23 42 / .22); padding: 8px; font: 14px system-ui, sans-serif; }
       .scout-adoption-menu button { display: block; width: 100%; border: 0; border-radius: 6px; background: transparent; padding: 10px; text-align: left; color: #0f172a; cursor: pointer; }
       .scout-adoption-highlight { outline: 3px solid #0ea5e9 !important; outline-offset: 4px !important; border-radius: 6px !important; }
+      .scout-adoption-pick-candidate { outline: 3px solid #f59e0b !important; outline-offset: 4px !important; border-radius: 6px !important; cursor: crosshair !important; }
       .scout-adoption-overlay { position: fixed; inset: 0; z-index: 2147483646; background: rgb(15 23 42 / .52); box-shadow: inset 0 0 140px rgb(15 23 42 / .46); }
       .scout-adoption-tooltip { position: fixed; z-index: 2147483647; width: max-content; max-width: min(292px, calc(100vw - 32px)); border: 1px solid rgba(14, 165, 233, .22); border-radius: 14px; background: rgba(255,255,255,.98); box-shadow: 0 18px 48px rgb(15 23 42 / .20), 0 2px 10px rgb(15 23 42 / .08); padding: 12px 14px 11px; color: #0f172a; font: 13px/1.4 system-ui, sans-serif; backdrop-filter: blur(10px); }
       .scout-adoption-tooltip__close { position: absolute; top: 7px; right: 8px; width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: #64748b !important; padding: 0 !important; margin: 0 !important; font: 18px/1 system-ui, sans-serif !important; cursor: pointer; }
@@ -567,9 +568,24 @@
       .scout-adoption-tooltip[data-placement="top"] .scout-adoption-tooltip__arrow { bottom: -7px; left: var(--arrow-left, 22px); border-left: 0; border-top: 0; }
       .scout-adoption-tooltip[data-placement="right"] .scout-adoption-tooltip__arrow { left: -7px; top: var(--arrow-top, 20px); border-right: 0; border-top: 0; }
       .scout-adoption-tooltip[data-placement="left"] .scout-adoption-tooltip__arrow { right: -7px; top: var(--arrow-top, 20px); border-left: 0; border-bottom: 0; }
-      .scout-adoption-missing { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 2147483647; max-width: min(620px, calc(100vw - 32px)); border-radius: 8px; background: #020617; color: #fff; padding: 12px 14px; font: 14px system-ui, sans-serif; box-shadow: 0 18px 52px rgb(15 23 42 / .28); }
-      .scout-adoption-missing button { margin-left: 8px; border: 1px solid #475569; border-radius: 6px; background: #fff; padding: 5px 8px; color: #020617; cursor: pointer; }
+      .scout-adoption-missing, .scout-adoption-recovery-panel { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 2147483647; width: min(360px, calc(100vw - 24px)); border: 1px solid rgb(148 163 184 / .38); border-radius: 12px; background: rgb(255 255 255 / .88); color: #0f172a; padding: 9px; font: 12.5px/1.35 system-ui, sans-serif; box-shadow: 0 16px 42px rgb(15 23 42 / .16); backdrop-filter: blur(12px); }
+      .scout-adoption-recovery-panel[data-dragging="true"] { user-select: none; cursor: grabbing; }
+      .scout-adoption-recovery-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; cursor: grab; }
+      .scout-adoption-recovery-title { min-width: 0; display: flex; align-items: center; gap: 7px; font-weight: 750; color: #0f172a; }
+      .scout-adoption-recovery-dot { width: 9px; height: 9px; border-radius: 999px; background: #0ea5e9; box-shadow: 0 0 0 5px rgb(14 165 233 / .12); }
+      .scout-adoption-recovery-spin { width: 14px; height: 14px; border: 2px solid #bae6fd; border-top-color: #0284c7; border-radius: 999px; animation: scout-spin .8s linear infinite; }
+      .scout-adoption-recovery-grip { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; color: #64748b; cursor: grab; }
+      .scout-adoption-recovery-body { color: #475569; padding-right: 2px; }
+      .scout-adoption-recovery-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+      .scout-adoption-recovery-actions button, .scout-adoption-missing button { display: inline-grid; place-items: center; width: 28px; height: 28px; border: 1px solid #dbe3ee; border-radius: 999px; background: rgb(255 255 255 / .94); padding: 0; color: #0f172a; cursor: pointer; }
+      .scout-adoption-recovery-actions button svg { width: 14px; height: 14px; stroke: currentColor; stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+      .scout-adoption-recovery-actions button:hover { background: #f8fafc; border-color: #cbd5e1; }
+      .scout-adoption-recovery-actions button[data-primary] { border-color: #0f172a; background: #0f172a; color: #fff; }
+      .scout-adoption-recovery-actions button[data-danger] { border-color: #fecaca; color: #b91c1c; }
+      .scout-adoption-target-arrow { position: fixed; z-index: 2147483647; pointer-events: none; display: flex; align-items: center; gap: 6px; border-radius: 999px; background: rgb(14 165 233 / .92); color: #fff; padding: 5px 8px; font: 700 11px system-ui, sans-serif; box-shadow: 0 10px 30px rgb(14 165 233 / .30); }
+      .scout-adoption-target-arrow:after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -6px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 7px solid rgb(14 165 233 / .92); }
       .scout-adoption-recovery-toast { top: max(16px, env(safe-area-inset-top)); bottom: auto; max-width: min(420px, calc(100vw - 32px)); text-align: center; pointer-events: none; }
+      @keyframes scout-spin { to { transform: rotate(360deg); } }
     `;
     document.head.appendChild(style);
   }
@@ -913,6 +929,127 @@
     return false;
   }
 
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[character] || character));
+  }
+
+  function iconButton(action, label, icon, primary, danger) {
+    return `<button type="button" data-${action} ${primary ? "data-primary" : ""} ${danger ? "data-danger" : ""} title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}">${iconSvg(icon)}</button>`;
+  }
+
+  function iconSvg(name) {
+    const icons = {
+      check: '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
+      x: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+      close: '<svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+      cursor: '<svg viewBox="0 0 24 24"><path d="m3 3 7.8 18 2.2-7 7-2.2L3 3Z"/></svg>',
+      skip: '<svg viewBox="0 0 24 24"><path d="m5 5 8 7-8 7V5Z"/><path d="M19 5v14"/></svg>',
+      refresh: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18 2v4h-4"/><path d="M6 22v-4h4"/></svg>',
+      grip: '<svg viewBox="0 0 24 24"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>'
+    };
+    return icons[name] || icons.close;
+  }
+
+  function buildSelectorCandidates(element) {
+    const candidates = [];
+    for (const attr of ["data-adoption-id", "data-testid", "data-test", "data-cy"]) {
+      const value = element.getAttribute(attr);
+      if (value) candidates.push({ type: attr, value, confidence: 95, reason: `Has ${attr} attribute` });
+    }
+    if (element.id) candidates.push({ type: "id", value: element.id, confidence: 90, reason: "Has unique ID" });
+    const name = element.getAttribute("name");
+    if (name) candidates.push({ type: "name", value: name, confidence: 85, reason: "Has name attribute" });
+    const ariaLabel = element.getAttribute("aria-label");
+    if (ariaLabel) candidates.push({ type: "aria-label", value: ariaLabel, confidence: 80, reason: "Has aria-label" });
+    const role = element.getAttribute("role");
+    const text = readableText(element.innerText || element.textContent);
+    if (role && text) candidates.push({ type: "role-text", value: `${role}::${text}`, confidence: 75, reason: "Has role and text content" });
+    const labelText = associatedLabelText(element);
+    if (labelText) candidates.push({ type: "label-text", value: labelText, confidence: 75, reason: "Has associated label" });
+    if ((element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) && element.placeholder) {
+      candidates.push({ type: "placeholder", value: element.placeholder, confidence: 70, reason: "Has placeholder text" });
+    }
+    if (text && text.length < 100) candidates.push({ type: "text-context", value: text, confidence: 65, reason: "Has text content" });
+    const cssSelector = buildCssSelector(element);
+    if (cssSelector) candidates.push({ type: "css", value: cssSelector, confidence: 50, reason: "CSS selector path" });
+    return candidates;
+  }
+
+  function buildElementIdentity(element) {
+    const rect = element.getBoundingClientRect();
+    const dataAttributes = {};
+    Array.from(element.attributes || []).forEach((attr) => {
+      if (attr.name.startsWith("data-")) dataAttributes[attr.name] = attr.value;
+    });
+    const labelText = associatedLabelText(element) || undefined;
+    const text = readableText(element.innerText || element.textContent) || undefined;
+    const parent = element.parentElement;
+    const form = element.closest("form");
+    const dialog = element.closest('[role="dialog"], [role="alertdialog"], dialog');
+
+    return {
+      tagName: element.tagName.toLowerCase(),
+      role: element.getAttribute("role") || undefined,
+      accessibleName: element.getAttribute("aria-label") || labelText || undefined,
+      text,
+      ariaLabel: element.getAttribute("aria-label") || undefined,
+      labelText,
+      placeholder: element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.placeholder || undefined : undefined,
+      inputType: element instanceof HTMLInputElement ? element.type : undefined,
+      selectedOptionText: element instanceof HTMLSelectElement ? readableText(Array.from(element.selectedOptions).map((option) => option.textContent || "").join(" ")) || undefined : undefined,
+      name: element.getAttribute("name") || undefined,
+      id: element.id || undefined,
+      dataAttributes,
+      parentTagName: parent?.tagName.toLowerCase(),
+      parentRole: parent?.getAttribute("role") || undefined,
+      parentAccessibleName: parent?.getAttribute("aria-label") || undefined,
+      parentText: readableText(parent?.innerText).slice(0, 180) || undefined,
+      formTitle: readableText(form?.querySelector("legend, h1, h2, h3, h4, h5, h6")?.textContent) || undefined,
+      dialogTitle: readableText(dialog?.querySelector('[role="heading"], h1, h2, h3, .modal-title, .dialog-title')?.textContent) || undefined,
+      url: window.location.href,
+      path: window.location.pathname,
+      cssFallback: buildCssSelector(element),
+      selectorCandidates: buildSelectorCandidates(element),
+      confidenceScore: 75,
+      needsUserConfirmation: false,
+      boundingBox: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+    };
+  }
+
+  function associatedLabelText(element) {
+    if (element.id) {
+      const label = document.querySelector(`label[for="${escapeCss(element.id)}"]`);
+      if (label) return readableText(label.textContent);
+    }
+    return readableText(element.closest("label")?.textContent);
+  }
+
+  function buildCssSelector(element) {
+    const path = [];
+    let current = element;
+    while (current && current !== document.body && current instanceof Element) {
+      let selector = current.tagName.toLowerCase();
+      if (current.id) {
+        selector += `#${escapeCss(current.id)}`;
+        path.unshift(selector);
+        break;
+      }
+      const siblings = current.parentElement ? Array.from(current.parentElement.children) : [];
+      const sameTagSiblings = siblings.filter((sibling) => sibling.tagName === current.tagName);
+      if (sameTagSiblings.length > 1) selector += `:nth-of-type(${sameTagSiblings.indexOf(current) + 1})`;
+      path.unshift(selector);
+      current = current.parentElement;
+      if (path.length > 5) break;
+    }
+    return path.join(" > ");
+  }
+
   class Player {
     constructor(guide, guideResolver) {
       this.guide = guide;
@@ -969,6 +1106,8 @@
       }
       if (this.highlighted) this.highlighted.classList.remove("scout-adoption-highlight");
       document.querySelector(".scout-adoption-missing")?.remove();
+      document.querySelector(".scout-adoption-recovery")?.remove();
+      this.removeTargetArrow();
       this.tooltip = null;
       this.highlighted = null;
     }
@@ -1063,34 +1202,341 @@
     }
 
     showMissing(step, onComplete) {
-      const banner = document.createElement("div");
-      banner.className = "scout-adoption-missing";
-      banner.innerHTML = `Element not found on this page <button type="button" data-retry>Retry</button><button type="button" data-skip>Skip</button><button type="button" data-stop>Stop</button><button type="button" data-recover>Try Smart Recovery</button>`;
-      banner.querySelector("[data-retry]").addEventListener("click", () => this.render(onComplete));
-      banner.querySelector("[data-skip]").addEventListener("click", () => this.next(onComplete));
-      banner.querySelector("[data-stop]").addEventListener("click", () => this.stop());
-      banner.querySelector("[data-recover]").addEventListener("click", () => this.trySmartRecovery(step));
-      document.body.appendChild(banner);
+      this.showAutoRecoveryLoading();
+      window.setTimeout(() => this.trySmartRecovery(step, onComplete), 250);
     }
 
-    trySmartRecovery(step) {
+    showAutoRecoveryLoading() {
+      this.showRecoveryPanel(`
+        <div class="scout-adoption-recovery-head" data-drag-handle>
+          <div class="scout-adoption-recovery-title"><span class="scout-adoption-recovery-grip" title="Drag this panel" aria-label="Drag this panel">${iconSvg("grip")}</span><span class="scout-adoption-recovery-spin"></span> AI auto healing</div>
+        </div>
+        <div class="scout-adoption-recovery-body">Control not found. Scout AI is auto-healing by finding the best replacement control.</div>
+      `);
+    }
+
+    trySmartRecovery(step, onComplete) {
       const control = findVisibleControlByTerms(identityTerms(step.target, this.guide.title).concat(String(step.title || "").split(/\s+/)));
       if (!control) {
-        this.showRecovery("I could not find a safe matching control. Navigate closer to the target page, then retry.");
+        this.showManualSelectionPrompt(step, onComplete);
         return;
       }
       control.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
       control.classList.add("scout-adoption-highlight");
       this.highlighted = control;
-      this.showRecovery(`I highlighted ${control.innerText || control.getAttribute("aria-label") || "the matching control"}. Click the highlighted control to continue.`);
+      this.showTargetArrow(control);
+      this.showSmartRecoveryConfirmation(step, control, onComplete);
+    }
+
+    showSmartRecoveryConfirmation(step, control, onComplete) {
+      const banner = this.showRecoveryPanel(`
+        <div class="scout-adoption-recovery-head" data-drag-handle>
+          <div class="scout-adoption-recovery-title"><span class="scout-adoption-recovery-grip" title="Drag this panel" aria-label="Drag this panel">${iconSvg("grip")}</span><span class="scout-adoption-recovery-dot"></span> AI auto healing</div>
+          <div class="scout-adoption-recovery-actions">
+            ${iconButton("accept", "Accept AI-healed control", "check", true)}
+            ${iconButton("pick", "Pick another control", "cursor")}
+            ${iconButton("reject", "Reject AI-healed control", "x", false, true)}
+            ${iconButton("skip", "Skip this step", "skip")}
+            ${iconButton("close", "Close recovery panel", "close")}
+          </div>
+        </div>
+        <div class="scout-adoption-recovery-body">
+          Control not found. Scout AI auto-healed it and highlighted a replacement. Accept to continue and send it for trainer review.
+        </div>
+      `);
+      banner.querySelector("[data-accept]").addEventListener("click", async () => {
+        banner.remove();
+        await this.acceptSmartRecovery(step, control, onComplete);
+      });
+      banner.querySelector("[data-pick]").addEventListener("click", () => {
+        this.highlighted?.classList.remove("scout-adoption-highlight");
+        this.removeTargetArrow();
+        this.startManualControlSelection(step, onComplete);
+      });
+      banner.querySelector("[data-reject]").addEventListener("click", async () => {
+        banner.remove();
+        await this.rejectSmartRecovery(step, control);
+        this.highlighted?.classList.remove("scout-adoption-highlight");
+        this.removeTargetArrow();
+        this.showManualSelectionPrompt(step, onComplete, "AI recovery suggestion rejected. Select the correct control or skip this step.");
+      });
+      banner.querySelector("[data-skip]").addEventListener("click", () => {
+        banner.remove();
+        this.highlighted?.classList.remove("scout-adoption-highlight");
+        this.removeTargetArrow();
+        this.recordSkippedRecovery(step);
+        this.next(onComplete);
+      });
+      banner.querySelector("[data-close]").addEventListener("click", () => {
+        banner.remove();
+        this.removeTargetArrow();
+      });
+    }
+
+    showManualSelectionPrompt(step, onComplete, message) {
+      const banner = this.showRecoveryPanel(`
+        <div class="scout-adoption-recovery-head" data-drag-handle>
+          <div class="scout-adoption-recovery-title"><span class="scout-adoption-recovery-grip" title="Drag this panel" aria-label="Drag this panel">${iconSvg("grip")}</span><span class="scout-adoption-recovery-dot" style="background:#f59e0b;box-shadow:0 0 0 5px rgb(245 158 11 / .14);"></span> AI auto healing needs help</div>
+          <div class="scout-adoption-recovery-actions">
+            ${iconButton("pick", "Select the correct control", "cursor", true)}
+            ${iconButton("retry", "Retry AI auto healing", "refresh")}
+            ${iconButton("skip", "Skip this step", "skip")}
+            ${iconButton("stop", "Stop this guide", "x", false, true)}
+            ${iconButton("close", "Close recovery panel", "close")}
+          </div>
+        </div>
+        <div class="scout-adoption-recovery-body">${escapeHtml(message || "Scout could not safely identify the control. You can select the best matching control and send it for trainer approval.")}</div>
+      `);
+      banner.querySelector("[data-pick]").addEventListener("click", () => this.startManualControlSelection(step, onComplete));
+      banner.querySelector("[data-retry]").addEventListener("click", () => {
+        this.showAutoRecoveryLoading();
+        window.setTimeout(() => this.trySmartRecovery(step, onComplete), 250);
+      });
+      banner.querySelector("[data-skip]").addEventListener("click", () => {
+        banner.remove();
+        this.recordSkippedRecovery(step);
+        this.next(onComplete);
+      });
+      banner.querySelector("[data-stop]").addEventListener("click", () => this.stop());
+      banner.querySelector("[data-close]").addEventListener("click", () => banner.remove());
+    }
+
+    startManualControlSelection(step, onComplete) {
+      const panel = this.showRecoveryPanel(`
+        <div class="scout-adoption-recovery-head" data-drag-handle>
+          <div class="scout-adoption-recovery-title"><span class="scout-adoption-recovery-grip" title="Drag this panel" aria-label="Drag this panel">${iconSvg("grip")}</span><span class="scout-adoption-recovery-dot" style="background:#f59e0b;box-shadow:0 0 0 5px rgb(245 158 11 / .14);"></span> Select replacement control</div>
+          <div class="scout-adoption-recovery-actions">
+            ${iconButton("cancel", "Cancel manual selection", "close")}
+          </div>
+        </div>
+        <div class="scout-adoption-recovery-body">Click the control that should be used for this step. The selection will be sent for trainer approval.</div>
+      `);
+      let hovered = null;
+      const cleanup = () => {
+        hovered?.classList.remove("scout-adoption-pick-candidate");
+        document.removeEventListener("pointerover", onPointerOver, true);
+        document.removeEventListener("click", onClick, true);
+      };
+      const onPointerOver = (event) => {
+        const target = event.target instanceof HTMLElement ? event.target.closest("button, a[href], input, select, textarea, [role='button'], [role='link'], [role='checkbox'], [role='radio'], [role='switch'], [tabindex]:not([tabindex='-1'])") : null;
+        if (!(target instanceof HTMLElement) || target.closest(".scout-adoption-recovery-panel, .scout-adoption-tooltip")) return;
+        hovered?.classList.remove("scout-adoption-pick-candidate");
+        hovered = target;
+        hovered.classList.add("scout-adoption-pick-candidate");
+      };
+      const onClick = (event) => {
+        const target = event.target instanceof HTMLElement ? event.target.closest("button, a[href], input, select, textarea, [role='button'], [role='link'], [role='checkbox'], [role='radio'], [role='switch'], [tabindex]:not([tabindex='-1'])") : null;
+        if (!(target instanceof HTMLElement) || target.closest(".scout-adoption-recovery-panel, .scout-adoption-tooltip")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        cleanup();
+        target.classList.remove("scout-adoption-pick-candidate");
+        target.classList.add("scout-adoption-highlight");
+        this.highlighted = target;
+        this.showSmartRecoveryConfirmation(step, target, onComplete);
+      };
+      panel.querySelector("[data-cancel]").addEventListener("click", () => {
+        cleanup();
+        this.showManualSelectionPrompt(step, onComplete);
+      });
+      document.addEventListener("pointerover", onPointerOver, true);
+      document.addEventListener("click", onClick, true);
+    }
+
+    async acceptSmartRecovery(step, control, onComplete) {
+      const proposedSelectorCandidates = buildSelectorCandidates(control);
+      const proposedElementIdentity = buildElementIdentity(control);
+      const originalIdentity = {
+        ...(step.target || {}),
+        selectorCandidates: step.target?.selectorCandidates || []
+      };
+
+      try {
+        const response = await fetch("/api/guided-workflow-player/healing-suggestions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflowId: this.guide.id,
+            stepId: step.id,
+            stepOrder: step.order || this.index + 1,
+            originalIdentity,
+            proposedElementIdentity,
+            proposedSelectorCandidates,
+            confidenceScore: 75,
+            healingSource: "rule-based",
+            healingReason: "Accepted smart text-based recovery match",
+            pageUrl: window.location.href,
+            pageTitle: document.title
+          })
+        });
+        if (!response.ok) throw new Error(response.statusText);
+        this.showRecovery("Accepted. Saved for trainer review. Continuing...");
+      } catch (error) {
+        console.error("[Scout Smart Recovery] Failed to save accepted match", error);
+        this.showRecovery("Accepted. Continuing with highlighted control.");
+      }
+
+      await delay(500);
+      this.continueWithRecoveredControl(step, control, onComplete);
+    }
+
+    async rejectSmartRecovery(step, control) {
+      try {
+        await fetch("/api/guided-workflow-player/healing-suggestions/reject-recovery", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflowId: this.guide.id,
+            stepId: step.id,
+            stepOrder: step.order || this.index + 1,
+            rejectedElement: {
+              tagName: control.tagName.toLowerCase(),
+              text: readableText(control.innerText || control.textContent).slice(0, 200),
+              ariaLabel: control.getAttribute("aria-label") || undefined,
+              id: control.id || undefined,
+              className: typeof control.className === "string" ? control.className : undefined,
+              elementIdentity: buildElementIdentity(control)
+            },
+            userAction: "reject",
+            pageUrl: window.location.href,
+            pageTitle: document.title,
+            reason: "AI auto-healing found a control, but the user rejected it"
+          })
+        });
+      } catch (error) {
+        console.error("[Scout Smart Recovery] Failed to record rejection", error);
+      }
+    }
+
+    async recordSkippedRecovery(step) {
+      try {
+        await fetch("/api/guided-workflow-player/healing-suggestions/reject-recovery", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflowId: this.guide.id,
+            stepId: step.id,
+            stepOrder: step.order || this.index + 1,
+            rejectedElement: null,
+            userAction: "skip",
+            pageUrl: window.location.href,
+            pageTitle: document.title,
+            reason: "Control not found and user skipped this step"
+          })
+        });
+      } catch (error) {
+        console.error("[Scout Smart Recovery] Failed to record skipped step", error);
+      }
+    }
+
+    showRecoveryPanel(html) {
+      document.querySelector(".scout-adoption-recovery")?.remove();
+      const panel = document.createElement("div");
+      panel.className = "scout-adoption-recovery scout-adoption-recovery-panel";
+      panel.innerHTML = html;
+      document.body.appendChild(panel);
+      this.attachRecoveryPanelDrag(panel);
+      return panel;
+    }
+
+    showTargetArrow(control) {
+      document.querySelector(".scout-adoption-target-arrow")?.remove();
+      const arrow = document.createElement("div");
+      arrow.className = "scout-adoption-target-arrow";
+      arrow.textContent = "AI match";
+      document.body.appendChild(arrow);
+      const position = () => {
+        if (!arrow.isConnected) return;
+        const rect = control.getBoundingClientRect();
+        const left = Math.min(window.innerWidth - arrow.offsetWidth - 8, Math.max(8, rect.left + rect.width / 2 - arrow.offsetWidth / 2));
+        const top = Math.max(8, rect.top - arrow.offsetHeight - 12);
+        arrow.style.left = `${left}px`;
+        arrow.style.top = `${top}px`;
+      };
+      position();
+      window.addEventListener("scroll", position, true);
+      window.addEventListener("resize", position);
+      arrow.__scoutCleanup = () => {
+        window.removeEventListener("scroll", position, true);
+        window.removeEventListener("resize", position);
+      };
+    }
+
+    removeTargetArrow() {
+      const arrow = document.querySelector(".scout-adoption-target-arrow");
+      arrow?.__scoutCleanup?.();
+      arrow?.remove();
+    }
+
+    attachRecoveryPanelDrag(panel) {
+      const handle = panel.querySelector("[data-drag-handle]") || panel;
+      let startX = 0;
+      let startY = 0;
+      let startLeft = 0;
+      let startTop = 0;
+      const onMove = (event) => {
+        const left = Math.min(window.innerWidth - panel.offsetWidth - 8, Math.max(8, startLeft + event.clientX - startX));
+        const top = Math.min(window.innerHeight - panel.offsetHeight - 8, Math.max(8, startTop + event.clientY - startY));
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+        panel.style.bottom = "auto";
+        panel.style.transform = "none";
+      };
+      const onUp = () => {
+        panel.dataset.dragging = "false";
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+      };
+      handle.addEventListener("pointerdown", (event) => {
+        if (event.target instanceof HTMLElement && event.target.closest("button")) return;
+        const rect = panel.getBoundingClientRect();
+        startX = event.clientX;
+        startY = event.clientY;
+        startLeft = rect.left;
+        startTop = rect.top;
+        panel.dataset.dragging = "true";
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp, { once: true });
+      });
+    }
+
+    continueWithRecoveredControl(step, control, onComplete) {
+      this.clear();
+      control.classList.add("scout-adoption-highlight");
+      focusTarget(control);
+      this.highlighted = control;
+      this.tooltip = createTooltip({
+        title: step.title,
+        message: step.message,
+        index: this.index,
+        total: this.steps.length,
+        target: control,
+        onBack: () => this.previous(onComplete),
+        onNext: () => this.next(onComplete),
+        onClose: () => this.stop(),
+        onGuideLink: (guideId) => this.openGuideLink(guideId)
+      });
+
+      if (step.type === "click" || step.trigger === "click") {
+        const advanceOnClick = (event) => {
+          if (isScoutPlayerEvent(event)) return;
+          control.removeEventListener("click", advanceOnClick);
+          this.next(onComplete);
+        };
+        control.addEventListener("click", advanceOnClick);
+      }
+
+      if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
+        const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
+        control.addEventListener(eventName, () => this.next(onComplete), { once: true });
+      }
     }
 
     showRecovery(message) {
-      document.querySelector(".scout-adoption-recovery")?.remove();
-      const banner = document.createElement("div");
-      banner.className = "scout-adoption-missing scout-adoption-recovery scout-adoption-recovery-toast";
-      banner.textContent = message;
-      document.body.appendChild(banner);
+      const banner = this.showRecoveryPanel(`
+        <div class="scout-adoption-recovery-body" style="text-align:center;">${escapeHtml(message)}</div>
+      `);
+      banner.classList.add("scout-adoption-recovery-toast");
     }
 
     openGuideLink(guideId) {
