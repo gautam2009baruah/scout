@@ -1,0 +1,321 @@
+// Core orchestration execution engine
+// Handles node execution, flow control, and context management
+
+import type {
+  OrchestrationExecution,
+  OrchestrationNode,
+  OrchestrationConnection,
+  NodeExecutionStatus,
+  NodeConfig,
+  ConditionNodeConfig,
+  AIDecisionNodeConfig,
+} from "@/shared/orchestrationTypes";
+
+import { executeWorkflowNode } from "./nodes/workflow-node";
+import { executeAIExtractionNode } from "./nodes/ai-extraction-node";
+import { executeAIDecisionNode } from "./nodes/ai-decision-node";
+import { executeConditionNode } from "./nodes/condition-node";
+import { executeHumanApprovalNode } from "./nodes/human-approval-node";
+import { executeNotificationNode } from "./nodes/notification-node";
+import { executeVariableNode } from "./nodes/variable-node";
+import { evaluateExpression } from "./expression-evaluator";
+
+export class OrchestrationEngine {
+  private execution: OrchestrationExecution;
+  private nodes: Map<string, OrchestrationNode>;
+  private connections: OrchestrationConnection[];
+  private context: Record<string, unknown>;
+
+  constructor(
+    execution: OrchestrationExecution,
+    nodes: OrchestrationNode[],
+    connections: OrchestrationConnection[]
+  ) {
+    this.execution = execution;
+    this.nodes = new Map(nodes.map((node) => [node.id, node]));
+    this.connections = connections;
+    this.context = execution.context;
+  }
+
+  /**
+   * Start or resume orchestration execution
+   */
+  async execute(): Promise<{
+    success: boolean;
+    status: "completed" | "paused" | "failed";
+    error?: string;
+  }> {
+    try {
+      // Find the starting node (trigger node or current node for resumption)
+      const startNodeId = this.execution.currentNodeId || this.findTriggerNode();
+
+      if (!startNodeId) {
+        throw new Error("No starting node found");
+      }
+
+      // Execute from the starting node
+      const result = await this.executeNode(startNodeId);
+
+      if (result.status === "paused") {
+        return { success: true, status: "paused" };
+      }
+
+      if (result.status === "failed") {
+        return { success: false, status: "failed", error: result.error };
+      }
+
+      return { success: true, status: "completed" };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      await this.recordExecutionError(errorMessage);
+      return { success: false, status: "failed", error: errorMessage };
+    }
+  }
+
+  /**
+   * Execute a single node and follow its connections
+   */
+  private async executeNode(
+    nodeId: string,
+    sourceHandle?: string
+  ): Promise<{
+    status: "completed" | "paused" | "failed";
+    error?: string;
+  }> {
+    const node = this.nodes.get(nodeId);
+    if (!node) {
+      throw new Error(`Node ${nodeId} not found`);
+    }
+
+    // Check if this is an end node
+    if (node.nodeType === "end") {
+      await this.recordNodeExecution(nodeId, "completed", {}, {});
+      return { status: "completed" };
+    }
+
+    // Record node execution start
+    const nodeExecutionId = await this.recordNodeExecution(
+      nodeId,
+      "running",
+      this.context,
+      null
+    );
+
+    try {
+      // Execute the node based on its type
+      const result = await this.executeNodeByType(node);
+
+      if (result.paused) {
+        // Human approval or async operation
+        await this.updateNodeExecution(nodeExecutionId, "running", null, null);
+        await this.updateExecutionStatus("paused", nodeId);
+        return { status: "paused" };
+      }
+
+      if (!result.success) {
+        await this.updateNodeExecution(
+          nodeExecutionId,
+          "failed",
+          null,
+          result.output,
+          result.error
+        );
+        return { status: "failed", error: result.error };
+      }
+
+      // Update context with node output
+      if (result.output) {
+        Object.assign(this.context, result.output);
+      }
+
+      // Record successful execution
+      await this.updateNodeExecution(
+        nodeExecutionId,
+        "completed",
+        this.context,
+        result.output
+      );
+
+      // Find next nodes to execute
+      const nextNodes = this.findNextNodes(nodeId, result.outputHandle);
+
+      if (nextNodes.length === 0) {
+        // No more nodes, orchestration complete
+        return { status: "completed" };
+      }
+
+      // Execute next nodes (sequential execution for now)
+      for (const nextNodeId of nextNodes) {
+        const nextResult = await this.executeNode(nextNodeId);
+        if (nextResult.status !== "completed") {
+          return nextResult;
+        }
+      }
+
+      return { status: "completed" };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      await this.updateNodeExecution(
+        nodeExecutionId,
+        "failed",
+        null,
+        null,
+        errorMessage
+      );
+      return { status: "failed", error: errorMessage };
+    }
+  }
+
+  /**
+   * Execute node based on its type
+   */
+  private async executeNodeByType(node: OrchestrationNode): Promise<{
+    success: boolean;
+    output?: Record<string, unknown>;
+    outputHandle?: string;
+    paused?: boolean;
+    error?: string;
+  }> {
+    const config = node.config as NodeConfig;
+
+    switch (node.nodeType) {
+      case "workflow":
+        return await executeWorkflowNode(config, this.context);
+
+      case "ai_extraction":
+        return await executeAIExtractionNode(config, this.context);
+
+      case "ai_decision":
+        return await executeAIDecisionNode(config, this.context);
+
+      case "condition":
+        return await executeConditionNode(config, this.context);
+
+      case "human_approval":
+        return await executeHumanApprovalNode(
+          config,
+          this.context,
+          this.execution.id,
+          node.id
+        );
+
+      case "notification":
+        return await executeNotificationNode(config, this.context);
+
+      case "variable":
+        return await executeVariableNode(config, this.context);
+
+      default:
+        throw new Error(`Unknown node type: ${node.nodeType}`);
+    }
+  }
+
+  /**
+   * Find the trigger node (starting point)
+   */
+  private findTriggerNode(): string | null {
+    for (const [nodeId, node] of this.nodes) {
+      if (node.nodeType === "trigger") {
+        return nodeId;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Find next nodes based on connections and conditions
+   */
+  private findNextNodes(nodeId: string, outputHandle?: string): string[] {
+    const connections = this.connections.filter(
+      (conn) =>
+        conn.sourceNodeId === nodeId &&
+        (!outputHandle || conn.sourceHandle === outputHandle)
+    );
+
+    return connections
+      .filter((conn) => this.evaluateConnectionCondition(conn))
+      .map((conn) => conn.targetNodeId);
+  }
+
+  /**
+   * Evaluate connection condition if present
+   */
+  private evaluateConnectionCondition(connection: OrchestrationConnection): boolean {
+    if (!connection.condition) {
+      return true;
+    }
+
+    try {
+      return evaluateExpression(connection.condition, this.context);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Record node execution (implementation calls DB)
+   */
+  private async recordNodeExecution(
+    nodeId: string,
+    status: NodeExecutionStatus,
+    input: Record<string, unknown> | null,
+    output: Record<string, unknown> | null
+  ): Promise<string> {
+    const node = this.nodes.get(nodeId);
+    if (!node) throw new Error(`Node ${nodeId} not found`);
+
+    // In production, this would insert into orchestration_node_executions table
+    // For now, return a mock ID
+    return crypto.randomUUID();
+  }
+
+  /**
+   * Update node execution status
+   */
+  private async updateNodeExecution(
+    nodeExecutionId: string,
+    status: NodeExecutionStatus,
+    input: Record<string, unknown> | null,
+    output: Record<string, unknown> | null,
+    error?: string
+  ): Promise<void> {
+    // In production, this would update orchestration_node_executions table
+  }
+
+  /**
+   * Update execution status
+   */
+  private async updateExecutionStatus(
+    status: "running" | "paused" | "completed" | "failed" | "cancelled",
+    currentNodeId?: string
+  ): Promise<void> {
+    // In production, this would update orchestration_executions table
+    this.execution.status = status;
+    if (currentNodeId) {
+      this.execution.currentNodeId = currentNodeId;
+    }
+  }
+
+  /**
+   * Record execution error
+   */
+  private async recordExecutionError(error: string): Promise<void> {
+    this.execution.status = "failed";
+    this.execution.errorMessage = error;
+    // In production, update database
+  }
+
+  /**
+   * Get current execution context
+   */
+  getContext(): Record<string, unknown> {
+    return this.context;
+  }
+
+  /**
+   * Update execution context
+   */
+  updateContext(updates: Record<string, unknown>): void {
+    Object.assign(this.context, updates);
+  }
+}
