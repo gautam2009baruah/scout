@@ -7,8 +7,13 @@ import type {
   OrchestrationConnection,
   NodeExecutionStatus,
   NodeConfig,
+  WorkflowNodeConfig,
+  AIExtractionNodeConfig,
   ConditionNodeConfig,
   AIDecisionNodeConfig,
+  HumanApprovalNodeConfig,
+  NotificationNodeConfig,
+  VariableNodeConfig,
 } from "@/shared/orchestrationTypes";
 
 import { executeWorkflowNode } from "./nodes/workflow-node";
@@ -117,7 +122,7 @@ export class OrchestrationEngine {
           nodeExecutionId,
           "failed",
           null,
-          result.output,
+          result.output ?? null,
           result.error
         );
         return { status: "failed", error: result.error };
@@ -133,7 +138,7 @@ export class OrchestrationEngine {
         nodeExecutionId,
         "completed",
         this.context,
-        result.output
+        result.output ?? null
       );
 
       // Find next nodes to execute
@@ -180,30 +185,30 @@ export class OrchestrationEngine {
 
     switch (node.nodeType) {
       case "workflow":
-        return await executeWorkflowNode(config, this.context);
+        return await executeWorkflowNode(config as WorkflowNodeConfig, this.context);
 
       case "ai_extraction":
-        return await executeAIExtractionNode(config, this.context);
+        return await executeAIExtractionNode(config as AIExtractionNodeConfig, this.context);
 
       case "ai_decision":
-        return await executeAIDecisionNode(config, this.context);
+        return await executeAIDecisionNode(config as AIDecisionNodeConfig, this.context);
 
       case "condition":
-        return await executeConditionNode(config, this.context);
+        return await executeConditionNode(config as ConditionNodeConfig, this.context);
 
       case "human_approval":
         return await executeHumanApprovalNode(
-          config,
+          config as HumanApprovalNodeConfig,
           this.context,
           this.execution.id,
           node.id
         );
 
       case "notification":
-        return await executeNotificationNode(config, this.context);
+        return await executeNotificationNode(config as NotificationNodeConfig, this.context);
 
       case "variable":
-        return await executeVariableNode(config, this.context);
+        return await executeVariableNode(config as VariableNodeConfig, this.context);
 
       default:
         throw new Error(`Unknown node type: ${node.nodeType}`);
@@ -214,7 +219,7 @@ export class OrchestrationEngine {
    * Find the trigger node (starting point)
    */
   private findTriggerNode(): string | null {
-    for (const [nodeId, node] of this.nodes) {
+    for (const [nodeId, node] of Array.from(this.nodes.entries())) {
       if (node.nodeType === "trigger") {
         return nodeId;
       }

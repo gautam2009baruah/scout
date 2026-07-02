@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { BarChart3, Bell, Bot, Building2, ChevronDown, FolderTree, LayoutDashboard, MapPinned, SlidersHorizontal, Sparkles, TableProperties, UsersRound } from "lucide-react";
+import { BarChart3, Bell, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, SlidersHorizontal, Sparkles, TableProperties, UsersRound } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
 import { ScoutChatbot } from "@/components/scout-chatbot";
@@ -24,6 +24,7 @@ const moduleIcons = {
 } as const;
 
 const TRAINING_SETUP_HREF = "/control-panel/administration/training-setup";
+const ORCHESTRATION_DESIGNER_HREF = "/control-panel/administration/orchestration-designer";
 const SELF_HEALING_REVIEW_HREF = "/control-panel/administration/self-healing-review";
 const WORKFLOW_ANALYTICS_HREF = "/control-panel/administration/workflow-analytics";
 const CRS_SCOUT_BASE_URL = "http://localhost:3000";
@@ -40,9 +41,10 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     visibleModules.get(MODULE_KEYS.aiConfiguration)
   ].filter(Boolean) as AdminSession["modules"];
   const isTrainingSetupActive = activeHref === TRAINING_SETUP_HREF;
+  const isOrchestrationDesignerActive = activeHref === ORCHESTRATION_DESIGNER_HREF;
   const isSelfHealingReviewActive = activeHref === SELF_HEALING_REVIEW_HREF;
   const isWorkflowAnalyticsActive = activeHref === WORKFLOW_ANALYTICS_HREF;
-  const isAdministrationActive = administrationModules.some((module) => module.key === active) || isTrainingSetupActive || isSelfHealingReviewActive || isWorkflowAnalyticsActive;
+  const isAdministrationActive = administrationModules.some((module) => module.key === active) || isTrainingSetupActive || isOrchestrationDesignerActive || isSelfHealingReviewActive || isWorkflowAnalyticsActive;
 
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
@@ -85,6 +87,17 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                       >
                         <MapPinned className="h-4 w-4" />
                         Training Setup
+                      </Link>
+                      <Link
+                        className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
+                          isOrchestrationDesignerActive
+                            ? "bg-slate-950 text-white shadow-sm"
+                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                        }`}
+                        href={ORCHESTRATION_DESIGNER_HREF}
+                      >
+                        <GitBranch className="h-4 w-4" />
+                        Orchestration Designer
                       </Link>
                       <Link
                         className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
