@@ -20,10 +20,16 @@ import { executeWorkflowNode } from "./nodes/workflow-node";
 import { executeAIExtractionNode } from "./nodes/ai-extraction-node";
 import { executeAIDecisionNode } from "./nodes/ai-decision-node";
 import { executeConditionNode } from "./nodes/condition-node";
-import { executeHumanApprovalNode } from "./nodes/human-approval-node";
+import { executeHumanApprovalNode, resumeAfterApproval } from "./nodes/human-approval-node";
 import { executeNotificationNode } from "./nodes/notification-node";
 import { executeVariableNode } from "./nodes/variable-node";
 import { evaluateExpression } from "./expression-evaluator";
+import {
+  updateExecution,
+  createNodeExecution,
+  updateNodeExecution,
+  getApprovals,
+} from "./db";
 
 export class OrchestrationEngine {
   private execution: OrchestrationExecution;
@@ -269,9 +275,17 @@ export class OrchestrationEngine {
     const node = this.nodes.get(nodeId);
     if (!node) throw new Error(`Node ${nodeId} not found`);
 
-    // In production, this would insert into orchestration_node_executions table
-    // For now, return a mock ID
-    return crypto.randomUUID();
+    const nodeExecution = await createNodeExecution({
+      executionId: this.execution.id,
+      nodeId: node.id,
+      nodeType: node.nodeType,
+      nodeLabel: node.label,
+      status,
+      input,
+      output,
+    });
+
+    return nodeExecution.id;
   }
 
   /**
@@ -284,7 +298,11 @@ export class OrchestrationEngine {
     output: Record<string, unknown> | null,
     error?: string
   ): Promise<void> {
-    // In production, this would update orchestration_node_executions table
+    await updateNodeExecution(nodeExecutionId, {
+      status,
+      output,
+      errorMessage: error,
+    });
   }
 
   /**
@@ -294,7 +312,11 @@ export class OrchestrationEngine {
     status: "running" | "paused" | "completed" | "failed" | "cancelled",
     currentNodeId?: string
   ): Promise<void> {
-    // In production, this would update orchestration_executions table
+    await updateExecution(this.execution.id, {
+      status,
+      currentNodeId: currentNodeId || null,
+      context: this.context,
+    });
     this.execution.status = status;
     if (currentNodeId) {
       this.execution.currentNodeId = currentNodeId;
@@ -305,9 +327,13 @@ export class OrchestrationEngine {
    * Record execution error
    */
   private async recordExecutionError(error: string): Promise<void> {
+    await updateExecution(this.execution.id, {
+      status: "failed",
+      errorMessage: error,
+      context: this.context,
+    });
     this.execution.status = "failed";
     this.execution.errorMessage = error;
-    // In production, update database
   }
 
   /**
@@ -322,5 +348,86 @@ export class OrchestrationEngine {
    */
   updateContext(updates: Record<string, unknown>): void {
     Object.assign(this.context, updates);
+  }
+
+  /**
+   * Resume execution after approval
+   * Called when an approval node has been responded to
+   */
+  async resumeAfterApproval(approvalId: string): Promise<{
+    success: boolean;
+    status: "completed" | "paused" | "failed";
+    error?: string;
+  }> {
+    try {
+      // Get the approval record
+      const approvals = await getApprovals({
+        executionId: this.execution.id,
+      });
+      const approval = approvals.find((a) => a.id === approvalId);
+
+      if (!approval) {
+        throw new Error(`Approval ${approvalId} not found`);
+      }
+
+      if (approval.status === "pending") {
+        throw new Error("Approval is still pending");
+      }
+
+      // Get the approval response
+      const approvalResponse = {
+        status: approval.status,
+        respondedAt: approval.respondedAt,
+        respondedByEmail: approval.respondedByEmail,
+        notes: approval.notes,
+        responseData: approval.responseData,
+      };
+
+      // Process the approval response
+      const result = await resumeAfterApproval(approvalResponse);
+
+      if (!result.success) {
+        throw new Error("Failed to process approval response");
+      }
+
+      // Update context with approval output
+      if (result.output) {
+        Object.assign(this.context, result.output);
+      }
+
+      // Find the current node (approval node)
+      const currentNodeId = this.execution.currentNodeId;
+      if (!currentNodeId) {
+        throw new Error("No current node found for resumption");
+      }
+
+      // Find next nodes based on approval result (approved/rejected handle)
+      const nextNodes = this.findNextNodes(currentNodeId, result.outputHandle);
+
+      if (nextNodes.length === 0) {
+        // No more nodes, mark as completed
+        await this.updateExecutionStatus("completed");
+        return { success: true, status: "completed" };
+      }
+
+      // Update execution to running
+      await this.updateExecutionStatus("running");
+
+      // Execute next nodes
+      for (const nextNodeId of nextNodes) {
+        const nextResult = await this.executeNode(nextNodeId);
+        if (nextResult.status !== "completed") {
+          return nextResult;
+        }
+      }
+
+      // All done
+      await this.updateExecutionStatus("completed");
+      return { success: true, status: "completed" };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      await this.recordExecutionError(errorMessage);
+      return { success: false, status: "failed", error: errorMessage };
+    }
   }
 }

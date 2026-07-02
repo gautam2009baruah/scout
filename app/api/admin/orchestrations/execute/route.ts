@@ -4,7 +4,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
-import type { OrchestrationExecution } from "@/shared/orchestrationTypes";
+import {
+  createExecution,
+  getExecutions,
+  getExecutionById,
+  getOrchestrationById,
+} from "@/lib/orchestrations/db";
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,25 +30,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create execution record
-    const execution: OrchestrationExecution = {
-      id: crypto.randomUUID(),
-      orchestrationId,
-      orchestrationVersion: 1,
-      status: "running",
-      context: {},
-      triggerData: triggerData || null,
-      startedAt: new Date().toISOString(),
-      completedAt: null,
-      errorMessage: null,
-      currentNodeId: null,
-      triggeredBy: session.user.email,
-    };
+    // Get orchestration to verify it exists and get version
+    const orchestration = await getOrchestrationById(orchestrationId);
+    if (!orchestration) {
+      return NextResponse.json(
+        { message: "Orchestration not found" },
+        { status: 404 }
+      );
+    }
 
-    // Start execution in background
-    // In production, this would queue the execution or start it in a worker
+    // Create execution record
+    const execution = await createExecution({
+      orchestrationId,
+      orchestrationVersion: orchestration.version,
+      context: {},
+      triggerData,
+      triggeredBy: session.user.email,
+    });
+
+    // TODO: Start execution in background worker
     // For now, return the execution record
-    
+    // In production, this would queue the execution or start it in a worker
+
     return NextResponse.json({ execution }, { status: 201 });
   } catch (error) {
     console.error("Error starting execution:", error);
@@ -69,14 +77,20 @@ export async function GET(request: NextRequest) {
 
     if (executionId) {
       // Get specific execution
-      // In production, query from database
-      return NextResponse.json({ execution: null });
+      const execution = await getExecutionById(executionId);
+      if (!execution) {
+        return NextResponse.json(
+          { message: "Execution not found" },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ execution });
     }
 
     if (orchestrationId) {
       // Get executions for orchestration
-      // In production, query from database
-      return NextResponse.json({ executions: [] });
+      const executions = await getExecutions({ orchestrationId });
+      return NextResponse.json({ executions });
     }
 
     return NextResponse.json(

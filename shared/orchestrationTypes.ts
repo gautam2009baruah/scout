@@ -89,6 +89,10 @@ export type WorkflowNodeConfig = {
   type: "workflow";
   workflowId?: string;
   workflowVersion?: number;
+  executionMode?: "manual" | "auto" | "scheduled"; // How to execute the workflow
+  targetUrl?: string; // Target URL for workflow execution (can be expression)
+  waitForCompletion?: boolean; // Whether to wait for workflow to complete
+  notifyUser?: boolean; // Whether to notify user for manual execution
   inputMapping: Record<string, string>; // variable expressions to workflow inputs
   outputMapping: Record<string, string>; // workflow outputs to variables
   continueOnFailure: boolean;

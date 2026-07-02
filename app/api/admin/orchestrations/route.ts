@@ -4,7 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
-import type { Orchestration } from "@/shared/orchestrationTypes";
+import { getOrchestrations, getOrchestrationById } from "@/lib/orchestrations/db";
+import type { OrchestrationStatus } from "@/shared/orchestrationTypes";
 
 export async function GET(request: NextRequest) {
   try {
@@ -18,11 +19,22 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const orchestrationId = searchParams.get("id");
     const companyId = searchParams.get("companyId");
-    const status = searchParams.get("status");
+    const status = searchParams.get("status") as OrchestrationStatus | null;
 
-    // Get orchestrations
-    // In production, query from database
-    const orchestrations: Orchestration[] = [];
+    // Get single orchestration by ID
+    if (orchestrationId) {
+      const orchestration = await getOrchestrationById(orchestrationId);
+      if (!orchestration) {
+        return NextResponse.json({ message: "Orchestration not found" }, { status: 404 });
+      }
+      return NextResponse.json({ orchestration });
+    }
+
+    // Get orchestrations with filters
+    const orchestrations = await getOrchestrations({
+      companyId: companyId || undefined,
+      status: status || undefined,
+    });
 
     return NextResponse.json({ orchestrations });
   } catch (error) {
@@ -54,25 +66,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create orchestration
-    // In production, insert into database
-    const orchestration: Orchestration = {
-      id: crypto.randomUUID(),
+    // Create orchestration in database
+    const { createOrchestration } = await import("@/lib/orchestrations/db");
+    const orchestration = await createOrchestration({
       companyId,
       name,
-      description: description || null,
-      version: 1,
-      status: "draft",
+      description,
       triggerType,
-      triggerConfig: triggerConfig || {},
-      variables: variables || {},
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      triggerConfig,
+      variables,
       createdByEmail: session.user.email,
-      updatedByEmail: session.user.email,
-      publishedAt: null,
-      publishedByEmail: null,
-    };
+    });
 
     return NextResponse.json({ orchestration }, { status: 201 });
   } catch (error) {
@@ -94,7 +98,7 @@ export async function PUT(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { id, name, description, triggerType, triggerConfig, variables } = body;
+    const { id, name, description, triggerType, triggerConfig, variables, publish } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -103,25 +107,23 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const { updateOrchestration, publishOrchestration } = await import("@/lib/orchestrations/db");
+
+    // Handle publish action
+    if (publish) {
+      const orchestration = await publishOrchestration(id, session.user.email);
+      return NextResponse.json({ orchestration });
+    }
+
     // Update orchestration
-    // In production, update database
-    const orchestration: Orchestration = {
-      id,
-      companyId: body.companyId,
+    const orchestration = await updateOrchestration(id, {
       name,
-      description: description || null,
-      version: body.version || 1,
-      status: body.status || "draft",
+      description,
       triggerType,
-      triggerConfig: triggerConfig || {},
-      variables: variables || {},
-      createdAt: body.createdAt,
-      updatedAt: new Date().toISOString(),
-      createdByEmail: body.createdByEmail,
+      triggerConfig,
+      variables,
       updatedByEmail: session.user.email,
-      publishedAt: body.publishedAt || null,
-      publishedByEmail: body.publishedByEmail || null,
-    };
+    });
 
     return NextResponse.json({ orchestration });
   } catch (error) {
@@ -152,8 +154,9 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Delete orchestration
-    // In production, delete from database (CASCADE will handle related records)
+    // Delete orchestration (CASCADE will handle related records)
+    const { deleteOrchestration } = await import("@/lib/orchestrations/db");
+    await deleteOrchestration(orchestrationId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

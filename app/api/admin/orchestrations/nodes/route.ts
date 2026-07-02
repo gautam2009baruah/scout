@@ -4,7 +4,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
-import type { OrchestrationNode } from "@/shared/orchestrationTypes";
+import { getNodes, createNode, updateNode, deleteNode } from "@/lib/orchestrations/db";
+import type { NodeType } from "@/shared/orchestrationTypes";
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,8 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get nodes for orchestration
-    // In production, query from database
-    const nodes: OrchestrationNode[] = [];
+    const nodes = await getNodes(orchestrationId);
 
     return NextResponse.json({ nodes });
   } catch (error) {
@@ -56,17 +56,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Create node
-    const node: OrchestrationNode = {
-      id: crypto.randomUUID(),
+    const node = await createNode({
       orchestrationId,
-      nodeType,
+      nodeType: nodeType as NodeType,
       label,
       positionX: positionX || 0,
       positionY: positionY || 0,
       config: config || {},
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    });
 
     return NextResponse.json({ node }, { status: 201 });
   } catch (error) {
@@ -92,9 +89,14 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update node
-    // In production, update database
+    const node = await updateNode(id, {
+      label,
+      positionX,
+      positionY,
+      config,
+    });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ node });
   } catch (error) {
     console.error("Error updating node:", error);
     return NextResponse.json({ message: "Failed to update node" }, { status: 500 });
@@ -118,7 +120,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete node
-    // In production, delete from database
+    await deleteNode(nodeId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

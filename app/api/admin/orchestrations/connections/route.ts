@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
-import type { OrchestrationConnection } from "@/shared/orchestrationTypes";
+import { getConnections, createConnection, deleteConnection } from "@/lib/orchestrations/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,8 +26,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get connections for orchestration
-    // In production, query from database
-    const connections: OrchestrationConnection[] = [];
+    const connections = await getConnections(orchestrationId);
 
     return NextResponse.json({ connections });
   } catch (error) {
@@ -54,16 +53,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Create connection
-    const connection: OrchestrationConnection = {
-      id: crypto.randomUUID(),
+    const connection = await createConnection({
       orchestrationId,
       sourceNodeId,
       targetNodeId,
-      sourceHandle: sourceHandle || null,
-      targetHandle: targetHandle || null,
-      condition: condition || null,
-      createdAt: new Date().toISOString(),
-    };
+      sourceHandle,
+      targetHandle,
+      condition,
+    });
 
     return NextResponse.json({ connection }, { status: 201 });
   } catch (error) {
@@ -89,7 +86,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete connection
-    // In production, delete from database
+    await deleteConnection(connectionId);
 
     return NextResponse.json({ success: true });
   } catch (error) {

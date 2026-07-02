@@ -1,8 +1,13 @@
 // Workflow node executor
-// Executes an existing Scout workflow
+// Executes an existing Scout guided workflow
 
 import type { WorkflowNodeConfig } from "@/shared/orchestrationTypes";
 import { evaluateExpression } from "../expression-evaluator";
+import {
+  executeGuidedWorkflow,
+  waitForWorkflowCompletion,
+  type WorkflowExecutionMode,
+} from "@/lib/guided-workflows/executor";
 
 export async function executeWorkflowNode(
   config: WorkflowNodeConfig,
@@ -17,33 +22,84 @@ export async function executeWorkflowNode(
       throw new Error("Workflow ID is required");
     }
 
+    // Evaluate workflow ID (can be dynamic expression)
+    const workflowId =
+      typeof config.workflowId === "string"
+        ? config.workflowId
+        : String(evaluateExpression(config.workflowId, context));
+
     // Evaluate input mappings using expressions
     const workflowInputs: Record<string, unknown> = {};
-    for (const [key, expression] of Object.entries(config.inputMapping)) {
-      workflowInputs[key] = evaluateExpression(expression, context);
-    }
-
-    // Execute the workflow
-    // In production, this would call the existing workflow execution engine
-    // For now, we'll simulate a successful execution
-    const workflowOutput = {
-      success: true,
-      result: {
-        // Mock workflow output
-        executionId: crypto.randomUUID(),
-        completedAt: new Date().toISOString(),
-      },
-    };
-
-    // Map workflow outputs to context variables
-    const output: Record<string, unknown> = {};
-    for (const [contextVar, workflowVar] of Object.entries(config.outputMapping)) {
-      const value = workflowOutput.result[workflowVar as keyof typeof workflowOutput.result];
-      if (value !== undefined) {
-        output[contextVar] = value;
+    if (config.inputMapping) {
+      for (const [key, expression] of Object.entries(config.inputMapping)) {
+        workflowInputs[key] = evaluateExpression(expression, context);
       }
     }
 
+    // Evaluate target URL if provided
+    const targetUrl = config.targetUrl
+      ? String(evaluateExpression(config.targetUrl, context))
+      : undefined;
+
+    // Determine user ID from context if available
+    const userId = context.userId ? String(context.userId) : undefined;
+
+    // Execute the guided workflow
+    const executionResult = await executeGuidedWorkflow({
+      workflowId,
+      userId,
+      executionMode: (config.executionMode as WorkflowExecutionMode) || "auto",
+      parameters: workflowInputs,
+      targetUrl,
+      timeout: config.timeout,
+      notifyUser: config.notifyUser !== false,
+    });
+
+    // If configured to wait for completion, poll for status
+    if (config.waitForCompletion && executionResult.status === "initiated") {
+      const timeout = config.timeout || 300000; // 5 minutes default
+      const completionResult = await waitForWorkflowCompletion(
+        executionResult.executionId,
+        timeout
+      );
+
+      // Map completion result outputs
+      const output = mapWorkflowOutput(completionResult, config.outputMapping);
+
+      if (completionResult.status === "completed") {
+        return { success: true, output };
+      }
+
+      if (completionResult.status === "timeout") {
+        if (config.continueOnFailure) {
+          return {
+            success: true,
+            output: {
+              ...output,
+              timeout: true,
+              message: "Workflow execution timeout",
+            },
+          };
+        }
+        return { success: false, error: "Workflow execution timeout" };
+      }
+
+      if (config.continueOnFailure) {
+        return {
+          success: true,
+          output: {
+            ...output,
+            error: completionResult.error,
+            failed: true,
+          },
+        };
+      }
+
+      return { success: false, error: completionResult.error || "Workflow failed" };
+    }
+
+    // Not waiting for completion - return immediately with execution info
+    const output = mapWorkflowOutput(executionResult, config.outputMapping);
     return { success: true, output };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -51,10 +107,52 @@ export async function executeWorkflowNode(
     if (config.continueOnFailure) {
       return {
         success: true,
-        output: { error: errorMessage },
+        output: { error: errorMessage, failed: true },
       };
     }
 
     return { success: false, error: errorMessage };
   }
+}
+
+/**
+ * Map workflow execution result to output variables based on outputMapping config
+ */
+function mapWorkflowOutput(
+  executionResult: {
+    executionId: string;
+    workflowId: string;
+    workflowTitle: string;
+    status: string;
+    steps?: number;
+    duration?: number;
+    output?: Record<string, unknown>;
+  },
+  outputMapping?: Record<string, string>
+): Record<string, unknown> {
+  const defaultOutput = {
+    executionId: executionResult.executionId,
+    workflowId: executionResult.workflowId,
+    workflowTitle: executionResult.workflowTitle,
+    status: executionResult.status,
+    steps: executionResult.steps,
+    duration: executionResult.duration,
+    ...executionResult.output,
+  };
+
+  if (!outputMapping || Object.keys(outputMapping).length === 0) {
+    return defaultOutput;
+  }
+
+  // Map specific output fields to context variables
+  const mappedOutput: Record<string, unknown> = {};
+  for (const [contextVar, workflowVar] of Object.entries(outputMapping)) {
+    const value = defaultOutput[workflowVar as keyof typeof defaultOutput];
+    if (value !== undefined) {
+      mappedOutput[contextVar] = value;
+    }
+  }
+
+  // Include unmapped default fields
+  return { ...defaultOutput, ...mappedOutput };
 }

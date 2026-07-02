@@ -3,7 +3,12 @@
 
 import type { AIDecisionNodeConfig } from "@/shared/orchestrationTypes";
 import { resolveVariablePath } from "../expression-evaluator";
+import { getLLMProvider } from "@/lib/llm/providers";
 
+/**
+ * Use AI to analyze input and decide which path to take
+ * Returns an output handle for conditional routing
+ */
 export async function executeAIDecisionNode(
   config: AIDecisionNodeConfig,
   context: Record<string, unknown>
@@ -21,36 +26,152 @@ export async function executeAIDecisionNode(
       throw new Error(`Input source "${config.inputSource}" not found in context`);
     }
 
-    // Prepare decision request
-    const decisionOptions = config.decisions.map((d) => `${d.label}: ${d.description || ""}`).join("\n");
-    const fullPrompt = `${config.prompt}\n\nInput:\n${JSON.stringify(inputData, null, 2)}\n\nDecision options:\n${decisionOptions}\n\nRespond with only the label of the chosen decision.`;
+    // Prepare input text
+    let inputText: string;
+    if (typeof inputData === "string") {
+      inputText = inputData;
+    } else {
+      inputText = JSON.stringify(inputData, null, 2);
+    }
+
+    // Build decision prompt
+    const systemPrompt = buildDecisionSystemPrompt(config);
+    const userPrompt = buildDecisionUserPrompt(inputText, config);
 
     // Call AI provider
-    // In production, this would use the configured AI provider
-    // For now, we'll use the first decision as default
-    const aiResponse = config.decisions[0]?.label || "";
+    const provider = await getLLMProvider();
+    const aiResponse = await provider.generate_answer(systemPrompt, userPrompt, "");
+
+    // Parse AI decision
+    const decisionLabel = parseDecisionResponse(aiResponse, config);
 
     // Find matching decision
     const matchingDecision = config.decisions.find(
-      (d) => d.label.toLowerCase() === aiResponse.toLowerCase()
+      (d) => d.label.toLowerCase() === decisionLabel.toLowerCase()
     );
 
-    const outputHandle = matchingDecision?.outputHandle || config.defaultDecision;
+    if (!matchingDecision) {
+      // Use default decision if no match found
+      if (config.defaultDecision) {
+        return {
+          success: true,
+          outputHandle: config.defaultDecision,
+          output: {
+            decision: "default",
+            handle: config.defaultDecision,
+            aiResponse: decisionLabel,
+            reason: "No matching decision found, using default",
+          },
+        };
+      }
 
-    if (!outputHandle) {
-      throw new Error(`No matching decision found for AI response: ${aiResponse}`);
+      throw new Error(
+        `No matching decision found for AI response: "${decisionLabel}". Available options: ${config.decisions.map((d) => d.label).join(", ")}`
+      );
     }
 
     return {
       success: true,
-      outputHandle,
+      outputHandle: matchingDecision.outputHandle,
       output: {
-        decision: aiResponse,
-        handle: outputHandle,
+        decision: matchingDecision.label,
+        handle: matchingDecision.outputHandle,
+        aiResponse: decisionLabel,
       },
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+    // If default decision is configured, use it on error
+    if (config.defaultDecision) {
+      return {
+        success: true,
+        outputHandle: config.defaultDecision,
+        output: {
+          decision: "default",
+          handle: config.defaultDecision,
+          error: errorMessage,
+          reason: "Error occurred, using default decision",
+        },
+      };
+    }
+
     return { success: false, error: errorMessage };
   }
+}
+
+/**
+ * Build system prompt for decision making
+ */
+function buildDecisionSystemPrompt(config: AIDecisionNodeConfig): string {
+  const decisionsList = config.decisions
+    .map((d) => {
+      const desc = d.description ? ` - ${d.description}` : "";
+      return `- "${d.label}"${desc}`;
+    })
+    .join("\n");
+
+  return [
+    "You are a decision-making assistant.",
+    "Analyze the provided input and choose the most appropriate decision from the available options.",
+    "Respond with ONLY the exact label of the chosen decision.",
+    "Do not include explanations, reasoning, or additional text.",
+    "",
+    "Available decisions:",
+    decisionsList,
+  ].join("\n");
+}
+
+/**
+ * Build user prompt for decision
+ */
+function buildDecisionUserPrompt(
+  inputText: string,
+  config: AIDecisionNodeConfig
+): string {
+  return [
+    config.prompt,
+    "",
+    "Input to analyze:",
+    inputText,
+    "",
+    "Respond with only the decision label.",
+  ].join("\n");
+}
+
+/**
+ * Parse AI response to extract decision label
+ */
+function parseDecisionResponse(
+  response: string,
+  config: AIDecisionNodeConfig
+): string {
+  // Clean up response
+  const cleaned = response
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "") // Remove quotes
+    .replace(/^Decision:\s*/i, "") // Remove "Decision:" prefix
+    .split("\n")[0] // Take first line only
+    .trim();
+
+  // Try exact match first
+  const exactMatch = config.decisions.find(
+    (d) => d.label.toLowerCase() === cleaned.toLowerCase()
+  );
+
+  if (exactMatch) {
+    return exactMatch.label;
+  }
+
+  // Try partial match
+  const partialMatch = config.decisions.find((d) =>
+    cleaned.toLowerCase().includes(d.label.toLowerCase())
+  );
+
+  if (partialMatch) {
+    return partialMatch.label;
+  }
+
+  // Return cleaned response if no match
+  return cleaned;
 }
