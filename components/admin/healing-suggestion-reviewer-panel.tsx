@@ -54,6 +54,8 @@ type HealingSuggestion = {
   last_playback_attempt_at: string;
   session_title?: string;
   topic_title?: string;
+  reviewed_at?: string;
+  reviewed_by_email?: string;
 };
 
 type EditModalData = {
@@ -65,9 +67,10 @@ export type HealingSuggestionReviewerPanelProps = {
   embedded?: boolean;
   workflowId?: string;
   stepId?: string;
+  onClose?: () => void;
 };
 
-export function HealingSuggestionReviewerPanel({ embedded = false, workflowId, stepId }: HealingSuggestionReviewerPanelProps) {
+export function HealingSuggestionReviewerPanel({ embedded = false, workflowId, stepId, onClose }: HealingSuggestionReviewerPanelProps) {
   const [suggestions, setSuggestions] = useState<HealingSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -167,9 +170,16 @@ export function HealingSuggestionReviewerPanel({ embedded = false, workflowId, s
           <h2 className="text-lg font-semibold tracking-normal text-slate-950">Self-Healing Review</h2>
           <p className="mt-1 text-sm text-slate-500">Review workflow self-healing suggestions from playback sessions.</p>
         </div>
-        <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50" onClick={() => void loadSuggestions()} type="button">
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
-        </button>
+        <div className="flex gap-2">
+          <button aria-label="Refresh" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50" onClick={() => void loadSuggestions()} title="Refresh" type="button">
+            <RefreshCw className="h-4 w-4" />
+          </button>
+          {onClose && (
+            <button aria-label="Close" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50" onClick={onClose} title="Close" type="button">
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-1 border-b border-slate-200">
@@ -234,29 +244,34 @@ function SuggestionCard({ index, onApprove, onDelete, onEdit, onReject, processi
   const [expanded, setExpanded] = useState(false);
   const confidence = numericConfidence(suggestion.confidence_score);
   const identity = suggestion.proposed_element_identity || suggestion.original_element_identity;
+  const userDecision = getUserDecisionFromReason(suggestion.healing_reason);
 
   return (
     <article className="rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
-        <button
-          className="flex h-6 w-6 items-center justify-center rounded hover:bg-slate-200"
-          onClick={() => setExpanded(!expanded)}
-          type="button"
-        >
-          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </button>
+      <button
+        className="flex w-full items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3 text-left hover:bg-slate-100"
+        onClick={() => setExpanded(!expanded)}
+        type="button"
+      >
+        {expanded ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[10px] font-bold text-white">{index}</span>
-            <p className="truncate text-sm font-semibold text-slate-950">Step {suggestion.step_order} · {suggestion.workflow_title}</p>
+            <p className="truncate text-sm font-semibold text-slate-950">Step {suggestion.step_order}</p>
           </div>
           {(suggestion.session_title || suggestion.topic_title) && (
             <p className="mt-1 text-xs text-slate-500">
               {suggestion.session_title || ""}{suggestion.session_title && suggestion.topic_title ? " • " : ""}{suggestion.topic_title || ""}
             </p>
           )}
+          {(statusFilter === "approved" || statusFilter === "rejected") && suggestion.reviewed_at && (
+            <p className="mt-1 text-xs text-slate-500">
+              {statusFilter === "approved" ? "Approved" : "Rejected"} by {suggestion.reviewed_by_email || "Unknown"} on {formatDateTimeUTC(suggestion.reviewed_at)}
+            </p>
+          )}
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+          {userDecision && <Badge tone={userDecision === "accepted" ? "emerald" : userDecision === "rejected" ? "red" : "amber"}>{userDecision}</Badge>}
           <Badge tone={confidence >= 95 ? "emerald" : confidence >= 75 ? "amber" : "slate"}>{confidence.toFixed(0)}%</Badge>
           {statusFilter === "pending" ? (
             <>
@@ -269,15 +284,17 @@ function SuggestionCard({ index, onApprove, onDelete, onEdit, onReject, processi
             <Badge tone={statusFilter === "approved" ? "emerald" : "red"}>{statusFilter}</Badge>
           )}
         </div>
-      </div>
+      </button>
       {expanded && (
         <div className="grid gap-4 p-4 text-sm">
           {identity && <ControlIdentityDetails identity={identity} />}
           <SelectorList candidates={suggestion.proposed_selector_candidates ?? []} />
           <div className="flex flex-wrap justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
             <span>Attempts: {suggestion.playback_attempt_count}</span>
-            <span>{new Date(suggestion.last_playback_attempt_at).toLocaleString()}</span>
+            <span>{formatDateTimeUTC(suggestion.last_playback_attempt_at)}</span>
           </div>
+        </div>
+      )}
         </div>
       )}
     </article>
@@ -285,54 +302,83 @@ function SuggestionCard({ index, onApprove, onDelete, onEdit, onReject, processi
 }
 
 function ControlIdentityDetails({ identity }: { identity: ElementIdentity }) {
+  const [open, setOpen] = useState(true);
+  
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Control Identification Details</p>
-      <div className="grid gap-2 text-xs">
-        {identity.tagName && <DetailRow label="Tag" value={identity.tagName} />}
-        {identity.role && <DetailRow label="Role" value={identity.role} />}
-        {identity.accessibleName && <DetailRow label="Accessible Name" value={identity.accessibleName} />}
-        {identity.text && <DetailRow label="Text" value={identity.text} />}
-        {identity.ariaLabel && <DetailRow label="Aria Label" value={identity.ariaLabel} />}
-        {identity.labelText && <DetailRow label="Label Text" value={identity.labelText} />}
-        {identity.placeholder && <DetailRow label="Placeholder" value={identity.placeholder} />}
-        {identity.inputType && <DetailRow label="Input Type" value={identity.inputType} />}
-        {identity.selectedOptionText && <DetailRow label="Selected Option" value={identity.selectedOptionText} />}
-        {identity.name && <DetailRow label="Name" value={identity.name} />}
-        {identity.id && <DetailRow label="ID" value={identity.id} />}
-        {identity.dataAttributes && Object.keys(identity.dataAttributes).length > 0 && (
-          <DetailRow label="Data Attributes" value={JSON.stringify(identity.dataAttributes, null, 2)} mono />
-        )}
-        {identity.nearbyHeading && <DetailRow label="Nearby Heading" value={identity.nearbyHeading} />}
-        {identity.parentContainerText && <DetailRow label="Parent Container" value={identity.parentContainerText} />}
-        {identity.previousSiblingText && <DetailRow label="Previous Sibling" value={identity.previousSiblingText} />}
-        {identity.nextSiblingText && <DetailRow label="Next Sibling" value={identity.nextSiblingText} />}
-        {identity.parentTagName && <DetailRow label="Parent Tag" value={identity.parentTagName} />}
-        {identity.parentRole && <DetailRow label="Parent Role" value={identity.parentRole} />}
-        {identity.parentAccessibleName && <DetailRow label="Parent Accessible Name" value={identity.parentAccessibleName} />}
-        {identity.parentText && <DetailRow label="Parent Text" value={identity.parentText} />}
-        {identity.formTitle && <DetailRow label="Form Title" value={identity.formTitle} />}
-        {identity.dialogTitle && <DetailRow label="Dialog Title" value={identity.dialogTitle} />}
-        {identity.cardTitle && <DetailRow label="Card Title" value={identity.cardTitle} />}
-        {identity.url && <DetailRow label="URL" value={identity.url} />}
-        {identity.path && <DetailRow label="Path" value={identity.path} />}
-        {identity.cssFallback && <DetailRow label="CSS Fallback" value={identity.cssFallback} mono />}
-        {identity.xpathFallback && <DetailRow label="XPath Fallback" value={identity.xpathFallback} mono />}
-        {identity.boundingBox && (
-          <DetailRow label="Bounding Box" value={`x: ${identity.boundingBox.x}, y: ${identity.boundingBox.y}, w: ${identity.boundingBox.width}, h: ${identity.boundingBox.height}`} />
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setOpen(!open)} type="button">
+          <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`} />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-slate-700">Control identification details</p>
+            <p className="mt-1 truncate text-[11px] text-slate-500">{getControlSummary(identity)}</p>
+          </div>
+        </button>
       </div>
+
+      {open && (
+        <>
+          <div className="mt-3 border-t border-slate-200 pt-3">
+            <p className="text-[11px] text-slate-500">Properties captured from the control during playback.</p>
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <ReadOnlyField label="Tag name" value={identity.tagName} />
+            <ReadOnlyField label="Role" value={identity.role} />
+            <ReadOnlyField label="Accessible name" value={identity.accessibleName} />
+            <ReadOnlyField label="Label text" value={identity.labelText} />
+            <ReadOnlyField label="Visible text" value={identity.text} />
+            <ReadOnlyField label="ARIA label" value={identity.ariaLabel} />
+            <ReadOnlyField label="Placeholder" value={identity.placeholder} />
+            <ReadOnlyField label="Name" value={identity.name} />
+            <ReadOnlyField label="Input type" value={identity.inputType} />
+            <ReadOnlyField label="Selected option text" value={identity.selectedOptionText} />
+            <ReadOnlyField label="Nearby heading" value={identity.nearbyHeading} />
+            <ReadOnlyField label="Parent container text" value={identity.parentContainerText} />
+            <ReadOnlyField label="Previous sibling text" value={identity.previousSiblingText} />
+            <ReadOnlyField label="Next sibling text" value={identity.nextSiblingText} />
+            <ReadOnlyField label="Parent tag name" value={identity.parentTagName} />
+            <ReadOnlyField label="Parent role" value={identity.parentRole} />
+            <ReadOnlyField label="Parent accessible name" value={identity.parentAccessibleName} />
+            <ReadOnlyField label="Parent text" value={identity.parentText} />
+            <ReadOnlyField label="Form title" value={identity.formTitle} />
+            <ReadOnlyField label="Dialog title" value={identity.dialogTitle} />
+            <ReadOnlyField label="Card title" value={identity.cardTitle} />
+            <ReadOnlyField label="CSS fallback" value={identity.cssFallback} />
+            <ReadOnlyField label="XPath fallback" value={identity.xpathFallback} />
+            {identity.dataAttributes && Object.keys(identity.dataAttributes).length > 0 && (
+              <div className="xl:col-span-3 md:col-span-2">
+                <ReadOnlyField label="Data attributes" value={JSON.stringify(identity.dataAttributes)} />
+              </div>
+            )}
+            {identity.boundingBox && (
+              <ReadOnlyField label="Bounding box" value={`x:${identity.boundingBox.x} y:${identity.boundingBox.y} w:${identity.boundingBox.width} h:${identity.boundingBox.height}`} />
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-function DetailRow({ label, mono, value }: { label: string; mono?: boolean; value: string }) {
+function ReadOnlyField({ label, value }: { label: string; value?: string }) {
+  if (!value) return null;
   return (
-    <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
-      <span className="font-semibold text-slate-600">{label}:</span>
-      <span className={mono ? "font-mono text-slate-800" : "text-slate-800"}>{value}</span>
-    </div>
+    <label className="grid gap-1 text-[11px] font-semibold text-slate-600">
+      {label}
+      <div className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs font-normal text-slate-900 flex items-center overflow-hidden">
+        <span className="truncate">{value}</span>
+      </div>
+    </label>
   );
+}
+
+function getControlSummary(identity: ElementIdentity): string {
+  const parts: string[] = [];
+  if (identity.tagName) parts.push(identity.tagName);
+  if (identity.role) parts.push(`role=${identity.role}`);
+  if (identity.text) parts.push(`"${identity.text.slice(0, 30)}"`);
+  if (identity.ariaLabel) parts.push(`aria-label="${identity.ariaLabel.slice(0, 30)}"`);
+  return parts.join(" · ") || "No identification data";
 }
 
 function SelectorList({ candidates }: { candidates: SelectorCandidate[] }) {
@@ -385,16 +431,16 @@ function EditModal({ data, onClose, onSave, processing }: {
             </div>
           )}
           <div>
-            <p className="mb-2 text-sm font-semibold uppercase text-slate-600">Selector Candidates</p>
-            <div className="grid gap-3">
+            <p className="mb-2 text-sm font-semibold text-slate-700">Selector candidates</p>
+            <div className="grid gap-2">
               {candidates.map((candidate, index) => (
-                <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[160px_minmax(0,1fr)_100px]" key={`${candidate.type}-${index}`}>
-                  <select className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { type: event.target.value as SelectorCandidateType })} value={candidate.type}>
-                    {selectorTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 lg:grid-cols-[150px_minmax(0,1fr)_110px_minmax(180px,.7fr)]" key={`${candidate.type}-${index}`}>
+                  <select className="h-9 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { type: event.target.value as SelectorCandidateType })} value={candidate.type}>
+                    {selectorTypes.map((type) => <option key={type} value={type}>{humanizeKey(type)}</option>)}
                   </select>
-                  <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { value: event.target.value })} value={candidate.value} />
-                  <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} max={100} min={0} onChange={(event) => updateCandidate(index, { confidence: Number(event.target.value) })} type="number" value={candidate.confidence} />
-                  <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900 md:col-span-3" disabled={processing} onChange={(event) => updateCandidate(index, { reason: event.target.value })} placeholder="Reason" value={candidate.reason} />
+                  <input className="h-9 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { value: event.target.value })} placeholder="Selector value" value={candidate.value} />
+                  <input className="h-9 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-slate-900" disabled={processing} max={1} min={0} onChange={(event) => updateCandidate(index, { confidence: Number(event.target.value) })} step={0.01} type="number" value={candidate.confidence} />
+                  <input className="h-9 rounded-md border border-slate-200 px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { reason: event.target.value })} placeholder="Reason" value={candidate.reason} />
                 </div>
               ))}
             </div>
@@ -436,4 +482,22 @@ function userDecisionLabel(reason: string) {
 function numericConfidence(value: HealingSuggestion["confidence_score"]) {
   const score = typeof value === "number" ? value : Number(value);
   return Number.isFinite(score) ? score : 0;
+}
+
+function formatDateTimeUTC(dateString: string): string {
+  const date = new Date(dateString);
+  const formatted = date.toUTCString().replace('GMT', '').trim();
+  return `${formatted} (UTC)`;
+}
+
+function getUserDecisionFromReason(reason: string): "accepted" | "rejected" | "skipped" | null {
+  const normalized = reason.toLowerCase();
+  if (normalized.includes("accepted")) return "accepted";
+  if (normalized.includes("rejected")) return "rejected";
+  if (normalized.includes("skipped")) return "skipped";
+  return null;
+}
+
+function humanizeKey(value: string): string {
+  return value.replace(/[-_]/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }

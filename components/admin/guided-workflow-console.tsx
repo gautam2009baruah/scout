@@ -1023,22 +1023,7 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
       {healingReviewStepId && sessionGuide ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onClick={() => setHealingReviewStepId(null)}>
           <div className="max-h-[88vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-base font-semibold text-slate-950">Workflow Self-Healing Suggestions</p>
-                <p className="mt-1 text-sm text-slate-500">Review pending user playback decisions for this step.</p>
-              </div>
-              <button
-                aria-label="Close self-healing review"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                onClick={() => setHealingReviewStepId(null)}
-                title="Close self-healing review"
-                type="button"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <HealingSuggestionReviewer embedded stepId={healingReviewStepId} workflowId={sessionGuide.id} />
+            <HealingSuggestionReviewer embedded onClose={() => setHealingReviewStepId(null)} stepId={healingReviewStepId} workflowId={sessionGuide.id} />
           </div>
         </div>
       ) : null}
