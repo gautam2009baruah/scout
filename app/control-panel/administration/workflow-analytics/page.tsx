@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AdminShell, WorkflowAnalyticsDashboard } from "@/components/admin";
+import { getMasterData } from "@/lib/admin/administration";
+import { listGuidedWorkflowRecordingSessions, listGuidedWorkflowTargetApps } from "@/lib/admin/guided-workflows";
 import { MODULE_KEYS, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
@@ -17,9 +19,15 @@ export default async function WorkflowAnalyticsPage() {
 
   requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
+  const [{ companies }, targetApps, recordingSessions] = await Promise.all([
+    getMasterData(),
+    listGuidedWorkflowTargetApps(session),
+    listGuidedWorkflowRecordingSessions(session)
+  ]);
+
   return (
     <AdminShell active={MODULE_KEYS.guidedWorkflows} activeHref="/control-panel/administration/workflow-analytics" session={session} title="Workflow Analytics">
-      <WorkflowAnalyticsDashboard />
+      <WorkflowAnalyticsDashboard companies={companies} recordingSessions={recordingSessions} targetApps={targetApps} />
     </AdminShell>
   );
 }

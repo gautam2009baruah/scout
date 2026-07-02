@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Activity, AlertTriangle, Bot, ChevronLeft, ChevronRight, Clock, Download, HeartPulse, RotateCcw, TimerReset, TrendingUp } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Activity, AlertTriangle, Bot, ChevronLeft, ChevronRight, Clock, Download, HeartPulse, ListFilter, RotateCcw, TimerReset, TrendingUp } from "lucide-react";
+import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
+
+type CompanyOption = { id: string; name: string };
 
 type AnalyticsResponse = {
   summary: {
@@ -77,17 +80,20 @@ const emptyRawData: RawAnalyticsResponse = {
   },
 };
 
-export function WorkflowAnalyticsDashboard() {
+export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], recordingSessions = [] }: {
+  companies?: CompanyOption[];
+  targetApps?: GuidedWorkflowTargetAppRow[];
+  recordingSessions?: GuidedWorkflowRecordingSessionRow[];
+}) {
   const [days, setDays] = useState("30");
   const [appliedDays, setAppliedDays] = useState("30");
-  const [companyId, setCompanyId] = useState("");
-  const [targetAppId, setTargetAppId] = useState("");
-  const [sessionId, setSessionId] = useState("");
-  const [topicId, setTopicId] = useState("");
-  const [appliedCompanyId, setAppliedCompanyId] = useState("");
-  const [appliedTargetAppId, setAppliedTargetAppId] = useState("");
-  const [appliedSessionId, setAppliedSessionId] = useState("");
-  const [appliedTopicId, setAppliedTopicId] = useState("");
+  const [filters, setFilters] = useState({
+    companyId: companies[0]?.id ?? "",
+    targetAppId: "",
+    sessionId: "",
+    topicId: "all"
+  });
+  const [appliedFilters, setAppliedFilters] = useState(filters);
   const [data, setData] = useState<AnalyticsResponse>(emptyData);
   const [rawData, setRawData] = useState<RawAnalyticsResponse>(emptyRawData);
   const [loading, setLoading] = useState(true);
@@ -97,13 +103,42 @@ export function WorkflowAnalyticsDashboard() {
   const [rawPage, setRawPage] = useState(1);
   const [rawPageSize, setRawPageSize] = useState(25);
 
+  const filteredTargetApps = useMemo(
+    () => targetApps.filter((app) => !filters.companyId || app.companyId === filters.companyId),
+    [filters.companyId, targetApps]
+  );
+  const filteredRecordingSessions = useMemo(
+    () => recordingSessions.filter((session) => {
+      const matchesCompany = !filters.companyId || session.companyId === filters.companyId;
+      const matchesTargetApp = !filters.targetAppId || session.targetAppId === filters.targetAppId;
+      return matchesCompany && matchesTargetApp;
+    }),
+    [filters.companyId, filters.targetAppId, recordingSessions]
+  );
+  const filteredTopics = useMemo(
+    () => filteredRecordingSessions
+      .filter((session) => !filters.sessionId || session.id === filters.sessionId)
+      .flatMap((session) => session.topics.map((topic) => ({ ...topic, sessionId: session.id }))),
+    [filteredRecordingSessions, filters.sessionId]
+  );
+
+  useEffect(() => {
+    setFilters((current) => {
+      const nextTargetAppId = current.targetAppId && filteredTargetApps.some((app) => app.id === current.targetAppId) ? current.targetAppId : "";
+      const nextSessionId = current.sessionId && filteredRecordingSessions.some((session) => session.id === current.sessionId) ? current.sessionId : "";
+      const nextTopicId = current.topicId === "all" || filteredTopics.some((topic) => topic.id === current.topicId) ? current.topicId : "all";
+      if (nextTargetAppId === current.targetAppId && nextSessionId === current.sessionId && nextTopicId === current.topicId) return current;
+      return { ...current, targetAppId: nextTargetAppId, sessionId: nextSessionId, topicId: nextTopicId };
+    });
+  }, [filteredRecordingSessions, filteredTargetApps, filteredTopics]);
+
   function buildQueryString(includeRawParams = false) {
     const params = new URLSearchParams();
     params.set("days", appliedDays);
-    if (appliedCompanyId) params.set("companyId", appliedCompanyId);
-    if (appliedTargetAppId) params.set("targetAppId", appliedTargetAppId);
-    if (appliedSessionId) params.set("sessionId", appliedSessionId);
-    if (appliedTopicId) params.set("topicId", appliedTopicId);
+    if (appliedFilters.companyId) params.set("companyId", appliedFilters.companyId);
+    if (appliedFilters.targetAppId) params.set("targetAppId", appliedFilters.targetAppId);
+    if (appliedFilters.sessionId) params.set("sessionId", appliedFilters.sessionId);
+    if (appliedFilters.topicId && appliedFilters.topicId !== "all") params.set("topicId", appliedFilters.topicId);
     if (includeRawParams) {
       params.set("view", "raw-data");
       params.set("page", String(rawPage));
@@ -114,10 +149,7 @@ export function WorkflowAnalyticsDashboard() {
 
   function applyFilters() {
     setAppliedDays(days);
-    setAppliedCompanyId(companyId);
-    setAppliedTargetAppId(targetAppId);
-    setAppliedSessionId(sessionId);
-    setAppliedTopicId(topicId);
+    setAppliedFilters(filters);
     setRawPage(1);
   }
 
@@ -162,7 +194,7 @@ export function WorkflowAnalyticsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [appliedDays, appliedCompanyId, appliedTargetAppId, appliedSessionId, appliedTopicId, rawPage, rawPageSize]);
+  }, [appliedDays, appliedFilters.companyId, appliedFilters.targetAppId, appliedFilters.sessionId, appliedFilters.topicId, rawPage, rawPageSize]);
 
   const summary = data.summary;
 
@@ -200,36 +232,58 @@ export function WorkflowAnalyticsDashboard() {
 
   return (
     <div className="grid gap-5">
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="grid gap-1 text-xs font-semibold text-slate-600">
-            Date range
-            <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setDays(event.target.value)} value={days}>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-              <option value="365">Last 365 days</option>
-            </select>
-          </label>
-          <label className="grid gap-1 text-xs font-semibold text-slate-600">
-            Company
-            <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setCompanyId(event.target.value)} placeholder="All companies" type="text" value={companyId} />
-          </label>
-          <label className="grid gap-1 text-xs font-semibold text-slate-600">
-            Target App
-            <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setTargetAppId(event.target.value)} placeholder="All apps" type="text" value={targetAppId} />
-          </label>
-          <label className="grid gap-1 text-xs font-semibold text-slate-600">
-            Training Session
-            <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setSessionId(event.target.value)} placeholder="All sessions" type="text" value={sessionId} />
-          </label>
-          <label className="grid gap-1 text-xs font-semibold text-slate-600">
-            Topic
-            <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setTopicId(event.target.value)} placeholder="All topics" type="text" value={topicId} />
-          </label>
-          <button className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" onClick={applyFilters} type="button">Filter</button>
+      <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]">
+        <FilterSelect
+          label="Date range"
+          onChange={(days) => setDays(days)}
+          value={days}
+        >
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="365">Last 365 days</option>
+        </FilterSelect>
+        <FilterSelect
+          label="Company"
+          onChange={(companyId) => setFilters({ companyId, targetAppId: "", sessionId: "", topicId: "all" })}
+          value={filters.companyId}
+        >
+          {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+        </FilterSelect>
+        <FilterSelect
+          label="Target app"
+          onChange={(targetAppId) => setFilters((current) => ({ ...current, targetAppId, sessionId: "", topicId: "all" }))}
+          value={filters.targetAppId}
+        >
+          <option value="">All target apps</option>
+          {filteredTargetApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
+        </FilterSelect>
+        <FilterSelect
+          label="Training session"
+          onChange={(sessionId) => setFilters((current) => ({ ...current, sessionId, topicId: "all" }))}
+          value={filters.sessionId}
+        >
+          <option value="">All training sessions</option>
+          {filteredRecordingSessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
+        </FilterSelect>
+        <FilterSelect
+          label="Topic"
+          onChange={(topicId) => setFilters((current) => ({ ...current, topicId }))}
+          value={filters.topicId}
+        >
+          <option value="all">All topics</option>
+          {filteredTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}
+        </FilterSelect>
+        <div className="flex items-end">
+          <button
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+            onClick={applyFilters}
+            type="button"
+          >
+            <ListFilter className="h-4 w-4" />
+            Filter
+          </button>
         </div>
-        <p className="mt-3 text-sm text-slate-500">All data derived from step executions table.</p>
       </div>
 
       {error ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
@@ -272,21 +326,21 @@ export function WorkflowAnalyticsDashboard() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead>
               <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2">Company</th>
-                <th className="px-3 py-2">Target App</th>
-                <th className="px-3 py-2">Session</th>
-                <th className="px-3 py-2">Topic</th>
-                <th className="px-3 py-2">Workflow</th>
-                <th className="px-3 py-2">Step #</th>
-                <th className="px-3 py-2">Step Description</th>
-                <th className="px-3 py-2">Started</th>
-                <th className="px-3 py-2">Completed</th>
-                <th className="px-3 py-2">Duration</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">User ID</th>
-                <th className="px-3 py-2">Error</th>
-                <th className="px-3 py-2">Healing</th>
-                <th className="px-3 py-2">AI</th>
+                <th className="whitespace-nowrap px-3 py-2">Company</th>
+                <th className="whitespace-nowrap px-3 py-2">Target App</th>
+                <th className="whitespace-nowrap px-3 py-2">Session</th>
+                <th className="whitespace-nowrap px-3 py-2">Topic</th>
+                <th className="whitespace-nowrap px-3 py-2">Workflow</th>
+                <th className="whitespace-nowrap px-3 py-2">Step #</th>
+                <th className="whitespace-nowrap px-3 py-2">Step Description</th>
+                <th className="whitespace-nowrap px-3 py-2">Started</th>
+                <th className="whitespace-nowrap px-3 py-2">Completed</th>
+                <th className="whitespace-nowrap px-3 py-2">Duration</th>
+                <th className="whitespace-nowrap px-3 py-2">Status</th>
+                <th className="whitespace-nowrap px-3 py-2">User ID</th>
+                <th className="whitespace-nowrap px-3 py-2">Error</th>
+                <th className="whitespace-nowrap px-3 py-2">Healing</th>
+                <th className="whitespace-nowrap px-3 py-2">AI</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -345,6 +399,21 @@ export function WorkflowAnalyticsDashboard() {
         </div>
       </section>
     </div>
+  );
+}
+
+function FilterSelect({ children, label, onChange, value }: { children: React.ReactNode; label: string; onChange(value: string): void; value: string }) {
+  return (
+    <label className="grid gap-1 text-xs font-semibold text-slate-600">
+      {label}
+      <select
+        className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+        onChange={(event) => onChange(event.target.value)}
+        value={value}
+      >
+        {children}
+      </select>
+    </label>
   );
 }
 
