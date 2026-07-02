@@ -1,8 +1,39 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Pencil, RefreshCw, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Pencil, RefreshCw, Trash2, X } from "lucide-react";
 import type { SelectorCandidate, SelectorCandidateType } from "@/shared/guideTypes";
+
+type ElementIdentity = {
+  tagName?: string;
+  role?: string;
+  accessibleName?: string;
+  text?: string;
+  ariaLabel?: string;
+  labelText?: string;
+  placeholder?: string;
+  inputType?: string;
+  selectedOptionText?: string;
+  name?: string;
+  id?: string;
+  dataAttributes?: Record<string, string>;
+  nearbyHeading?: string;
+  parentContainerText?: string;
+  previousSiblingText?: string;
+  nextSiblingText?: string;
+  parentTagName?: string;
+  parentRole?: string;
+  parentAccessibleName?: string;
+  parentText?: string;
+  formTitle?: string;
+  dialogTitle?: string;
+  cardTitle?: string;
+  url?: string;
+  path?: string;
+  cssFallback?: string;
+  xpathFallback?: string;
+  boundingBox?: { x: number; y: number; width: number; height: number };
+};
 
 type HealingSuggestion = {
   id: string;
@@ -11,6 +42,8 @@ type HealingSuggestion = {
   step_id: string;
   step_order: number;
   proposed_selector_candidates: SelectorCandidate[];
+  proposed_element_identity?: ElementIdentity;
+  original_element_identity?: ElementIdentity;
   confidence_score: number | string;
   healing_source: "rule-based" | "ai-assisted";
   healing_reason: string;
@@ -19,6 +52,8 @@ type HealingSuggestion = {
   status: "pending" | "approved" | "rejected";
   playback_attempt_count: number;
   last_playback_attempt_at: string;
+  session_title?: string;
+  topic_title?: string;
 };
 
 type EditModalData = {
@@ -104,14 +139,33 @@ export function HealingSuggestionReviewerPanel({ embedded = false, workflowId, s
     }
   }
 
+  async function handleDelete(suggestionId: string) {
+    if (!confirm("Permanently delete this review item? This cannot be undone.")) return;
+    try {
+      setProcessingId(suggestionId);
+      const response = await fetch("/api/guided-workflow-player/healing-suggestions/review?action=delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggestionId }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.message || body?.error || "Failed to delete suggestion");
+      await loadSuggestions();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete suggestion");
+    } finally {
+      setProcessingId(null);
+    }
+  }
+
   const shellClass = embedded ? "grid gap-4" : "mx-auto max-w-6xl p-6";
 
   return (
     <div className={shellClass}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-normal text-slate-950">{stepId ? "Step Self-Healing Review" : "Workflow Self-Healing Suggestions"}</h2>
-          <p className="mt-1 text-sm text-slate-500">Pending items come from users during playback. Approved and rejected are trainer decisions.</p>
+          <h2 className="text-lg font-semibold tracking-normal text-slate-950">Self-Healing Review</h2>
+          <p className="mt-1 text-sm text-slate-500">Review workflow self-healing suggestions from playback sessions.</p>
         </div>
         <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50" onClick={() => void loadSuggestions()} type="button">
           <RefreshCw className="h-3.5 w-3.5" /> Refresh
@@ -137,10 +191,12 @@ export function HealingSuggestionReviewerPanel({ embedded = false, workflowId, s
         </div>
       ) : (
         <div className="grid gap-3">
-          {suggestions.map((suggestion) => (
+          {suggestions.map((suggestion, index) => (
             <SuggestionCard
               key={suggestion.id}
+              index={index + 1}
               onApprove={() => void handleApprove(suggestion.id)}
+              onDelete={() => void handleDelete(suggestion.id)}
               onEdit={() => setEditModal({ suggestion, editedCandidates: [...(suggestion.proposed_selector_candidates ?? [])] })}
               onReject={() => void handleReject(suggestion.id)}
               processing={processingId === suggestion.id}
@@ -165,55 +221,117 @@ export function HealingSuggestionReviewerPanel({ embedded = false, workflowId, s
 
 export default HealingSuggestionReviewerPanel;
 
-function SuggestionCard({ onApprove, onEdit, onReject, processing, statusFilter, suggestion }: {
+function SuggestionCard({ index, onApprove, onDelete, onEdit, onReject, processing, statusFilter, suggestion }: {
+  index: number;
   onApprove(): void;
+  onDelete(): void;
   onEdit(): void;
   onReject(): void;
   processing: boolean;
   statusFilter: HealingSuggestion["status"];
   suggestion: HealingSuggestion;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const confidence = numericConfidence(suggestion.confidence_score);
-  const decisionTone = suggestion.healing_reason.toLowerCase().includes("skipped") ? "amber" : suggestion.healing_reason.toLowerCase().includes("rejected") ? "red" : "emerald";
+  const identity = suggestion.proposed_element_identity || suggestion.original_element_identity;
 
   return (
     <article className="rounded-lg border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-slate-950">{suggestion.workflow_title}</p>
-          <p className="mt-1 text-xs text-slate-500">Step {suggestion.step_order} · {suggestion.step_id}</p>
-        </div>
-        {statusFilter === "pending" ? (
-          <div className="flex gap-1">
-            <IconButton disabled={processing} label="Edit selectors" onClick={onEdit}><Pencil className="h-3.5 w-3.5" /></IconButton>
-            <IconButton disabled={processing} label="Approve" onClick={onApprove} tone="approve"><Check className="h-3.5 w-3.5" /></IconButton>
-            <IconButton disabled={processing} label="Reject" onClick={onReject} tone="reject"><X className="h-3.5 w-3.5" /></IconButton>
+      <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50 px-4 py-3">
+        <button
+          className="flex h-6 w-6 items-center justify-center rounded hover:bg-slate-200"
+          onClick={() => setExpanded(!expanded)}
+          type="button"
+        >
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-700 text-[10px] font-bold text-white">{index}</span>
+            <p className="truncate text-sm font-semibold text-slate-950">Step {suggestion.step_order} · {suggestion.workflow_title}</p>
           </div>
-        ) : (
-          <Badge tone={statusFilter === "approved" ? "emerald" : "red"}>{statusFilter}</Badge>
+          {(suggestion.session_title || suggestion.topic_title) && (
+            <p className="mt-1 text-xs text-slate-500">
+              {suggestion.session_title || ""}{suggestion.session_title && suggestion.topic_title ? " • " : ""}{suggestion.topic_title || ""}
+            </p>
+          )}
+        </div>
+        <div className="flex gap-1">
+          <Badge tone={confidence >= 95 ? "emerald" : confidence >= 75 ? "amber" : "slate"}>{confidence.toFixed(0)}%</Badge>
+          {statusFilter === "pending" ? (
+            <>
+              <IconButton disabled={processing} label="Edit" onClick={onEdit}><Pencil className="h-3.5 w-3.5" /></IconButton>
+              <IconButton disabled={processing} label="Approve" onClick={onApprove} tone="approve"><Check className="h-3.5 w-3.5" /></IconButton>
+              <IconButton disabled={processing} label="Reject" onClick={onReject} tone="reject"><X className="h-3.5 w-3.5" /></IconButton>
+              <IconButton disabled={processing} label="Delete" onClick={onDelete} tone="delete"><Trash2 className="h-3.5 w-3.5" /></IconButton>
+            </>
+          ) : (
+            <Badge tone={statusFilter === "approved" ? "emerald" : "red"}>{statusFilter}</Badge>
+          )}
+        </div>
+      </div>
+      {expanded && (
+        <div className="grid gap-4 p-4 text-sm">
+          {identity && <ControlIdentityDetails identity={identity} />}
+          <SelectorList candidates={suggestion.proposed_selector_candidates ?? []} />
+          <div className="flex flex-wrap justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
+            <span>Attempts: {suggestion.playback_attempt_count}</span>
+            <span>{new Date(suggestion.last_playback_attempt_at).toLocaleString()}</span>
+          </div>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function ControlIdentityDetails({ identity }: { identity: ElementIdentity }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Control Identification Details</p>
+      <div className="grid gap-2 text-xs">
+        {identity.tagName && <DetailRow label="Tag" value={identity.tagName} />}
+        {identity.role && <DetailRow label="Role" value={identity.role} />}
+        {identity.accessibleName && <DetailRow label="Accessible Name" value={identity.accessibleName} />}
+        {identity.text && <DetailRow label="Text" value={identity.text} />}
+        {identity.ariaLabel && <DetailRow label="Aria Label" value={identity.ariaLabel} />}
+        {identity.labelText && <DetailRow label="Label Text" value={identity.labelText} />}
+        {identity.placeholder && <DetailRow label="Placeholder" value={identity.placeholder} />}
+        {identity.inputType && <DetailRow label="Input Type" value={identity.inputType} />}
+        {identity.selectedOptionText && <DetailRow label="Selected Option" value={identity.selectedOptionText} />}
+        {identity.name && <DetailRow label="Name" value={identity.name} />}
+        {identity.id && <DetailRow label="ID" value={identity.id} />}
+        {identity.dataAttributes && Object.keys(identity.dataAttributes).length > 0 && (
+          <DetailRow label="Data Attributes" value={JSON.stringify(identity.dataAttributes, null, 2)} mono />
+        )}
+        {identity.nearbyHeading && <DetailRow label="Nearby Heading" value={identity.nearbyHeading} />}
+        {identity.parentContainerText && <DetailRow label="Parent Container" value={identity.parentContainerText} />}
+        {identity.previousSiblingText && <DetailRow label="Previous Sibling" value={identity.previousSiblingText} />}
+        {identity.nextSiblingText && <DetailRow label="Next Sibling" value={identity.nextSiblingText} />}
+        {identity.parentTagName && <DetailRow label="Parent Tag" value={identity.parentTagName} />}
+        {identity.parentRole && <DetailRow label="Parent Role" value={identity.parentRole} />}
+        {identity.parentAccessibleName && <DetailRow label="Parent Accessible Name" value={identity.parentAccessibleName} />}
+        {identity.parentText && <DetailRow label="Parent Text" value={identity.parentText} />}
+        {identity.formTitle && <DetailRow label="Form Title" value={identity.formTitle} />}
+        {identity.dialogTitle && <DetailRow label="Dialog Title" value={identity.dialogTitle} />}
+        {identity.cardTitle && <DetailRow label="Card Title" value={identity.cardTitle} />}
+        {identity.url && <DetailRow label="URL" value={identity.url} />}
+        {identity.path && <DetailRow label="Path" value={identity.path} />}
+        {identity.cssFallback && <DetailRow label="CSS Fallback" value={identity.cssFallback} mono />}
+        {identity.xpathFallback && <DetailRow label="XPath Fallback" value={identity.xpathFallback} mono />}
+        {identity.boundingBox && (
+          <DetailRow label="Bounding Box" value={`x: ${identity.boundingBox.x}, y: ${identity.boundingBox.y}, w: ${identity.boundingBox.width}, h: ${identity.boundingBox.height}`} />
         )}
       </div>
-      <div className="grid gap-3 p-4 text-sm">
-        <div className="flex flex-wrap gap-2">
-          <Badge tone={confidence >= 95 ? "emerald" : confidence >= 75 ? "amber" : "slate"}>{confidence.toFixed(1)}% confidence</Badge>
-          <Badge tone="blue">{suggestion.healing_source === "ai-assisted" ? "AI assisted" : "Rule based"}</Badge>
-          <Badge tone={decisionTone}>{userDecisionLabel(suggestion.healing_reason)}</Badge>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase text-slate-500">Reason</p>
-          <p className="mt-1 text-slate-800">{suggestion.healing_reason}</p>
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase text-slate-500">Page</p>
-          <p className="mt-1 truncate text-slate-700">{suggestion.page_title || suggestion.page_url}</p>
-        </div>
-        <SelectorList candidates={suggestion.proposed_selector_candidates ?? []} />
-        <div className="flex flex-wrap justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
-          <span>Attempts: {suggestion.playback_attempt_count}</span>
-          <span>{new Date(suggestion.last_playback_attempt_at).toLocaleString()}</span>
-        </div>
-      </div>
-    </article>
+    </div>
+  );
+}
+
+function DetailRow({ label, mono, value }: { label: string; mono?: boolean; value: string }) {
+  return (
+    <div className="grid grid-cols-[120px_minmax(0,1fr)] gap-2">
+      <span className="font-semibold text-slate-600">{label}:</span>
+      <span className={mono ? "font-mono text-slate-800" : "text-slate-800"}>{value}</span>
+    </div>
   );
 }
 
@@ -243,6 +361,7 @@ function EditModal({ data, onClose, onSave, processing }: {
 }) {
   const [candidates, setCandidates] = useState(data.editedCandidates);
   const selectorTypes: SelectorCandidateType[] = ["data-adoption-id", "data-testid", "data-test", "data-cy", "id", "name", "aria-label", "role-text", "label-text", "placeholder", "text-context", "css", "xpath"];
+  const identity = data.suggestion.proposed_element_identity || data.suggestion.original_element_identity;
 
   function updateCandidate(index: number, patch: Partial<SelectorCandidate>) {
     setCandidates((current) => current.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, ...patch } : candidate));
@@ -250,25 +369,36 @@ function EditModal({ data, onClose, onSave, processing }: {
 
   return (
     <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/35 p-4" onClick={onClose}>
-      <div className="max-h-[86vh] w-full max-w-3xl overflow-auto rounded-lg border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+      <div className="max-h-[86vh] w-full max-w-4xl overflow-auto rounded-lg border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
           <div>
             <h3 className="text-base font-semibold text-slate-950">Edit Healing Suggestion</h3>
-            <p className="mt-1 text-sm text-slate-500">{data.suggestion.workflow_title}</p>
+            <p className="mt-1 text-sm text-slate-500">{data.suggestion.workflow_title} - Step {data.suggestion.step_order}</p>
           </div>
           <button className="rounded-md px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100" onClick={onClose} type="button">Close</button>
         </div>
-        <div className="grid gap-3 p-4">
-          {candidates.map((candidate, index) => (
-            <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[160px_minmax(0,1fr)_100px]" key={`${candidate.type}-${index}`}>
-              <select className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { type: event.target.value as SelectorCandidateType })} value={candidate.type}>
-                {selectorTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-              </select>
-              <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { value: event.target.value })} value={candidate.value} />
-              <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} max={100} min={0} onChange={(event) => updateCandidate(index, { confidence: Number(event.target.value) })} type="number" value={candidate.confidence} />
-              <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900 md:col-span-3" disabled={processing} onChange={(event) => updateCandidate(index, { reason: event.target.value })} value={candidate.reason} />
+        <div className="grid gap-4 p-4">
+          {identity && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-3 text-sm font-semibold uppercase text-slate-600">Control Identification Details</p>
+              <ControlIdentityDetails identity={identity} />
             </div>
-          ))}
+          )}
+          <div>
+            <p className="mb-2 text-sm font-semibold uppercase text-slate-600">Selector Candidates</p>
+            <div className="grid gap-3">
+              {candidates.map((candidate, index) => (
+                <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[160px_minmax(0,1fr)_100px]" key={`${candidate.type}-${index}`}>
+                  <select className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { type: event.target.value as SelectorCandidateType })} value={candidate.type}>
+                    {selectorTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                  <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} onChange={(event) => updateCandidate(index, { value: event.target.value })} value={candidate.value} />
+                  <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900" disabled={processing} max={100} min={0} onChange={(event) => updateCandidate(index, { confidence: Number(event.target.value) })} type="number" value={candidate.confidence} />
+                  <input className="h-9 rounded-md border border-slate-200 bg-white px-2 text-xs outline-none focus:border-slate-900 md:col-span-3" disabled={processing} onChange={(event) => updateCandidate(index, { reason: event.target.value })} placeholder="Reason" value={candidate.reason} />
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-200 p-4">
           <button className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" disabled={processing} onClick={onClose} type="button">Cancel</button>
@@ -279,8 +409,8 @@ function EditModal({ data, onClose, onSave, processing }: {
   );
 }
 
-function IconButton({ children, disabled, label, onClick, tone }: { children: React.ReactNode; disabled?: boolean; label: string; onClick(): void; tone?: "approve" | "reject" }) {
-  const toneClass = tone === "approve" ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50" : tone === "reject" ? "border-red-200 text-red-700 hover:bg-red-50" : "border-slate-300 text-slate-700 hover:bg-slate-50";
+function IconButton({ children, disabled, label, onClick, tone }: { children: React.ReactNode; disabled?: boolean; label: string; onClick(): void; tone?: "approve" | "reject" | "delete" }) {
+  const toneClass = tone === "approve" ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50" : tone === "reject" ? "border-red-200 text-red-700 hover:bg-red-50" : tone === "delete" ? "border-red-300 text-red-800 hover:bg-red-100" : "border-slate-300 text-slate-700 hover:bg-slate-50";
   return <button aria-label={label} className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border bg-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40 ${toneClass}`} disabled={disabled} onClick={onClick} title={label} type="button">{children}</button>;
 }
 

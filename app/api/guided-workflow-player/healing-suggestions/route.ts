@@ -185,10 +185,14 @@ export async function GET(request: NextRequest) {
         s.playback_attempt_count,
         s.last_playback_attempt_at,
         w.title as workflow_title,
-        u.email as reviewed_by_email
+        u.email as reviewed_by_email,
+        t.title as topic_title,
+        rs.title as session_title
       FROM guided_workflow_healing_suggestions s
       JOIN guided_workflow_guides w ON s.workflow_id = w.id
       LEFT JOIN users u ON s.reviewed_by = u.id
+      LEFT JOIN guided_workflow_topics t ON w.topic_id = t.id
+      LEFT JOIN guided_workflow_recording_sessions rs ON t.recording_session_id = rs.id
       WHERE s.status = $1
     `;
     const params: unknown[] = [status];
