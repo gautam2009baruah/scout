@@ -71,105 +71,61 @@ export async function recordWorkflowAnalyticsEvents(events: WorkflowAnalyticsEve
 
       const companyId = guide.company_id;
       const workflowVersionId = event.workflowVersionId || event.workflowId;
-      const workflowVersion = event.workflowVersion ?? Number(guide.version ?? 1);
       const healingUsed = event.healingUsed === true || event.eventType === "healing_attempted" || event.eventType === "healing_succeeded";
       const aiUsed = event.aiUsed === true || event.eventType === "ai_provider_called";
       const normalizedUserId = normalizeUserId(event.userId);
 
-      await client.query(
-        `
-          INSERT INTO workflow_executions (
-            id, company_id, workflow_id, workflow_version_id, workflow_version, user_id,
-            status, started_at, healing_used, ai_used
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, 'started', now(), $7, $8)
-          ON CONFLICT (id) DO UPDATE
-          SET healing_used = workflow_executions.healing_used OR EXCLUDED.healing_used,
-              ai_used = workflow_executions.ai_used OR EXCLUDED.ai_used,
-              updated_at = now()
-        `,
-        [event.executionId, companyId, event.workflowId, workflowVersionId, workflowVersion, normalizedUserId, healingUsed, aiUsed]
-      );
-
-      if (event.eventType === "workflow_completed" || event.eventType === "workflow_failed" || event.eventType === "workflow_abandoned") {
-        const status = event.eventType === "workflow_completed" ? "completed" : event.eventType === "workflow_failed" ? "failed" : "abandoned";
-        await client.query(
-          `
-            UPDATE workflow_executions
-            SET status = $2,
-                completed_at = now(),
-                duration_ms = COALESCE($3, duration_ms),
-                healing_used = healing_used OR $4,
-                ai_used = ai_used OR $5,
-                updated_at = now()
-            WHERE id = $1
-          `,
-          [event.executionId, status, event.durationMs ?? null, healingUsed, aiUsed]
-        );
-      }
-
+      // Only record step executions - all analytics derived from this table
       if (event.stepExecutionId && event.stepId) {
+        // Determine step status from event type
+        let stepStatus = "started";
+        let completedAt: string | null = null;
+        let errorMessage: string | null = null;
+
+        if (event.eventType === "step_completed") {
+          stepStatus = "completed";
+          completedAt = "now()";
+        } else if (event.eventType === "step_failed") {
+          stepStatus = "failed";
+          completedAt = "now()";
+          errorMessage = event.errorMessage || null;
+        }
+
         await client.query(
           `
             INSERT INTO step_executions (
               id, workflow_execution_id, company_id, workflow_id, workflow_version_id,
-              step_id, step_order, action_type, status, started_at, healing_used, ai_used
+              step_id, step_order, action_type, status, started_at, completed_at, error_message,
+              healing_used, ai_used, user_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'started', now(), $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), ${completedAt ? completedAt : "NULL"}, $10, $11, $12, $13)
             ON CONFLICT (id) DO UPDATE
-            SET healing_used = step_executions.healing_used OR EXCLUDED.healing_used,
+            SET status = EXCLUDED.status,
+                completed_at = COALESCE(EXCLUDED.completed_at, step_executions.completed_at),
+                error_message = COALESCE(EXCLUDED.error_message, step_executions.error_message),
+                healing_used = step_executions.healing_used OR EXCLUDED.healing_used,
                 ai_used = step_executions.ai_used OR EXCLUDED.ai_used,
+                user_id = COALESCE(EXCLUDED.user_id, step_executions.user_id),
                 updated_at = now()
           `,
-          [event.stepExecutionId, event.executionId, companyId, event.workflowId, workflowVersionId, event.stepId, event.stepOrder ?? null, event.actionType || null, healingUsed, aiUsed]
+          [
+            event.stepExecutionId,
+            event.executionId,
+            companyId,
+            event.workflowId,
+            workflowVersionId,
+            event.stepId,
+            event.stepOrder ?? null,
+            event.actionType || null,
+            stepStatus,
+            errorMessage,
+            healingUsed,
+            aiUsed,
+            normalizedUserId,
+          ]
         );
-
-        if (event.eventType === "step_completed" || event.eventType === "step_failed") {
-          await client.query(
-            `
-              UPDATE step_executions
-              SET status = $2,
-                  completed_at = now(),
-                  duration_ms = COALESCE($3, duration_ms),
-                  error_message = COALESCE($4, error_message),
-                  healing_used = healing_used OR $5,
-                  ai_used = ai_used OR $6,
-                  updated_at = now()
-              WHERE id = $1
-            `,
-            [event.stepExecutionId, event.eventType === "step_completed" ? "completed" : "failed", event.durationMs ?? null, event.errorMessage || null, healingUsed, aiUsed]
-          );
-        }
+        recorded += 1;
       }
-
-      await client.query(
-        `
-          INSERT INTO analytics_events (
-            workflow_execution_id, step_execution_id, company_id, workflow_id, workflow_version_id,
-            user_id, step_id, action_type, event_type, status, duration_ms, error_message,
-            healing_used, ai_used, metadata_json
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb)
-        `,
-        [
-          event.executionId,
-          event.stepExecutionId || null,
-          companyId,
-          event.workflowId,
-          workflowVersionId,
-          normalizedUserId,
-          event.stepId || null,
-          event.actionType || null,
-          event.eventType,
-          event.status || null,
-          event.durationMs ?? null,
-          event.errorMessage || null,
-          healingUsed,
-          aiUsed,
-          JSON.stringify(event.metadata ?? {}),
-        ]
-      );
-      recorded += 1;
     }
 
     await client.query("COMMIT");

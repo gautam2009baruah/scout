@@ -23,23 +23,21 @@ type AnalyticsResponse = {
 type RawAnalyticsRow = {
   id: string;
   workflow_execution_id: string;
-  step_execution_id: string | null;
-  step_id: string | null;
-  action_type: string | null;
-  event_type: string;
-  status: string | null;
+  company_name: string;
+  target_app_name: string;
+  session_title: string;
+  topic_title: string;
+  workflow_title: string;
+  step_order: number | null;
+  step_description: string;
+  started_at: string;
+  completed_at: string | null;
   duration_ms: number | null;
+  status: string;
+  user_id: string;
   error_message: string | null;
   healing_used: boolean;
   ai_used: boolean;
-  metadata_json: Record<string, unknown> | null;
-  created_at: string;
-  started_at: string | null;
-  execution_status: string | null;
-  user_id: string;
-  workflow_id: string;
-  workflow_title: string;
-  workflow_version: number | null;
 };
 
 type RawAnalyticsResponse = {
@@ -82,6 +80,14 @@ const emptyRawData: RawAnalyticsResponse = {
 export function WorkflowAnalyticsDashboard() {
   const [days, setDays] = useState("30");
   const [appliedDays, setAppliedDays] = useState("30");
+  const [companyId, setCompanyId] = useState("");
+  const [targetAppId, setTargetAppId] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [topicId, setTopicId] = useState("");
+  const [appliedCompanyId, setAppliedCompanyId] = useState("");
+  const [appliedTargetAppId, setAppliedTargetAppId] = useState("");
+  const [appliedSessionId, setAppliedSessionId] = useState("");
+  const [appliedTopicId, setAppliedTopicId] = useState("");
   const [data, setData] = useState<AnalyticsResponse>(emptyData);
   const [rawData, setRawData] = useState<RawAnalyticsResponse>(emptyRawData);
   const [loading, setLoading] = useState(true);
@@ -90,6 +96,30 @@ export function WorkflowAnalyticsDashboard() {
   const [rawError, setRawError] = useState("");
   const [rawPage, setRawPage] = useState(1);
   const [rawPageSize, setRawPageSize] = useState(25);
+
+  function buildQueryString(includeRawParams = false) {
+    const params = new URLSearchParams();
+    params.set("days", appliedDays);
+    if (appliedCompanyId) params.set("companyId", appliedCompanyId);
+    if (appliedTargetAppId) params.set("targetAppId", appliedTargetAppId);
+    if (appliedSessionId) params.set("sessionId", appliedSessionId);
+    if (appliedTopicId) params.set("topicId", appliedTopicId);
+    if (includeRawParams) {
+      params.set("view", "raw-data");
+      params.set("page", String(rawPage));
+      params.set("pageSize", String(rawPageSize));
+    }
+    return params.toString();
+  }
+
+  function applyFilters() {
+    setAppliedDays(days);
+    setAppliedCompanyId(companyId);
+    setAppliedTargetAppId(targetAppId);
+    setAppliedSessionId(sessionId);
+    setAppliedTopicId(topicId);
+    setRawPage(1);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -101,8 +131,8 @@ export function WorkflowAnalyticsDashboard() {
         setRawError("");
 
         const [summaryResponse, rawResponse] = await Promise.all([
-          fetch(`/api/admin/guided-workflow-analytics?days=${appliedDays}`),
-          fetch(`/api/admin/guided-workflow-analytics?days=${appliedDays}&view=raw-data&page=${rawPage}&pageSize=${rawPageSize}`),
+          fetch(`/api/admin/guided-workflow-analytics?${buildQueryString(false)}`),
+          fetch(`/api/admin/guided-workflow-analytics?${buildQueryString(true)}`),
         ]);
 
         const summaryBody = await summaryResponse.json().catch(() => null);
@@ -132,23 +162,27 @@ export function WorkflowAnalyticsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [appliedDays, rawPage, rawPageSize]);
+  }, [appliedDays, appliedCompanyId, appliedTargetAppId, appliedSessionId, appliedTopicId, rawPage, rawPageSize]);
 
   const summary = data.summary;
 
   function exportRows(format: "csv" | "json") {
     const rows = rawData.rows.map((row) => ({
-      timestamp: row.created_at,
-      workflow: row.workflow_title || row.workflow_id,
-      workflowId: row.workflow_id,
-      step: row.step_id || "-",
-      event: row.event_type,
-      status: row.status || row.execution_status || "-",
-      userId: row.user_id || "pending",
+      company: row.company_name,
+      targetApp: row.target_app_name,
+      session: row.session_title,
+      topic: row.topic_title,
+      workflow: row.workflow_title,
+      stepNumber: row.step_order ?? "",
+      stepDescription: row.step_description,
+      stepStarted: row.started_at,
+      stepCompleted: row.completed_at || "",
       durationMs: row.duration_ms ?? "",
+      status: row.status,
+      userId: row.user_id || "pending",
+      error: row.error_message || "",
       healingUsed: row.healing_used ? "yes" : "no",
       aiUsed: row.ai_used ? "yes" : "no",
-      errorMessage: row.error_message || "",
     }));
 
     const content = format === "csv"
@@ -166,11 +200,8 @@ export function WorkflowAnalyticsDashboard() {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div>
-          <p className="text-sm text-slate-500">Aggregated from stored workflow execution, step execution, and analytics event rows.</p>
-        </div>
-        <div className="flex items-end gap-2">
+      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
           <label className="grid gap-1 text-xs font-semibold text-slate-600">
             Date range
             <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setDays(event.target.value)} value={days}>
@@ -180,11 +211,25 @@ export function WorkflowAnalyticsDashboard() {
               <option value="365">Last 365 days</option>
             </select>
           </label>
-          <button className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" onClick={() => {
-            setAppliedDays(days);
-            setRawPage(1);
-          }} type="button">Filter</button>
+          <label className="grid gap-1 text-xs font-semibold text-slate-600">
+            Company
+            <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setCompanyId(event.target.value)} placeholder="All companies" type="text" value={companyId} />
+          </label>
+          <label className="grid gap-1 text-xs font-semibold text-slate-600">
+            Target App
+            <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setTargetAppId(event.target.value)} placeholder="All apps" type="text" value={targetAppId} />
+          </label>
+          <label className="grid gap-1 text-xs font-semibold text-slate-600">
+            Training Session
+            <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setSessionId(event.target.value)} placeholder="All sessions" type="text" value={sessionId} />
+          </label>
+          <label className="grid gap-1 text-xs font-semibold text-slate-600">
+            Topic
+            <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => setTopicId(event.target.value)} placeholder="All topics" type="text" value={topicId} />
+          </label>
+          <button className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" onClick={applyFilters} type="button">Filter</button>
         </div>
+        <p className="mt-3 text-sm text-slate-500">All data derived from step executions table.</p>
       </div>
 
       {error ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
@@ -209,20 +254,9 @@ export function WorkflowAnalyticsDashboard() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Raw analytics data</h2>
-            <p className="mt-1 text-sm text-slate-500">This table is paginated and uses the same date-range filter as the dashboard summary.</p>
+            <p className="mt-1 text-sm text-slate-500">Step execution history with all related context.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <label className="grid gap-1 text-xs font-semibold text-slate-600">
-              Page size
-              <select className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900" onChange={(event) => {
-                setRawPageSize(Number(event.target.value));
-                setRawPage(1);
-              }} value={rawPageSize}>
-                <option value="10">10</option>
-                <option value="25">25</option>
-                <option value="50">50</option>
-              </select>
-            </label>
             <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" onClick={() => exportRows("csv")} type="button">
               <Download className="h-4 w-4" /> CSV
             </button>
@@ -238,34 +272,45 @@ export function WorkflowAnalyticsDashboard() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead>
               <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2">Timestamp</th>
+                <th className="px-3 py-2">Company</th>
+                <th className="px-3 py-2">Target App</th>
+                <th className="px-3 py-2">Session</th>
+                <th className="px-3 py-2">Topic</th>
                 <th className="px-3 py-2">Workflow</th>
-                <th className="px-3 py-2">Step</th>
-                <th className="px-3 py-2">Event</th>
+                <th className="px-3 py-2">Step #</th>
+                <th className="px-3 py-2">Step Description</th>
+                <th className="px-3 py-2">Started</th>
+                <th className="px-3 py-2">Completed</th>
+                <th className="px-3 py-2">Duration</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2">User ID</th>
-                <th className="px-3 py-2">Duration</th>
-                <th className="px-3 py-2">Healing / AI</th>
+                <th className="px-3 py-2">Error</th>
+                <th className="px-3 py-2">Healing</th>
+                <th className="px-3 py-2">AI</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rawLoading ? (
-                <tr><td className="px-3 py-4 text-sm text-slate-500" colSpan={8}>Loading raw analytics data...</td></tr>
+                <tr><td className="px-3 py-4 text-sm text-slate-500" colSpan={15}>Loading analytics data...</td></tr>
               ) : rawData.rows.length === 0 ? (
-                <tr><td className="px-3 py-4 text-sm text-slate-500" colSpan={8}>No analytics events found for this time range.</td></tr>
+                <tr><td className="px-3 py-4 text-sm text-slate-500" colSpan={15}>No step executions found for this time range.</td></tr>
               ) : rawData.rows.map((row) => (
-                <tr className="align-top" key={row.id}>
-                  <td className="whitespace-nowrap px-3 py-3 text-slate-700">{formatDateTime(row.created_at)}</td>
-                  <td className="max-w-[220px] px-3 py-3">
-                    <div className="truncate font-medium text-slate-900">{row.workflow_title || row.workflow_id}</div>
-                    <div className="truncate text-xs text-slate-500">{row.workflow_id}</div>
-                  </td>
-                  <td className="px-3 py-3 text-slate-700">{row.step_id || "—"}</td>
-                  <td className="px-3 py-3 text-slate-700">{row.event_type}</td>
-                  <td className="px-3 py-3 text-slate-700">{row.status || row.execution_status || "—"}</td>
-                  <td className="px-3 py-3 text-slate-700">{row.user_id || "pending"}</td>
-                  <td className="px-3 py-3 text-slate-700">{row.duration_ms != null ? `${row.duration_ms}ms` : "—"}</td>
-                  <td className="px-3 py-3 text-slate-700">{row.healing_used ? "Healing" : "—"}{row.healing_used && row.ai_used ? " / " : ""}{row.ai_used ? "AI" : ""}</td>
+                <tr className="align-top hover:bg-slate-50" key={row.id}>
+                  <td className="px-3 py-3 text-slate-700">{row.company_name}</td>
+                  <td className="px-3 py-3 text-slate-700">{row.target_app_name}</td>
+                  <td className="px-3 py-3 text-slate-700">{row.session_title}</td>
+                  <td className="px-3 py-3 text-slate-700">{row.topic_title}</td>
+                  <td className="max-w-[200px] px-3 py-3 truncate font-medium text-slate-900">{row.workflow_title}</td>
+                  <td className="px-3 py-3 text-slate-700">{row.step_order ?? "—"}</td>
+                  <td className="max-w-[250px] px-3 py-3 truncate text-slate-700">{row.step_description || "—"}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-slate-700">{formatDateTimeUTC(row.started_at)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-slate-700">{row.completed_at ? formatDateTimeUTC(row.completed_at) : "—"}</td>
+                  <td className="px-3 py-3 text-slate-700">{formatDuration(row.duration_ms)}</td>
+                  <td className="px-3 py-3"><StatusBadge status={row.status} /></td>
+                  <td className="px-3 py-3 text-slate-700">{row.user_id}</td>
+                  <td className="max-w-[200px] px-3 py-3 truncate text-xs text-slate-600">{row.error_message || "—"}</td>
+                  <td className="px-3 py-3 text-center">{row.healing_used ? "✓" : "—"}</td>
+                  <td className="px-3 py-3 text-center">{row.ai_used ? "✓" : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -273,7 +318,21 @@ export function WorkflowAnalyticsDashboard() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm text-slate-500">
-          <p>Showing {rawData.rows.length} of {rawData.pagination.total} records</p>
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 text-xs font-semibold">
+              Page size:
+              <select className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-sm" onChange={(event) => {
+                setRawPageSize(Number(event.target.value));
+                setRawPage(1);
+              }} value={rawPageSize}>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+            <span>|</span>
+            <p>Showing {rawData.rows.length} of {rawData.pagination.total} records</p>
+          </div>
           <div className="flex items-center gap-2">
             <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white disabled:cursor-not-allowed disabled:opacity-50" disabled={rawData.pagination.page <= 1} onClick={() => setRawPage((current) => Math.max(1, current - 1))} type="button">
               <ChevronLeft className="h-4 w-4" />
@@ -314,8 +373,9 @@ function AnalyticsList({ emptyText, items, title }: { emptyText: string; items: 
   );
 }
 
-function formatDuration(ms: number) {
-  if (!ms) return "0s";
+function formatDuration(ms: number | null) {
+  if (!ms) return "—";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   const seconds = Math.round(ms / 1000);
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);
@@ -327,8 +387,25 @@ function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
 }
 
+function formatDateTimeUTC(value: string) {
+  const date = new Date(value);
+  const formatted = date.toUTCString().replace("GMT", "").trim();
+  return `${formatted.slice(0, -9)} (UTC)`;
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const colors = {
+    completed: "bg-emerald-100 text-emerald-800",
+    failed: "bg-red-100 text-red-800",
+    started: "bg-blue-100 text-blue-800",
+    abandoned: "bg-amber-100 text-amber-800",
+  };
+  const color = colors[status as keyof typeof colors] || "bg-slate-100 text-slate-700";
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${color}`}>{status}</span>;
+}
+
 function toCsv(rows: Array<Record<string, unknown>>) {
-  const headers = ["timestamp", "workflow", "workflowId", "step", "event", "status", "userId", "durationMs", "healingUsed", "aiUsed", "errorMessage"];
+  const headers = ["company", "targetApp", "session", "topic", "workflow", "stepNumber", "stepDescription", "stepStarted", "stepCompleted", "durationMs", "status", "userId", "error", "healingUsed", "aiUsed"];
   const escapeValue = (value: unknown) => {
     const text = value == null ? "" : String(value);
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
