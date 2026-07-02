@@ -231,8 +231,8 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
   }
 
   return (
-    <div className="grid gap-5">
-      <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]">
+    <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
+      <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]">
         <FilterSelect
           label="Date range"
           onChange={(days) => setDays(days)}
@@ -288,7 +288,7 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
 
       {error ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <Metric icon={<Activity className="h-4 w-4" />} label="Total executions" loading={loading} value={summary.totalExecutions.toLocaleString()} />
         <Metric icon={<TrendingUp className="h-4 w-4" />} label="Success rate" loading={loading} value={`${summary.successRate}%`} />
         <Metric icon={<Clock className="h-4 w-4" />} label="Avg completion time" loading={loading} value={formatDuration(summary.averageCompletionTimeMs)} />
@@ -299,12 +299,12 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
         <Metric icon={<TimerReset className="h-4 w-4" />} label="Estimated time saved" loading={loading} value={formatDuration(summary.estimatedTimeSavedMs)} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid gap-2 xl:grid-cols-2">
         <AnalyticsList emptyText="No failed steps in this range." items={data.failedSteps.map((item) => ({ label: `Step ${item.step_order || item.step_id}`, value: `${item.failures} failures` }))} title="Failed steps" />
         <AnalyticsList emptyText="No healed controls in this range." items={data.mostHealedControls.map((item) => ({ label: item.step_id || "Unknown step", value: `${item.healed_count} healed` }))} title="Most healed controls" />
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Raw analytics data</h2>
@@ -322,7 +322,7 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
 
         {rawError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{rawError}</p> : null}
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead>
               <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -371,7 +371,7 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
           </table>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm text-slate-500">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm text-slate-500">
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-2 text-xs font-semibold">
               Page size:
@@ -419,7 +419,7 @@ function FilterSelect({ children, label, onChange, value }: { children: React.Re
 
 function Metric({ icon, label, loading, value }: { icon: React.ReactNode; label: string; loading: boolean; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-500">{icon}{label}</div>
       <p className="mt-3 text-2xl font-semibold text-slate-950">{loading ? "..." : value}</p>
     </div>
@@ -428,7 +428,7 @@ function Metric({ icon, label, loading, value }: { icon: React.ReactNode; label:
 
 function AnalyticsList({ emptyText, items, title }: { emptyText: string; items: Array<{ label: string; value: string }>; title: string }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
       <p className="text-sm font-semibold text-slate-950">{title}</p>
       <div className="mt-3 grid gap-2">
         {items.length === 0 ? <p className="text-sm text-slate-500">{emptyText}</p> : items.map((item) => (
