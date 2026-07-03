@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     // Create orchestration execution
     const execution = await createExecution({
       orchestrationId,
-      status: "running",
+      orchestrationVersion: orchestration.version,
       context: {
         trigger: triggerContext,
       },
