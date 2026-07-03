@@ -128,8 +128,9 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ orchestration });
   } catch (error) {
     console.error("Error updating orchestration:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to update orchestration";
     return NextResponse.json(
-      { message: "Failed to update orchestration" },
+      { message: errorMessage },
       { status: 500 }
     );
   }

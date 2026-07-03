@@ -193,6 +193,27 @@ export async function publishOrchestration(
   const nodes = await getNodes(id);
   const connections = await getConnections(id);
 
+  // Validate orchestration before publishing
+  const triggerNodes = nodes.filter(n => n.nodeType === "trigger");
+  if (triggerNodes.length === 0) {
+    throw new Error("Cannot publish: Orchestration must have at least one trigger node");
+  }
+
+  const endNodes = nodes.filter(n => n.nodeType === "end");
+  if (endNodes.length === 0) {
+    throw new Error("Cannot publish: Orchestration must have at least one end node");
+  }
+
+  if (nodes.length < 2) {
+    throw new Error("Cannot publish: Orchestration must have at least a trigger and an end node");
+  }
+
+  // Check if trigger is configured
+  const triggerNode = triggerNodes[0];
+  if (!triggerNode.config || Object.keys(triggerNode.config).length === 0) {
+    throw new Error("Cannot publish: Trigger node must be configured");
+  }
+
   await createOrchestrationVersion({
     orchestrationId: id,
     version: orchestration.version,
