@@ -101,17 +101,16 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
   return (
     <Draggable
       handle=".drag-handle"
-      bounds="parent"
-      defaultPosition={{ x: -400, y: 50 }}
+      defaultPosition={{ x: 0, y: 0 }}
     >
       <div 
         ref={resizeRef}
-        className="absolute bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden z-50"
+        className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden z-50"
         style={{ 
           width: `${panelWidth}px`,
           height: `${panelHeight}px`,
           right: 20,
-          top: 20
+          top: 80
         }}
       >
         {/* Resize Handles */}
