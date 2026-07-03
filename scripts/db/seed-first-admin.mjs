@@ -48,12 +48,13 @@ try {
     [companyName, companySlug]
   );
 
-  const roleResult = await client.query(
-    "SELECT id FROM roles WHERE company_id IS NULL AND key = 'owner' LIMIT 1"
+  // Find any admin role
+  let roleResult = await client.query(
+    "SELECT id FROM roles WHERE is_admin_role = true LIMIT 1"
   );
 
   if (roleResult.rowCount !== 1) {
-    throw new Error("Owner role was not found. Run db:migrate first.");
+    throw new Error("No admin role found in database. Please run db:migrate first.");
   }
 
   await client.query(

@@ -161,7 +161,7 @@ function WorkflowConfig({ config, updateConfig }: any) {
           onChange={(e) => updateConfig({ workflowId: e.target.value })}
           placeholder="workflow-id or {{variableName}}"
         />
-        <p className="mt-1 text-xs text-slate-500">Use workflow ID or {{'{{'}}variable{{'}}'}}</p>
+        <p className="mt-1 text-xs text-slate-500">Use workflow ID or {'{{variable}}'}</p>
       </div>
 
       <div>
@@ -544,7 +544,7 @@ function HumanApprovalConfig({ config, updateConfig }: any) {
           onChange={(e) => updateConfig({ approverEmail: e.target.value })}
           placeholder="user@example.com or {{variableName}}"
         />
-        <p className="mt-1 text-xs text-slate-500">Email address or {{'{{'}}variable{{'}}'}}</p>
+        <p className="mt-1 text-xs text-slate-500">Email address or {'{{variable}}'}</p>
       </div>
 
       <div>
@@ -666,7 +666,7 @@ function NotificationConfig({ config, updateConfig }: any) {
           onChange={(e) => updateConfig({ message: e.target.value })}
           placeholder="Use {{variableName}} for dynamic content"
         />
-        <p className="mt-1 text-xs text-slate-500">Supports {{'{{'}}variable{{'}}'}} substitution</p>
+        <p className="mt-1 text-xs text-slate-500">Supports {'{{variable}}'} substitution</p>
       </div>
     </div>
   );
@@ -733,7 +733,7 @@ function VariableConfig({ config, updateConfig }: any) {
                 onChange={(e) => updateConfig({ value: e.target.value })}
                 placeholder="{{variableName}} or literal value"
               />
-              <p className="mt-1 text-xs text-slate-500">Use {{'{{'}}variable{{'}}'}} or enter literal value</p>
+              <p className="mt-1 text-xs text-slate-500">Use {'{{variable}}'} or enter literal value</p>
             </div>
           )}
         </>
