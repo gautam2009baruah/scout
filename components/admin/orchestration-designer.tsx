@@ -40,8 +40,9 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import type { NodeType, Orchestration } from "@/shared/orchestrationTypes";
+import type { NodeType, Orchestration, ManualTriggerConfig } from "@/shared/orchestrationTypes";
 import { NodePropertiesPanel } from "./node-properties-panel";
+import { ManualTriggerDialog } from "./manual-trigger-dialog";
 
 type CompanyOption = { id: string; name: string };
 
@@ -98,6 +99,8 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isPropertiesOpen, setIsPropertiesOpen] = useState(false);
+  const [isManualTriggerOpen, setIsManualTriggerOpen] = useState(false);
+  const [manualTriggerConfig, setManualTriggerConfig] = useState<ManualTriggerConfig | null>(null);
 
   // Load orchestration data when orchestration changes
   useEffect(() => {
@@ -316,7 +319,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
     }
   };
 
-  // Execute orchestration
+  // Execute orchestration via manual trigger
   const executeOrchestration = async () => {
     if (!orchestration) return;
 
@@ -326,25 +329,48 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
     }
 
     try {
-      const response = await fetch("/api/admin/orchestrations/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orchestrationId: orchestration.id,
-          triggerData: {},
-        }),
-      });
+      // Get manual trigger configuration
+      const response = await fetch(
+        `/api/admin/orchestrations/triggers?orchestrationId=${orchestration.id}&triggerType=manual&status=active`
+      );
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to execute orchestration");
+        throw new Error("Failed to get trigger configuration");
       }
 
-      const result = await response.json();
-      alert(`Orchestration execution started! Execution ID: ${result.execution.id}`);
+      const data = await response.json();
+      
+      if (!data.triggers || data.triggers.length === 0) {
+        // No manual trigger exists, create default one
+        const createResponse = await fetch("/api/admin/orchestrations/triggers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            orchestrationId: orchestration.id,
+            triggerType: "manual",
+            name: "Manual Trigger",
+            description: "Manually start this orchestration",
+            config: {
+              type: "manual",
+              inputFields: [],
+            },
+          }),
+        });
+
+        if (!createResponse.ok) {
+          throw new Error("Failed to create manual trigger");
+        }
+
+        const newTrigger = await createResponse.json();
+        setManualTriggerConfig(newTrigger.config as ManualTriggerConfig);
+      } else {
+        setManualTriggerConfig(data.triggers[0].config as ManualTriggerConfig);
+      }
+
+      setIsManualTriggerOpen(true);
     } catch (error) {
-      console.error("Error executing orchestration:", error);
-      alert(error instanceof Error ? error.message : "Failed to execute orchestration");
+      console.error("Error preparing manual trigger:", error);
+      alert(error instanceof Error ? error.message : "Failed to prepare manual trigger");
     }
   };
 
@@ -509,6 +535,20 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
           onCreate={(newOrchestration) => {
             setOrchestration(newOrchestration);
             setIsCreateDialogOpen(false);
+          }}
+        />
+      )}
+
+      {/* Manual Trigger Dialog */}
+      {isManualTriggerOpen && orchestration && manualTriggerConfig && (
+        <ManualTriggerDialog
+          orchestrationId={orchestration.id}
+          orchestrationName={orchestration.name}
+          triggerConfig={manualTriggerConfig}
+          onClose={() => setIsManualTriggerOpen(false)}
+          onSuccess={(executionId) => {
+            setIsManualTriggerOpen(false);
+            alert(`Orchestration execution started! Execution ID: ${executionId}`);
           }}
         />
       )}

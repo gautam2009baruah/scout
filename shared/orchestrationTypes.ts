@@ -357,3 +357,117 @@ export type OrchestrationAnalytics = {
     averageDurationMs: number;
   }>;
 };
+
+// ============================================================================
+// Trigger Types
+// ============================================================================
+
+export type TriggerStatus = "active" | "inactive" | "error";
+
+export type OrchestrationTrigger = {
+  id: string;
+  orchestrationId: string;
+  triggerType: OrchestrationTriggerType;
+  name: string;
+  description: string | null;
+  config: Record<string, unknown>; // Encrypted sensitive data
+  status: TriggerStatus;
+  lastTriggeredAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdByEmail: string | null;
+  updatedByEmail: string | null;
+};
+
+export type TriggerExecutionLog = {
+  id: string;
+  triggerId: string;
+  orchestrationId: string;
+  executionId: string | null;
+  status: "received" | "validated" | "started" | "failed";
+  payload: Record<string, unknown>;
+  errorMessage: string | null;
+  triggeredAt: string;
+  triggeredBy: string | null;
+};
+
+// Trigger configuration schemas for each type
+export type ManualTriggerConfig = {
+  type: "manual";
+  inputFields?: Array<{
+    name: string;
+    label: string;
+    type: "text" | "number" | "boolean" | "select" | "textarea";
+    required: boolean;
+    defaultValue?: string | number | boolean;
+    options?: Array<{ label: string; value: string }>; // for select
+    placeholder?: string;
+    description?: string;
+  }>;
+};
+
+export type ScheduleTriggerConfig = {
+  type: "schedule";
+  cronExpression: string;
+  timezone: string;
+  enabled: boolean;
+  nextRunAt?: string;
+};
+
+export type WebhookTriggerConfig = {
+  type: "webhook";
+  secret: string; // Encrypted
+  allowedIPs?: string[];
+  headers?: Record<string, string>;
+  method: "POST" | "GET" | "PUT";
+  responseFormat: "json" | "text";
+};
+
+export type ChatbotTriggerConfig = {
+  type: "chatbot";
+  intent: string;
+  confidence: number;
+  entities?: string[];
+};
+
+export type APITriggerConfig = {
+  type: "api";
+  apiKey: string; // Encrypted
+  allowedOrigins?: string[];
+  rateLimit?: number;
+};
+
+export type EmailTriggerConfig = {
+  type: "email";
+  fromAddress?: string;
+  subjectPattern?: string;
+  bodyPattern?: string;
+  attachmentRequired?: boolean;
+};
+
+export type FileUploadTriggerConfig = {
+  type: "file_upload";
+  allowedExtensions: string[];
+  maxSizeMB: number;
+  storageLocation: string;
+};
+
+export type TriggerConfig =
+  | ManualTriggerConfig
+  | ScheduleTriggerConfig
+  | WebhookTriggerConfig
+  | ChatbotTriggerConfig
+  | APITriggerConfig
+  | EmailTriggerConfig
+  | FileUploadTriggerConfig;
+
+// Trigger context that gets passed to orchestration
+export type TriggerContext = {
+  type: OrchestrationTriggerType;
+  triggerId: string;
+  startedBy: string | null;
+  startedAt: string;
+  input: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+};
