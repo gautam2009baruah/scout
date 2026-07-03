@@ -8,6 +8,10 @@ import {
   waitForWorkflowCompletion,
   type WorkflowExecutionMode,
 } from "@/lib/guided-workflows/executor";
+import { executeBrowserWorkflow } from "../browser-executor";
+import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
+
+const fallbackSession = { user: { id: "system" } } as any;
 
 export async function executeWorkflowNode(
   config: WorkflowNodeConfig,
@@ -44,6 +48,59 @@ export async function executeWorkflowNode(
     // Determine user ID from context if available
     const userId = context.userId ? String(context.userId) : undefined;
 
+    // **BROWSER AUTOMATION MODE** - If target URL is provided, use automated browser execution
+    if (targetUrl) {
+      // Get workflow details to access recorded steps
+      const workflow = await getGuidedWorkflowById(workflowId, fallbackSession);
+      
+      if (!workflow) {
+        throw new Error(`Workflow not found: ${workflowId}`);
+      }
+
+      if (workflow.status !== "published") {
+        throw new Error(`Workflow is not published: ${workflow.status}`);
+      }
+
+      // Execute workflow in automated browser
+      const browserResult = await executeBrowserWorkflow({
+        workflowId,
+        targetUrl,
+        steps: workflow.recordedActions || [],
+        parameters: workflowInputs,
+        timeout: config.timeout || 300000,
+        headless: false, // Always visible so user can login if needed
+      });
+
+      if (!browserResult.success) {
+        if (config.continueOnFailure) {
+          return {
+            success: true,
+            output: {
+              error: browserResult.error,
+              status: browserResult.status,
+              failed: true,
+            },
+          };
+        }
+        return { success: false, error: browserResult.error };
+      }
+
+      // Map browser execution output
+      const output = mapWorkflowOutput(
+        {
+          executionId: browserResult.executionId,
+          workflowId,
+          workflowTitle: workflow.title,
+          status: browserResult.status,
+          output: browserResult.output,
+        },
+        config.outputMapping
+      );
+
+      return { success: true, output };
+    }
+
+    // **STANDARD MODE** - No target URL, use existing execution method
     // Execute the guided workflow
     const executionResult = await executeGuidedWorkflow({
       workflowId,

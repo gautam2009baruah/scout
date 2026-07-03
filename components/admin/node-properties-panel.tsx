@@ -1059,7 +1059,19 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
           onChange={(e) => updateConfig({ targetUrl: e.target.value })}
           placeholder="https://example.com or {{variableName}}"
         />
-        <p className="mt-1 text-xs text-slate-500">Target URL for workflow execution</p>
+        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
+          <p className="font-semibold text-blue-900 mb-1">🤖 Automated Browser Execution</p>
+          <p className="text-blue-800">
+            When Target URL is provided, the workflow will run in an <strong>automated browser</strong>:
+          </p>
+          <ul className="list-disc list-inside mt-1 text-blue-700 space-y-1">
+            <li>Browser opens and navigates to this URL</li>
+            <li>If login page detected, <strong>waits for you to login</strong></li>
+            <li>After login, resumes navigation to target URL</li>
+            <li>Executes all workflow steps automatically</li>
+            <li>Returns results back to orchestration</li>
+          </ul>
+        </div>
       </div>
 
       {/* Input Mapping Section */}

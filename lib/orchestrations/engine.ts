@@ -191,6 +191,18 @@ export class OrchestrationEngine {
     const config = node.config as NodeConfig;
 
     switch (node.nodeType) {
+      case "trigger":
+        // Trigger node is the entry point - just pass through the trigger data
+        return {
+          success: true,
+          output: {
+            trigger: {
+              input: this.execution.triggerData || {},
+              timestamp: this.execution.startedAt,
+            },
+          },
+        };
+
       case "workflow":
         return await executeWorkflowNode(config as WorkflowNodeConfig, this.context);
 
