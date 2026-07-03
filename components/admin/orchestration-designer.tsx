@@ -571,9 +571,45 @@ function CreateOrchestrationDialog({
   const [triggerType, setTriggerType] = useState<"manual" | "chatbot" | "schedule" | "webhook">("manual");
   const [creating, setCreating] = useState(false);
 
+  // Webhook configuration
+  const [webhookMethods, setWebhookMethods] = useState<Array<"GET" | "POST" | "PUT">>(["POST"]);
+  const [webhookIPs, setWebhookIPs] = useState("");
+
+  // Schedule configuration
+  const [scheduleExpression, setScheduleExpression] = useState("0 0 * * *");
+  const [scheduleTimezone, setScheduleTimezone] = useState("UTC");
+
   const handleCreate = async () => {
     setCreating(true);
     try {
+      // Build trigger config based on type
+      let triggerConfig = {};
+      if (triggerType === "webhook") {
+        triggerConfig = {
+          type: "webhook",
+          allowedMethods: webhookMethods,
+          allowedIPs: webhookIPs ? webhookIPs.split(",").map(ip => ip.trim()).filter(ip => ip) : undefined,
+          enabled: true,
+        };
+      } else if (triggerType === "schedule") {
+        triggerConfig = {
+          type: "schedule",
+          cronExpression: scheduleExpression,
+          timezone: scheduleTimezone,
+          enabled: true,
+        };
+      } else if (triggerType === "manual") {
+        triggerConfig = {
+          type: "manual",
+          inputFields: [],
+        };
+      } else if (triggerType === "chatbot") {
+        triggerConfig = {
+          type: "chatbot",
+          enabled: true,
+        };
+      }
+
       const response = await fetch("/api/admin/orchestrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -582,7 +618,7 @@ function CreateOrchestrationDialog({
           name,
           description,
           triggerType,
-          triggerConfig: {},
+          triggerConfig,
           variables: {},
         }),
       });
@@ -654,6 +690,111 @@ function CreateOrchestrationDialog({
               <option value="webhook">Webhook</option>
             </select>
           </div>
+
+          {/* Webhook Configuration */}
+          {triggerType === "webhook" && (
+            <div className="space-y-3 border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
+              <h4 className="text-sm font-semibold text-slate-700">Webhook Settings</h4>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-2">
+                  Allowed HTTP Methods
+                </label>
+                <div className="flex gap-3">
+                  {(["GET", "POST", "PUT"] as const).map((method) => (
+                    <label key={method} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={webhookMethods.includes(method)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setWebhookMethods([...webhookMethods, method]);
+                          } else {
+                            setWebhookMethods(webhookMethods.filter((m) => m !== method));
+                          }
+                        }}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">{method}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  IP Allowlist (optional)
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                  value={webhookIPs}
+                  onChange={(e) => setWebhookIPs(e.target.value)}
+                  placeholder="192.168.1.1, 10.0.0.5"
+                />
+                <p className="text-xs text-slate-500 mt-1">Comma-separated IP addresses</p>
+              </div>
+
+              <p className="text-xs text-blue-700">
+                ℹ️ A unique webhook URL and secret will be generated after creation
+              </p>
+            </div>
+          )}
+
+          {/* Schedule Configuration */}
+          {triggerType === "schedule" && (
+            <div className="space-y-3 border-l-4 border-purple-500 bg-purple-50 p-4 rounded">
+              <h4 className="text-sm font-semibold text-slate-700">Schedule Settings</h4>
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  Cron Expression
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
+                  value={scheduleExpression}
+                  onChange={(e) => setScheduleExpression(e.target.value)}
+                  placeholder="0 0 * * *"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Format: minute hour day month weekday (e.g., "0 0 * * *" = daily at midnight)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">
+                  Timezone
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                  value={scheduleTimezone}
+                  onChange={(e) => setScheduleTimezone(e.target.value)}
+                  placeholder="UTC"
+                />
+                <p className="text-xs text-slate-500 mt-1">e.g., UTC, America/New_York, Europe/London</p>
+              </div>
+            </div>
+          )}
+
+          {/* Manual Trigger Info */}
+          {triggerType === "manual" && (
+            <div className="border-l-4 border-green-500 bg-green-50 p-3 rounded">
+              <p className="text-xs text-green-700">
+                ℹ️ Manual triggers can be executed from the UI with custom input fields (configurable after creation)
+              </p>
+            </div>
+          )}
+
+          {/* Chatbot Trigger Info */}
+          {triggerType === "chatbot" && (
+            <div className="border-l-4 border-orange-500 bg-orange-50 p-3 rounded">
+              <p className="text-xs text-orange-700">
+                ℹ️ Chatbot triggers are automatically invoked when users interact with the Scout chatbot
+              </p>
+            </div>
+          )}
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button
