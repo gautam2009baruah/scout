@@ -41,10 +41,13 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  List,
 } from "lucide-react";
 import type { NodeType, Orchestration, ManualTriggerConfig } from "@/shared/orchestrationTypes";
 import { NodePropertiesPanel } from "./node-properties-panel";
 import { ManualTriggerDialog } from "./manual-trigger-dialog";
+import { ExecutionMonitor } from "./execution-monitor";
+import { OrchestrationList } from "./orchestration-list";
 
 type CompanyOption = { id: string; name: string };
 
@@ -104,6 +107,8 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
   const [isPropertiesOpen, setIsPropertiesOpen] = useState(false);
   const [isManualTriggerOpen, setIsManualTriggerOpen] = useState(false);
   const [manualTriggerConfig, setManualTriggerConfig] = useState<ManualTriggerConfig | null>(null);
+  const [executionMonitorId, setExecutionMonitorId] = useState<string | null>(null);
+  const [isListOpen, setIsListOpen] = useState(false);
 
   // Load orchestration data when orchestration changes
   useEffect(() => {
@@ -382,6 +387,14 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
+          <button
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={() => setIsListOpen(true)}
+            type="button"
+          >
+            <List className="h-4 w-4" />
+            All Orchestrations
+          </button>
           {!orchestration ? (
             <button
               className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
@@ -575,8 +588,29 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
           onClose={() => setIsManualTriggerOpen(false)}
           onSuccess={(executionId) => {
             setIsManualTriggerOpen(false);
-            alert(`Orchestration execution started! Execution ID: ${executionId}`);
+            setExecutionMonitorId(executionId);
           }}
+        />
+      )}
+
+      {/* Execution Monitor */}
+      {executionMonitorId && orchestration && (
+        <ExecutionMonitor
+          executionId={executionMonitorId}
+          orchestrationName={orchestration.name}
+          onClose={() => setExecutionMonitorId(null)}
+        />
+      )}
+
+      {/* Orchestration List */}
+      {isListOpen && (
+        <OrchestrationList
+          onLoad={(loadedOrchestration) => {
+            setOrchestration(loadedOrchestration);
+            // Nodes and edges will be loaded by the useEffect
+          }}
+          onClose={() => setIsListOpen(false)}
+          currentOrchestrationId={orchestration?.id}
         />
       )}
     </div>
