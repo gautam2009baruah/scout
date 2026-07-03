@@ -11,7 +11,12 @@ import {
   createTriggerLog,
   decryptTriggerConfig,
 } from "@/lib/orchestrations/triggers";
-import { getOrchestrationById } from "@/lib/orchestrations/db";
+import {
+  getOrchestrationById,
+  createExecution,
+  getNodes,
+  getConnections,
+} from "@/lib/orchestrations/db";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
 import type { WebhookTriggerConfig, TriggerConfig } from "@/shared/orchestrationTypes";
 
@@ -282,14 +287,18 @@ async function handleWebhook(
     );
 
     // ========================================================================
-    // 10. Execute Orchestration
+    // 10. Create Execution
     // ========================================================================
 
-    const engine = new OrchestrationEngine();
-    const execution = await engine.executeInBackground(
-      orchestration.id,
-      triggerContext
-    );
+    const execution = await createExecution({
+      orchestrationId: trigger.orchestrationId,
+      orchestrationVersion: orchestration.version,
+      context: {
+        trigger: triggerContext,
+      },
+      triggerData: requestBody,
+      triggeredBy: clientIP,
+    });
 
     await createTriggerLog({
       triggerId: trigger.id,
@@ -302,6 +311,13 @@ async function handleWebhook(
 
     // Update last triggered timestamp
     await updateTriggerLastTriggered(trigger.id);
+
+    // Get nodes and connections
+    const nodes = await getNodes(trigger.orchestrationId);
+    const connections = await getConnections(trigger.orchestrationId);
+
+    // Start execution in background
+    executeInBackground(execution, nodes, connections, trigger.id, trigger.orchestrationId, clientIP);
 
     // ========================================================================
     // 11. Success Response
@@ -363,6 +379,52 @@ async function handleWebhook(
     }
 
     return NextResponse.json(responseBody, { status: statusCode });
+  }
+}
+
+// Execute orchestration in background
+async function executeInBackground(
+  execution: any,
+  nodes: any[],
+  connections: any[],
+  triggerId: string,
+  orchestrationId: string,
+  triggeredBy: string
+) {
+  try {
+    const engine = new OrchestrationEngine(execution, nodes, connections);
+    const result = await engine.execute();
+
+    if (!result.success) {
+      // Log failure
+      await createTriggerLog({
+        triggerId,
+        orchestrationId,
+        executionId: execution.id,
+        status: "failed",
+        payload: {},
+        errorMessage: result.error,
+        triggeredBy,
+      });
+
+      await updateTriggerLastTriggered(triggerId, result.error);
+    }
+  } catch (error) {
+    console.error("Background execution error:", error);
+    await createTriggerLog({
+      triggerId,
+      orchestrationId,
+      executionId: execution.id,
+      status: "failed",
+      payload: {},
+      errorMessage: error instanceof Error ? error.message : "Unknown error",
+      triggeredBy,
+    });
+
+    await updateTriggerLastTriggered(
+      triggerId,
+      error instanceof Error ? error.message : "Unknown error"
+    );
   }
 }
 
