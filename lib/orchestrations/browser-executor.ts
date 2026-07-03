@@ -701,6 +701,17 @@ export async function executeBrowserWorkflow(
 
   try {
     console.log(`🚀 Starting browser workflow execution: ${options.workflowId}`);
+    console.log(`📋 Parameters received:`, options.parameters || {});
+    console.log(`🔑 Parameter keys:`, Object.keys(options.parameters || {}));
+    
+    if (options.parameters && Object.keys(options.parameters).length > 0) {
+      console.log(`📊 Parameter details:`);
+      for (const [key, value] of Object.entries(options.parameters)) {
+        console.log(`   ${key} = "${value}"`);
+      }
+    } else {
+      console.log(`⚠️  No parameters provided - Scout Player will run in standard mode`);
+    }
 
     // Launch browser (visible by default so user can login)
     // This will reuse existing browser instance if running, preserving session

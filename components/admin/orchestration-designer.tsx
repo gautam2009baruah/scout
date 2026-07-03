@@ -304,6 +304,11 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
     }
 
     try {
+      // First, save the orchestration to ensure database has latest nodes
+      console.log("📝 Saving orchestration before publishing...");
+      await saveOrchestration();
+      
+      console.log("📤 Publishing orchestration...");
       const response = await fetch("/api/admin/orchestrations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
