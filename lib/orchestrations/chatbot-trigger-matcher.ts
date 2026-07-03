@@ -3,7 +3,7 @@
 
 import { getPool } from "@/lib/db/pool";
 import type { ChatbotTriggerConfig } from "@/shared/orchestrationTypes";
-import { getAICompletion } from "@/lib/ai/completion";
+import { getLLMProvider } from "@/lib/llm/providers";
 
 export type TriggerMatch = {
   triggerId: string;
@@ -151,10 +151,12 @@ Respond with ONLY a JSON object in this format:
 If the user message doesn't clearly match any intent, set matchedIndex to null and confidence to 0.`;
   
   try {
-    const response = await getAICompletion(prompt, {
-      maxTokens: 200,
-      temperature: 0.3,
-    });
+    const provider = await getLLMProvider();
+    const response = await provider.generate_answer(
+      "You are an intent classification system. Respond only with valid JSON.",
+      prompt,
+      ""
+    );
     
     const parsed = JSON.parse(response);
     
