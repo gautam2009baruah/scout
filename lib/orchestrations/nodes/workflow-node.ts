@@ -32,10 +32,18 @@ export async function executeWorkflowNode(
         ? config.workflowId
         : String(evaluateExpression(config.workflowId, context));
 
+    // Debug logging
+    console.log("[WorkflowNode] Evaluation:", {
+      configWorkflowId: config.workflowId,
+      evaluatedWorkflowId: workflowId,
+      contextKeys: Object.keys(context),
+      contextSample: JSON.stringify(context).substring(0, 200),
+    });
+
     // Validate workflowId is not empty after evaluation
     if (!workflowId || workflowId.trim() === "") {
       throw new Error(
-        `Workflow ID evaluated to empty value. Check your input mapping. Config: ${JSON.stringify(config.workflowId)}, Context keys: ${Object.keys(context).join(", ")}`
+        `Workflow ID evaluated to empty value. Config: ${JSON.stringify(config.workflowId)}, Context keys: ${Object.keys(context).join(", ")}`
       );
     }
 
@@ -43,7 +51,7 @@ export async function executeWorkflowNode(
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidPattern.test(workflowId)) {
       throw new Error(
-        `Invalid workflow ID format: "${workflowId}". Expected UUID format. Available context: ${Object.keys(context).join(", ")}`
+        `Invalid workflow ID format: "${workflowId}". Expected UUID format. Config: ${JSON.stringify(config.workflowId)}, Available context: ${Object.keys(context).join(", ")}`
       );
     }
 

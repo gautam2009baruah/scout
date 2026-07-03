@@ -192,14 +192,21 @@ export class OrchestrationEngine {
 
     switch (node.nodeType) {
       case "trigger":
-        // Trigger node is the entry point - spread trigger data to top level for easy access
+        // Trigger node is the entry point
+        // Provide trigger data in multiple formats for flexibility:
+        // 1. Root level: {{workflowId}}
+        // 2. trigger.input: {{trigger.input.workflowId}} (backward compatible)
+        // 3. trigger metadata: {{trigger.timestamp}}, {{trigger.startedBy}}
+        const triggerData = this.execution.triggerData || {};
         return {
           success: true,
           output: {
-            ...(this.execution.triggerData || {}), // Spread trigger data to context root
+            ...triggerData, // Spread to root for easy access
             trigger: {
+              input: triggerData, // Also available under trigger.input
               timestamp: this.execution.startedAt,
-              data: this.execution.triggerData || {}, // Also keep original data for reference
+              startedBy: this.execution.triggeredBy,
+              startedAt: this.execution.startedAt,
             },
           },
         };
