@@ -53,7 +53,7 @@ export async function getIMAPCredentials(credentialId: string): Promise<IMAPConf
     [credentialId]
   );
   
-  if (result.rowCount === 0) {
+  if ((result.rowCount ?? 0) === 0) {
     return null;
   }
   

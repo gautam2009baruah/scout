@@ -64,7 +64,7 @@ export async function isEmailAlreadyProcessed(
     [triggerId, messageId]
   );
   
-  return result.rowCount > 0;
+  return (result.rowCount ?? 0) > 0;
 }
 
 /**
@@ -127,7 +127,7 @@ export async function processEmailTrigger(
       [orchestrationId]
     );
     
-    if (orchResult.rowCount === 0) {
+    if ((orchResult.rowCount ?? 0) === 0) {
       throw new Error("Orchestration not found or not published");
     }
     

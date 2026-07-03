@@ -35,7 +35,7 @@ export async function getGmailCredentials(credentialId: string): Promise<GmailCo
     [credentialId]
   );
   
-  if (result.rowCount === 0) {
+  if ((result.rowCount ?? 0) === 0) {
     return null;
   }
   

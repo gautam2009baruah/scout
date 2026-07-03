@@ -43,7 +43,7 @@ export async function POST(
       [triggerId]
     );
 
-    if (triggerResult.rowCount === 0) {
+    if ((triggerResult.rowCount ?? 0) === 0) {
       return NextResponse.json(
         { error: "File upload trigger not found or inactive" },
         { status: 404 }
@@ -139,7 +139,7 @@ export async function POST(
       // Generate unique filename
       const fileId = randomBytes(16).toString("hex");
       const fileName = `${fileId}${fileExt}`;
-      const storagePath = join(config.storageLocation, fileName);
+      const storagePath = join(/*turbopackIgnore: true*/ config.storageLocation, fileName);
 
       // Save file to storage
       const buffer = Buffer.from(await file.arrayBuffer());
@@ -191,7 +191,7 @@ export async function POST(
       [trigger.orchestration_id]
     );
 
-    if (orchResult.rowCount === 0) {
+    if ((orchResult.rowCount ?? 0) === 0) {
       return NextResponse.json(
         { error: "Orchestration not found or not published" },
         { status: 404 }
