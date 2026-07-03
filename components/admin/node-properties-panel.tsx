@@ -834,6 +834,8 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
     type: string;
     stepOrder: number;
   }>>([]);
+  const [fetchingWorkflowId, setFetchingWorkflowId] = useState<string | null>(null);
+  const workflowCacheRef = useRef<Map<string, any>>(new Map());
 
   // Extract available fields from trigger node
   const availableFields = (() => {
@@ -904,10 +906,24 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
     updateConfig({ outputMapping });
   }, [outputMappings]);
 
-  // Fetch workflow details when workflow is selected
+  // Fetch workflow details when workflow is selected (with caching)
   useEffect(() => {
     async function fetchWorkflowDetails() {
       if (!config.workflowId || config.workflowId.includes("{{")) return;
+      
+      // Check cache first
+      const cached = workflowCacheRef.current.get(config.workflowId);
+      if (cached) {
+        setWorkflowSteps(cached);
+        return;
+      }
+      
+      // Prevent duplicate requests for same workflow
+      if (fetchingWorkflowId === config.workflowId) {
+        return;
+      }
+      
+      setFetchingWorkflowId(config.workflowId);
       
       try {
         const response = await fetch(`/api/admin/guided-workflows/${config.workflowId}`);
@@ -955,6 +971,8 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
             });
           }
           
+          // Cache the result
+          workflowCacheRef.current.set(config.workflowId, steps);
           setWorkflowSteps(steps);
           
           // Auto-suggest mappings if steps match trigger fields
@@ -980,6 +998,8 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
         }
       } catch (error) {
         console.error("Failed to fetch workflow details:", error);
+      } finally {
+        setFetchingWorkflowId(null);
       }
     }
     
