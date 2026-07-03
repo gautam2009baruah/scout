@@ -30,6 +30,14 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { orchestrationId, input } = body;
 
+    console.log("\n" + "▓".repeat(80));
+    console.log("📥 TRIGGER EXECUTE API - RECEIVED REQUEST");
+    console.log("▓".repeat(80));
+    console.log("Orchestration ID:", orchestrationId);
+    console.log("Input data:", JSON.stringify(input, null, 2));
+    console.log("Input keys:", input ? Object.keys(input) : "none");
+    console.log("▓".repeat(80) + "\n");
+
     if (!orchestrationId) {
       return NextResponse.json(
         { error: "orchestrationId is required" },

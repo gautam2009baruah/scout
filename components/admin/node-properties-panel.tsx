@@ -263,6 +263,16 @@ function TriggerConfig({ config, updateConfig }: any) {
         <div className="border-l-4 border-green-500 bg-green-50 p-4 rounded space-y-3">
           <h4 className="text-sm font-semibold text-slate-700">Manual Trigger Settings</h4>
           
+          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs space-y-2">
+            <p className="font-semibold text-blue-900">💡 How Manual Trigger Works:</p>
+            <div className="space-y-1 text-blue-800">
+              <p><strong>Field Name:</strong> Variable name (e.g., "session_name") - use lowercase with underscores</p>
+              <p><strong>Label:</strong> Display text shown in dialog (e.g., "Training Session Title")</p>
+              <p className="pt-2 border-t border-blue-200"><strong>When you run:</strong> A dialog will ask you to enter the actual values for these fields.</p>
+              <p><strong>In workflow mapping:</strong> Use trigger.input.field_name to access the value</p>
+            </div>
+          </div>
+          
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Input Fields</label>
             <div className="space-y-2">
@@ -272,7 +282,7 @@ function TriggerConfig({ config, updateConfig }: any) {
                     <input
                       type="text"
                       className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-                      placeholder="Field name"
+                      placeholder="e.g. session_name"
                       value={field.name || ""}
                       onChange={(e) => {
                         const updated = [...inputFields];
@@ -283,7 +293,7 @@ function TriggerConfig({ config, updateConfig }: any) {
                     <input
                       type="text"
                       className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-                      placeholder="Label"
+                      placeholder="e.g. Training Session Title"
                       value={field.label || ""}
                       onChange={(e) => {
                         const updated = [...inputFields];

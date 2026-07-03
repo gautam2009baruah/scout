@@ -198,6 +198,16 @@ export class OrchestrationEngine {
         // 2. trigger.input: {{trigger.input.workflowId}} (backward compatible)
         // 3. trigger metadata: {{trigger.timestamp}}, {{trigger.startedBy}}
         const triggerData = this.execution.triggerData || {};
+        
+        console.log("\n" + "▓".repeat(80));
+        console.log("⚡ TRIGGER NODE OUTPUT");
+        console.log("▓".repeat(80));
+        console.log("Trigger data received:", JSON.stringify(triggerData, null, 2));
+        console.log("Will be available as:");
+        console.log("  - Root level: {{fieldName}}");
+        console.log("  - Nested: {{trigger.input.fieldName}}");
+        console.log("▓".repeat(80) + "\n");
+        
         return {
           success: true,
           output: {

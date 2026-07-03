@@ -60,12 +60,43 @@ export async function executeWorkflowNode(
       console.log("\n" + "=".repeat(80));
       console.log("🔧 WORKFLOW NODE - EVALUATING INPUT MAPPINGS");
       console.log("=".repeat(80));
-      console.log("Input mapping config:", config.inputMapping);
+      console.log("📋 Available context keys:", Object.keys(context));
+      console.log("📋 Context data:", JSON.stringify(context, null, 2).substring(0, 500) + "...");
+      console.log("\n💼 Input mapping config:", config.inputMapping);
+      
       for (const [key, expression] of Object.entries(config.inputMapping)) {
         const evaluatedValue = evaluateExpression(expression, context);
         workflowInputs[key] = evaluatedValue;
-        console.log(`✅ ${key}: "${expression}" => "${evaluatedValue}"`);
+        
+        if (!evaluatedValue || evaluatedValue === "") {
+          console.log(`❌ ${key}: "${expression}" => EMPTY or NULL`);
+          console.log(`   🔍 Debugging: trying to resolve "${expression}"`);
+          
+          // Try to manually resolve to show what went wrong
+          const pathMatch = expression.match(/\{\{([^}]+)\}\}/);
+          if (pathMatch) {
+            const path = pathMatch[1].trim();
+            const parts = path.split(".");
+            console.log(`   Path parts: [${parts.join(", ")}]`);
+            
+            let current: any = context;
+            for (let i = 0; i < parts.length; i++) {
+              const part = parts[i];
+              console.log(`   Step ${i + 1}: Looking for "${part}" in`, typeof current);
+              if (current && typeof current === "object" && part in current) {
+                current = current[part];
+                console.log(`   ✅ Found: ${typeof current === "object" ? JSON.stringify(current).substring(0, 100) : current}`);
+              } else {
+                console.log(`   ❌ Not found! Available keys:`, current && typeof current === "object" ? Object.keys(current) : "N/A");
+                break;
+              }
+            }
+          }
+        } else {
+          console.log(`✅ ${key}: "${expression}" => "${evaluatedValue}"`);
+        }
       }
+      
       console.log("\n📦 FINAL WORKFLOW INPUTS:", workflowInputs);
       console.log("=".repeat(80) + "\n");
     } else {

@@ -71,6 +71,13 @@ export function ManualTriggerDialog({
     try {
       setExecuting(true);
 
+      console.log("\n" + "█".repeat(60));
+      console.log("📤 MANUAL TRIGGER - SENDING DATA");
+      console.log("█".repeat(60));
+      console.log("Input values:", JSON.stringify(inputValues, null, 2));
+      console.log("Field names:", Object.keys(inputValues));
+      console.log("█".repeat(60) + "\n");
+
       const response = await fetch("/api/admin/orchestrations/triggers/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

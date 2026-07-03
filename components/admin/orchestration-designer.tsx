@@ -342,7 +342,30 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
     }
 
     try {
-      // Get manual trigger configuration
+      // Get trigger node configuration from canvas
+      const triggerNode = nodes.find(n => n.data.nodeType === "trigger");
+      
+      if (!triggerNode) {
+        alert("This orchestration has no trigger node. Please add a trigger node first.");
+        return;
+      }
+
+      const triggerNodeConfig = triggerNode.data.config || {};
+      
+      console.log("\n" + "█".repeat(60));
+      console.log("🎯 EXECUTING ORCHESTRATION");
+      console.log("█".repeat(60));
+      console.log("Trigger node config:", triggerNodeConfig);
+      console.log("Input fields:", triggerNodeConfig.inputFields || []);
+      console.log("█".repeat(60) + "\n");
+
+      // Use trigger node config directly (it has the latest inputFields)
+      const triggerConfig: ManualTriggerConfig = {
+        type: triggerNodeConfig.triggerType || "manual",
+        inputFields: triggerNodeConfig.inputFields || [],
+      };
+      
+      // Ensure trigger record exists in database (for logging/tracking)
       const response = await fetch(
         `/api/admin/orchestrations/triggers?orchestrationId=${orchestration.id}&triggerType=manual&status=active`
       );
@@ -354,7 +377,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
       const data = await response.json();
       
       if (!data.triggers || data.triggers.length === 0) {
-        // No manual trigger exists, create default one
+        // Create trigger record with the node's config
         const createResponse = await fetch("/api/admin/orchestrations/triggers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -363,23 +386,17 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
             triggerType: "manual",
             name: "Manual Trigger",
             description: "Manually start this orchestration",
-            config: {
-              type: "manual",
-              inputFields: [],
-            },
+            config: triggerConfig,
           }),
         });
 
         if (!createResponse.ok) {
           throw new Error("Failed to create manual trigger");
         }
-
-        const newTrigger = await createResponse.json();
-        setManualTriggerConfig(newTrigger.config as ManualTriggerConfig);
-      } else {
-        setManualTriggerConfig(data.triggers[0].config as ManualTriggerConfig);
       }
 
+      // Show manual trigger dialog with the node's config
+      setManualTriggerConfig(triggerConfig);
       setIsManualTriggerOpen(true);
     } catch (error) {
       console.error("Error preparing manual trigger:", error);
