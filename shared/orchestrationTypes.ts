@@ -409,10 +409,17 @@ export type ManualTriggerConfig = {
 
 export type ScheduleTriggerConfig = {
   type: "schedule";
-  cronExpression: string;
-  timezone: string;
+  scheduleType: "one-time" | "daily" | "weekly" | "monthly" | "cron"; // Schedule frequency
+  cronExpression?: string; // Required if scheduleType is "cron"
+  specificTime?: string; // e.g., "14:30" for daily/weekly
+  dayOfWeek?: number; // 0-6 for weekly (0 = Sunday)
+  dayOfMonth?: number; // 1-31 for monthly
+  oneTimeDate?: string; // ISO date for one-time
+  timezone: string; // e.g., "UTC", "America/New_York"
+  startDate?: string; // ISO date - when to start the schedule
+  endDate?: string; // ISO date - when to end the schedule
   enabled: boolean;
-  nextRunAt?: string;
+  nextRunAt?: string; // Computed next execution time
 };
 
 export type WebhookTriggerConfig = {
@@ -427,9 +434,21 @@ export type WebhookTriggerConfig = {
 
 export type ChatbotTriggerConfig = {
   type: "chatbot";
-  intent: string;
-  confidence: number;
-  entities?: string[];
+  intentName: string; // Name of the intent that triggers this
+  examplePhrases: string[]; // Example user phrases for intent matching
+  requiredVariables?: Array<{
+    name: string;
+    label: string;
+    type: "text" | "number" | "boolean" | "select";
+    description?: string;
+    options?: Array<{ label: string; value: string }>; // For select type
+  }>;
+  confirmationRequired: boolean; // If true, ask user before running
+  confirmationMessage?: string; // Custom confirmation message
+  allowedRoles?: string[]; // Roles that can trigger this (empty = all)
+  allowedUsers?: string[]; // Specific user emails (empty = all)
+  minConfidence: number; // Minimum confidence threshold (0-1)
+  enabled: boolean;
 };
 
 export type APITriggerConfig = {
@@ -442,17 +461,44 @@ export type APITriggerConfig = {
 
 export type EmailTriggerConfig = {
   type: "email";
-  fromAddress?: string;
-  subjectPattern?: string;
-  bodyPattern?: string;
-  attachmentRequired?: boolean;
+  provider: "gmail" | "outlook" | "imap"; // Email provider
+  mailbox: string; // Email address to monitor
+  folder?: string; // Folder/label to monitor (default: INBOX)
+  senderFilter?: string; // Filter by sender email
+  subjectContains?: string; // Subject must contain this
+  bodyContains?: string; // Body must contain this
+  unreadOnly: boolean; // Only process unread emails
+  hasAttachment?: boolean; // Require attachment
+  pollingIntervalMinutes: number; // How often to check for emails
+  markAsProcessed: boolean; // Mark email as read/processed after execution
+  credentialId?: string; // Reference to stored OAuth token or IMAP credentials
+  imapConfig?: {
+    host: string;
+    port: number;
+    tls: boolean;
+    username: string;
+    // Password stored separately in secure vault, not here
+  };
+  enabled: boolean;
 };
 
 export type FileUploadTriggerConfig = {
   type: "file_upload";
-  allowedExtensions: string[];
-  maxSizeMB: number;
-  storageLocation: string;
+  allowedFileTypes: string[]; // e.g., [".pdf", ".docx", ".txt"]
+  maxFileSizeMB: number; // Maximum file size in megabytes
+  allowMultipleFiles: boolean; // Allow multiple file uploads
+  requiredMetadata?: Array<{
+    name: string;
+    label: string;
+    type: "text" | "number" | "select";
+    required: boolean;
+    description?: string;
+    options?: Array<{ label: string; value: string }>;
+  }>;
+  virusScanEnabled: boolean; // Enable virus scanning if available
+  storageLocation: string; // Where to store uploaded files
+  aiExtractionCompatible: boolean; // If true, files can be read by AI extraction nodes
+  enabled: boolean;
 };
 
 export type TriggerConfig =

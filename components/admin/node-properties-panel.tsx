@@ -122,6 +122,28 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete }: NodeP
 // ============================================================================
 
 function TriggerConfig({ config, updateConfig }: any) {
+  const [triggerType, setTriggerType] = useState(config.triggerType || "manual");
+  const [inputFields, setInputFields] = useState<any[]>(config.inputFields || []);
+  const [examplePhrases, setExamplePhrases] = useState<string[]>(config.examplePhrases || []);
+  const [requiredVariables, setRequiredVariables] = useState<any[]>(config.requiredVariables || []);
+  
+  const handleTriggerTypeChange = (newType: string) => {
+    setTriggerType(newType);
+    updateConfig({ triggerType: newType });
+  };
+
+  useEffect(() => {
+    if (triggerType === "manual") {
+      updateConfig({ inputFields });
+    }
+  }, [inputFields]);
+
+  useEffect(() => {
+    if (triggerType === "chatbot") {
+      updateConfig({ examplePhrases, requiredVariables });
+    }
+  }, [examplePhrases, requiredVariables]);
+
   return (
     <div className="space-y-4">
       <div>
@@ -130,8 +152,8 @@ function TriggerConfig({ config, updateConfig }: any) {
         </label>
         <select
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.triggerType || "manual"}
-          onChange={(e) => updateConfig({ triggerType: e.target.value })}
+          value={triggerType}
+          onChange={(e) => handleTriggerTypeChange(e.target.value)}
         >
           <option value="manual">Manual</option>
           <option value="chatbot">Chatbot</option>
@@ -143,6 +165,562 @@ function TriggerConfig({ config, updateConfig }: any) {
         </select>
         <p className="mt-1 text-xs text-slate-500">How this orchestration is triggered</p>
       </div>
+
+      {/* Manual Trigger Configuration */}
+      {triggerType === "manual" && (
+        <div className="border-l-4 border-green-500 bg-green-50 p-4 rounded space-y-3">
+          <h4 className="text-sm font-semibold text-slate-700">Manual Trigger Settings</h4>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Input Fields</label>
+            <div className="space-y-2">
+              {inputFields.map((field, index) => (
+                <div key={index} className="bg-white border border-slate-200 rounded p-3 space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                      placeholder="Field name"
+                      value={field.name || ""}
+                      onChange={(e) => {
+                        const updated = [...inputFields];
+                        updated[index].name = e.target.value;
+                        setInputFields(updated);
+                      }}
+                    />
+                    <input
+                      type="text"
+                      className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                      placeholder="Label"
+                      value={field.label || ""}
+                      onChange={(e) => {
+                        const updated = [...inputFields];
+                        updated[index].label = e.target.value;
+                        setInputFields(updated);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="p-1 text-red-600 hover:bg-red-50 rounded"
+                      onClick={() => setInputFields(inputFields.filter((_, i) => i !== index))}
+                    >
+                      <Minus className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      className="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
+                      value={field.type || "text"}
+                      onChange={(e) => {
+                        const updated = [...inputFields];
+                        updated[index].type = e.target.value;
+                        setInputFields(updated);
+                      }}
+                    >
+                      <option value="text">Text</option>
+                      <option value="number">Number</option>
+                      <option value="boolean">Boolean</option>
+                      <option value="select">Select</option>
+                      <option value="textarea">Textarea</option>
+                    </select>
+                    <label className="flex items-center gap-1 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={field.required || false}
+                        onChange={(e) => {
+                          const updated = [...inputFields];
+                          updated[index].required = e.target.checked;
+                          setInputFields(updated);
+                        }}
+                      />
+                      Required
+                    </label>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400"
+                onClick={() => setInputFields([...inputFields, { name: "", label: "", type: "text", required: false }])}
+              >
+                <Plus className="h-4 w-4" />
+                Add Input Field
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Schedule Trigger Configuration */}
+      {triggerType === "schedule" && (
+        <div className="border-l-4 border-purple-500 bg-purple-50 p-4 rounded space-y-3">
+          <h4 className="text-sm font-semibold text-slate-700">Schedule Settings</h4>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Schedule Type</label>
+            <select
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.scheduleType || "daily"}
+              onChange={(e) => updateConfig({ scheduleType: e.target.value })}
+            >
+              <option value="one-time">One-time</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="cron">Cron Expression</option>
+            </select>
+          </div>
+
+          {config.scheduleType === "cron" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Cron Expression</label>
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
+                placeholder="0 0 * * *"
+                value={config.cronExpression || ""}
+                onChange={(e) => updateConfig({ cronExpression: e.target.value })}
+              />
+              <p className="text-xs text-slate-500 mt-1">Format: minute hour day month weekday</p>
+            </div>
+          )}
+
+          {(config.scheduleType === "daily" || config.scheduleType === "weekly" || config.scheduleType === "monthly") && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Time</label>
+              <input
+                type="time"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.specificTime || "00:00"}
+                onChange={(e) => updateConfig({ specificTime: e.target.value })}
+              />
+            </div>
+          )}
+
+          {config.scheduleType === "weekly" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Day of Week</label>
+              <select
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.dayOfWeek || 0}
+                onChange={(e) => updateConfig({ dayOfWeek: parseInt(e.target.value) })}
+              >
+                <option value="0">Sunday</option>
+                <option value="1">Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+                <option value="6">Saturday</option>
+              </select>
+            </div>
+          )}
+
+          {config.scheduleType === "monthly" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Day of Month</label>
+              <input
+                type="number"
+                min="1"
+                max="31"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.dayOfMonth || 1}
+                onChange={(e) => updateConfig({ dayOfMonth: parseInt(e.target.value) })}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Timezone</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="UTC, America/New_York, Europe/London"
+              value={config.timezone || "UTC"}
+              onChange={(e) => updateConfig({ timezone: e.target.value })}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="scheduleEnabled"
+              checked={config.enabled !== false}
+              onChange={(e) => updateConfig({ enabled: e.target.checked })}
+            />
+            <label htmlFor="scheduleEnabled" className="text-sm text-slate-700">Enabled</label>
+          </div>
+        </div>
+      )}
+
+      {/* Webhook Trigger Configuration */}
+      {triggerType === "webhook" && (
+        <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded space-y-3">
+          <h4 className="text-sm font-semibold text-slate-700">Webhook Settings</h4>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Allowed HTTP Methods</label>
+            <div className="flex gap-3">
+              {["GET", "POST", "PUT"].map((method) => (
+                <label key={method} className="flex items-center gap-1 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={(config.allowedMethods || ["POST"]).includes(method)}
+                    onChange={(e) => {
+                      const current = config.allowedMethods || ["POST"];
+                      const updated = e.target.checked
+                        ? [...current, method]
+                        : current.filter((m: string) => m !== method);
+                      updateConfig({ allowedMethods: updated });
+                    }}
+                  />
+                  {method}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">IP Allowlist (optional)</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="192.168.1.1, 10.0.0.5"
+              value={(config.allowedIPs || []).join(", ")}
+              onChange={(e) => {
+                const ips = e.target.value.split(",").map(ip => ip.trim()).filter(ip => ip);
+                updateConfig({ allowedIPs: ips });
+              }}
+            />
+            <p className="text-xs text-slate-500 mt-1">Comma-separated IP addresses</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="webhookEnabled"
+              checked={config.enabled !== false}
+              onChange={(e) => updateConfig({ enabled: e.target.checked })}
+            />
+            <label htmlFor="webhookEnabled" className="text-sm text-slate-700">Enabled</label>
+          </div>
+
+          <p className="text-xs text-blue-700">ℹ️ Webhook URL and secret will be generated when trigger is created</p>
+        </div>
+      )}
+
+      {/* Chatbot Trigger Configuration */}
+      {triggerType === "chatbot" && (
+        <div className="border-l-4 border-orange-500 bg-orange-50 p-4 rounded space-y-3">
+          <h4 className="text-sm font-semibold text-slate-700">Chatbot Settings</h4>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Intent Name</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="process_report, handle_request"
+              value={config.intentName || ""}
+              onChange={(e) => updateConfig({ intentName: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">Example Phrases</label>
+            <div className="space-y-2">
+              {examplePhrases.map((phrase, index) => (
+                <div key={index} className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                    placeholder="e.g., Process the quarterly report"
+                    value={phrase}
+                    onChange={(e) => {
+                      const updated = [...examplePhrases];
+                      updated[index] = e.target.value;
+                      setExamplePhrases(updated);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="p-1 text-red-600 hover:bg-red-50 rounded"
+                    onClick={() => setExamplePhrases(examplePhrases.filter((_, i) => i !== index))}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600"
+                onClick={() => setExamplePhrases([...examplePhrases, ""])}
+              >
+                <Plus className="h-4 w-4" />
+                Add Example Phrase
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Minimum Confidence</label>
+            <input
+              type="number"
+              min="0"
+              max="1"
+              step="0.1"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.minConfidence || 0.7}
+              onChange={(e) => updateConfig({ minConfidence: parseFloat(e.target.value) })}
+            />
+            <p className="text-xs text-slate-500 mt-1">Threshold for intent match (0-1)</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="confirmationRequired"
+              checked={config.confirmationRequired !== false}
+              onChange={(e) => updateConfig({ confirmationRequired: e.target.checked })}
+            />
+            <label htmlFor="confirmationRequired" className="text-sm text-slate-700">Require user confirmation</label>
+          </div>
+
+          {config.confirmationRequired && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Confirmation Message (optional)</label>
+              <textarea
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                rows={2}
+                placeholder="Custom confirmation message to show user"
+                value={config.confirmationMessage || ""}
+                onChange={(e) => updateConfig({ confirmationMessage: e.target.value })}
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="chatbotEnabled"
+              checked={config.enabled !== false}
+              onChange={(e) => updateConfig({ enabled: e.target.checked })}
+            />
+            <label htmlFor="chatbotEnabled" className="text-sm text-slate-700">Enabled</label>
+          </div>
+        </div>
+      )}
+
+      {/* API Trigger Configuration */}
+      {triggerType === "api" && (
+        <div className="border-l-4 border-indigo-500 bg-indigo-50 p-4 rounded space-y-3">
+          <h4 className="text-sm font-semibold text-slate-700">API Trigger Settings</h4>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Rate Limit (requests/minute)</label>
+            <input
+              type="number"
+              min="0"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="0 = unlimited"
+              value={config.rateLimit || 60}
+              onChange={(e) => updateConfig({ rateLimit: parseInt(e.target.value) || 0 })}
+            />
+            <p className="text-xs text-slate-500 mt-1">0 means unlimited</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="apiEnabled"
+              checked={config.enabled !== false}
+              onChange={(e) => updateConfig({ enabled: e.target.checked })}
+            />
+            <label htmlFor="apiEnabled" className="text-sm text-slate-700">Enabled</label>
+          </div>
+
+          <p className="text-xs text-indigo-700">ℹ️ API clients can be managed separately</p>
+        </div>
+      )}
+
+      {/* Email Trigger Configuration */}
+      {triggerType === "email" && (
+        <div className="border-l-4 border-pink-500 bg-pink-50 p-4 rounded space-y-3">
+          <h4 className="text-sm font-semibold text-slate-700">Email Trigger Settings</h4>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email Provider</label>
+            <select
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.provider || "gmail"}
+              onChange={(e) => updateConfig({ provider: e.target.value })}
+            >
+              <option value="gmail">Gmail</option>
+              <option value="outlook">Microsoft Outlook</option>
+              <option value="imap">IMAP (Generic)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Mailbox/Email Address</label>
+            <input
+              type="email"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="inbox@company.com"
+              value={config.mailbox || ""}
+              onChange={(e) => updateConfig({ mailbox: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Subject Contains (optional)</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Invoice, Report"
+              value={config.subjectContains || ""}
+              onChange={(e) => updateConfig({ subjectContains: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Sender Filter (optional)</label>
+            <input
+              type="email"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="sender@domain.com"
+              value={config.senderFilter || ""}
+              onChange={(e) => updateConfig({ senderFilter: e.target.value })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Polling Interval (minutes)</label>
+            <input
+              type="number"
+              min="1"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.pollingIntervalMinutes || 5}
+              onChange={(e) => updateConfig({ pollingIntervalMinutes: parseInt(e.target.value) || 5 })}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="unreadOnly"
+              checked={config.unreadOnly !== false}
+              onChange={(e) => updateConfig({ unreadOnly: e.target.checked })}
+            />
+            <label htmlFor="unreadOnly" className="text-sm text-slate-700">Process unread emails only</label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="markAsProcessed"
+              checked={config.markAsProcessed !== false}
+              onChange={(e) => updateConfig({ markAsProcessed: e.target.checked })}
+            />
+            <label htmlFor="markAsProcessed" className="text-sm text-slate-700">Mark as processed after execution</label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="emailEnabled"
+              checked={config.enabled !== false}
+              onChange={(e) => updateConfig({ enabled: e.target.checked })}
+            />
+            <label htmlFor="emailEnabled" className="text-sm text-slate-700">Enabled</label>
+          </div>
+
+          <p className="text-xs text-pink-700">ℹ️ Email credentials must be configured separately</p>
+        </div>
+      )}
+
+      {/* File Upload Trigger Configuration */}
+      {triggerType === "file_upload" && (
+        <div className="border-l-4 border-teal-500 bg-teal-50 p-4 rounded space-y-3">
+          <h4 className="text-sm font-semibold text-slate-700">File Upload Settings</h4>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Allowed File Types</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder=".pdf, .docx, .txt"
+              value={(config.allowedFileTypes || []).join(", ")}
+              onChange={(e) => {
+                const types = e.target.value.split(",").map(t => t.trim()).filter(t => t);
+                updateConfig({ allowedFileTypes: types });
+              }}
+            />
+            <p className="text-xs text-slate-500 mt-1">Comma-separated file extensions</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Max File Size (MB)</label>
+            <input
+              type="number"
+              min="1"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.maxFileSizeMB || 10}
+              onChange={(e) => updateConfig({ maxFileSizeMB: parseInt(e.target.value) || 10 })}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Storage Location</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="./storage/uploads"
+              value={config.storageLocation || "./storage/uploads"}
+              onChange={(e) => updateConfig({ storageLocation: e.target.value })}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="allowMultipleFiles"
+              checked={config.allowMultipleFiles !== false}
+              onChange={(e) => updateConfig({ allowMultipleFiles: e.target.checked })}
+            />
+            <label htmlFor="allowMultipleFiles" className="text-sm text-slate-700">Allow multiple files</label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="virusScanEnabled"
+              checked={config.virusScanEnabled === true}
+              onChange={(e) => updateConfig({ virusScanEnabled: e.target.checked })}
+            />
+            <label htmlFor="virusScanEnabled" className="text-sm text-slate-700">Enable virus scanning</label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="aiExtractionCompatible"
+              checked={config.aiExtractionCompatible === true}
+              onChange={(e) => updateConfig({ aiExtractionCompatible: e.target.checked })}
+            />
+            <label htmlFor="aiExtractionCompatible" className="text-sm text-slate-700">AI extraction compatible</label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="fileUploadEnabled"
+              checked={config.enabled !== false}
+              onChange={(e) => updateConfig({ enabled: e.target.checked })}
+            />
+            <label htmlFor="fileUploadEnabled" className="text-sm text-slate-700">Enabled</label>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

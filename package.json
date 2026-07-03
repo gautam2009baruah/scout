@@ -10,7 +10,8 @@
     "db:migrate": "node scripts/db/migrate.mjs",
     "db:seed:first-admin": "node scripts/db/seed-first-admin.mjs",
     "jobs:worker": "node scripts/jobs/worker.mjs",
-    "extension:build": "node scripts/build-extension.mjs"
+    "extension:build": "node scripts/build-extension.mjs",
+    "triggers:schedule": "node scripts/schedule-trigger-worker.mjs"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",
