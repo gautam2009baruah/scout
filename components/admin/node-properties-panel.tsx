@@ -1079,9 +1079,16 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
         <label className="block text-sm font-semibold text-slate-700 mb-2">
           📥 Input Mapping
         </label>
-        <div className="mb-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-700">
-          <p className="font-semibold mb-1">💡 Smart Mapping:</p>
-          <p>Scout detected <strong>{workflowSteps.length} input field{workflowSteps.length !== 1 ? 's' : ''}</strong> in this workflow. Just select where to get the data from - no technical knowledge needed!</p>
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-slate-700">
+          <p className="font-semibold mb-2 text-blue-900">💡 How Input Mapping Works:</p>
+          <div className="space-y-1.5">
+            <p><strong>Left side:</strong> Describe the field to find (e.g., "training session title", "employee name")</p>
+            <p><strong>Right side:</strong> Select the trigger field that contains the value</p>
+            <p className="text-blue-800 mt-2 pt-2 border-t border-blue-200">
+              <strong>Example:</strong> "fill training name textbox" → trigger.input.title<br/>
+              This finds a textbox with label "training name" and fills it with the title from your trigger.
+            </p>
+          </div>
         </div>
         
         {workflowSteps.length > 0 ? (
@@ -1187,7 +1194,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
                   <input
                     type="text"
                     className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                    placeholder="parameter"
+                    placeholder="e.g. training title, employee name"
                     value={mapping.key}
                     onChange={(e) => {
                       const updated = [...inputMappings];

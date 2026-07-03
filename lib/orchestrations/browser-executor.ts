@@ -233,51 +233,43 @@ function matchParametersToSteps(
   console.log("");
 
   for (const [paramKey, paramValue] of Object.entries(parameters)) {
-    const normalizedKey = paramKey.toLowerCase().trim();
-    const instruction = String(paramValue).trim();
-
-    console.log(`\n📌 Parameter: "${paramKey}"`);
-    console.log(`   Instruction: "${instruction}"`);
-
-    // Parse the instruction to determine action and value
-    // Supported formats:
-    // 1. Simple value: "My Training" -> action: fill, value: "My Training"
-    // 2. Action only: "click" -> action: click, value: undefined
-    // 3. Action with value: "fill: My Training" or "enter My Training" -> action: fill, value: "My Training"
+    // NEW LOGIC:
+    // - paramKey = instruction for finding element (e.g., "fill training session title textbox")
+    // - paramValue = actual data from trigger (e.g., "My Training Session")
     
-    let action = "none";
-    let value: string | undefined;
+    const searchInstruction = paramKey.toLowerCase().trim();
+    const fillValue = String(paramValue).trim();
 
-    const instructionLower = instruction.toLowerCase();
+    console.log(`\n📌 Mapping:`);
+    console.log(`   Find element: "${paramKey}"`);
+    console.log(`   Fill with: "${fillValue}"`);
 
-    // Check for explicit actions
-    if (instructionLower === "click" || instructionLower === "press") {
+    // Parse the search instruction to determine action
+    let action = "fill"; // Default to fill
+    let searchKeywords = searchInstruction;
+
+    // Check if instruction starts with action keywords
+    if (searchInstruction.startsWith("click ") || searchInstruction.startsWith("press ")) {
       action = "click";
-    } else if (instructionLower === "skip" || instructionLower === "ignore") {
+      searchKeywords = searchInstruction.replace(/^(click|press)\s+/i, "");
+    } else if (searchInstruction.startsWith("skip ")) {
       action = "skip";
-    } else if (instructionLower.startsWith("fill:") || instructionLower.startsWith("enter:")) {
+      searchKeywords = searchInstruction.replace(/^skip\s+/i, "");
+    } else if (searchInstruction.startsWith("fill ") || searchInstruction.startsWith("enter ") || 
+               searchInstruction.startsWith("type ")) {
       action = "fill";
-      value = instruction.split(":")[1]?.trim();
-    } else if (instructionLower.startsWith("fill ") || instructionLower.startsWith("enter ")) {
-      action = "fill";
-      value = instruction.substring(instruction.indexOf(" ") + 1).trim();
-    } else if (instructionLower.includes("fill") || instructionLower.includes("enter") || 
-               instructionLower.includes("type") || instructionLower.includes("input")) {
-      // Instruction contains fill/enter/type/input keyword
-      action = "fill";
-      // Try to extract value from the instruction
-      const fillMatch = instruction.match(/(?:fill|enter|type|input)[:\s]+(.+)/i);
-      value = fillMatch ? fillMatch[1].trim() : instruction;
-    } else {
-      // No action keyword found - treat as a value to fill
-      action = "fill";
-      value = instruction;
+      searchKeywords = searchInstruction.replace(/^(fill|enter|type)\s+/i, "");
     }
 
-    console.log(`   Parsed action: ${action}${value ? `, value: "${value}"` : ""}`);
+    // Clean up quotes from search keywords
+    searchKeywords = searchKeywords.replace(/["']/g, "").trim();
 
-    // Try to find matching step
+    console.log(`   Action: ${action}`);
+    console.log(`   Search keywords: "${searchKeywords}"`);
+
+    // Try to find matching step using search keywords
     let matchedIndex = -1;
+    let matchReason = "";
 
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
@@ -294,70 +286,90 @@ function matchParametersToSteps(
 
       const combinedText = searchTexts.join(" ");
 
-      // Check for exact element name/id match first (highest priority)
-      if (step.elementIdentity?.name === paramKey || step.elementIdentity?.id === paramKey) {
-        matchedIndex = i;
-        console.log(`   ✅ Exact match by element name/id at step ${i + 1}`);
-        break;
+      // Extract significant keywords (3+ characters, skip common words)
+      const keywords = searchKeywords
+        .split(/\s+/)
+        .filter(word => word.length >= 3 && !["the", "and", "with", "for"].includes(word));
+
+      if (keywords.length === 0) {
+        // If no significant keywords, use the whole search string
+        if (combinedText.includes(searchKeywords)) {
+          matchedIndex = i;
+          matchReason = "full phrase match";
+          break;
+        }
+        continue;
       }
 
-      // Check for keyword match in descriptions
-      const keywords = normalizedKey.split(/\s+/).filter(word => word.length > 2);
+      // Count how many keywords match
       const matchCount = keywords.filter(keyword => combinedText.includes(keyword)).length;
+      const matchPercentage = matchCount / keywords.length;
 
-      if (matchCount > 0 && matchCount === keywords.length) {
+      // High confidence: all keywords match
+      if (matchCount === keywords.length) {
         matchedIndex = i;
-        console.log(`   ✅ Matched by description keywords at step ${i + 1}: "${step.stepDescription}"`);
+        matchReason = `all ${keywords.length} keywords matched`;
         break;
       }
 
-      // Partial match (at least half the keywords)
-      if (keywords.length > 1 && matchCount >= Math.ceil(keywords.length / 2)) {
+      // Medium confidence: at least 70% of keywords match
+      if (matchPercentage >= 0.7 && matchedIndex === -1) {
         matchedIndex = i;
-        console.log(`   ⚠️  Partial match (${matchCount}/${keywords.length} keywords) at step ${i + 1}: "${step.stepDescription}"`);
-        break;
+        matchReason = `${matchCount}/${keywords.length} keywords matched (${Math.round(matchPercentage * 100)}%)`;
+        // Don't break - keep looking for a better match
       }
     }
 
     if (matchedIndex >= 0) {
-      stepActions.set(matchedIndex, { action, value });
-      if (action === "fill" && value) {
-        console.log(`   ✅ MATCHED → Will auto-fill step ${matchedIndex + 1} with: "${value}"`);
+      // Use fillValue from trigger, not from instruction
+      stepActions.set(matchedIndex, { action, value: fillValue });
+      
+      console.log(`   ✅ MATCHED at step ${matchedIndex + 1} (${matchReason})`);
+      console.log(`   Step description: "${steps[matchedIndex].stepDescription}"`);
+      
+      if (action === "fill") {
+        console.log(`   → Will auto-fill with: "${fillValue}"`);
       } else if (action === "click") {
-        console.log(`   ✅ MATCHED → Will auto-click step ${matchedIndex + 1}`);
+        console.log(`   → Will auto-click`);
       } else if (action === "skip") {
-        console.log(`   ℹ️  MATCHED → Will skip step ${matchedIndex + 1} (manual interaction)`);
+        console.log(`   → Will skip (manual interaction)`);
       }
     } else {
-      console.log(`   ❌ NO MATCH FOUND for parameter: "${paramKey}"`);
+      console.log(`   ❌ NO MATCH FOUND`);
+      console.log(`   Could not find step matching: "${searchKeywords}"`);
     }
   }
 
   console.log("\n📊 MATCHING SUMMARY:");
-  console.log(`   Total parameters: ${Object.keys(parameters).length}`);
+  console.log(`   Total mappings: ${Object.keys(parameters).length}`);
   console.log(`   Matched: ${stepActions.size}`);
   console.log(`   Unmatched: ${Object.keys(parameters).length - stepActions.size}`);
   console.log("▓".repeat(80) + "\n");
 
-  // If only one parameter and one input step, auto-match
+  // If only one mapping and one input step, auto-match as fallback
   if (parameters && Object.keys(parameters).length === 1 && stepActions.size === 0) {
     const inputSteps = steps.filter(s => s.type === "input" || s.type === "change");
     if (inputSteps.length === 1) {
       const inputIndex = steps.indexOf(inputSteps[0]);
       const [paramKey, paramValue] = Object.entries(parameters)[0];
-      const instruction = String(paramValue);
+      const fillValue = String(paramValue);
       
-      // Parse action
-      if (instruction.toLowerCase() === "click") {
-        stepActions.set(inputIndex, { action: "click" });
-      } else {
-        stepActions.set(inputIndex, { action: "fill", value: instruction });
+      // Determine action from the key
+      const keyLower = paramKey.toLowerCase();
+      let action = "fill";
+      
+      if (keyLower.includes("click") || keyLower.includes("press")) {
+        action = "click";
+      } else if (keyLower.includes("skip")) {
+        action = "skip";
       }
-      console.log(`   ℹ️  Auto-matched single parameter "${paramKey}" to single input step ${inputIndex + 1}`);
+      
+      stepActions.set(inputIndex, { action, value: fillValue });
+      console.log(`   ℹ️  Fallback: Auto-matched single mapping to single input step ${inputIndex + 1}`);
+      console.log(`   → Will ${action} with value: "${fillValue}"`);
     }
   }
 
-  console.log(`\n   📊 Total matches: ${stepActions.size}/${Object.keys(parameters).length}`);
   return stepActions;
 }
 
@@ -406,7 +418,6 @@ async function injectAndExecuteScoutPlayer(
     console.log(`✅ Scout Player injected`);
 
     // Convert RecordedActions to guide format expected by the player
-    // Include automation instructions from parameter matching
     const guideSteps = steps.map((action, index) => ({
       order: index + 1,
       description: action.stepDescription || `Step ${index + 1}`,
@@ -414,7 +425,6 @@ async function injectAndExecuteScoutPlayer(
         selectorCandidates: action.elementIdentity?.selectorCandidates || [],
       },
       action: action.type,
-      autoAction: stepValueMap.get(index), // { action: "fill"|"click"|"skip", value?: string }
     }));
 
     const guide = {
@@ -424,52 +434,125 @@ async function injectAndExecuteScoutPlayer(
       recordedActions: steps,
     };
 
-    console.log(`🎬 Starting Scout Player with ${steps.length} steps...`);
+    console.log(`\n🎬 Starting Scout Player with ${steps.length} steps...`);
     
-    const autoActionCount = stepValueMap.size;
-    if (autoActionCount > 0) {
-      console.log(`\n✨ Automation enabled for ${autoActionCount} step(s)`);
-      console.log(`   Actions will be performed based on your input mapping.`);
+    const hasInstructions = parameters && Object.keys(parameters).length > 0;
+    if (hasInstructions) {
+      console.log(`\n✨ Automation enabled with ${Object.keys(parameters).length} instruction(s)`);
+      console.log(`   Will auto-fill when highlighted element matches instructions.`);
     }
     
     console.log(`\n⚠️  USER ACTION REQUIRED:`);
     console.log(`   The Scout player will now guide you through the workflow.`);
     console.log(`   Please follow the tooltips and complete each step.`);
-    if (autoActionCount > 0) {
-      console.log(`   Steps with automation will be handled automatically.`);
+    if (hasInstructions) {
+      console.log(`   Matching fields will be filled automatically.`);
     }
     console.log(`   The browser will remain open for you to interact.\n`);
 
     // Inject the guide data and start the player
-    // Only enhance with auto-fill if parameters were matched
-    if (stepValueMap.size > 0) {
+    // Enhanced with auto-fill based on highlighted element matching
+    if (hasInstructions) {
       // WITH AUTO-FILL ENHANCEMENT (orchestration mode)
-      await page.evaluate((guideData) => {
+      // Pass parameters directly - check highlighted element in real-time
+      await page.evaluate((guideData, instructionsMap) => {
         // Create and start the player
         const Player = (window as any)._ScoutPlayerClass;
         if (!Player) {
           throw new Error("Scout Player class not found. Make sure the player script was injected.");
         }
 
-        // Helper to find element (copied from player's findTarget logic)
-        function findTargetElement(elementIdentity: any): HTMLElement | null {
-          if (!elementIdentity || !elementIdentity.selectorCandidates) return null;
+        // Helper to extract searchable text from highlighted element
+        function getElementSearchText(element: HTMLElement): string {
+          const texts: string[] = [];
           
-          const candidates = [...elementIdentity.selectorCandidates].sort(
-            (a: any, b: any) => (b.confidence || 0) - (a.confidence || 0)
-          );
-
-          for (const candidate of candidates) {
-            try {
-              const element = document.querySelector(candidate.value);
-              if (element instanceof HTMLElement) {
-                console.log(`[Scout Auto-fill] Found element via selector: ${candidate.value}`);
-                return element;
-              }
-            } catch (e) {
-              // Try next candidate
+          // Get label text (from associated label or aria-label)
+          const id = element.id;
+          if (id) {
+            const label = document.querySelector(`label[for="${id}"]`);
+            if (label) texts.push(label.textContent?.toLowerCase() || "");
+          }
+          
+          const ariaLabel = element.getAttribute('aria-label');
+          if (ariaLabel) texts.push(ariaLabel.toLowerCase());
+          
+          // Get placeholder
+          const placeholder = element.getAttribute('placeholder');
+          if (placeholder) texts.push(placeholder.toLowerCase());
+          
+          // Get name attribute
+          const name = element.getAttribute('name');
+          if (name) texts.push(name.toLowerCase());
+          
+          // Get id
+          if (id) texts.push(id.toLowerCase());
+          
+          // Get title
+          const title = element.getAttribute('title');
+          if (title) texts.push(title.toLowerCase());
+          
+          // Get nearby text (previous sibling or parent text)
+          const parent = element.parentElement;
+          if (parent) {
+            const parentText = parent.textContent?.replace(element.textContent || '', '').trim();
+            if (parentText && parentText.length < 100) {
+              texts.push(parentText.toLowerCase());
             }
           }
+          
+          return texts.filter(Boolean).join(' ');
+        }
+
+        // Helper to check if instruction matches element
+        function findMatchingInstruction(element: HTMLElement, instructions: Record<string, string>): { instruction: string; value: string; action: string } | null {
+          const elementText = getElementSearchText(element);
+          
+          console.log(`\n🔍 Checking highlighted element:`);
+          console.log(`   <${element.tagName}> "${elementText.substring(0, 80)}${elementText.length > 80 ? '...' : ''}"`);
+          
+          for (const [instruction, value] of Object.entries(instructions)) {
+            const instructionLower = instruction.toLowerCase();
+            
+            // Determine action from instruction
+            let action = "fill";
+            let searchText = instructionLower;
+            
+            if (instructionLower.startsWith("click ") || instructionLower.startsWith("press ")) {
+              action = "click";
+              searchText = instructionLower.replace(/^(click|press)\s+/i, "");
+            } else if (instructionLower.startsWith("skip ")) {
+              action = "skip";
+              searchText = instructionLower.replace(/^skip\s+/i, "");
+            } else if (instructionLower.startsWith("fill ") || instructionLower.startsWith("enter ") || 
+                       instructionLower.startsWith("type ")) {
+              action = "fill";
+              searchText = instructionLower.replace(/^(fill|enter|type)\s+/i, "");
+            }
+            
+            // Clean up quotes
+            searchText = searchText.replace(/["']/g, "").trim();
+            
+            // Extract keywords (3+ chars, skip common words)
+            const keywords = searchText
+              .split(/\s+/)
+              .filter(word => word.length >= 3 && !["the", "and", "with", "for", "textbox", "field", "input"].includes(word));
+            
+            if (keywords.length === 0) continue;
+            
+            // Check how many keywords match
+            const matchedKeywords = keywords.filter(keyword => elementText.includes(keyword));
+            const matchPercentage = matchedKeywords.length / keywords.length;
+            
+            console.log(`   📋 "${instruction}" → ${matchedKeywords.length}/${keywords.length} (${Math.round(matchPercentage * 100)}%)`);
+            
+            // Match if 70%+ of keywords found
+            if (matchPercentage >= 0.7) {
+              console.log(`   ✅ MATCH!`);
+              return { instruction, value, action };
+            }
+          }
+          
+          console.log(`   ❌ No matching instructions`);
           return null;
         }
 
@@ -479,88 +562,82 @@ async function injectAndExecuteScoutPlayer(
         // Store original render method
         const originalRender = player.render.bind(player);
         
-        // Override render to add automation
+        // Override render to check highlighted element against instructions
         player.render = function() {
           originalRender();
           
-          const currentStep = guideData.steps[player.index];
-          const currentAction = guideData.recordedActions[player.index];
-          
-          // Check if this step has automation instructions
-          if (currentStep && currentStep.autoAction) {
-            const autoAction = currentStep.autoAction;
+          // Wait a moment for element to be fully highlighted
+          setTimeout(() => {
+            const highlightedElement = player.highlighted;
+            
+            if (!highlightedElement) {
+              return; // No element highlighted yet
+            }
+            
+            // Check if this highlighted element matches any instruction
+            const match = findMatchingInstruction(highlightedElement, instructionsMap);
+            
+            if (!match) {
+              return; // No match - user handles manually
+            }
             
             console.log(`\n${"=".repeat(70)}`);
             console.log(`🤖 SCOUT AUTOMATION - Step ${player.index + 1}`);
             console.log(`${"=".repeat(70)}`);
-            console.log(`Description: ${currentStep.description}`);
-            console.log(`Action: ${autoAction.action.toUpperCase()}`);
-            if (autoAction.value) {
-              console.log(`Value: "${autoAction.value}"`);
+            console.log(`Matched: "${match.instruction}"`);
+            console.log(`Action: ${match.action.toUpperCase()}`);
+            if (match.value) {
+              console.log(`Value: "${match.value}"`);
             }
             console.log(`${"=".repeat(70)}`);
             
-            // Handle based on action type
-            if (autoAction.action === "skip") {
-              console.log(`⏭️  SKIPPING - User will handle this step manually`);
-              return; // Scout player will wait for user
+            if (match.action === "skip") {
+              console.log(`⏭️  SKIPPING - User will handle manually`);
+              return;
             }
             
-            if (autoAction.action === "fill" && autoAction.value) {
-              // Auto-fill logic with retry
-              let attempts = 0;
-              const maxAttempts = 15;
-              
-              const tryAutoFill = () => {
-                attempts++;
-                
-                let target = player.highlighted;
-                if (!target) {
-                  target = findTargetElement(currentAction.elementIdentity);
-                }
+            if (match.action === "fill") {
+              // Auto-fill the highlighted element
+              setTimeout(() => {
+                const target = player.highlighted;
                 
                 if (target && (target instanceof HTMLInputElement || 
                               target instanceof HTMLTextAreaElement ||
                               target instanceof HTMLSelectElement)) {
                   
-                  console.log(`✅ Element found (attempt ${attempts})`);
-                  console.log(`   Type: ${target.tagName}, ID: ${target.id || 'none'}, Name: ${target.name || 'none'}`);
-                  
-                  const fillValue = autoAction.value || "";
+                  const fillValue = match.value || "";
                   
                   try {
                     if (target instanceof HTMLSelectElement) {
-                      // For select elements
-                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
-                      if (nativeInputValueSetter) {
-                        nativeInputValueSetter.call(target, fillValue);
+                      // Select element
+                      const nativeValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
+                      if (nativeValueSetter) {
+                        nativeValueSetter.call(target, fillValue);
                       } else {
                         target.value = fillValue;
                       }
                       
-                      // Dispatch events for React/frameworks
                       target.dispatchEvent(new Event('input', { bubbles: true }));
                       target.dispatchEvent(new Event('change', { bubbles: true }));
                       target.dispatchEvent(new Event('blur', { bubbles: true }));
                       
                       console.log(`✅ SELECT FILLED: "${fillValue}"`);
                     } else {
-                      // For input/textarea elements
+                      // Input/textarea element
                       target.focus();
                       
-                      // Use native setter to bypass React's event system
-                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                      const nativeValueSetter = Object.getOwnPropertyDescriptor(
                         target instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype,
                         'value'
                       )?.set;
                       
-                      if (nativeInputValueSetter) {
-                        nativeInputValueSetter.call(target, fillValue);
+                      if (nativeValueSetter) {
+                        nativeValueSetter.call(target, fillValue);
                       } else {
                         target.value = fillValue;
                       }
                       
-                      // Dispatch all necessary events for React/frameworks
+                      // Dispatch all events for React/frameworks
                       target.dispatchEvent(new Event('input', { bubbles: true }));
                       target.dispatchEvent(new Event('change', { bubbles: true }));
                       target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
@@ -568,7 +645,6 @@ async function injectAndExecuteScoutPlayer(
                       target.dispatchEvent(new Event('blur', { bubbles: true }));
                       
                       console.log(`✅ INPUT FILLED: "${fillValue}"`);
-                      console.log(`   Current value: "${target.value}"`);
                       
                       // Visual feedback
                       const originalOutline = target.style.outline;
@@ -581,53 +657,34 @@ async function injectAndExecuteScoutPlayer(
                         target.style.outlineOffset = originalOffset;
                       }, 1500);
                     }
-                    
-                    return true;
                   } catch (error) {
-                    console.error(`❌ ERROR filling element:`, error);
-                    return false;
+                    console.error(`❌ ERROR filling:`, error);
                   }
                 } else {
-                  if (attempts < maxAttempts) {
-                    console.log(`⏳ Waiting for element... (${attempts}/${maxAttempts})`);
-                    setTimeout(tryAutoFill, 250);
-                  } else {
-                    console.error(`❌ FAILED: Element not found after ${maxAttempts} attempts`);
-                    if (player.highlighted) {
-                      console.error(`   Highlighted element is not fillable. Type: ${player.highlighted.tagName}`);
-                    }
-                  }
-                  return false;
+                  console.error(`❌ Highlighted element not fillable`);
                 }
-              };
-              
-              // Wait longer for element to be highlighted
-              setTimeout(tryAutoFill, 500);
-            } else if (autoAction.action === "click") {
-              // Auto-click logic
+              }, 300);
+            } else if (match.action === "click") {
+              // Auto-click the highlighted element
               setTimeout(() => {
-                let target = player.highlighted;
-                if (!target) {
-                  target = findTargetElement(currentAction.elementIdentity);
-                }
-                
+                const target = player.highlighted;
                 if (target && target instanceof HTMLElement) {
-                  console.log(`🖱️  AUTO-CLICKING element`);
+                  console.log(`🖱️  AUTO-CLICKING`);
                   target.click();
                   console.log(`✅ CLICKED`);
                 } else {
-                  console.error(`❌ Click target not found`);
+                  console.error(`❌ No clickable element`);
                 }
-              }, 500);
+              }, 300);
             }
-          }
+          }, 400);
         };
 
         (window as any)._scoutPlayerInstance = player;
         player.start();
         
-        console.log("[Scout] Player started with auto-fill enhancement");
-      }, guide);
+        console.log("[Scout] Player started with auto-fill (element matching mode)");
+      }, guide, Object.fromEntries(Object.entries(parameters || {}).map(([k, v]) => [k, String(v)])));
     } else {
       // WITHOUT AUTO-FILL (standard digital adoption mode)
       await page.evaluate((guideData) => {
