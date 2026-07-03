@@ -315,16 +315,17 @@ export function validateTriggerConfig(
     case "manual":
       if (config.type !== "manual") {
         errors.push("Invalid manual trigger config");
-      }
-      // Validate input fields
-      if (config.inputFields) {
-        config.inputFields.forEach((field, index) => {
-          if (!field.name) errors.push(`Input field ${index}: name is required`);
-          if (!field.label) errors.push(`Input field ${index}: label is required`);
-          if (field.type === "select" && !field.options) {
-            errors.push(`Input field ${index}: options required for select type`);
-          }
-        });
+      } else {
+        // Validate input fields (type is narrowed to ManualTriggerConfig)
+        if (config.inputFields) {
+          config.inputFields.forEach((field, index) => {
+            if (!field.name) errors.push(`Input field ${index}: name is required`);
+            if (!field.label) errors.push(`Input field ${index}: label is required`);
+            if (field.type === "select" && !field.options) {
+              errors.push(`Input field ${index}: options required for select type`);
+            }
+          });
+        }
       }
       break;
 
