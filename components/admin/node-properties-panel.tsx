@@ -726,20 +726,119 @@ function TriggerConfig({ config, updateConfig }: any) {
 }
 
 function WorkflowConfig({ config, updateConfig }: any) {
+  const [inputMappings, setInputMappings] = useState<Array<{ key: string; value: string }>>(
+    Object.entries(config.inputMapping || {}).map(([key, value]) => ({ key, value: value as string }))
+  );
+  const [outputMappings, setOutputMappings] = useState<Array<{ key: string; value: string }>>(
+    Object.entries(config.outputMapping || {}).map(([key, value]) => ({ key, value: value as string }))
+  );
+  const [availableWorkflows, setAvailableWorkflows] = useState<Array<{ id: string; title: string; status: string }>>([]);
+  const [loadingWorkflows, setLoadingWorkflows] = useState(true);
+  const [useManualInput, setUseManualInput] = useState(false);
+
+  // Fetch available workflows
+  useEffect(() => {
+    async function fetchWorkflows() {
+      try {
+        const response = await fetch("/api/admin/guided-workflows");
+        if (response.ok) {
+          const data = await response.json();
+          const workflows = (data.guides || [])
+            .filter((guide: any) => guide.status === "published")
+            .map((guide: any) => ({
+              id: guide.id,
+              title: guide.title,
+              status: guide.status,
+            }));
+          setAvailableWorkflows(workflows);
+        }
+      } catch (error) {
+        console.error("Failed to fetch workflows:", error);
+      } finally {
+        setLoadingWorkflows(false);
+      }
+    }
+    fetchWorkflows();
+  }, []);
+
+  useEffect(() => {
+    const inputMapping = inputMappings.reduce((acc, mapping) => {
+      if (mapping.key && mapping.value) acc[mapping.key] = mapping.value;
+      return acc;
+    }, {} as Record<string, string>);
+    updateConfig({ inputMapping });
+  }, [inputMappings]);
+
+  useEffect(() => {
+    const outputMapping = outputMappings.reduce((acc, mapping) => {
+      if (mapping.key && mapping.value) acc[mapping.key] = mapping.value;
+      return acc;
+    }, {} as Record<string, string>);
+    updateConfig({ outputMapping });
+  }, [outputMappings]);
+
+  // Check if current value is a dynamic expression
+  const isDynamicExpression = config.workflowId?.includes("{{") && config.workflowId?.includes("}}");
+  const showManualInput = useManualInput || isDynamicExpression;
+
   return (
     <div className="space-y-4">
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Workflow ID <span className="text-red-500">*</span>
+          Workflow <span className="text-red-500">*</span>
         </label>
-        <input
-          type="text"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.workflowId || ""}
-          onChange={(e) => updateConfig({ workflowId: e.target.value })}
-          placeholder="workflow-id or {{variableName}}"
-        />
-        <p className="mt-1 text-xs text-slate-500">Use workflow ID or {'{{variable}}'}</p>
+        
+        {showManualInput ? (
+          <>
+            <input
+              type="text"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+              value={config.workflowId || ""}
+              onChange={(e) => updateConfig({ workflowId: e.target.value })}
+              placeholder="{{variableName}} or workflow-id"
+            />
+            <div className="mt-1 flex items-center justify-between">
+              <p className="text-xs text-slate-500">Dynamic expression or workflow ID</p>
+              <button
+                type="button"
+                className="text-xs text-blue-600 hover:text-blue-700"
+                onClick={() => setUseManualInput(false)}
+              >
+                Select from list
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <select
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+              value={config.workflowId || ""}
+              onChange={(e) => updateConfig({ workflowId: e.target.value })}
+              disabled={loadingWorkflows}
+            >
+              <option value="">
+                {loadingWorkflows ? "Loading workflows..." : "Select a workflow..."}
+              </option>
+              {availableWorkflows.map((workflow) => (
+                <option key={workflow.id} value={workflow.id}>
+                  {workflow.title} ({workflow.id})
+                </option>
+              ))}
+            </select>
+            <div className="mt-1 flex items-center justify-between">
+              <p className="text-xs text-slate-500">
+                {availableWorkflows.length} published workflow{availableWorkflows.length !== 1 ? "s" : ""} available
+              </p>
+              <button
+                type="button"
+                className="text-xs text-blue-600 hover:text-blue-700"
+                onClick={() => setUseManualInput(true)}
+              >
+                Use dynamic expression
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       <div>
@@ -754,7 +853,121 @@ function WorkflowConfig({ config, updateConfig }: any) {
         <p className="mt-1 text-xs text-slate-500">Target URL for workflow execution</p>
       </div>
 
-      <div>
+      {/* Input Mapping Section */}
+      <div className="border-t pt-4">
+        <label className="block text-sm font-semibold text-slate-700 mb-2">
+          📥 Input Mapping (Context → Workflow Parameters)
+        </label>
+        <p className="text-xs text-slate-500 mb-3">
+          Map context variables to workflow input parameters. Use {'{{variable.path}}'} to access trigger data.
+        </p>
+        <div className="space-y-2">
+          {inputMappings.map((mapping, index) => (
+            <div key={index} className="flex gap-2">
+              <input
+                type="text"
+                className="w-1/3 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                placeholder="workflowParam"
+                value={mapping.key}
+                onChange={(e) => {
+                  const updated = [...inputMappings];
+                  updated[index].key = e.target.value;
+                  setInputMappings(updated);
+                }}
+              />
+              <span className="flex items-center text-slate-400">←</span>
+              <input
+                type="text"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                placeholder="{{trigger.input.fieldName}}"
+                value={mapping.value}
+                onChange={(e) => {
+                  const updated = [...inputMappings];
+                  updated[index].value = e.target.value;
+                  setInputMappings(updated);
+                }}
+              />
+              <button
+                type="button"
+                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                onClick={() => setInputMappings(inputMappings.filter((_, i) => i !== index))}
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700"
+            onClick={() => setInputMappings([...inputMappings, { key: "", value: "" }])}
+          >
+            <Plus className="h-4 w-4" />
+            Add Input Mapping
+          </button>
+        </div>
+        <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
+          💡 Example: customer ← {'{{trigger.input.customerName}}'}
+        </div>
+      </div>
+
+      {/* Output Mapping Section */}
+      <div className="border-t pt-4">
+        <label className="block text-sm font-semibold text-slate-700 mb-2">
+          📤 Output Mapping (Workflow Results → Context Variables)
+        </label>
+        <p className="text-xs text-slate-500 mb-3">
+          Map workflow output fields to context variables for use in subsequent nodes.
+        </p>
+        <div className="space-y-2">
+          {outputMappings.map((mapping, index) => (
+            <div key={index} className="flex gap-2">
+              <input
+                type="text"
+                className="w-1/3 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                placeholder="variableName"
+                value={mapping.key}
+                onChange={(e) => {
+                  const updated = [...outputMappings];
+                  updated[index].key = e.target.value;
+                  setOutputMappings(updated);
+                }}
+              />
+              <span className="flex items-center text-slate-400">←</span>
+              <input
+                type="text"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                placeholder="result.fieldName"
+                value={mapping.value}
+                onChange={(e) => {
+                  const updated = [...outputMappings];
+                  updated[index].value = e.target.value;
+                  setOutputMappings(updated);
+                }}
+              />
+              <button
+                type="button"
+                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                onClick={() => setOutputMappings(outputMappings.filter((_, i) => i !== index))}
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700"
+            onClick={() => setOutputMappings([...outputMappings, { key: "", value: "" }])}
+          >
+            <Plus className="h-4 w-4" />
+            Add Output Mapping
+          </button>
+        </div>
+        <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
+          💡 Example: invoiceId ← result.invoiceId
+        </div>
+      </div>
+
+      <div className="border-t pt-4">
         <label className="block text-sm font-semibold text-slate-700 mb-1">Execution Mode</label>
         <select
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
@@ -777,6 +990,19 @@ function WorkflowConfig({ config, updateConfig }: any) {
         />
         <label htmlFor="waitForCompletion" className="text-sm text-slate-700">
           Wait for workflow completion
+        </label>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="continueOnFailure"
+          className="rounded border-slate-300"
+          checked={config.continueOnFailure === true}
+          onChange={(e) => updateConfig({ continueOnFailure: e.target.checked })}
+        />
+        <label htmlFor="continueOnFailure" className="text-sm text-slate-700">
+          Continue on failure
         </label>
       </div>
 
