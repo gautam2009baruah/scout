@@ -265,7 +265,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
           }),
         });
         const savedNode = await nodeResponse.json();
-        nodeIdMap.set(node.id, savedNode.node.id);
+        nodeIdMap.set(node.id, savedNode.node?.id || savedNode.id);
       }
 
       // Save connections/edges

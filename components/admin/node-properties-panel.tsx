@@ -36,7 +36,7 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
   const config = node.data.config || {};
   const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
   const [panelHeight, setPanelHeight] = useState(600);
-  const resizeRef = useRef<HTMLDivElement>(null);
+  const nodeRef = useRef<HTMLDivElement>(null);
 
   const updateConfig = (updates: Record<string, any>) => {
     onUpdate({
@@ -55,7 +55,7 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
 
   // Handle resize
   useEffect(() => {
-    const resizeElement = resizeRef.current;
+    const resizeElement = nodeRef.current;
     if (!resizeElement) return;
 
     let isResizing = false;
@@ -77,9 +77,9 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
-      const deltaX = e.clientX - startX;
+      const deltaX = startX - e.clientX; // Inverted for right-side resize
       const deltaY = e.clientY - startY;
-      setPanelWidth(Math.max(300, startWidth - deltaX)); // Resize from right edge (moving left increases width)
+      setPanelWidth(Math.max(300, startWidth + deltaX));
       setPanelHeight(Math.max(400, startHeight + deltaY));
     };
 
@@ -101,16 +101,18 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
   return (
     <Draggable
       handle=".drag-handle"
-      defaultPosition={{ x: 0, y: 0 }}
+      nodeRef={nodeRef}
+      defaultPosition={{ 
+        x: typeof window !== 'undefined' ? window.innerWidth - panelWidth - 40 : 600, 
+        y: 80 
+      }}
     >
       <div 
-        ref={resizeRef}
+        ref={nodeRef}
         className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden z-50"
         style={{ 
           width: `${panelWidth}px`,
-          height: `${panelHeight}px`,
-          right: 20,
-          top: 80
+          height: `${panelHeight}px`
         }}
       >
         {/* Resize Handles */}
