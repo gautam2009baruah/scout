@@ -219,14 +219,24 @@ function matchParametersToSteps(
 ): Map<number, { action: string; value?: string }> {
   const stepActions = new Map<number, { action: string; value?: string }>();
 
-  console.log(`\n🔍 Matching parameters to workflow steps...`);
-  console.log(`   Parameters provided:`, Object.keys(parameters).join(", "));
+  console.log("\n" + "▓".repeat(80));
+  console.log("🔍 MATCHING PARAMETERS TO WORKFLOW STEPS");
+  console.log("▓".repeat(80));
+  
+  if (!parameters || Object.keys(parameters).length === 0) {
+    console.log("⚠️  No parameters to match");
+    console.log("▓".repeat(80) + "\n");
+    return stepActions;
+  }
+  
+  console.log(`Parameters: ${Object.keys(parameters).join(", ")}`);
+  console.log("");
 
   for (const [paramKey, paramValue] of Object.entries(parameters)) {
     const normalizedKey = paramKey.toLowerCase().trim();
     const instruction = String(paramValue).trim();
 
-    console.log(`\n   📌 Processing parameter: "${paramKey}"`);
+    console.log(`\n📌 Parameter: "${paramKey}"`);
     console.log(`   Instruction: "${instruction}"`);
 
     // Parse the instruction to determine action and value
@@ -312,16 +322,22 @@ function matchParametersToSteps(
     if (matchedIndex >= 0) {
       stepActions.set(matchedIndex, { action, value });
       if (action === "fill" && value) {
-        console.log(`   ✅ Will auto-fill step ${matchedIndex + 1} with: "${value}"`);
+        console.log(`   ✅ MATCHED → Will auto-fill step ${matchedIndex + 1} with: "${value}"`);
       } else if (action === "click") {
-        console.log(`   ✅ Will auto-click step ${matchedIndex + 1}`);
+        console.log(`   ✅ MATCHED → Will auto-click step ${matchedIndex + 1}`);
       } else if (action === "skip") {
-        console.log(`   ℹ️  Will skip step ${matchedIndex + 1} (manual interaction)`);
+        console.log(`   ℹ️  MATCHED → Will skip step ${matchedIndex + 1} (manual interaction)`);
       }
     } else {
-      console.log(`   ⚠️  No matching step found for parameter: "${paramKey}"`);
+      console.log(`   ❌ NO MATCH FOUND for parameter: "${paramKey}"`);
     }
   }
+
+  console.log("\n📊 MATCHING SUMMARY:");
+  console.log(`   Total parameters: ${Object.keys(parameters).length}`);
+  console.log(`   Matched: ${stepActions.size}`);
+  console.log(`   Unmatched: ${Object.keys(parameters).length - stepActions.size}`);
+  console.log("▓".repeat(80) + "\n");
 
   // If only one parameter and one input step, auto-match
   if (parameters && Object.keys(parameters).length === 1 && stepActions.size === 0) {
@@ -474,17 +490,19 @@ async function injectAndExecuteScoutPlayer(
           if (currentStep && currentStep.autoAction) {
             const autoAction = currentStep.autoAction;
             
-            console.log(`\n[Scout Automation] ======================================`);
-            console.log(`[Scout Automation] Step ${player.index + 1}: ${currentStep.description}`);
-            console.log(`[Scout Automation] Action: ${autoAction.action}`);
+            console.log(`\n${"=".repeat(70)}`);
+            console.log(`🤖 SCOUT AUTOMATION - Step ${player.index + 1}`);
+            console.log(`${"=".repeat(70)}`);
+            console.log(`Description: ${currentStep.description}`);
+            console.log(`Action: ${autoAction.action.toUpperCase()}`);
             if (autoAction.value) {
-              console.log(`[Scout Automation] Value: "${autoAction.value}"`);
+              console.log(`Value: "${autoAction.value}"`);
             }
-            console.log(`[Scout Automation] ======================================`);
+            console.log(`${"=".repeat(70)}`);
             
             // Handle based on action type
             if (autoAction.action === "skip") {
-              console.log(`[Scout Automation] ⏭️  Skipping - user will handle manually`);
+              console.log(`⏭️  SKIPPING - User will handle this step manually`);
               return; // Scout player will wait for user
             }
             
@@ -505,8 +523,8 @@ async function injectAndExecuteScoutPlayer(
                               target instanceof HTMLTextAreaElement ||
                               target instanceof HTMLSelectElement)) {
                   
-                  console.log(`[Scout Automation] ✅ Element found on attempt ${attempts}`);
-                  console.log(`[Scout Automation] Element type: ${target.tagName}, ID: ${target.id}, Name: ${target.name}`);
+                  console.log(`✅ Element found (attempt ${attempts})`);
+                  console.log(`   Type: ${target.tagName}, ID: ${target.id || 'none'}, Name: ${target.name || 'none'}`);
                   
                   const fillValue = autoAction.value || "";
                   
@@ -525,7 +543,7 @@ async function injectAndExecuteScoutPlayer(
                       target.dispatchEvent(new Event('change', { bubbles: true }));
                       target.dispatchEvent(new Event('blur', { bubbles: true }));
                       
-                      console.log(`[Scout Automation] ✅ Select filled with: "${fillValue}"`);
+                      console.log(`✅ SELECT FILLED: "${fillValue}"`);
                     } else {
                       // For input/textarea elements
                       target.focus();
@@ -549,8 +567,8 @@ async function injectAndExecuteScoutPlayer(
                       target.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
                       target.dispatchEvent(new Event('blur', { bubbles: true }));
                       
-                      console.log(`[Scout Automation] ✅ Input filled with: "${fillValue}"`);
-                      console.log(`[Scout Automation] Current value check: "${target.value}"`);
+                      console.log(`✅ INPUT FILLED: "${fillValue}"`);
+                      console.log(`   Current value: "${target.value}"`);
                       
                       // Visual feedback
                       const originalOutline = target.style.outline;
@@ -566,17 +584,17 @@ async function injectAndExecuteScoutPlayer(
                     
                     return true;
                   } catch (error) {
-                    console.error(`[Scout Automation] ❌ Error filling element:`, error);
+                    console.error(`❌ ERROR filling element:`, error);
                     return false;
                   }
                 } else {
                   if (attempts < maxAttempts) {
-                    console.log(`[Scout Automation] ⏳ Element not ready, retrying... (${attempts}/${maxAttempts})`);
+                    console.log(`⏳ Waiting for element... (${attempts}/${maxAttempts})`);
                     setTimeout(tryAutoFill, 250);
                   } else {
-                    console.error(`[Scout Automation] ❌ Failed to find fillable element after ${maxAttempts} attempts`);
+                    console.error(`❌ FAILED: Element not found after ${maxAttempts} attempts`);
                     if (player.highlighted) {
-                      console.error(`[Scout Automation] Highlighted element exists but is not fillable. Type: ${player.highlighted.tagName}`);
+                      console.error(`   Highlighted element is not fillable. Type: ${player.highlighted.tagName}`);
                     }
                   }
                   return false;
@@ -594,11 +612,11 @@ async function injectAndExecuteScoutPlayer(
                 }
                 
                 if (target && target instanceof HTMLElement) {
-                  console.log(`[Scout Automation] 🖱️  Auto-clicking element`);
+                  console.log(`🖱️  AUTO-CLICKING element`);
                   target.click();
-                  console.log(`[Scout Automation] ✅ Element clicked`);
+                  console.log(`✅ CLICKED`);
                 } else {
-                  console.error(`[Scout Automation] ❌ Click target not found`);
+                  console.error(`❌ Click target not found`);
                 }
               }, 500);
             }
@@ -700,18 +718,20 @@ export async function executeBrowserWorkflow(
   let page: Page | null = null;
 
   try {
-    console.log(`🚀 Starting browser workflow execution: ${options.workflowId}`);
-    console.log(`📋 Parameters received:`, options.parameters || {});
-    console.log(`🔑 Parameter keys:`, Object.keys(options.parameters || {}));
+    console.log("\n" + "█".repeat(80));
+    console.log("🚀 BROWSER WORKFLOW EXECUTION STARTED");
+    console.log("█".repeat(80));
+    console.log(`Workflow ID: ${options.workflowId}`);
     
     if (options.parameters && Object.keys(options.parameters).length > 0) {
-      console.log(`📊 Parameter details:`);
+      console.log("\n📋 PARAMETERS RECEIVED:");
       for (const [key, value] of Object.entries(options.parameters)) {
-        console.log(`   ${key} = "${value}"`);
+        console.log(`   ✅ ${key} = "${value}"`);
       }
     } else {
-      console.log(`⚠️  No parameters provided - Scout Player will run in standard mode`);
+      console.log(`\n⚠️  NO PARAMETERS - Scout Player will run in standard mode (no auto-fill)`);
     }
+    console.log("█".repeat(80) + "\n");
 
     // Launch browser (visible by default so user can login)
     // This will reuse existing browser instance if running, preserving session

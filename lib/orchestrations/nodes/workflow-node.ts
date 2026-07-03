@@ -57,16 +57,19 @@ export async function executeWorkflowNode(
     // Evaluate input mappings using expressions
     const workflowInputs: Record<string, unknown> = {};
     if (config.inputMapping) {
-      console.log("[WorkflowNode] 🔧 Evaluating input mappings...");
-      console.log("[WorkflowNode] Input mapping config:", config.inputMapping);
+      console.log("\n" + "=".repeat(80));
+      console.log("🔧 WORKFLOW NODE - EVALUATING INPUT MAPPINGS");
+      console.log("=".repeat(80));
+      console.log("Input mapping config:", config.inputMapping);
       for (const [key, expression] of Object.entries(config.inputMapping)) {
         const evaluatedValue = evaluateExpression(expression, context);
         workflowInputs[key] = evaluatedValue;
-        console.log(`[WorkflowNode]   ${key}: "${expression}" => "${evaluatedValue}"`);
+        console.log(`✅ ${key}: "${expression}" => "${evaluatedValue}"`);
       }
-      console.log("[WorkflowNode] ✅ Final workflow inputs:", workflowInputs);
+      console.log("\n📦 FINAL WORKFLOW INPUTS:", workflowInputs);
+      console.log("=".repeat(80) + "\n");
     } else {
-      console.log("[WorkflowNode] ⚠️  No input mapping configured");
+      console.log("\n⚠️  WARNING: No input mapping configured for workflow node\n");
     }
 
     // Evaluate target URL if provided
