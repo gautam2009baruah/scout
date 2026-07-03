@@ -489,9 +489,9 @@ async function injectAndExecuteScoutPlayer(
             }
             
             if (autoAction.action === "fill" && autoAction.value) {
-              // Auto-fill logic
+              // Auto-fill logic with retry
               let attempts = 0;
-              const maxAttempts = 10;
+              const maxAttempts = 15;
               
               const tryAutoFill = () => {
                 attempts++;
@@ -506,47 +506,85 @@ async function injectAndExecuteScoutPlayer(
                               target instanceof HTMLSelectElement)) {
                   
                   console.log(`[Scout Automation] ✅ Element found on attempt ${attempts}`);
-                  console.log(`[Scout Automation] Element type: ${target.tagName}`);
+                  console.log(`[Scout Automation] Element type: ${target.tagName}, ID: ${target.id}, Name: ${target.name}`);
                   
                   const fillValue = autoAction.value || "";
                   
-                  if (target instanceof HTMLSelectElement) {
-                    target.value = fillValue;
-                    target.dispatchEvent(new Event('change', { bubbles: true }));
-                    console.log(`[Scout Automation] ✅ Select filled with: "${fillValue}"`);
-                  } else {
-                    target.focus();
-                    target.value = "";
-                    target.value = fillValue;
-                    target.dispatchEvent(new Event('input', { bubbles: true }));
-                    target.dispatchEvent(new Event('change', { bubbles: true }));
-                    console.log(`[Scout Automation] ✅ Input filled with: "${fillValue}"`);
+                  try {
+                    if (target instanceof HTMLSelectElement) {
+                      // For select elements
+                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set;
+                      if (nativeInputValueSetter) {
+                        nativeInputValueSetter.call(target, fillValue);
+                      } else {
+                        target.value = fillValue;
+                      }
+                      
+                      // Dispatch events for React/frameworks
+                      target.dispatchEvent(new Event('input', { bubbles: true }));
+                      target.dispatchEvent(new Event('change', { bubbles: true }));
+                      target.dispatchEvent(new Event('blur', { bubbles: true }));
+                      
+                      console.log(`[Scout Automation] ✅ Select filled with: "${fillValue}"`);
+                    } else {
+                      // For input/textarea elements
+                      target.focus();
+                      
+                      // Use native setter to bypass React's event system
+                      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                        target instanceof HTMLInputElement ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype,
+                        'value'
+                      )?.set;
+                      
+                      if (nativeInputValueSetter) {
+                        nativeInputValueSetter.call(target, fillValue);
+                      } else {
+                        target.value = fillValue;
+                      }
+                      
+                      // Dispatch all necessary events for React/frameworks
+                      target.dispatchEvent(new Event('input', { bubbles: true }));
+                      target.dispatchEvent(new Event('change', { bubbles: true }));
+                      target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+                      target.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                      target.dispatchEvent(new Event('blur', { bubbles: true }));
+                      
+                      console.log(`[Scout Automation] ✅ Input filled with: "${fillValue}"`);
+                      console.log(`[Scout Automation] Current value check: "${target.value}"`);
+                      
+                      // Visual feedback
+                      const originalOutline = target.style.outline;
+                      const originalOffset = target.style.outlineOffset;
+                      target.style.outline = "4px solid #10b981";
+                      target.style.outlineOffset = "2px";
+                      
+                      setTimeout(() => {
+                        target.style.outline = originalOutline;
+                        target.style.outlineOffset = originalOffset;
+                      }, 1500);
+                    }
                     
-                    // Visual feedback
-                    const originalOutline = target.style.outline;
-                    const originalOffset = target.style.outlineOffset;
-                    target.style.outline = "4px solid #10b981";
-                    target.style.outlineOffset = "2px";
-                    
-                    setTimeout(() => {
-                      target.style.outline = originalOutline;
-                      target.style.outlineOffset = originalOffset;
-                    }, 1500);
+                    return true;
+                  } catch (error) {
+                    console.error(`[Scout Automation] ❌ Error filling element:`, error);
+                    return false;
                   }
-                  
-                  return true;
                 } else {
                   if (attempts < maxAttempts) {
                     console.log(`[Scout Automation] ⏳ Element not ready, retrying... (${attempts}/${maxAttempts})`);
-                    setTimeout(tryAutoFill, 200);
+                    setTimeout(tryAutoFill, 250);
                   } else {
-                    console.error(`[Scout Automation] ❌ Failed to find element after ${maxAttempts} attempts`);
+                    console.error(`[Scout Automation] ❌ Failed to find fillable element after ${maxAttempts} attempts`);
+                    if (player.highlighted) {
+                      console.error(`[Scout Automation] Highlighted element exists but is not fillable. Type: ${player.highlighted.tagName}`);
+                    }
                   }
                   return false;
                 }
               };
               
-              setTimeout(tryAutoFill, 300);
+              // Wait longer for element to be highlighted
+              setTimeout(tryAutoFill, 500);
             } else if (autoAction.action === "click") {
               // Auto-click logic
               setTimeout(() => {
