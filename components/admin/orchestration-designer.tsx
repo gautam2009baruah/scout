@@ -39,6 +39,8 @@ import {
   Settings,
   Plus,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import type { NodeType, Orchestration, ManualTriggerConfig } from "@/shared/orchestrationTypes";
 import { NodePropertiesPanel } from "./node-properties-panel";
@@ -98,6 +100,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isPropertiesOpen, setIsPropertiesOpen] = useState(false);
   const [isManualTriggerOpen, setIsManualTriggerOpen] = useState(false);
   const [manualTriggerConfig, setManualTriggerConfig] = useState<ManualTriggerConfig | null>(null);
@@ -433,9 +436,32 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
       </div>
 
       {orchestration ? (
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden relative">
+          {/* Sidebar Toggle Button */}
+          <button
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-white border border-slate-300 rounded-r-lg p-1.5 shadow-md hover:bg-slate-50 transition-all"
+            style={{ left: isSidebarCollapsed ? '0' : '14rem' }}
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            type="button"
+            title={isSidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+          >
+            {isSidebarCollapsed ? (
+              <ChevronRight className="h-4 w-4 text-slate-600" />
+            ) : (
+              <ChevronLeft className="h-4 w-4 text-slate-600" />
+            )}
+          </button>
+
           {/* Node Toolbox */}
-          <div className="w-56 border-r border-slate-200 bg-white p-4 overflow-y-auto">
+          <div 
+            className="border-r border-slate-200 bg-white p-4 overflow-y-auto transition-all duration-300 ease-in-out"
+            style={{ 
+              width: isSidebarCollapsed ? '0' : '14rem',
+              minWidth: isSidebarCollapsed ? '0' : '14rem',
+              padding: isSidebarCollapsed ? '0' : '1rem',
+              opacity: isSidebarCollapsed ? 0 : 1
+            }}
+          >
             <h3 className="mb-3 text-sm font-bold text-slate-900">Node Types</h3>
             <div className="space-y-2">
               {NODE_CONFIGS.map((nodeConfig) => (
@@ -501,6 +527,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
           {isPropertiesOpen && selectedNode && (
             <NodePropertiesPanel
               node={selectedNode}
+              nodes={nodes}
               onClose={() => setIsPropertiesOpen(false)}
               onUpdate={(updates) => updateSelectedNode(updates)}
               onDelete={deleteSelectedNode}

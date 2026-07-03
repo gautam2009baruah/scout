@@ -5,10 +5,11 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, Trash2, Plus, Minus } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Trash2, Plus, Minus, Move, Maximize2 } from "lucide-react";
 import type { Node } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
+import Draggable from "react-draggable";
 
 const NODE_CONFIGS = [
   { type: "trigger", label: "Trigger", icon: "⚡" },
@@ -24,14 +25,18 @@ const NODE_CONFIGS = [
 
 interface NodePropertiesPanelProps {
   node: Node;
+  nodes?: Node[]; // All nodes in the flow for context-aware suggestions
   onClose: () => void;
   onUpdate: (updates: Partial<Node>) => void;
   onDelete: () => void;
 }
 
-export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDelete }: NodePropertiesPanelProps) {
   const nodeType = node.data.nodeType as NodeType;
   const config = node.data.config || {};
+  const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
+  const [panelHeight, setPanelHeight] = useState(600);
+  const resizeRef = useRef<HTMLDivElement>(null);
 
   const updateConfig = (updates: Record<string, any>) => {
     onUpdate({
@@ -48,33 +53,116 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete }: NodeP
     });
   };
 
+  // Handle resize
+  useEffect(() => {
+    const resizeElement = resizeRef.current;
+    if (!resizeElement) return;
+
+    let isResizing = false;
+    let startX = 0;
+    let startY = 0;
+    let startWidth = 0;
+    let startHeight = 0;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).classList.contains('resize-handle')) {
+        isResizing = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startWidth = panelWidth;
+        startHeight = panelHeight;
+        e.preventDefault();
+      }
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+      setPanelWidth(Math.max(300, startWidth - deltaX)); // Resize from right edge (moving left increases width)
+      setPanelHeight(Math.max(400, startHeight + deltaY));
+    };
+
+    const handleMouseUp = () => {
+      isResizing = false;
+    };
+
+    document.addEventListener('mousedown', handleMouseDown);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [panelWidth, panelHeight]);
+
   return (
-    <div className="w-96 border-l border-slate-200 bg-white overflow-y-auto">
-      {/* Header */}
-      <div className="sticky top-0 bg-white border-b border-slate-200 p-4 z-10">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-bold text-slate-900">Node Properties</h3>
-          <button
-            className="text-slate-500 hover:text-slate-700 transition-colors"
-            onClick={onClose}
-            type="button"
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
+    <Draggable
+      handle=".drag-handle"
+      bounds="parent"
+      defaultPosition={{ x: -400, y: 50 }}
+    >
+      <div 
+        ref={resizeRef}
+        className="absolute bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden z-50"
+        style={{ 
+          width: `${panelWidth}px`,
+          height: `${panelHeight}px`,
+          right: 20,
+          top: 20
+        }}
+      >
+        {/* Resize Handles */}
+        <div className="resize-handle absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
+        <div className="resize-handle absolute left-0 bottom-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
+        <div className="resize-handle absolute left-0 bottom-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tl-lg" />
+        
+        <div className="flex flex-col h-full">
+          {/* Header */}
+          <div className="drag-handle bg-gradient-to-r from-slate-700 to-slate-600 p-4 cursor-move border-b-2 border-slate-500 flex-shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Move className="h-4 w-4 text-slate-300" />
+                <h3 className="text-base font-bold text-white">Node Properties</h3>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  className="text-slate-300 hover:text-white transition-colors p-1 rounded hover:bg-slate-600"
+                  onClick={() => {
+                    setPanelWidth(384);
+                    setPanelHeight(600);
+                  }}
+                  type="button"
+                  title="Reset size"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </button>
+                <button
+                  className="text-slate-300 hover:text-white transition-colors p-1 rounded hover:bg-slate-600"
+                  onClick={onClose}
+                  type="button"
+                  title="Close"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
 
-        <div className="rounded-lg bg-slate-50 px-3 py-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">{NODE_CONFIGS.find((n) => n.type === nodeType)?.icon}</span>
-            <span className="text-sm font-semibold text-slate-700">
-              {NODE_CONFIGS.find((n) => n.type === nodeType)?.label}
-            </span>
+            <div className="rounded-lg bg-white bg-opacity-10 backdrop-blur-sm px-3 py-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">{NODE_CONFIGS.find((n) => n.type === nodeType)?.icon}</span>
+                <span className="text-sm font-semibold text-white">
+                  {NODE_CONFIGS.find((n) => n.type === nodeType)?.label}
+                </span>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Content */}
-      <div className="p-4 space-y-4">
+          {/* Content - Scrollable */}
+          <div className="flex-1 overflow-y-auto bg-white">
+            <div className="p-4 space-y-4">
         {/* Common: Label */}
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-1">
@@ -92,7 +180,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete }: NodeP
 
         {/* Node-specific configuration */}
         {nodeType === "trigger" && <TriggerConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "workflow" && <WorkflowConfig config={config} updateConfig={updateConfig} />}
+        {nodeType === "workflow" && <WorkflowConfig config={config} updateConfig={updateConfig} nodes={nodes} />}
         {nodeType === "ai_extraction" && <AIExtractionConfig config={config} updateConfig={updateConfig} />}
         {nodeType === "ai_decision" && <AIDecisionConfig config={config} updateConfig={updateConfig} />}
         {nodeType === "condition" && <ConditionConfig config={config} updateConfig={updateConfig} />}
@@ -112,8 +200,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete }: NodeP
             Delete Node
           </button>
         </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </Draggable>
   );
 }
 
@@ -725,7 +816,7 @@ function TriggerConfig({ config, updateConfig }: any) {
   );
 }
 
-function WorkflowConfig({ config, updateConfig }: any) {
+function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
   const [inputMappings, setInputMappings] = useState<Array<{ key: string; value: string }>>(
     Object.entries(config.inputMapping || {}).map(([key, value]) => ({ key, value: value as string }))
   );
@@ -735,6 +826,41 @@ function WorkflowConfig({ config, updateConfig }: any) {
   const [availableWorkflows, setAvailableWorkflows] = useState<Array<{ id: string; title: string; status: string }>>([]);
   const [loadingWorkflows, setLoadingWorkflows] = useState(true);
   const [useManualInput, setUseManualInput] = useState(false);
+  const [workflowSteps, setWorkflowSteps] = useState<Array<{ 
+    description: string; 
+    parameterName: string; 
+    parameterLabel: string;
+    type: string;
+    stepOrder: number;
+  }>>([]);
+
+  // Extract available fields from trigger node
+  const availableFields = (() => {
+    const triggerNode = nodes.find((n: any) => n.data?.nodeType === "trigger");
+    if (!triggerNode) return [];
+
+    const triggerConfig = triggerNode.data?.config || {};
+    const fields: Array<{ value: string; label: string; description: string }> = [];
+
+    // Add trigger metadata fields
+    fields.push(
+      { value: "{{trigger.startedBy}}", label: "Triggered By", description: "User who started the orchestration" },
+      { value: "{{trigger.startedAt}}", label: "Started At", description: "Timestamp when orchestration started" }
+    );
+
+    // Add input fields from manual trigger
+    if (triggerConfig.inputFields && Array.isArray(triggerConfig.inputFields)) {
+      triggerConfig.inputFields.forEach((field: any) => {
+        fields.push({
+          value: `{{trigger.input.${field.name}}}`,
+          label: field.label || field.name,
+          description: `Input field: ${field.type}${field.required ? " (required)" : ""}`
+        });
+      });
+    }
+
+    return fields;
+  })();
 
   // Fetch available workflows
   useEffect(() => {
@@ -776,6 +902,88 @@ function WorkflowConfig({ config, updateConfig }: any) {
     }, {} as Record<string, string>);
     updateConfig({ outputMapping });
   }, [outputMappings]);
+
+  // Fetch workflow details when workflow is selected
+  useEffect(() => {
+    async function fetchWorkflowDetails() {
+      if (!config.workflowId || config.workflowId.includes("{{")) return;
+      
+      try {
+        const response = await fetch(`/api/admin/guided-workflows/${config.workflowId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const guide = data.guide;
+          
+          // Extract parameters from recorded actions
+          const steps: Array<{ 
+            description: string; 
+            parameterName: string; 
+            parameterLabel: string;
+            type: string;
+            stepOrder: number;
+          }> = [];
+          
+          if (guide.recordedActions && Array.isArray(guide.recordedActions)) {
+            guide.recordedActions.forEach((action: any, index: number) => {
+              if (action.type === "input" || action.type === "change") {
+                // Extract parameter name from maskedValue or field properties
+                const paramName = action.elementIdentity?.name || 
+                                 action.name || 
+                                 action.elementIdentity?.id ||
+                                 `field_${index}`;
+                
+                const label = action.elementIdentity?.labelText || 
+                             action.elementIdentity?.placeholder ||
+                             action.elementIdentity?.ariaLabel ||
+                             action.labelText ||
+                             paramName;
+                
+                const description = action.stepDescription || 
+                                   `Enter value in ${label}`;
+                
+                const fieldType = action.elementIdentity?.inputType || action.inputType || "text";
+                
+                steps.push({
+                  description,
+                  parameterName: paramName,
+                  parameterLabel: label,
+                  type: fieldType,
+                  stepOrder: action.stepOrder || index
+                });
+              }
+            });
+          }
+          
+          setWorkflowSteps(steps);
+          
+          // Auto-suggest mappings if steps match trigger fields
+          if (steps.length > 0 && inputMappings.length === 0 && availableFields.length > 0) {
+            const suggestedMappings = steps.map(step => {
+              // Try to find matching trigger field
+              const matchingField = availableFields.find(field => {
+                const fieldLower = field.label.toLowerCase();
+                const paramLower = step.parameterLabel.toLowerCase();
+                return fieldLower.includes(paramLower) || paramLower.includes(fieldLower);
+              });
+              
+              return {
+                key: step.parameterName,
+                value: matchingField?.value || ""
+              };
+            });
+            
+            if (suggestedMappings.some(m => m.value)) {
+              setInputMappings(suggestedMappings);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch workflow details:", error);
+      }
+    }
+    
+    fetchWorkflowDetails();
+  }, [config.workflowId]);
 
   // Check if current value is a dynamic expression
   const isDynamicExpression = config.workflowId?.includes("{{") && config.workflowId?.includes("}}");
@@ -856,75 +1064,243 @@ function WorkflowConfig({ config, updateConfig }: any) {
       {/* Input Mapping Section */}
       <div className="border-t pt-4">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
-          📥 Input Mapping (Context → Workflow Parameters)
+          📥 Input Mapping
         </label>
-        <p className="text-xs text-slate-500 mb-3">
-          Map context variables to workflow input parameters. Use {'{{variable.path}}'} to access trigger data.
-        </p>
-        <div className="space-y-2">
-          {inputMappings.map((mapping, index) => (
-            <div key={index} className="flex gap-2">
-              <input
-                type="text"
-                className="w-1/3 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                placeholder="workflowParam"
-                value={mapping.key}
-                onChange={(e) => {
-                  const updated = [...inputMappings];
-                  updated[index].key = e.target.value;
-                  setInputMappings(updated);
-                }}
-              />
-              <span className="flex items-center text-slate-400">←</span>
-              <input
-                type="text"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-                placeholder="{{trigger.input.fieldName}}"
-                value={mapping.value}
-                onChange={(e) => {
-                  const updated = [...inputMappings];
-                  updated[index].value = e.target.value;
-                  setInputMappings(updated);
-                }}
-              />
+        <div className="mb-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-700">
+          <p className="font-semibold mb-1">💡 Smart Mapping:</p>
+          <p>Scout detected <strong>{workflowSteps.length} input field{workflowSteps.length !== 1 ? 's' : ''}</strong> in this workflow. Just select where to get the data from - no technical knowledge needed!</p>
+        </div>
+        
+        {workflowSteps.length > 0 ? (
+          <div className="space-y-3">
+            {workflowSteps.map((step, index) => {
+              const mapping = inputMappings.find(m => m.key === step.parameterName) || 
+                            inputMappings[index] || 
+                            { key: step.parameterName, value: "" };
+              const mappingIndex = inputMappings.findIndex(m => m.key === step.parameterName) ?? index;
+              
+              return (
+                <div key={step.parameterName} className="p-3 bg-white border border-slate-200 rounded-lg">
+                  <div className="flex items-start gap-2 mb-2">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex-shrink-0">
+                      {step.stepOrder + 1}
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-slate-900">{step.description}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        Field: <span className="font-mono bg-slate-100 px-1 rounded">{step.parameterLabel}</span>
+                        {step.type && <span className="ml-2">• Type: {step.type}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2 pl-8">
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Get value from:
+                    </label>
+                    {availableFields.length > 0 ? (
+                      <div className="space-y-1">
+                        <select
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                          value={mapping.value || ""}
+                          onChange={(e) => {
+                            const updated = [...inputMappings];
+                            if (mappingIndex >= 0 && mappingIndex < updated.length) {
+                              updated[mappingIndex] = { key: step.parameterName, value: e.target.value };
+                            } else {
+                              updated.push({ key: step.parameterName, value: e.target.value });
+                            }
+                            setInputMappings(updated);
+                          }}
+                        >
+                          <option value="">Select a field...</option>
+                          <optgroup label="📥 Trigger Fields">
+                            {availableFields.map((field) => (
+                              <option key={field.value} value={field.value}>
+                                {field.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="✍️ Custom">
+                            <option value="__custom__">Type manually...</option>
+                          </optgroup>
+                        </select>
+                        {mapping.value === "__custom__" || (!availableFields.some(f => f.value === mapping.value) && mapping.value) ? (
+                          <input
+                            type="text"
+                            className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 font-mono bg-slate-50"
+                            placeholder="Type value or {{expression}}"
+                            value={mapping.value === "__custom__" ? "" : mapping.value}
+                            onChange={(e) => {
+                              const updated = [...inputMappings];
+                              if (mappingIndex >= 0 && mappingIndex < updated.length) {
+                                updated[mappingIndex] = { key: step.parameterName, value: e.target.value };
+                              } else {
+                                updated.push({ key: step.parameterName, value: e.target.value });
+                              }
+                              setInputMappings(updated);
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                        placeholder="{{trigger.input.fieldName}} or static value"
+                        value={mapping.value}
+                        onChange={(e) => {
+                          const updated = [...inputMappings];
+                          if (mappingIndex >= 0 && mappingIndex < updated.length) {
+                            updated[mappingIndex] = { key: step.parameterName, value: e.target.value };
+                          } else {
+                            updated.push({ key: step.parameterName, value: e.target.value });
+                          }
+                          setInputMappings(updated);
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <>
+            {/* Fallback to manual mapping if workflow details not loaded */}
+            <div className="space-y-2">
+              {inputMappings.map((mapping, index) => (
+                <div key={index} className="grid grid-cols-[1fr_auto_2fr_auto] gap-2 items-center">
+                  <input
+                    type="text"
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="parameter"
+                    value={mapping.key}
+                    onChange={(e) => {
+                      const updated = [...inputMappings];
+                      updated[index].key = e.target.value;
+                      setInputMappings(updated);
+                    }}
+                  />
+                  <span className="flex items-center text-slate-400 text-lg">←</span>
+                  <div className="relative">
+                    {availableFields.length > 0 ? (
+                      <div className="flex flex-col gap-1">
+                        <select
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                          value={mapping.value || ""}
+                          onChange={(e) => {
+                            const updated = [...inputMappings];
+                            updated[index].value = e.target.value;
+                            setInputMappings(updated);
+                          }}
+                        >
+                          <option value="">Select a field...</option>
+                          <optgroup label="📥 Trigger Fields">
+                            {availableFields.map((field) => (
+                              <option key={field.value} value={field.value}>
+                                {field.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
+                        <input
+                          type="text"
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 font-mono bg-slate-50"
+                          placeholder="Or type: {{expression}}"
+                          value={mapping.value}
+                          onChange={(e) => {
+                            const updated = [...inputMappings];
+                            updated[index].value = e.target.value;
+                            setInputMappings(updated);
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                        placeholder="{{trigger.input.fieldName}}"
+                        value={mapping.value}
+                        onChange={(e) => {
+                          const updated = [...inputMappings];
+                          updated[index].value = e.target.value;
+                          setInputMappings(updated);
+                        }}
+                      />
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    onClick={() => setInputMappings(inputMappings.filter((_, i) => i !== index))}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
               <button
                 type="button"
-                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                onClick={() => setInputMappings(inputMappings.filter((_, i) => i !== index))}
+                className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700"
+                onClick={() => setInputMappings([...inputMappings, { key: "", value: "" }])}
               >
-                <Minus className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
+                Add Input Mapping
               </button>
             </div>
-          ))}
-          <button
-            type="button"
-            className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700"
-            onClick={() => setInputMappings([...inputMappings, { key: "", value: "" }])}
-          >
-            <Plus className="h-4 w-4" />
-            Add Input Mapping
-          </button>
-        </div>
-        <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
-          💡 Example: customer ← {'{{trigger.input.customerName}}'}
-        </div>
+          </>
+        )}
+        
+        {availableFields.length > 0 && workflowSteps.length === 0 ? (
+          <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
+            <strong>✅ {availableFields.length} field{availableFields.length !== 1 ? "s" : ""} available from trigger!</strong>
+            <p className="mt-1">Select a workflow to see smart mapping suggestions.</p>
+          </div>
+        ) : !availableFields.length && workflowSteps.length === 0 ? (
+          <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+            <strong>⚠️ No trigger node found</strong>
+            <p className="mt-1">Connect a trigger node first to enable smart field mapping.</p>
+          </div>
+        ) : null}
       </div>
 
       {/* Output Mapping Section */}
       <div className="border-t pt-4">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
-          📤 Output Mapping (Workflow Results → Context Variables)
+          📤 Output Mapping
         </label>
-        <p className="text-xs text-slate-500 mb-3">
-          Map workflow output fields to context variables for use in subsequent nodes.
-        </p>
+        <div className="mb-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-700">
+          <p className="font-semibold mb-1">How it works:</p>
+          <p className="mb-2">After the workflow runs, it returns <strong>result data</strong>. Save that data to use in later nodes.</p>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="bg-white px-2 py-1 rounded border">invoiceId</span>
+            <span>←</span>
+            <span className="bg-white px-2 py-1 rounded border font-mono">output.invoiceId</span>
+          </div>
+          <p className="mt-1 text-slate-600">↑ Save workflow's "invoiceId" result as "invoiceId" variable</p>
+        </div>
+        
+        {/* Column Headers */}
+        <div className="grid grid-cols-[1fr_auto_2fr_auto] gap-2 mb-2 px-1">
+          <div className="text-xs font-semibold text-slate-600">
+            Variable Name
+            <div className="text-[10px] font-normal text-slate-500">Save as this name</div>
+          </div>
+          <div></div>
+          <div className="text-xs font-semibold text-slate-600">
+            Workflow Output Field
+            <div className="text-[10px] font-normal text-slate-500">Get this from workflow result</div>
+          </div>
+          <div></div>
+        </div>
+
         <div className="space-y-2">
           {outputMappings.map((mapping, index) => (
-            <div key={index} className="flex gap-2">
+            <div key={index} className="grid grid-cols-[1fr_auto_2fr_auto] gap-2 items-center">
               <input
                 type="text"
-                className="w-1/3 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                placeholder="variableName"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                placeholder="invoiceId"
                 value={mapping.key}
                 onChange={(e) => {
                   const updated = [...outputMappings];
@@ -932,11 +1308,11 @@ function WorkflowConfig({ config, updateConfig }: any) {
                   setOutputMappings(updated);
                 }}
               />
-              <span className="flex items-center text-slate-400">←</span>
+              <span className="flex items-center text-slate-400 text-lg">←</span>
               <input
                 type="text"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-                placeholder="result.fieldName"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                placeholder="output.invoiceId"
                 value={mapping.value}
                 onChange={(e) => {
                   const updated = [...outputMappings];
@@ -962,8 +1338,13 @@ function WorkflowConfig({ config, updateConfig }: any) {
             Add Output Mapping
           </button>
         </div>
-        <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">
-          💡 Example: invoiceId ← result.invoiceId
+        <div className="mt-3 p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-800">
+          <strong>💡 Common Examples:</strong>
+          <div className="mt-1 space-y-1 font-mono">
+            <div>invoiceId ← output.invoiceId</div>
+            <div>pdfUrl ← output.pdfPath</div>
+            <div>status ← output.status</div>
+          </div>
         </div>
       </div>
 

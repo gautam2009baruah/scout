@@ -27,6 +27,7 @@
     "pg": "^8.21.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "react-draggable": "^4.7.0",
     "reactflow": "^11.11.4",
     "tailwind-merge": "^2.3.0"
   },
