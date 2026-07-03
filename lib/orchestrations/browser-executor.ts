@@ -1,11 +1,12 @@
 /**
  * Automated Browser Workflow Executor
- * Handles browser-based workflow execution with login detection and user authentication wait
+ * Handles browser-based workflow execution with login detection and Scout player injection
  */
 
 import puppeteer, { Browser, Page } from "puppeteer";
 import type { RecordedAction, GuideStep } from "@/shared/guideTypes";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 
 export type BrowserExecutionOptions = {
   workflowId: string;
@@ -188,117 +189,264 @@ async function waitForUserLogin(
 }
 
 /**
- * Execute a single workflow step in the browser
+ * Match parameters to workflow steps using intelligent matching
  */
-async function executeStep(
-  page: Page,
-  action: RecordedAction,
+function matchParametersToSteps(
+  steps: RecordedAction[],
   parameters: Record<string, unknown>
-): Promise<boolean> {
-  try {
-    const { type, elementIdentity, maskedValue, stepDescription } = action;
+): Map<number, string> {
+  const stepValues = new Map<number, string>();
 
-    // Get the actual value (replace masked values with parameters)
-    let actualValue = "";
-    if (maskedValue && elementIdentity?.name && parameters[elementIdentity.name]) {
-      actualValue = String(parameters[elementIdentity.name]);
-    }
+  console.log(`\n🔍 Matching parameters to workflow steps...`);
+  console.log(`   Parameters provided:`, Object.keys(parameters).join(", "));
 
-    // Find element using multiple strategies
-    let element = null;
+  for (const [paramKey, paramValue] of Object.entries(parameters)) {
+    const normalizedKey = paramKey.toLowerCase().trim();
+    const value = String(paramValue);
 
-    // Try ID
-    if (elementIdentity?.id) {
-      element = await page.$(`#${CSS.escape(elementIdentity.id)}`);
-    }
+    console.log(`\n   📌 Matching parameter: "${paramKey}" = "${value}"`);
 
-    // Try name attribute
-    if (!element && elementIdentity?.name) {
-      element = await page.$(`[name="${elementIdentity.name}"]`);
-    }
+    // Try to find matching step
+    let matchedIndex = -1;
 
-    // Try ARIA label
-    if (!element && elementIdentity?.ariaLabel) {
-      element = await page.$(`[aria-label="${elementIdentity.ariaLabel}"]`);
-    }
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      
+      // Skip non-input steps
+      if (step.type !== "input" && step.type !== "change") continue;
 
-    // Try placeholder
-    if (!element && elementIdentity?.placeholder) {
-      element = await page.$(`[placeholder="${elementIdentity.placeholder}"]`);
-    }
+      // Build searchable text from step metadata
+      const searchTexts = [
+        step.stepDescription?.toLowerCase() || "",
+        step.elementIdentity?.labelText?.toLowerCase() || "",
+        step.elementIdentity?.placeholder?.toLowerCase() || "",
+        step.elementIdentity?.ariaLabel?.toLowerCase() || "",
+        step.elementIdentity?.name?.toLowerCase() || "",
+        step.elementIdentity?.id?.toLowerCase() || "",
+      ].filter(Boolean);
 
-    // Try using selector candidates (best first)
-    if (!element && elementIdentity?.selectorCandidates && elementIdentity.selectorCandidates.length > 0) {
-      // Sort by confidence and try each
-      const sortedCandidates = [...elementIdentity.selectorCandidates].sort((a, b) => b.confidence - a.confidence);
-      for (const candidate of sortedCandidates) {
-        try {
-          if (candidate.type === "css") {
-            element = await page.$(candidate.value);
-          } else if (candidate.type === "id") {
-            element = await page.$(`#${CSS.escape(candidate.value)}`);
-          } else if (candidate.type === "name") {
-            element = await page.$(`[name="${candidate.value}"]`);
-          } else if (candidate.type === "aria-label") {
-            element = await page.$(`[aria-label="${candidate.value}"]`);
-          }
-          
-          if (element) break;
-        } catch (e) {
-          // Try next candidate
-          continue;
-        }
+      const combinedText = searchTexts.join(" ");
+
+      // Check for exact element name/id match first (highest priority)
+      if (step.elementIdentity?.name === paramKey || step.elementIdentity?.id === paramKey) {
+        matchedIndex = i;
+        console.log(`   ✅ Exact match by element name/id at step ${i + 1}`);
+        break;
+      }
+
+      // Check for keyword match in descriptions
+      const keywords = normalizedKey.split(/\s+/).filter(word => word.length > 2);
+      const matchCount = keywords.filter(keyword => combinedText.includes(keyword)).length;
+
+      if (matchCount > 0 && matchCount === keywords.length) {
+        matchedIndex = i;
+        console.log(`   ✅ Matched by description keywords at step ${i + 1}: "${step.stepDescription}"`);
+        break;
+      }
+
+      // Partial match (at least half the keywords)
+      if (keywords.length > 1 && matchCount >= Math.ceil(keywords.length / 2)) {
+        matchedIndex = i;
+        console.log(`   ⚠️  Partial match (${matchCount}/${keywords.length} keywords) at step ${i + 1}: "${step.stepDescription}"`);
+        break;
       }
     }
 
-    if (!element) {
-      console.warn(`⚠️ Element not found for action: ${type}`);
-      return false;
+    if (matchedIndex >= 0) {
+      stepValues.set(matchedIndex, value);
+      console.log(`   ✅ Will auto-fill step ${matchedIndex + 1} with: "${value}"`);
+    } else {
+      console.log(`   ⚠️  No matching step found for parameter: "${paramKey}"`);
+    }
+  }
+
+  // If only one parameter and one input step, auto-match
+  if (parameters && Object.keys(parameters).length === 1 && stepValues.size === 0) {
+    const inputSteps = steps.filter(s => s.type === "input" || s.type === "change");
+    if (inputSteps.length === 1) {
+      const inputIndex = steps.indexOf(inputSteps[0]);
+      const [paramKey, paramValue] = Object.entries(parameters)[0];
+      stepValues.set(inputIndex, String(paramValue));
+      console.log(`   ℹ️  Auto-matched single parameter "${paramKey}" to single input step ${inputIndex + 1}`);
+    }
+  }
+
+  console.log(`\n   📊 Total matches: ${stepValues.size}/${Object.keys(parameters).length}`);
+  return stepValues;
+}
+
+/**
+ * Inject Scout Player and execute workflow
+ */
+async function injectAndExecuteScoutPlayer(
+  page: Page,
+  workflowId: string,
+  workflowTitle: string,
+  steps: RecordedAction[],
+  parameters: Record<string, unknown>,
+  timeout: number = 60000
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    console.log(`\n📦 Injecting Scout Adoption Player...`);
+
+    // Match parameters to steps using intelligent matching
+    const stepValueMap = matchParametersToSteps(steps, parameters);
+
+    // Read the Scout player script from public folder
+    const playerScriptPath = join(process.cwd(), "public", "scout-adoption-player.js");
+    
+    if (!existsSync(playerScriptPath)) {
+      throw new Error(`Scout player script not found at: ${playerScriptPath}`);
     }
 
-    // Execute action based on type
-    switch (type) {
-      case "click":
-        await element.click();
-        await new Promise(resolve => setTimeout(resolve, 500)); // Wait for any animations/effects
-        break;
+    const playerScript = readFileSync(playerScriptPath, "utf-8");
+    
+    // Inject the player script into the page
+    await page.evaluate(playerScript);
+    console.log(`✅ Scout Player injected`);
 
-      case "input":
-      case "change":
-        await element.click(); // Focus the element
-        await element.evaluate((el: any) => (el.value = "")); // Clear existing value
-        if (actualValue) {
-          // Check if it's a select element
-          const tagName = await element.evaluate((el: any) => el.tagName.toLowerCase());
-          if (tagName === "select") {
-            await element.select(actualValue);
-          } else {
-            await element.type(actualValue, { delay: 50 }); // Type with human-like delay
+    // Convert RecordedActions to guide format expected by the player
+    // Include auto-fill values from parameter matching
+    const guideSteps = steps.map((action, index) => ({
+      order: index + 1,
+      description: action.stepDescription || `Step ${index + 1}`,
+      target: {
+        selectorCandidates: action.elementIdentity?.selectorCandidates || [],
+      },
+      action: action.type,
+      autoFillValue: stepValueMap.get(index), // Add auto-fill value if matched
+    }));
+
+    const guide = {
+      id: workflowId,
+      title: workflowTitle,
+      steps: guideSteps,
+      recordedActions: steps,
+    };
+
+    console.log(`🎬 Starting Scout Player with ${steps.length} steps...`);
+    
+    const autoFillCount = stepValueMap.size;
+    if (autoFillCount > 0) {
+      console.log(`\n✨ Auto-fill enabled for ${autoFillCount} step(s)`);
+      console.log(`   Values will be automatically entered based on your input mapping.`);
+    }
+    
+    console.log(`\n⚠️  USER ACTION REQUIRED:`);
+    console.log(`   The Scout player will now guide you through the workflow.`);
+    console.log(`   Please follow the tooltips and complete each step.`);
+    if (autoFillCount > 0) {
+      console.log(`   Fields with auto-fill will be populated automatically.`);
+    }
+    console.log(`   The browser will remain open for you to interact.\n`);
+
+    // Inject the guide data and start the player
+    // Only enhance with auto-fill if parameters were matched
+    if (stepValueMap.size > 0) {
+      // WITH AUTO-FILL ENHANCEMENT (orchestration mode)
+      await page.evaluate((guideData) => {
+        // Create and start the player
+        const Player = (window as any).Player;
+        if (!Player) {
+          throw new Error("Scout Player class not found");
+        }
+
+        // Create a wrapper that adds auto-fill without modifying the original Player
+        const player = new Player(guideData);
+        
+        // Store original render method for this instance only
+        const originalRender = player.render.bind(player);
+        
+        // Override render for this instance only to add auto-fill
+        player.render = function() {
+          originalRender();
+          
+          // Get current step
+          const currentStep = guideData.steps[player.index];
+          const currentAction = guideData.recordedActions[player.index];
+          
+          // Check if this step has auto-fill value
+          if (currentStep && currentStep.autoFillValue && 
+              (currentAction.type === "input" || currentAction.type === "change")) {
+            
+            console.log(`[Scout Auto-fill] Filling step ${player.index + 1} with: "${currentStep.autoFillValue}"`);
+            
+            // Find the target element
+            setTimeout(() => {
+              try {
+                // Use the highlighted element from the player
+                const target = player.highlighted;
+                
+                if (target && (target instanceof HTMLInputElement || 
+                              target instanceof HTMLTextAreaElement)) {
+                  // Auto-fill the value
+                  const fillValue = currentStep.autoFillValue || "";
+                  target.value = fillValue;
+                  target.dispatchEvent(new Event('input', { bubbles: true }));
+                  target.dispatchEvent(new Event('change', { bubbles: true }));
+                  
+                  // Visual feedback - green border briefly
+                  const originalOutline = target.style.outline;
+                  const originalOffset = target.style.outlineOffset;
+                  target.style.outline = "3px solid #10b981";
+                  target.style.outlineOffset = "2px";
+                  
+                  setTimeout(() => {
+                    target.style.outline = originalOutline;
+                    target.style.outlineOffset = originalOffset;
+                  }, 1000);
+                  
+                  console.log(`[Scout Auto-fill] ✅ Value filled successfully`);
+                } else if (target && target instanceof HTMLSelectElement) {
+                  // Handle select elements
+                  const fillValue = currentStep.autoFillValue || "";
+                  target.value = fillValue;
+                  target.dispatchEvent(new Event('change', { bubbles: true }));
+                  console.log(`[Scout Auto-fill] ✅ Select value set successfully`);
+                }
+              } catch (err) {
+                console.error(`[Scout Auto-fill] ❌ Error:`, err);
+              }
+            }, 500); // Wait for element to be highlighted
           }
+        };
+
+        (window as any)._scoutPlayerInstance = player;
+        player.start();
+        
+        console.log("[Scout] Player started with auto-fill enhancement");
+      }, guide);
+    } else {
+      // WITHOUT AUTO-FILL (standard digital adoption mode)
+      await page.evaluate((guideData) => {
+        const Player = (window as any).Player;
+        if (!Player) {
+          throw new Error("Scout Player class not found");
         }
-        break;
 
-      case "navigation":
-        if (action.url) {
-          await page.goto(action.url, { waitUntil: "networkidle2" });
-        }
-        break;
-
-      case "submit":
-        await element.click();
-        await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 }).catch(() => {
-          // Navigation might not happen for AJAX forms
-        });
-        break;
-
-      default:
-        console.warn(`Unsupported action type: ${type}`);
+        const player = new Player(guideData);
+        (window as any)._scoutPlayerInstance = player;
+        player.start();
+        
+        console.log("[Scout] Player started in standard mode");
+      }, guide);
     }
 
-    return true;
+    console.log(`✅ Scout Player started successfully`);
+    console.log(`⏱️  Workflow is now running. Browser will stay open.`);
+    
+    // For automated orchestrations, we'll just wait a bit and return success
+    // The workflow runs in the browser with user guidance
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    return { success: true };
+    
   } catch (error) {
-    console.error(`Error executing step:`, error);
-    return false;
+    console.error(`❌ Failed to inject Scout Player:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
   }
 }
 
@@ -399,23 +547,24 @@ export async function executeBrowserWorkflow(
       await page.goto(options.targetUrl, { waitUntil: "networkidle2" });
     }
 
-    // Execute workflow steps
-    console.log(`▶️ Executing ${options.steps.length} workflow steps...`);
-    let successCount = 0;
+    // Inject Scout Player and execute workflow with tooltips/highlighting
+    const playerResult = await injectAndExecuteScoutPlayer(
+      page,
+      options.workflowId,
+      "Automated Workflow", // Can be enhanced to pass actual workflow title
+      options.steps,
+      options.parameters || {}, // Pass parameters for intelligent auto-fill
+      options.timeout
+    );
 
-    for (let i = 0; i < options.steps.length; i++) {
-      const step = options.steps[i];
-      console.log(`Step ${i + 1}/${options.steps.length}: ${step.type}`);
-
-      const success = await executeStep(page, step, options.parameters);
-      if (success) {
-        successCount++;
-      } else {
-        console.warn(`⚠️ Step ${i + 1} failed, continuing...`);
-      }
-
-      // Small delay between steps
-      await new Promise(resolve => setTimeout(resolve, 300));
+    if (!playerResult.success) {
+      return {
+        success: false,
+        executionId,
+        status: "failed",
+        error: playerResult.error,
+        duration: Date.now() - startTime,
+      };
     }
 
     // Extract output data
@@ -426,8 +575,8 @@ export async function executeBrowserWorkflow(
 
     const duration = Date.now() - startTime;
 
-    console.log(`✅ Workflow completed in ${duration}ms`);
-    console.log(`📊 Steps executed: ${successCount}/${options.steps.length}`);
+    console.log(`✅ Workflow player injected and started in ${duration}ms`);
+    console.log(`📊 Total steps: ${options.steps.length}`);
 
     return {
       success: true,
@@ -435,7 +584,7 @@ export async function executeBrowserWorkflow(
       status: "completed",
       output: {
         ...output,
-        stepsExecuted: successCount,
+        message: "Scout Player is running the workflow in the browser",
         totalSteps: options.steps.length,
       },
       screenshot: screenshot.toString(),
@@ -457,10 +606,10 @@ export async function executeBrowserWorkflow(
       duration: Date.now() - startTime,
     };
   } finally {
-    // Close the page but keep browser open for reuse
-    if (page) {
-      await page.close().catch(() => {});
-    }
+    // Keep the browser and page open so user can interact with the Scout Player
+    // The page will remain open with the Scout tooltips/highlights running
+    console.log(`\n🌐 Browser remains open for interaction`);
+    console.log(`📍 You can now follow the Scout Player tooltips in the browser\n`);
   }
 }
 
