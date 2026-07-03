@@ -192,13 +192,14 @@ export class OrchestrationEngine {
 
     switch (node.nodeType) {
       case "trigger":
-        // Trigger node is the entry point - just pass through the trigger data
+        // Trigger node is the entry point - spread trigger data to top level for easy access
         return {
           success: true,
           output: {
+            ...(this.execution.triggerData || {}), // Spread trigger data to context root
             trigger: {
-              input: this.execution.triggerData || {},
               timestamp: this.execution.startedAt,
+              data: this.execution.triggerData || {}, // Also keep original data for reference
             },
           },
         };
