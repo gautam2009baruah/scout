@@ -5,6 +5,7 @@
 
 import puppeteer, { Browser, Page } from "puppeteer";
 import type { RecordedAction, GuideStep } from "@/shared/guideTypes";
+import { existsSync } from "fs";
 
 export type BrowserExecutionOptions = {
   workflowId: string;
@@ -28,12 +29,40 @@ export type BrowserExecutionResult = {
 let globalBrowser: Browser | null = null;
 
 /**
+ * Get Edge executable path for Windows
+ */
+function getEdgeExecutablePath(): string | undefined {
+  const edgePaths = [
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+    process.env.LOCALAPPDATA + "\\Microsoft\\Edge\\Application\\msedge.exe",
+  ];
+
+  for (const path of edgePaths) {
+    try {
+      if (existsSync(path)) {
+        console.log(`✅ Found Edge browser at: ${path}`);
+        return path;
+      }
+    } catch (e) {
+      // Continue to next path
+    }
+  }
+
+  console.log("⚠️ Edge not found, falling back to Chrome");
+  return undefined;
+}
+
+/**
  * Get or create browser instance
  */
 async function getBrowser(headless: boolean = false): Promise<Browser> {
   if (!globalBrowser || !globalBrowser.isConnected()) {
+    const edgePath = getEdgeExecutablePath();
+    
     globalBrowser = await puppeteer.launch({
       headless: headless, // true or false
+      executablePath: edgePath, // Use Edge if found, otherwise Chromium
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -56,8 +85,8 @@ async function isLoginPage(page: Page): Promise<boolean> {
   try {
     const url = page.url().toLowerCase();
     const title = (await page.title()).toLowerCase();
-    const content = await page.content();
-    const contentLower = content.toLowerCase();
+
+    console.log(`🔍 Checking if login page: URL=${url}, Title=${title}`);
 
     // Check URL patterns
     const urlPatterns = [
@@ -69,13 +98,17 @@ async function isLoginPage(page: Page): Promise<boolean> {
       "sso",
       "oauth",
     ];
-    if (urlPatterns.some((pattern) => url.includes(pattern))) {
+    const urlMatch = urlPatterns.some((pattern) => url.includes(pattern));
+    if (urlMatch) {
+      console.log(`✅ Login page detected via URL pattern`);
       return true;
     }
 
     // Check page title
     const titlePatterns = ["login", "sign in", "log in", "authentication"];
-    if (titlePatterns.some((pattern) => title.includes(pattern))) {
+    const titleMatch = titlePatterns.some((pattern) => title.includes(pattern));
+    if (titleMatch) {
+      console.log(`✅ Login page detected via title pattern`);
       return true;
     }
 
@@ -83,14 +116,16 @@ async function isLoginPage(page: Page): Promise<boolean> {
     const hasPasswordField = await page.$('input[type="password"]').then((el) => !!el);
     const hasLoginButton = await page
       .$(
-        'button[type="submit"], input[type="submit"], button:has-text("login"), button:has-text("sign in")'
+        'button[type="submit"], input[type="submit"]'
       )
       .then((el) => !!el);
 
     if (hasPasswordField && hasLoginButton) {
+      console.log(`✅ Login page detected via password field + submit button`);
       return true;
     }
 
+    console.log(`❌ Not a login page`);
     return false;
   } catch (error) {
     console.error("Error detecting login page:", error);
@@ -106,30 +141,49 @@ async function waitForUserLogin(
   targetUrl: string,
   timeout: number = 300000 // 5 minutes default
 ): Promise<boolean> {
-  console.log("⏳ Login page detected. Waiting for user to authenticate...");
+  console.log("🔐 ============================================");
+  console.log("⏳ LOGIN REQUIRED - Please login in the browser");
+  console.log("🔐 ============================================");
+  console.log("⏱️ Waiting up to 5 minutes for you to complete login...");
 
   const startTime = Date.now();
+  let checkCount = 0;
 
-  // Poll every second to check if user has logged in
+  // Poll every 2 seconds to check if user has logged in
   while (Date.now() - startTime < timeout) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    checkCount++;
 
     const currentUrl = page.url();
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    
+    console.log(`⏳ Check ${checkCount}: Still waiting... (${elapsed}s elapsed, URL: ${currentUrl})`);
+
     const stillOnLoginPage = await isLoginPage(page);
 
     // Check if user has navigated away from login page
     if (!stillOnLoginPage) {
-      console.log("✅ User authenticated successfully!");
+      console.log("✅ ============================================");
+      console.log("✅ LOGIN SUCCESSFUL - Continuing workflow...");
+      console.log("✅ ============================================");
       return true;
     }
 
     // Check if we're on the target URL or close to it
-    if (currentUrl.includes(new URL(targetUrl).hostname)) {
-      return true;
+    try {
+      const targetHostname = new URL(targetUrl).hostname;
+      if (currentUrl.includes(targetHostname) && !stillOnLoginPage) {
+        console.log("✅ Navigated to target domain, proceeding...");
+        return true;
+      }
+    } catch (e) {
+      // Invalid URL, continue waiting
     }
   }
 
-  console.log("⏱️ Login timeout - user did not authenticate in time");
+  console.log("⏱️ ============================================");
+  console.log("⏱️ LOGIN TIMEOUT - User did not complete login");
+  console.log("⏱️ ============================================");
   return false;
 }
 
@@ -317,8 +371,12 @@ export async function executeBrowserWorkflow(
     console.log(`🌐 Navigating to: ${options.targetUrl}`);
     await page.goto(options.targetUrl, { waitUntil: "networkidle2" });
 
+    // Wait a bit for page to fully render before checking
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
     // Check if we landed on a login page
     const needsLogin = await isLoginPage(page);
+    console.log(`🔐 Login required: ${needsLogin}`);
 
     if (needsLogin) {
       console.log("🔐 Login page detected!");
