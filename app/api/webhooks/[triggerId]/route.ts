@@ -13,7 +13,7 @@ import {
 } from "@/lib/orchestrations/triggers";
 import { getOrchestrationById } from "@/lib/orchestrations/db";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
-import type { WebhookTriggerConfig } from "@/shared/orchestrationTypes";
+import type { WebhookTriggerConfig, TriggerConfig } from "@/shared/orchestrationTypes";
 
 async function handleWebhook(
   request: NextRequest,
@@ -44,7 +44,7 @@ async function handleWebhook(
     }
 
     orchestrationId = trigger.orchestrationId;
-    const triggerConfig = decryptTriggerConfig(trigger.config) as WebhookTriggerConfig;
+    const triggerConfig = decryptTriggerConfig(trigger.config as TriggerConfig) as WebhookTriggerConfig;
 
     // ========================================================================
     // 2. Check if Trigger is Enabled

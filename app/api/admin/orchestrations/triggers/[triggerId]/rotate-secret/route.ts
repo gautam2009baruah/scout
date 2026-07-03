@@ -9,7 +9,7 @@ import {
   generateWebhookSecret,
   decryptTriggerConfig,
 } from "@/lib/orchestrations/triggers";
-import type { WebhookTriggerConfig } from "@/shared/orchestrationTypes";
+import type { WebhookTriggerConfig, TriggerConfig } from "@/shared/orchestrationTypes";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export async function POST(
@@ -42,7 +42,7 @@ export async function POST(
     const newSecret = generateWebhookSecret();
 
     // Decrypt current config
-    const currentConfig = decryptTriggerConfig(trigger.config) as WebhookTriggerConfig;
+    const currentConfig = decryptTriggerConfig(trigger.config as TriggerConfig) as WebhookTriggerConfig;
 
     // Update config with new secret
     const updatedConfig: WebhookTriggerConfig = {
