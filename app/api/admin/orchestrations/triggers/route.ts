@@ -108,7 +108,7 @@ export async function POST(request: NextRequest) {
       name,
       description,
       config: finalConfig,
-      createdByEmail: session.email,
+      createdByEmail: session.user.email,
     });
 
     // Add webhook URL to response if this is a webhook trigger
@@ -147,7 +147,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const updates: any = { updatedByEmail: session.email };
+    const updates: any = { updatedByEmail: session.user.email };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (config !== undefined) {

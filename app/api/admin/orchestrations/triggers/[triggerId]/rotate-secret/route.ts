@@ -53,7 +53,7 @@ export async function POST(
     // Update trigger
     await updateTrigger(triggerId, {
       config: updatedConfig,
-      updatedByEmail: session.email,
+      updatedByEmail: session.user.email,
     });
 
     // Return new secret (only time it's shown)

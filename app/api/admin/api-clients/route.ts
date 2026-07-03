@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       description,
       rateLimit,
       allowedOrchestrations,
-      createdByEmail: session.email,
+      createdByEmail: session.user.email,
     });
 
     return NextResponse.json({

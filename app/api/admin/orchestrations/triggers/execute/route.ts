@@ -96,11 +96,11 @@ export async function POST(request: NextRequest) {
       orchestrationId,
       status: "received",
       payload: input || {},
-      triggeredBy: session.email,
+      triggeredBy: session.user.email,
     });
 
     // Build trigger context
-    const triggerContext = buildTriggerContext(trigger, input || {}, session.email);
+    const triggerContext = buildTriggerContext(trigger, input || {}, session.user.email);
 
     // Create orchestration execution
     const execution = await createExecution({
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         trigger: triggerContext,
       },
       triggerData: input || {},
-      triggeredBy: session.email,
+      triggeredBy: session.user.email,
     });
 
     // Log validation passed and execution started
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
       executionId: execution.id,
       status: "validated",
       payload: input || {},
-      triggeredBy: session.email,
+      triggeredBy: session.user.email,
     });
 
     await createTriggerLog({
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
       executionId: execution.id,
       status: "started",
       payload: input || {},
-      triggeredBy: session.email,
+      triggeredBy: session.user.email,
     });
 
     // Update trigger last triggered
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
 
     // Start execution in background
     // (In production, you might want to use a job queue)
-    executeInBackground(execution, nodes, connections, trigger.id, orchestrationId, session.email);
+    executeInBackground(execution, nodes, connections, trigger.id, orchestrationId, session.user.email);
 
     return NextResponse.json({
       success: true,
