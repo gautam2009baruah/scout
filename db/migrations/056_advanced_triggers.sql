@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS chatbot_trigger_matches (
   execution_id UUID REFERENCES orchestration_executions(id) ON DELETE SET NULL,
   user_message TEXT NOT NULL,
   matched_intent TEXT NOT NULL,
-  confidence NUMERIC(5,4) NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+  confidence NUMERIC(5,4) NOT NULL,
   extracted_variables JSONB DEFAULT '{}',
   confirmation_required BOOLEAN NOT NULL DEFAULT false,
   confirmation_given BOOLEAN,
