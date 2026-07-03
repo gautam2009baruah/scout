@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getExecutionById, getOrchestrationById, getNodes, getConnections } from "@/lib/orchestrations/db";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 // POST - Resume orchestration execution after approval
 export async function POST(request: NextRequest) {

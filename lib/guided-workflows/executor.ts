@@ -5,7 +5,28 @@
 
 import { getPool } from "@/lib/db/pool";
 import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
+import type { AdminSession } from "@/lib/admin/auth";
 import crypto from "node:crypto";
+
+const fallbackSession: AdminSession = {
+  user: {
+    id: "system",
+    tenantId: "system",
+    name: "System",
+    email: "system@example.com",
+    roleId: "system",
+    isAdminRole: true,
+    isActive: true,
+    mustChangePassword: false,
+  },
+  tenant: {
+    tenantId: "system",
+    slug: "system",
+    name: "System",
+  },
+  modules: [],
+  expiresAt: new Date(Date.now() + 60_000),
+};
 
 export type WorkflowExecutionMode = "manual" | "auto" | "scheduled";
 
@@ -47,7 +68,7 @@ export async function executeGuidedWorkflow(
 
   try {
     // Get workflow details
-    const workflow = await getGuidedWorkflowById(options.workflowId);
+    const workflow = await getGuidedWorkflowById(options.workflowId, fallbackSession);
     if (!workflow) {
       throw new Error(`Workflow not found: ${options.workflowId}`);
     }
@@ -185,7 +206,7 @@ export async function getWorkflowExecutionStatus(
   const isFailed = row.event_type === "workflow_failed";
 
   // Get workflow details
-  const workflow = await getGuidedWorkflowById(row.workflow_id);
+  const workflow = await getGuidedWorkflowById(row.workflow_id, fallbackSession);
 
   return {
     success: isCompleted,

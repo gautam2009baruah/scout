@@ -9,7 +9,7 @@ import {
   getExecutionById,
 } from "@/lib/orchestrations/db";
 import type { ApprovalStatus } from "@/shared/orchestrationTypes";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 // GET - Get approval by ID or list approvals for current user
 export async function GET(request: NextRequest) {
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       approverEmail: string;
       status?: ApprovalStatus;
     } = {
-      approverEmail: session.email,
+      approverEmail: session.user.email,
     };
 
     if (status) {
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
     // Get the approval to verify it exists and is pending
     const approvals = await getApprovals({
-      approverEmail: session.email,
+      approverEmail: session.user.email,
     });
     const approval = approvals.find((a) => a.id === approvalId);
 
@@ -113,22 +113,20 @@ export async function POST(request: NextRequest) {
       status,
       responseData: responseData || {},
       notes: notes || null,
-      respondedByEmail: session.email,
+      respondedByEmail: session.user.email,
     });
 
     // Update the node execution status
-    await updateNodeExecution(
-      approval.nodeExecutionId,
-      status === "approved" ? "completed" : "failed",
-      null,
-      {
+    await updateNodeExecution(approval.nodeExecutionId, {
+      status: status === "approved" ? "completed" : "failed",
+      output: {
         approvalStatus: status,
-        approvedBy: session.email,
+        approvedBy: session.user.email,
         approvedAt: updatedApproval.respondedAt,
         notes,
       },
-      status === "rejected" ? "Approval rejected" : undefined
-    );
+      errorMessage: status === "rejected" ? "Approval rejected" : null,
+    });
 
     // Get the execution to determine if we should resume
     const execution = await getExecutionById(approval.executionId);

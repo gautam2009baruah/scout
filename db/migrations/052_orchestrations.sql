@@ -2,7 +2,7 @@
 -- Allows users to build business processes by connecting reusable nodes
 
 -- Main orchestration definitions
-CREATE TABLE orchestrations (
+CREATE TABLE IF NOT EXISTS orchestrations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id uuid NOT NULL,
   name text NOT NULL,
@@ -21,12 +21,12 @@ CREATE TABLE orchestrations (
   CONSTRAINT orchestrations_company_fk FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
 );
 
-CREATE INDEX orchestrations_company_idx ON orchestrations(company_id);
-CREATE INDEX orchestrations_status_idx ON orchestrations(status);
-CREATE INDEX orchestrations_trigger_type_idx ON orchestrations(trigger_type);
+CREATE INDEX IF NOT EXISTS orchestrations_company_idx ON orchestrations(company_id);
+CREATE INDEX IF NOT EXISTS orchestrations_status_idx ON orchestrations(status);
+CREATE INDEX IF NOT EXISTS orchestrations_trigger_type_idx ON orchestrations(trigger_type);
 
 -- Nodes within an orchestration
-CREATE TABLE orchestration_nodes (
+CREATE TABLE IF NOT EXISTS orchestration_nodes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   orchestration_id uuid NOT NULL,
   node_type text NOT NULL, -- workflow, ai_extraction, ai_decision, condition, human_approval, notification, variable, end
@@ -39,11 +39,11 @@ CREATE TABLE orchestration_nodes (
   CONSTRAINT orchestration_nodes_orchestration_fk FOREIGN KEY (orchestration_id) REFERENCES orchestrations(id) ON DELETE CASCADE
 );
 
-CREATE INDEX orchestration_nodes_orchestration_idx ON orchestration_nodes(orchestration_id);
-CREATE INDEX orchestration_nodes_type_idx ON orchestration_nodes(node_type);
+CREATE INDEX IF NOT EXISTS orchestration_nodes_orchestration_idx ON orchestration_nodes(orchestration_id);
+CREATE INDEX IF NOT EXISTS orchestration_nodes_type_idx ON orchestration_nodes(node_type);
 
 -- Connections between nodes
-CREATE TABLE orchestration_connections (
+CREATE TABLE IF NOT EXISTS orchestration_connections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   orchestration_id uuid NOT NULL,
   source_node_id uuid NOT NULL,
@@ -57,12 +57,12 @@ CREATE TABLE orchestration_connections (
   CONSTRAINT orchestration_connections_target_fk FOREIGN KEY (target_node_id) REFERENCES orchestration_nodes(id) ON DELETE CASCADE
 );
 
-CREATE INDEX orchestration_connections_orchestration_idx ON orchestration_connections(orchestration_id);
-CREATE INDEX orchestration_connections_source_idx ON orchestration_connections(source_node_id);
-CREATE INDEX orchestration_connections_target_idx ON orchestration_connections(target_node_id);
+CREATE INDEX IF NOT EXISTS orchestration_connections_orchestration_idx ON orchestration_connections(orchestration_id);
+CREATE INDEX IF NOT EXISTS orchestration_connections_source_idx ON orchestration_connections(source_node_id);
+CREATE INDEX IF NOT EXISTS orchestration_connections_target_idx ON orchestration_connections(target_node_id);
 
 -- Orchestration executions
-CREATE TABLE orchestration_executions (
+CREATE TABLE IF NOT EXISTS orchestration_executions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   orchestration_id uuid NOT NULL,
   orchestration_version integer NOT NULL,
@@ -77,12 +77,12 @@ CREATE TABLE orchestration_executions (
   CONSTRAINT orchestration_executions_orchestration_fk FOREIGN KEY (orchestration_id) REFERENCES orchestrations(id) ON DELETE CASCADE
 );
 
-CREATE INDEX orchestration_executions_orchestration_idx ON orchestration_executions(orchestration_id);
-CREATE INDEX orchestration_executions_status_idx ON orchestration_executions(status);
-CREATE INDEX orchestration_executions_started_idx ON orchestration_executions(started_at);
+CREATE INDEX IF NOT EXISTS orchestration_executions_orchestration_idx ON orchestration_executions(orchestration_id);
+CREATE INDEX IF NOT EXISTS orchestration_executions_status_idx ON orchestration_executions(status);
+CREATE INDEX IF NOT EXISTS orchestration_executions_started_idx ON orchestration_executions(started_at);
 
 -- Individual node executions within an orchestration execution
-CREATE TABLE orchestration_node_executions (
+CREATE TABLE IF NOT EXISTS orchestration_node_executions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   execution_id uuid NOT NULL,
   node_id uuid NOT NULL,
@@ -99,12 +99,12 @@ CREATE TABLE orchestration_node_executions (
   CONSTRAINT orchestration_node_executions_execution_fk FOREIGN KEY (execution_id) REFERENCES orchestration_executions(id) ON DELETE CASCADE
 );
 
-CREATE INDEX orchestration_node_executions_execution_idx ON orchestration_node_executions(execution_id);
-CREATE INDEX orchestration_node_executions_status_idx ON orchestration_node_executions(status);
-CREATE INDEX orchestration_node_executions_started_idx ON orchestration_node_executions(started_at);
+CREATE INDEX IF NOT EXISTS orchestration_node_executions_execution_idx ON orchestration_node_executions(execution_id);
+CREATE INDEX IF NOT EXISTS orchestration_node_executions_status_idx ON orchestration_node_executions(status);
+CREATE INDEX IF NOT EXISTS orchestration_node_executions_started_idx ON orchestration_node_executions(started_at);
 
 -- Human approval requests
-CREATE TABLE orchestration_approvals (
+CREATE TABLE IF NOT EXISTS orchestration_approvals (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   execution_id uuid NOT NULL,
   node_execution_id uuid NOT NULL,
@@ -120,12 +120,12 @@ CREATE TABLE orchestration_approvals (
   CONSTRAINT orchestration_approvals_node_execution_fk FOREIGN KEY (node_execution_id) REFERENCES orchestration_node_executions(id) ON DELETE CASCADE
 );
 
-CREATE INDEX orchestration_approvals_execution_idx ON orchestration_approvals(execution_id);
-CREATE INDEX orchestration_approvals_approver_idx ON orchestration_approvals(approver_email);
-CREATE INDEX orchestration_approvals_status_idx ON orchestration_approvals(status);
+CREATE INDEX IF NOT EXISTS orchestration_approvals_execution_idx ON orchestration_approvals(execution_id);
+CREATE INDEX IF NOT EXISTS orchestration_approvals_approver_idx ON orchestration_approvals(approver_email);
+CREATE INDEX IF NOT EXISTS orchestration_approvals_status_idx ON orchestration_approvals(status);
 
 -- Orchestration versions (for version history)
-CREATE TABLE orchestration_versions (
+CREATE TABLE IF NOT EXISTS orchestration_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   orchestration_id uuid NOT NULL,
   version integer NOT NULL,
@@ -137,8 +137,8 @@ CREATE TABLE orchestration_versions (
   CONSTRAINT orchestration_versions_unique UNIQUE (orchestration_id, version)
 );
 
-CREATE INDEX orchestration_versions_orchestration_idx ON orchestration_versions(orchestration_id);
-CREATE INDEX orchestration_versions_version_idx ON orchestration_versions(orchestration_id, version);
+CREATE INDEX IF NOT EXISTS orchestration_versions_orchestration_idx ON orchestration_versions(orchestration_id);
+CREATE INDEX IF NOT EXISTS orchestration_versions_version_idx ON orchestration_versions(orchestration_id, version);
 
 COMMENT ON TABLE orchestrations IS 'Visual workflow orchestration definitions';
 COMMENT ON TABLE orchestration_nodes IS 'Nodes within orchestrations (workflow, AI, approval, etc.)';

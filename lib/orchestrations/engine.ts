@@ -90,6 +90,7 @@ export class OrchestrationEngine {
     nodeId: string,
     sourceHandle?: string
   ): Promise<{
+    success: boolean;
     status: "completed" | "paused" | "failed";
     error?: string;
   }> {
@@ -101,7 +102,7 @@ export class OrchestrationEngine {
     // Check if this is an end node
     if (node.nodeType === "end") {
       await this.recordNodeExecution(nodeId, "completed", {}, {});
-      return { status: "completed" };
+      return { success: true, status: "completed" };
     }
 
     // Record node execution start
@@ -120,7 +121,7 @@ export class OrchestrationEngine {
         // Human approval or async operation
         await this.updateNodeExecution(nodeExecutionId, "running", null, null);
         await this.updateExecutionStatus("paused", nodeId);
-        return { status: "paused" };
+        return { success: true, status: "paused" };
       }
 
       if (!result.success) {
@@ -131,7 +132,7 @@ export class OrchestrationEngine {
           result.output ?? null,
           result.error
         );
-        return { status: "failed", error: result.error };
+        return { success: false, status: "failed", error: result.error };
       }
 
       // Update context with node output
@@ -152,7 +153,7 @@ export class OrchestrationEngine {
 
       if (nextNodes.length === 0) {
         // No more nodes, orchestration complete
-        return { status: "completed" };
+        return { success: true, status: "completed" };
       }
 
       // Execute next nodes (sequential execution for now)
@@ -163,7 +164,7 @@ export class OrchestrationEngine {
         }
       }
 
-      return { status: "completed" };
+      return { success: true, status: "completed" };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await this.updateNodeExecution(
@@ -173,7 +174,7 @@ export class OrchestrationEngine {
         null,
         errorMessage
       );
-      return { status: "failed", error: errorMessage };
+      return { success: false, status: "failed", error: errorMessage };
     }
   }
 

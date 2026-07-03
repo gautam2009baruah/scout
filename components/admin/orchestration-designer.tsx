@@ -27,6 +27,8 @@ import ReactFlow, {
   BackgroundVariant,
   Panel,
   NodeTypes,
+  Handle,
+  Position,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import {
@@ -59,9 +61,19 @@ function CustomNode({ data }: { data: any }) {
   const config = NODE_CONFIGS.find((n) => n.type === data.nodeType);
   return (
     <div
-      className="rounded-lg border-2 bg-white px-4 py-3 shadow-md"
+      className="relative rounded-lg border-2 bg-white px-4 py-3 shadow-md"
       style={{ borderColor: config?.color || "#64748b", minWidth: 150 }}
     >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!h-3 !w-3 !border-2 !border-white !bg-slate-700"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!h-3 !w-3 !border-2 !border-white !bg-slate-700"
+      />
       <div className="flex items-center gap-2">
         <span className="text-xl">{config?.icon}</span>
         <div className="flex-1">

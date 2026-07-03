@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeHumanApprovalNode } from "@/lib/orchestrations/nodes/human-approval-node";
 import type { HumanApprovalNodeConfig } from "@/shared/orchestrationTypes";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 // POST - Test approval node execution
 export async function POST(request: NextRequest) {

@@ -40,20 +40,20 @@ export async function executeHumanApprovalNode(
     };
 
     // Create node execution record for this approval step
-    const nodeExecutionId = await createNodeExecution({
+    const nodeExecution = await createNodeExecution({
       executionId,
       nodeId,
       nodeType: "human_approval",
       nodeLabel: config.title,
       status: "running",
-      inputContext: context,
+      input: context,
       output: null,
     });
 
     // Create approval record in database
     const approval = await createApproval({
       executionId,
-      nodeExecutionId,
+      nodeExecutionId: nodeExecution.id,
       approverEmail,
       requestData,
     });
@@ -66,43 +66,9 @@ export async function executeHumanApprovalNode(
       await sendEmail({
         to: approverEmail,
         subject: `Approval Required: ${config.title}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #2563eb;">Approval Required</h2>
-            <h3>${config.title}</h3>
-            ${config.description ? `<p>${config.description}</p>` : ""}
-            
-            ${config.fields && config.fields.length > 0 ? `
-              <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                <h4 style="margin-top: 0;">Details:</h4>
-                <ul style="list-style: none; padding: 0;">
-                  ${config.fields
-                    .map(
-                      (field) => `
-                    <li style="margin: 10px 0;">
-                      <strong>${field.label}:</strong> 
-                      ${evaluateExpression(field.value, context) || field.defaultValue || "N/A"}
-                    </li>
-                  `
-                    )
-                    .join("")}
-                </ul>
-              </div>
-            ` : ""}
-            
-            <div style="margin: 30px 0;">
-              <a href="${approvalUrl}" 
-                 style="background: #2563eb; color: white; padding: 12px 24px; 
-                        text-decoration: none; border-radius: 6px; display: inline-block;">
-                Review and Respond
-              </a>
-            </div>
-            
-            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-              This is an automated message from the Scout Orchestration System.
-            </p>
-          </div>
-        `,
+        body: `Approval Required: ${config.title}\n\n${config.description || ""}\n\n${(config.fields || [])
+          .map((field) => `${field.label}: ${field.defaultValue ?? "N/A"}`)
+          .join("\n")}\n\nReview and respond: ${approvalUrl}`,
       });
     } catch (emailError) {
       console.error("Failed to send approval email:", emailError);
