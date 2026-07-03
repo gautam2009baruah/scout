@@ -10,8 +10,7 @@ import {
 } from "@/lib/guided-workflows/executor";
 import { executeBrowserWorkflow } from "../browser-executor";
 import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
-
-const fallbackSession = { user: { id: "system" } } as any;
+import { getPool } from "@/lib/db/pool";
 
 export async function executeWorkflowNode(
   config: WorkflowNodeConfig,
@@ -73,8 +72,36 @@ export async function executeWorkflowNode(
 
     // **BROWSER AUTOMATION MODE** - If target URL is provided, use automated browser execution
     if (targetUrl) {
+      // Get session for workflow access - query user from database
+      const systemContext = context._system as { triggeredBy?: string } | undefined;
+      const triggeredByEmail = systemContext?.triggeredBy || "admin@example.com";
+      
+      const pool = getPool();
+      const userResult = await pool.query(
+        `SELECT u.id, u.email, u.company_id, r.is_admin_role
+         FROM users u
+         JOIN roles r ON u.role_id = r.id
+         WHERE u.email = $1 AND u.status = 'active'
+         LIMIT 1`,
+        [triggeredByEmail]
+      );
+      
+      if (userResult.rows.length === 0) {
+        throw new Error(`User not found or inactive: ${triggeredByEmail}`);
+      }
+
+      const user = userResult.rows[0];
+      const session = {
+        user: {
+          id: user.id,
+          email: user.email,
+          isAdminRole: user.is_admin_role,
+          tenantId: user.company_id,
+        },
+      } as any;
+
       // Get workflow details to access recorded steps
-      const workflow = await getGuidedWorkflowById(workflowId, fallbackSession);
+      const workflow = await getGuidedWorkflowById(workflowId, session);
       
       if (!workflow) {
         throw new Error(`Workflow not found: ${workflowId}`);

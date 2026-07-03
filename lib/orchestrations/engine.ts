@@ -208,6 +208,11 @@ export class OrchestrationEngine {
               startedBy: this.execution.triggeredBy,
               startedAt: this.execution.startedAt,
             },
+            // Pass user info for workflow execution
+            _system: {
+              triggeredBy: this.execution.triggeredBy,
+              executionId: this.execution.id,
+            },
           },
         };
 
