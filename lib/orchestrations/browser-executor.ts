@@ -5,8 +5,9 @@
 
 import puppeteer, { Browser, Page } from "puppeteer";
 import type { RecordedAction, GuideStep } from "@/shared/guideTypes";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, mkdirSync } from "fs";
 import { join } from "path";
+import { tmpdir } from "os";
 
 export type BrowserExecutionOptions = {
   workflowId: string;
@@ -55,15 +56,31 @@ function getEdgeExecutablePath(): string | undefined {
 }
 
 /**
- * Get or create browser instance
+ * Get or create browser instance with session persistence
  */
 async function getBrowser(headless: boolean = false): Promise<Browser> {
   if (!globalBrowser || !globalBrowser.isConnected()) {
     const edgePath = getEdgeExecutablePath();
     
+    // Create persistent user data directory to preserve sessions
+    const userDataDir = join(tmpdir(), "scout-orchestration-browser");
+    
+    try {
+      if (!existsSync(userDataDir)) {
+        mkdirSync(userDataDir, { recursive: true });
+        console.log(`📁 Created browser profile directory: ${userDataDir}`);
+      } else {
+        console.log(`📁 Reusing browser profile directory: ${userDataDir}`);
+        console.log(`✨ Session data (cookies, login state) will be preserved`);
+      }
+    } catch (e) {
+      console.warn(`⚠️ Could not create user data directory, sessions won't persist`);
+    }
+    
     globalBrowser = await puppeteer.launch({
       headless: headless, // true or false
       executablePath: edgePath, // Use Edge if found, otherwise Chromium
+      userDataDir: userDataDir, // Persist sessions across runs
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -75,6 +92,10 @@ async function getBrowser(headless: boolean = false): Promise<Browser> {
         height: 1080,
       },
     });
+    
+    console.log(`✅ Browser launched (session persistence enabled)`);
+  } else {
+    console.log(`🔄 Reusing existing browser instance`);
   }
   return globalBrowser;
 }
@@ -302,7 +323,21 @@ async function injectAndExecuteScoutPlayer(
     const playerScript = readFileSync(playerScriptPath, "utf-8");
     
     // Inject the player script into the page
-    await page.evaluate(playerScript);
+    // We need to modify it to expose the Player class globally for our auto-fill enhancement
+    const modifiedPlayerScript = playerScript.replace(
+      /class Player \{/,
+      `window._ScoutPlayerClass = class Player {`
+    ).replace(
+      /}\)\(\);[\s]*$/,
+      `
+  // Expose Player class for orchestration auto-fill
+  if (window._ScoutPlayerClass) {
+    console.log("[Scout] Player class exposed for orchestration");
+  }
+})();`
+    );
+    
+    await page.evaluate(modifiedPlayerScript);
     console.log(`✅ Scout Player injected`);
 
     // Convert RecordedActions to guide format expected by the player
@@ -346,9 +381,9 @@ async function injectAndExecuteScoutPlayer(
       // WITH AUTO-FILL ENHANCEMENT (orchestration mode)
       await page.evaluate((guideData) => {
         // Create and start the player
-        const Player = (window as any).Player;
+        const Player = (window as any)._ScoutPlayerClass;
         if (!Player) {
-          throw new Error("Scout Player class not found");
+          throw new Error("Scout Player class not found. Make sure the player script was injected.");
         }
 
         // Create a wrapper that adds auto-fill without modifying the original Player
@@ -419,9 +454,9 @@ async function injectAndExecuteScoutPlayer(
     } else {
       // WITHOUT AUTO-FILL (standard digital adoption mode)
       await page.evaluate((guideData) => {
-        const Player = (window as any).Player;
+        const Player = (window as any)._ScoutPlayerClass;
         if (!Player) {
-          throw new Error("Scout Player class not found");
+          throw new Error("Scout Player class not found. Make sure the player script was injected.");
         }
 
         const player = new Player(guideData);
@@ -509,13 +544,23 @@ export async function executeBrowserWorkflow(
     console.log(`🚀 Starting browser workflow execution: ${options.workflowId}`);
 
     // Launch browser (visible by default so user can login)
+    // This will reuse existing browser instance if running, preserving session
     const browser = await getBrowser(options.headless || false);
+    
+    // Always create a NEW page/tab - don't disturb existing tabs
     page = await browser.newPage();
+    console.log(`📄 Opened new browser tab`);
+    
+    const existingPages = await browser.pages();
+    if (existingPages.length > 1) {
+      console.log(`✨ Existing session preserved - you have ${existingPages.length} tab(s) open`);
+      console.log(`🔐 If you're already logged in, you won't need to login again`);
+    }
 
     // Set reasonable timeout
     page.setDefaultTimeout(options.timeout || 60000);
 
-    // Navigate to target URL
+    // Navigate to target URL in the new tab
     console.log(`🌐 Navigating to: ${options.targetUrl}`);
     await page.goto(options.targetUrl, { waitUntil: "networkidle2" });
 
@@ -523,6 +568,7 @@ export async function executeBrowserWorkflow(
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Check if we landed on a login page
+    // With session persistence, this should be false if user already logged in
     const needsLogin = await isLoginPage(page);
     console.log(`🔐 Login required: ${needsLogin}`);
 
