@@ -454,7 +454,7 @@ async function injectAndExecuteScoutPlayer(
     // Enhanced with auto-fill based on highlighted element matching
     if (hasInstructions) {
       // WITH AUTO-FILL ENHANCEMENT (orchestration mode)
-      // Pass parameters directly - check highlighted element in real-time
+      // Pass parameters and recorded actions for element matching
       await page.evaluate((guideData, instructionsMap) => {
         // Create and start the player
         const Player = (window as any)._ScoutPlayerClass;
@@ -462,70 +462,62 @@ async function injectAndExecuteScoutPlayer(
           throw new Error("Scout Player class not found. Make sure the player script was injected.");
         }
 
-        // Helper to extract searchable text from highlighted element
-        function getElementSearchText(element: HTMLElement): string {
+        // Helper to extract searchable text from elementIdentity (reusing Scout's recorded data)
+        function getElementSearchText(elementIdentity: any): string {
+          if (!elementIdentity) return "";
+          
           const texts: string[] = [];
           
-          // Get label text (from associated label or aria-label)
-          const id = element.id;
-          if (id) {
-            const label = document.querySelector(`label[for="${id}"]`);
-            if (label) texts.push(label.textContent?.toLowerCase() || "");
-          }
-          
-          const ariaLabel = element.getAttribute('aria-label');
-          if (ariaLabel) texts.push(ariaLabel.toLowerCase());
-          
-          // Get placeholder
-          const placeholder = element.getAttribute('placeholder');
-          if (placeholder) texts.push(placeholder.toLowerCase());
-          
-          // Get name attribute
-          const name = element.getAttribute('name');
-          if (name) texts.push(name.toLowerCase());
-          
-          // Get id
-          if (id) texts.push(id.toLowerCase());
-          
-          // Get title
-          const title = element.getAttribute('title');
-          if (title) texts.push(title.toLowerCase());
-          
-          // Get nearby text (previous sibling or parent text)
-          const parent = element.parentElement;
-          if (parent) {
-            const parentText = parent.textContent?.replace(element.textContent || '', '').trim();
-            if (parentText && parentText.length < 100) {
-              texts.push(parentText.toLowerCase());
-            }
-          }
+          // Use all the text properties Scout recorded (in priority order)
+          if (elementIdentity.labelText) texts.push(elementIdentity.labelText.toLowerCase());
+          if (elementIdentity.accessibleName) texts.push(elementIdentity.accessibleName.toLowerCase());
+          if (elementIdentity.ariaLabel) texts.push(elementIdentity.ariaLabel.toLowerCase());
+          if (elementIdentity.placeholder) texts.push(elementIdentity.placeholder.toLowerCase());
+          if (elementIdentity.text) texts.push(elementIdentity.text.toLowerCase());
+          if (elementIdentity.nearbyHeading) texts.push(elementIdentity.nearbyHeading.toLowerCase());
+          if (elementIdentity.name) texts.push(elementIdentity.name.toLowerCase());
+          if (elementIdentity.id) texts.push(elementIdentity.id.toLowerCase());
+          if (elementIdentity.parentContainerText) texts.push(elementIdentity.parentContainerText.toLowerCase());
+          if (elementIdentity.previousSiblingText) texts.push(elementIdentity.previousSiblingText.toLowerCase());
+          if (elementIdentity.nextSiblingText) texts.push(elementIdentity.nextSiblingText.toLowerCase());
           
           return texts.filter(Boolean).join(' ');
         }
 
-        // Helper to check if instruction matches element
-        function findMatchingInstruction(element: HTMLElement, instructions: Record<string, string>): { instruction: string; value: string; action: string } | null {
-          const elementText = getElementSearchText(element);
+        // Helper to check if instruction matches element using Scout's recorded elementIdentity
+        function findMatchingInstruction(stepIndex: number, recordedActions: any[], instructions: Record<string, string>): { instruction: string; value: string; action: string } | null {
+          const action = recordedActions[stepIndex];
+          if (!action || !action.elementIdentity) {
+            console.log(`\n⚠️  No elementIdentity for step ${stepIndex + 1}`);
+            return null;
+          }
           
-          console.log(`\n🔍 Checking highlighted element:`);
-          console.log(`   <${element.tagName}> "${elementText.substring(0, 80)}${elementText.length > 80 ? '...' : ''}"`);
+          const elementText = getElementSearchText(action.elementIdentity);
+          
+          console.log(`\n🔍 Checking highlighted element (Step ${stepIndex + 1}):`);
+          console.log(`   <${action.elementIdentity.tagName}> Properties:`);
+          if (action.elementIdentity.labelText) console.log(`     - Label: "${action.elementIdentity.labelText}"`);
+          if (action.elementIdentity.placeholder) console.log(`     - Placeholder: "${action.elementIdentity.placeholder}"`);
+          if (action.elementIdentity.ariaLabel) console.log(`     - Aria-Label: "${action.elementIdentity.ariaLabel}"`);
+          if (action.elementIdentity.accessibleName) console.log(`     - Accessible Name: "${action.elementIdentity.accessibleName}"`);
+          if (action.elementIdentity.name) console.log(`     - Name: "${action.elementIdentity.name}"`);
           
           for (const [instruction, value] of Object.entries(instructions)) {
             const instructionLower = instruction.toLowerCase();
             
             // Determine action from instruction
-            let action = "fill";
+            let actionType = "fill";
             let searchText = instructionLower;
             
             if (instructionLower.startsWith("click ") || instructionLower.startsWith("press ")) {
-              action = "click";
+              actionType = "click";
               searchText = instructionLower.replace(/^(click|press)\s+/i, "");
             } else if (instructionLower.startsWith("skip ")) {
-              action = "skip";
+              actionType = "skip";
               searchText = instructionLower.replace(/^skip\s+/i, "");
             } else if (instructionLower.startsWith("fill ") || instructionLower.startsWith("enter ") || 
                        instructionLower.startsWith("type ")) {
-              action = "fill";
+              actionType = "fill";
               searchText = instructionLower.replace(/^(fill|enter|type)\s+/i, "");
             }
             
@@ -548,7 +540,7 @@ async function injectAndExecuteScoutPlayer(
             // Match if 70%+ of keywords found
             if (matchPercentage >= 0.7) {
               console.log(`   ✅ MATCH!`);
-              return { instruction, value, action };
+              return { instruction, value, action: actionType };
             }
           }
           
@@ -562,7 +554,7 @@ async function injectAndExecuteScoutPlayer(
         // Store original render method
         const originalRender = player.render.bind(player);
         
-        // Override render to check highlighted element against instructions
+        // Override render to check highlighted element against instructions using Scout's recorded data
         player.render = function() {
           originalRender();
           
@@ -574,8 +566,8 @@ async function injectAndExecuteScoutPlayer(
               return; // No element highlighted yet
             }
             
-            // Check if this highlighted element matches any instruction
-            const match = findMatchingInstruction(highlightedElement, instructionsMap);
+            // Check if this step's elementIdentity matches any instruction
+            const match = findMatchingInstruction(player.index, guideData.recordedActions, instructionsMap);
             
             if (!match) {
               return; // No match - user handles manually
