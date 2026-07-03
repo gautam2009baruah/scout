@@ -41,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import type { NodeType, Orchestration } from "@/shared/orchestrationTypes";
+import { NodePropertiesPanel } from "./node-properties-panel";
 
 type CompanyOption = { id: string; name: string };
 
@@ -472,69 +473,12 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
 
           {/* Properties Panel */}
           {isPropertiesOpen && selectedNode && (
-            <div className="w-80 border-l border-slate-200 bg-white p-4 overflow-y-auto">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-slate-900">Node Properties</h3>
-                <button
-                  className="text-slate-500 hover:text-slate-700"
-                  onClick={() => setIsPropertiesOpen(false)}
-                  type="button"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Node Type</label>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                    {NODE_CONFIGS.find((n) => n.type === selectedNode.data.nodeType)?.label}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Label</label>
-                  <input
-                    type="text"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={selectedNode.data.label}
-                    onChange={(e) => {
-                      updateSelectedNode({
-                        data: { ...selectedNode.data, label: e.target.value },
-                      });
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Configuration (JSON)</label>
-                  <textarea
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs font-mono"
-                    rows={12}
-                    value={JSON.stringify(selectedNode.data.config, null, 2)}
-                    onChange={(e) => {
-                      try {
-                        const config = JSON.parse(e.target.value);
-                        updateSelectedNode({
-                          data: { ...selectedNode.data, config },
-                        });
-                      } catch {
-                        // Invalid JSON, ignore
-                      }
-                    }}
-                  />
-                </div>
-
-                <button
-                  className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                  onClick={deleteSelectedNode}
-                  type="button"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Delete Node
-                </button>
-              </div>
-            </div>
+            <NodePropertiesPanel
+              node={selectedNode}
+              onClose={() => setIsPropertiesOpen(false)}
+              onUpdate={(updates) => updateSelectedNode(updates)}
+              onDelete={deleteSelectedNode}
+            />
           )}
         </div>
       ) : (
