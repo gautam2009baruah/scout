@@ -10,7 +10,7 @@ import {
   deleteAPIClient,
   regenerateAPIKey,
 } from "@/lib/orchestrations/triggers";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 // GET - List API clients or get by ID
 export async function GET(request: NextRequest) {

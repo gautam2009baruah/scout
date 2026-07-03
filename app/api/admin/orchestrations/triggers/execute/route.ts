@@ -17,7 +17,7 @@ import {
 } from "@/lib/orchestrations/triggers";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
 import type { ManualTriggerConfig } from "@/shared/orchestrationTypes";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 // POST - Execute orchestration via manual trigger
 export async function POST(request: NextRequest) {

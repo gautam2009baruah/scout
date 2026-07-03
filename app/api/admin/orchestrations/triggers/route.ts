@@ -12,7 +12,7 @@ import {
   generateWebhookSecret,
 } from "@/lib/orchestrations/triggers";
 import type { TriggerConfig, OrchestrationTriggerType, TriggerStatus, WebhookTriggerConfig } from "@/shared/orchestrationTypes";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 // GET - List triggers or get by ID
 export async function GET(request: NextRequest) {

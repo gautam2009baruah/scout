@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getTriggerLogs } from "@/lib/orchestrations/triggers";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 // GET - Get trigger execution logs
 export async function GET(request: NextRequest) {

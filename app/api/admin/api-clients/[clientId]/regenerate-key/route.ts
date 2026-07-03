@@ -4,7 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { regenerateAPIKey } from "@/lib/orchestrations/triggers";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export async function POST(
   request: NextRequest,

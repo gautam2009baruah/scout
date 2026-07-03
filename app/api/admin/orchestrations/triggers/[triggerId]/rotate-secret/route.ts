@@ -10,7 +10,7 @@ import {
   decryptTriggerConfig,
 } from "@/lib/orchestrations/triggers";
 import type { WebhookTriggerConfig } from "@/shared/orchestrationTypes";
-import { getCurrentAdminSession } from "@/lib/admin/auth";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export async function POST(
   request: NextRequest,
