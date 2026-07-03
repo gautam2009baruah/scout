@@ -417,11 +417,12 @@ export type ScheduleTriggerConfig = {
 
 export type WebhookTriggerConfig = {
   type: "webhook";
-  secret: string; // Encrypted
-  allowedIPs?: string[];
-  headers?: Record<string, string>;
-  method: "POST" | "GET" | "PUT";
-  responseFormat: "json" | "text";
+  webhookUrl?: string; // Generated after trigger creation
+  secret: string; // Encrypted, validated via X-Scout-Webhook-Secret header
+  allowedMethods: Array<"GET" | "POST" | "PUT">; // Default: ["POST"]
+  allowedIPs?: string[]; // Optional IP allowlist
+  payloadSchema?: Record<string, unknown>; // Optional JSON schema validation
+  enabled: boolean;
 };
 
 export type ChatbotTriggerConfig = {
@@ -433,9 +434,10 @@ export type ChatbotTriggerConfig = {
 
 export type APITriggerConfig = {
   type: "api";
-  apiKey: string; // Encrypted
-  allowedOrigins?: string[];
-  rateLimit?: number;
+  allowedClients?: string[]; // Client IDs that can use this trigger
+  requestSchema?: Record<string, unknown>; // Expected request body schema
+  rateLimit?: number; // Requests per minute, 0 = unlimited
+  enabled: boolean;
 };
 
 export type EmailTriggerConfig = {
@@ -461,6 +463,41 @@ export type TriggerConfig =
   | APITriggerConfig
   | EmailTriggerConfig
   | FileUploadTriggerConfig;
+
+// ============================================================================
+// API Client & Key Types (for API Trigger authentication)
+// ============================================================================
+
+export type APIClient = {
+  id: string;
+  name: string;
+  description: string | null;
+  apiKey: string; // Encrypted
+  isActive: boolean;
+  rateLimit: number; // Requests per minute, 0 = unlimited
+  allowedOrchestrations: string[]; // Empty = all orchestrations
+  lastUsedAt: string | null;
+  createdAt: string;
+  createdByEmail: string | null;
+};
+
+export type APIRequestLog = {
+  id: string;
+  clientId: string;
+  orchestrationId: string;
+  triggerId: string | null;
+  executionId: string | null;
+  endpoint: string;
+  method: string;
+  statusCode: number;
+  requestBody: Record<string, unknown> | null;
+  responseBody: Record<string, unknown> | null;
+  errorMessage: string | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  requestedAt: string;
+  durationMs: number | null;
+};
 
 // Trigger context that gets passed to orchestration
 export type TriggerContext = {

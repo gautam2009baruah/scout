@@ -17,16 +17,16 @@ CREATE TABLE IF NOT EXISTS internal_notifications (
 );
 
 -- Index for querying user notifications
-CREATE INDEX idx_internal_notifications_user_id ON internal_notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_internal_notifications_user_id ON internal_notifications(user_id);
 
 -- Index for unread notifications
-CREATE INDEX idx_internal_notifications_unread ON internal_notifications(user_id, read) WHERE read = FALSE;
+CREATE INDEX IF NOT EXISTS idx_internal_notifications_unread ON internal_notifications(user_id, read) WHERE read = FALSE;
 
 -- Index for notification type
-CREATE INDEX idx_internal_notifications_type ON internal_notifications(type);
+CREATE INDEX IF NOT EXISTS idx_internal_notifications_type ON internal_notifications(type);
 
 -- Index for created_at for sorting
-CREATE INDEX idx_internal_notifications_created_at ON internal_notifications(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_internal_notifications_created_at ON internal_notifications(created_at DESC);
 
 COMMENT ON TABLE internal_notifications IS 'Internal notifications for orchestration workflows and system events';
 COMMENT ON COLUMN internal_notifications.user_id IS 'User identifier (email or user ID)';

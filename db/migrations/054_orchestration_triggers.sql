@@ -19,9 +19,9 @@ CREATE TABLE IF NOT EXISTS orchestration_triggers (
   CONSTRAINT orchestration_triggers_orchestration_fk FOREIGN KEY (orchestration_id) REFERENCES orchestrations(id) ON DELETE CASCADE
 );
 
-CREATE INDEX orchestration_triggers_orchestration_idx ON orchestration_triggers(orchestration_id);
-CREATE INDEX orchestration_triggers_type_idx ON orchestration_triggers(trigger_type);
-CREATE INDEX orchestration_triggers_status_idx ON orchestration_triggers(status);
+CREATE INDEX IF NOT EXISTS orchestration_triggers_orchestration_idx ON orchestration_triggers(orchestration_id);
+CREATE INDEX IF NOT EXISTS orchestration_triggers_type_idx ON orchestration_triggers(trigger_type);
+CREATE INDEX IF NOT EXISTS orchestration_triggers_status_idx ON orchestration_triggers(status);
 
 -- Trigger execution logs table
 CREATE TABLE IF NOT EXISTS trigger_execution_logs (
@@ -39,11 +39,11 @@ CREATE TABLE IF NOT EXISTS trigger_execution_logs (
   CONSTRAINT trigger_execution_logs_execution_fk FOREIGN KEY (execution_id) REFERENCES orchestration_executions(id) ON DELETE SET NULL
 );
 
-CREATE INDEX trigger_execution_logs_trigger_idx ON trigger_execution_logs(trigger_id);
-CREATE INDEX trigger_execution_logs_orchestration_idx ON trigger_execution_logs(orchestration_id);
-CREATE INDEX trigger_execution_logs_execution_idx ON trigger_execution_logs(execution_id);
-CREATE INDEX trigger_execution_logs_status_idx ON trigger_execution_logs(status);
-CREATE INDEX trigger_execution_logs_triggered_at_idx ON trigger_execution_logs(triggered_at);
+CREATE INDEX IF NOT EXISTS trigger_execution_logs_trigger_idx ON trigger_execution_logs(trigger_id);
+CREATE INDEX IF NOT EXISTS trigger_execution_logs_orchestration_idx ON trigger_execution_logs(orchestration_id);
+CREATE INDEX IF NOT EXISTS trigger_execution_logs_execution_idx ON trigger_execution_logs(execution_id);
+CREATE INDEX IF NOT EXISTS trigger_execution_logs_status_idx ON trigger_execution_logs(status);
+CREATE INDEX IF NOT EXISTS trigger_execution_logs_triggered_at_idx ON trigger_execution_logs(triggered_at);
 
 -- Comments
 COMMENT ON TABLE orchestration_triggers IS 'Trigger configurations for orchestrations';
