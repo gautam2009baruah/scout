@@ -64,7 +64,7 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: 
 ];
 
 // Custom Node Component
-function CustomNode({ data }: { data: any }) {
+const CustomNode = ({ data }: { data: any }) => {
   const config = NODE_CONFIGS.find((n) => n.type === data.nodeType);
   return (
     <div
@@ -90,9 +90,9 @@ function CustomNode({ data }: { data: any }) {
       </div>
     </div>
   );
-}
+};
 
-// Node type mapping for React Flow
+// Node type mapping for React Flow - memoized to prevent recreation
 const nodeTypes: NodeTypes = {
   custom: CustomNode,
 };

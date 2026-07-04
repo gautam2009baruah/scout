@@ -36,7 +36,16 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
   const config = node.data.config || {};
   const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
   const [panelHeight, setPanelHeight] = useState(600);
+  const [position, setPosition] = useState({ x: 0, y: 80 });
   const nodeRef = useRef<HTMLDivElement>(null);
+
+  // Calculate initial position after mount to ensure it's fully visible
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const x = Math.max(16, window.innerWidth - panelWidth - 32);
+      setPosition({ x, y: 80 });
+    }
+  }, [panelWidth]);
 
   const updateConfig = (updates: Record<string, any>) => {
     onUpdate({
@@ -74,19 +83,20 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
         startWidth = panelWidth;
         startHeight = panelHeight;
         
-        // Determine resize direction from which handle was clicked
-        const rect = resizeElement.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
-        
+        // Determine resize direction from the specific handle class
         resizeDirection = '';
-        
-        // Check which edge/corner based on click position (8px for corners, 4px for edges)
-        if (clickX < 8) resizeDirection += 'left';
-        else if (clickX > rect.width - 8) resizeDirection += 'right';
-        
-        if (clickY < 8) resizeDirection += 'top';
-        else if (clickY > rect.height - 8) resizeDirection += 'bottom';
+        if (target.classList.contains('resize-left') || target.classList.contains('resize-topleft') || target.classList.contains('resize-bottomleft')) {
+          resizeDirection += 'left';
+        }
+        if (target.classList.contains('resize-right') || target.classList.contains('resize-topright') || target.classList.contains('resize-bottomright')) {
+          resizeDirection += 'right';
+        }
+        if (target.classList.contains('resize-top') || target.classList.contains('resize-topleft') || target.classList.contains('resize-topright')) {
+          resizeDirection += 'top';
+        }
+        if (target.classList.contains('resize-bottom') || target.classList.contains('resize-bottomleft') || target.classList.contains('resize-bottomright')) {
+          resizeDirection += 'bottom';
+        }
         
         e.preventDefault();
         e.stopPropagation();
@@ -140,15 +150,9 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
     <Draggable
       handle=".drag-handle"
       nodeRef={nodeRef}
-      defaultPosition={{ 
-        x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - panelWidth - 32) : 600, 
-        y: 80 
-      }}
-      bounds={{ 
-        left: 16, 
-        top: 16, 
-        right: typeof window !== 'undefined' ? window.innerWidth - 300 : 1000, 
-        bottom: typeof window !== 'undefined' ? window.innerHeight - 200 : 800 
+      position={position}
+      onDrag={(e, data) => {
+        setPosition({ x: data.x, y: data.y });
       }}
       onStart={(e) => {
         // Prevent dragging when clicking on resize handles
@@ -160,51 +164,52 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
     >
       <div 
         ref={nodeRef}
-        className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden"
+        className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl"
         style={{ 
           width: `${panelWidth}px`,
           height: `${panelHeight}px`,
-          zIndex: 50
+          zIndex: 9999,
+          overflow: 'visible'
         }}
       >
-        {/* Resize Handles - All borders with higher z-index and pointer events */}
+        {/* Resize Handles - All 4 edges */}
         <div 
-          className="resize-handle absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
-          style={{ zIndex: 10, width: '4px', left: 0 }}
+          className="resize-handle resize-left absolute left-0 top-0 bottom-0 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+          style={{ width: '8px', zIndex: 1000 }}
         />
         <div 
-          className="resize-handle absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
-          style={{ zIndex: 10, width: '4px', right: 0 }}
+          className="resize-handle resize-right absolute right-0 top-0 bottom-0 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+          style={{ width: '8px', zIndex: 1000 }}
         />
         <div 
-          className="resize-handle absolute left-0 top-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
-          style={{ zIndex: 10, height: '4px', top: 0 }}
+          className="resize-handle resize-top absolute left-0 top-0 right-0 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+          style={{ height: '8px', zIndex: 1000 }}
         />
         <div 
-          className="resize-handle absolute left-0 bottom-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
-          style={{ zIndex: 10, height: '4px', bottom: 0 }}
+          className="resize-handle resize-bottom absolute left-0 bottom-0 right-0 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+          style={{ height: '8px', zIndex: 1000 }}
         />
         {/* Corner Handles with highest z-index */}
         <div 
-          className="resize-handle absolute left-0 top-0 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-50 rounded-tl-lg" 
-          style={{ zIndex: 20, width: '8px', height: '8px' }}
+          className="resize-handle resize-topleft absolute left-0 top-0 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-50" 
+          style={{ width: '12px', height: '12px', zIndex: 1001 }}
         />
         <div 
-          className="resize-handle absolute right-0 top-0 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-50 rounded-tr-lg" 
-          style={{ zIndex: 20, width: '8px', height: '8px' }}
+          className="resize-handle resize-topright absolute right-0 top-0 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-50" 
+          style={{ width: '12px', height: '12px', zIndex: 1001 }}
         />
         <div 
-          className="resize-handle absolute left-0 bottom-0 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-50 rounded-bl-lg" 
-          style={{ zIndex: 20, width: '8px', height: '8px' }}
+          className="resize-handle resize-bottomleft absolute left-0 bottom-0 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-50" 
+          style={{ width: '12px', height: '12px', zIndex: 1001 }}
         />
         <div 
-          className="resize-handle absolute right-0 bottom-0 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-50 rounded-br-lg" 
-          style={{ zIndex: 20, width: '8px', height: '8px' }}
+          className="resize-handle resize-bottomright absolute right-0 bottom-0 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-50" 
+          style={{ width: '12px', height: '12px', zIndex: 1001 }}
         />
         
         <div className="flex flex-col h-full">
           {/* Header */}
-          <div className="drag-handle bg-gradient-to-r from-slate-700 to-slate-600 p-4 cursor-move border-b-2 border-slate-500 flex-shrink-0">
+          <div className="drag-handle bg-gradient-to-r from-slate-700 to-slate-600 p-4 cursor-move border-b-2 border-slate-500 flex-shrink-0" style={{ position: 'relative', zIndex: 1002 }}>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Move className="h-4 w-4 text-slate-300" />
@@ -244,7 +249,7 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
           </div>
 
           {/* Content - Scrollable */}
-          <div className="flex-1 overflow-y-auto bg-white">
+          <div className="flex-1 overflow-y-auto bg-white" style={{ position: 'relative', zIndex: 1002 }}>
             <div className="p-4 space-y-4">
         {/* Common: Label */}
         <div>
