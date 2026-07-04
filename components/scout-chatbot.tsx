@@ -564,33 +564,42 @@ export function ScoutChatbot({
       const trigger = body.orchestration_trigger;
       
       console.log('🎯 Orchestration auto-execute triggered:', trigger);
-      console.log('📤 Sending SCOUT_START_EXECUTION to parent window...');
+      console.log('📤 Triggering orchestration execution...');
       console.log('🪟 window.parent:', window.parent);
       console.log('🪟 Is iframe?:', window.parent !== window);
       
-      // Send postMessage to parent window to start in-context execution
+      const payload = {
+        executionId: trigger.executionId,
+        orchestrationId: trigger.orchestrationId,
+        orchestrationName: trigger.orchestrationName,
+        triggerData: {
+          triggerId: trigger.triggerId,
+          confidence: trigger.confidence,
+          matchedPhrase: body.matchedPhrase,
+          matchedIntent: body.matchedIntent,
+        },
+        context: {},
+      };
+      
+      // Method 1: If in iframe, send postMessage to parent
       if (window.parent && window.parent !== window) {
-        const payload = {
+        console.log('📤 Method 1: Posting message to parent window (iframe mode)');
+        window.parent.postMessage({
           type: 'SCOUT_START_EXECUTION',
-          payload: {
-            executionId: trigger.executionId,
-            orchestrationId: trigger.orchestrationId,
-            orchestrationName: trigger.orchestrationName,
-            triggerData: {
-              triggerId: trigger.triggerId,
-              confidence: trigger.confidence,
-              matchedPhrase: body.matchedPhrase,
-              matchedIntent: body.matchedIntent,
-            },
-            context: {},
-          },
-        };
-        
-        console.log('📤 Posting message:', payload);
-        window.parent.postMessage(payload, '*'); // TODO: Use specific origin for security
+          payload: payload,
+        }, '*');
         console.log('✅ Message posted to parent window');
-      } else {
-        console.warn('⚠️ Not in iframe - cannot send postMessage to parent');
+      } 
+      // Method 2: If same window, dispatch custom event
+      else {
+        console.log('📤 Method 2: Dispatching custom event (same window mode)');
+        const event = new CustomEvent('SCOUT_START_EXECUTION', {
+          detail: payload,
+          bubbles: true,
+          cancelable: false,
+        });
+        window.dispatchEvent(event);
+        console.log('✅ Custom event dispatched');
       }
     }
 

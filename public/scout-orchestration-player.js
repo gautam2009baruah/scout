@@ -33,10 +33,13 @@
    */
   function init() {
     console.log('🎬 Initializing Scout Orchestration Player...');
-    console.log('✅ Event listener registered for postMessage');
+    console.log('✅ Event listeners registered for postMessage AND custom events');
     
-    // Register message listener
+    // Listen for postMessage (iframe mode)
     window.addEventListener('message', handleMessage);
+    
+    // Listen for custom events (same window mode)
+    window.addEventListener('SCOUT_START_EXECUTION', handleCustomEvent);
     
     // Inject styles
     injectStyles();
@@ -52,6 +55,14 @@
       });
       console.log('✅ Sent SCOUT_PLAYER_READY to chatbot iframes');
     }, 1000);
+  }
+
+  /**
+   * Handle custom event (same window mode)
+   */
+  function handleCustomEvent(event) {
+    console.log('📨 Received custom event:', event.type, event.detail);
+    handleStartExecution(event.detail);
   }
 
   /**
