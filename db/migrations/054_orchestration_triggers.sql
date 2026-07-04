@@ -2,7 +2,14 @@
 -- Adds trigger configuration and execution logging tables
 
 -- ============================================================================
--- Step 1: Create base table without trigger_type if it doesn't exist
+-- Step 1: Drop and recreate indexes that may reference missing columns
+-- ============================================================================
+DROP INDEX IF EXISTS orchestration_triggers_type_idx;
+DROP INDEX IF EXISTS orchestration_triggers_orchestration_idx;
+DROP INDEX IF EXISTS orchestration_triggers_status_idx;
+
+-- ============================================================================
+-- Step 2: Create base table without trigger_type if it doesn't exist
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS orchestration_triggers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -20,7 +27,7 @@ CREATE TABLE IF NOT EXISTS orchestration_triggers (
 );
 
 -- ============================================================================
--- Step 2: Add trigger_type column if it doesn't exist
+-- Step 3: Add trigger_type column if it doesn't exist
 -- ============================================================================
 DO $$
 BEGIN
