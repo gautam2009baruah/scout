@@ -8,7 +8,6 @@
     "start": "next start",
     "lint": "eslint .",
     "db:migrate": "node scripts/db/migrate.mjs",
-    "db:cleanup": "node scripts/db/cleanup-triggers.mjs",
     "db:seed:first-admin": "node scripts/db/seed-first-admin.mjs",
     "jobs:worker": "node scripts/jobs/worker.mjs",
     "extension:build": "node scripts/build-extension.mjs",

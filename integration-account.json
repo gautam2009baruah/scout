@@ -1,0 +1,11 @@
+{
+  "version": "2.0.10",
+  "rally": {
+    "apiUrl": "https://rally1.rallydev.com",
+    "apiKey": "enter your rally API key here"
+  },
+  "wiki": {
+    "baseUrl": "https://wiki.sabre.com",
+    "token": "enter your confluence Personal Access Token here. Take it from https://wiki.sabre.com/plugins/personalaccesstokens/usertokens.action"
+  }
+}

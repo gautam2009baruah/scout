@@ -1,0 +1,28 @@
+# ArchitectSkill Index
+# Format: [Description | type | intent-tag]::path
+# Architecture and requirements design skill for SON to SRD to AD2 to stories flow.
+# Invocation aliases: architect, archon
+# Token policy: load index -> prompt -> archon/SKILL.md -> single phase template only.
+# Expand to additional templates only for explicit end-to-end package requests.
+#
+# RootPath: ${workspaceRoot}
+# All asset paths below are relative to RootPath.
+
+# Load order: index (this file) -> dispatch prompt -> Archon skill orchestrator -> phase template
+# Primary dispatch prompt
+[Architect Skill Dispatch Prompt | prompt | arch-dispatch]::.github/prompts/codenova-architect-skill.prompt.md
+
+# Primary orchestrator (canonical workflow, questioning protocol, file generation)
+[Archon Skill Orchestrator | skill | arch-orchestrator]::.github/instructions/isf/architectskill/archon/SKILL.md
+
+# Overview and asset selection guide (lightweight reference)
+[Architect Skill Overview | domain | arch-overview]::.github/instructions/isf/architectskill/ARCHITECT_DOMAIN_OVERVIEW.md
+
+# Feature-specific templates (primary, used for initialized feature folders)
+[AD2 Full Feature Template | template | arch-ad2-full]::.github/instructions/isf/architectskill/archon/assets/templates/AD2_FEAXXXX_FULL.md
+[ADR Feature Template | template | arch-adr-full]::.github/instructions/isf/architectskill/archon/assets/templates/ADR_FEAXXXX_Topic.md
+
+# Non-feature-specific focused templates (for standalone requests without feature folder context)
+[SON to SRD Template | template | arch-son-srd]::.github/instructions/isf/architectskill/SON_TO_SRD_TEMPLATE.md
+[Impact Analysis Template | template | arch-impact]::.github/instructions/isf/architectskill/IMPACT_ANALYSIS_TEMPLATE.md
+[Story Breakdown Template | template | arch-stories]::.github/instructions/isf/architectskill/STORY_BREAKDOWN_TEMPLATE.md

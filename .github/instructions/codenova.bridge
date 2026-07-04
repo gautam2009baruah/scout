@@ -1,0 +1,203 @@
+---
+description: "CodeNova STM (Working Memory) — domain knowledge pattern database. Consulted as Step 0 of every deep-discover execution before workspace tool calls. Coordinates with progressive-disclosure trigger keywords."
+applyTo: "**"
+---
+
+# CodeNova STM — Pattern & Domain Knowledge Database
+
+**Version**: 2.0 (Progressive-Disclosure Aware)  
+**Authority**: Primary lookup source for all `deep-discover` operations.  
+**Usage**: `codenova.task.brainLookup(subject)` — Step 0 of the `deep-discover` protocol. Also consulted by progressive-disclosure skill triggers to cross-reference acronyms and domain terms.  
+**Sources**: Validated from `Environments.xml`, `CRS_FUNCTIONAL_AREAS_SERVICES_INFRASTRUCTURE_MAPPING.md`, `OXI_PRODUCT_OWNER_TERMINOLOGY_ANALYSIS.md`, `CRS_UNIFIED_LEXICON.md`, lexicon files.  
+**Coordination**: Bridge acronyms and term definitions coordinate with progressive-disclosure trigger keywords in `.github/instructions/pd/skills/*/triggers.md`
+
+---
+
+## SECTION 1 — SERVER NAME SEGMENT DECODER
+
+Server names follow the pattern: `SH{env}{dc}CR{segment}{nn}`
+
+| Segment Code | Full Name | Role / ServerRole | Deploy Group |
+|---|---|---|---|
+| `PRC` | **Property Connect** | Interface_WebServer64 | Interface |
+| `CHC` | **Channel Connect** | Interface_WebServer64 | Interface |
+| `GGL` | **Google / GDS Connect** | Interface_WebServer64 | Interface |
+| `SDX` | **Sabre Direct Connect** | SabreDirectConnect_WebServer64 | GDSDirectConnect |
+| `TDX` | **Travelport Direct Connect** | TravelportDirectConnect_WebServer64 | GDSDirectConnect |
+| `CPT` | **Cockpit / Control Panel** | DashboardWebServerCombo64 | — |
+| `CCT` | **Control Center** | DashboardWebServerCombo64 | — |
+| `BPM` | **Business Product Manager** | ProductManagerServer | — |
+| `SOA` | **SOA v2 Services** | SOAv2_ServiceServer64 | — |
+| `MBL` | **Mobile** | Mobile_WebServer64 | Mobile |
+| `DMB` | **Dumbo** | DumboServiceServer64Legacy | — |
+| `IDV` | **Ideas Data Exchange** | ExcludeGroup | IdeasDataExchange |
+
+### Environment Prefix Codes
+
+| Env Code | Environment Name |
+|---|---|
+| `SHT1` | CRS Test 1 |
+| `SHT2` | CRS Test 2 |
+| `SHUT` | UAT (shutaus = CRS UAT Austin) |
+| `SHPR` | Production |
+| `SHPROP3` | Production OP3 |
+| `SHT5` / `SHT6` | Test 5 / Test 6 |
+
+---
+
+## SECTION 2 — ACRONYM & TERM DICTIONARY
+
+### Core Platform Acronyms
+
+| Acronym | Full Name | Definition |
+|---|---|---|
+| **CRS** | Central Reservation System | The SynXis core hospitality reservation platform |
+| **HSS** | Hospitality Service Suite | Enterprise WCF/.NET services layer (ProductManager, ProfileManager, etc.) |
+| **ARI** | Availability, Rates, Inventory | The ARI integration service domain handling inventory/rate sync to channels |
+| **OXI** | OPERA eXchange Interface | Oracle's PMS integration protocol used by Property Connect |
+| **PMS** | Property Management System | Hotel-level system (OPERA is most common) |
+| **PRC** | Property Connect | Umbrella integration service between SynXis CR and PMS (OPERA/OXI) |
+| **CHC** | Channel Connect | Integration service for OTA/channel distribution (Expedia, Booking.com, etc.) |
+| **GDS** | Global Distribution System | Travel agency systems (Sabre, Travelport, Amadeus) |
+| **SDX** | Sabre Direct Connect | Sabre GDS direct connect integration |
+| **TDX** | Travelport Direct Connect | Travelport GDS direct connect integration |
+| **SBE** | Sabre Booking Engine | Consumer-facing booking application (ReactJS) |
+| **SVA** | SynXis Voice Agent | Voice/call center booking channel |
+| **GC** | Guest Connect | Mobile/web guest-facing booking interface |
+| **CC** | Control Center | Property management UI (ASP.NET) |
+| **RTAV** | Real-Time Availability | OXI message type: Physical Rooms, OOO, Definite Count, Tentative Count, Overbook |
+| **ICE** | — | Modern REST API for reservations (Frontman layer) |
+| **OTA** | Online Travel Agency | Third-party booking channels (Expedia, Booking.com, etc.) |
+| **LOS** | Length of Stay | Number of nights for a reservation |
+| **CTA** | Closed to Arrival | Stay restriction: no new arrivals on a date |
+| **CTD** | Closed to Departure | Stay restriction: no departures on a date |
+| **OOO** | Out of Order | Rooms removed from inventory (maintenance) |
+| **OHIP** | Oracle Hospitality Integration Platform | Modern Oracle PMS integration protocol |
+| **HTNG** | Hospitality Technology Next Generation | Industry standard for PMS integration |
+| **BAR** | Best Available Rate | Dynamic best publicly available rate |
+| **RevPAR** | Revenue Per Available Room | KPI: Total Revenue / Total Available Rooms |
+| **CPD** | — | Central Payment Domain / Payment Processing |
+| **HSPD** | Hospitality Product (Rally Project) | The Rally/Agile project workspace for SHS |
+| **SON** | Specification of Need | Business requirements documents (product owner stories) |
+
+### Infrastructure / Config Acronyms
+
+| Acronym | Context | Meaning |
+|---|---|---|
+| `SVCARIPRC1` / `SVCARIPRC2` | connector.xml `User Id` | ARI database service account for Property Connect env 1/2 |
+| `SVCARIPRC` | DB credentials | Pattern: SVC (Service Account) + ARI + PRC (Property Connect) |
+| `TPRCDR` | interfaceconfiginfo.xml `pegasusAmenityCode` | Pegasus amenity code for Property Connect |
+| `SAID Card` | Cloud infra | Service Asset and Integration Design card (YAML-based deployment descriptor) |
+| `DomainQueueDirectorWindowsService` | Windows Service | Routes domain events via message queues |
+| `IntegLogService` | Windows Service | Integration logging service |
+| `InterfaceLoaderQReaderWindowsService` | Windows Service | Queue reader for interface loader |
+
+---
+
+## SECTION 3 — CODE DOMAIN CLASSIFICATION
+
+Each feature/component belongs to one of these code domains:
+
+| Domain | Short Name | Description | Primary Namespace |
+|---|---|---|---|
+| Hospitality Service Suite | **HSS** | Enterprise WCF service layer | `Synxis.Enterprise.Business` |
+| Integration Property Connect | **PRC** | PMS integration (OXI, HTNG, OHIP) | `Synxis.Application.Integration.PropertyConnect` |
+| Integration Channel Connect | **CHC** | OTA/channel integration | `Synxis.Application.Integration.ChannelConnect` |
+| Integration ARI | **ARI** | Availability, Rates, Inventory sync | `shs_synxis.ari` repository |
+| Control Center | **CC** | Property management UI | `SHS.Web.HMS` / `SHS.Web.ControlCenter` |
+| Cockpit | **Cockpit** | Operational dashboard & monitoring | `SHS.Web.Cockpit` |
+| GDS | **GDS** | Global Distribution System connectivity | `Synxis.Application.GDS` |
+| Profile Manager | **PM** | Guest and corporate profile management | `Synxis.Enterprise.Business.Profiles` |
+| Frontman | **FM** | ASP.NET Core REST API gateway layer | `SHS.Web.FrontMan` |
+
+---
+
+## SECTION 4 — ARCHITECTURE & INTEGRATION FLOWS
+
+### Reservation Flow
+
+```
+Booking Channels (SBE / SVA / GC / OTA / GDS)
+    ↓
+SynXis CR (Central Reservation System)
+    ├── HSS Services (Reservation, Rates, Inventory)
+    ├── Property Connect (PRC) → OPERA PMS via OXI
+    ├── Channel Connect (CHC) → OTA Channels
+    └── ARI → Channel Inventory/Rate sync
+```
+
+### Property Connect (PRC) Bidirectional Flow
+
+```
+OUTBOUND: SynXis CR → Property Connect → OPERA PMS
+  - Reservation Delivery (create/modify/cancel)
+  - Content Push (rates, packages, configuration)
+  - Group delivery
+
+INBOUND: OPERA PMS/ORS → Property Connect → SynXis CR
+  - RTAV (Real-Time Availability update)
+    Fields: Physical Rooms, Out of Order, Definite Count,
+            Tentative Count, House Overbook, Room Type Overbook
+```
+
+### ARI Flow
+
+```
+SynXis CR (Inventory/Rate changes)
+    → ARI Processor
+    → ARI Push Service
+    → Channel Connect / OTA channels
+    (also feeds: ARI API, ARI DTO Builder, ARI Shopping Service)
+```
+
+---
+
+## SECTION 5 — SOLUTION & PROJECT MAP
+
+| Subject | QA Solution | Source Project Path |
+|---|---|---|
+| Property Connect | `QA/Shs.Qa.PropertyConnect.sln` | `Synxis/Application/Integration/PropertyConnect.*` |
+| Channel Connect | `QA/Shs.Qa.ChannelConnect.sln` | `Synxis/Application/Integration/ChannelConnect.*` |
+| ARI | `QA/Shs.Qa.ARI.Tests.sln` | `shs_synxis.ari` (separate repo) |
+| XML/GDS | `QA/Shs.Qa.Xml.GDS.sln` | `Synxis/Application/GDS.*` |
+| HMS/Control Center | `QA/Hms.Qa.sln` | `SHS/Web/HMS.*` |
+| Cockpit | `QA/Shs.Qa.Web.Cockpit.sln` | `SHS/Web/Cockpit.*` |
+| Profile Manager | `QA/Shs.Qa.ProfileManager.sln` | `Synxis/Enterprise/ProfileManager.*` |
+| HSS General | `QA/Shs.Qa.Hss.sln` | `Synxis/Enterprise/Synxis.Enterprise.Business.*` |
+
+---
+
+## SECTION 6 — WINDOWS SERVICES (STANDARD SET)
+
+The following Windows services are deployed as a **standard set** on all Interface_WebServer64 (PRC/CHC/GGL) nodes:
+
+| Service Asset ID | Purpose |
+|---|---|
+| `DomainQueueDirectorWindowsService` | Domain-level message queue routing |
+| `IntegLogService` | Integration audit/event logging |
+| `InterfaceLoaderQReaderWindowsService` | Interface loader queue consumer |
+
+---
+
+## SECTION 7 — PROGRESSIVE-DISCLOSURE GUARD INTEGRATION
+
+When domain skill intent is detected, cross-reference the subject term with this bridge before loading skill guides:
+
+1. If term is `CONFIRMED` in this brain db, load skill manifest + triggers + one primary loading-rule (no deep search needed).
+2. If term is `INFERRED`, load skill manifest + triggers, then conditionally load nested files based on loading-rules.
+3. If term is `UNKNOWN`, invoke progressive-disclosure router-contract guard: ask one clarifying question or route to deep-discover with search.
+
+This coordination reduces token waste by confirming domain context early.
+
+## SECTION 8 — CONFIDENCE RULES
+
+When performing a brain lookup, classify the result:
+
+| Confidence | Criteria |
+|---|---|
+| `CONFIRMED` | Term is explicitly defined in this brain db with a source citation |
+| `INFERRED` | Term matches a pattern in this brain db but is not directly cited |
+| `UNKNOWN — SEARCH REQUIRED` | Term not found in brain db; proceed to Step 2 (workspace grep/semantic search) |
+
+> If brain lookup returns `CONFIRMED`, you MAY skip Step 2 (SEARCH) and proceed directly to Step 4 (SYNTHESIZE), citing this brain db as authority. Always still perform Step 3 (CROSS-REFERENCE) to enrich with live workspace details.
+

@@ -1,0 +1,984 @@
+{
+  "version": "2.0.10",
+  "workspace": "SHS_SYNXIS",
+  "description": "CodeNova configuration for the shs_synxis.projectx workspace",
+  "identity": {
+    "name": "CodeNova",
+    "mode": "copilot-chat-overlay",
+    "commandPrefix": "codenova"
+  },
+  "rally": {
+    "enabled": true,
+    "apiUrl": "https://rally1.rallydev.com",
+    "apiVersion": "v2.0",
+    "authHeader": "ZSESSIONID",
+    "apiKey": "enter your rally API key here",
+    "workspace": "27154375360",
+    "project": "HSPD",
+    "defaultProject": "HSPD",
+    "workItemPrefixes": {
+      "FE": {
+        "type": "Feature",
+        "resource": "feature"
+      },
+      "TF": {
+        "type": "Team Feature",
+        "resource": "teamfeature"
+      },
+      "DE": {
+        "type": "Defect",
+        "resource": "defect"
+      },
+      "US": {
+        "type": "User Story",
+        "resource": "hierarchicalrequirement"
+      },
+      "TA": {
+        "type": "Task",
+        "resource": "task"
+      },
+      "DS": {
+        "type": "Defect Suite",
+        "resource": "defectsuite"
+      }
+    },
+    "fetchFields": {
+      "defect": "FormattedID,Name,Description,State,Priority,Severity,Owner,Project,Iteration,Release,CreationDate,LastUpdateDate,ScheduleState,Tags,Notes,Blocked,BlockedReason",
+      "hierarchicalrequirement": "FormattedID,Name,Description,ScheduleState,Owner,Project,Iteration,PlanEstimate,AcceptanceCriteria,Tags,Notes,Blocked",
+      "task": "FormattedID,Name,Description,State,Owner,WorkProduct,Estimate,Actuals,ToDo"
+    }
+  },
+  "git": {
+    "enabled": true,
+    "repositories": [
+      {
+        "url": "https://github.com/sabre-internal/shs_synxis.projectx",
+        "branch": "Master",
+        "name": "shs_synxis.projectx"
+      }
+    ],
+    "localPath": "."
+  },
+  "github": {
+    "enabled": true,
+    "repository": "sabre-internal/shs_synxis.projectx",
+    "remoteUrl": "https://github.com/sabre-internal/shs_synxis.projectx.git",
+    "localPath": ".",
+    "defaultBranch": "master",
+    "cli": "gh"
+  },
+  "executionPriorityOrder": [
+    {
+      "priority": 1,
+      "label": "HIGHEST â€” Ask / Explain / Discover / Search / Scan",
+      "condition": "Message carries ask, explain, discover, search, or scan semantic intent",
+      "action": "codenova.task â†’ ask â†’ deep-discover:<subject>"
+    },
+    {
+      "priority": 2,
+      "label": "Multi-step workflow intent",
+      "condition": "Message includes explicit multi-action sequencing (e.g. perform todo, step lists, numbered actions)",
+      "action": "codenova:run workflow orchestrator"
+    },
+    {
+      "priority": 3,
+      "label": "Named CodeNova command",
+      "condition": "Message matches a named CodeNova command (e.g. get, review pr, git fetch)",
+      "action": "codenova.orchestrator or codenova.task (per command registry)"
+    },
+    {
+      "priority": 4,
+      "label": "LOWEST â€” Fallback",
+      "condition": "No intent match; ambiguous or general-purpose Copilot request",
+      "action": "Direct tool use (grep_search, semantic_search, etc.)"
+    }
+  ],
+  "executors": {
+    "orchestrator": {
+      "invocation": "codenova.orchestrator.run(workflow, params)",
+      "description": "Multi-step, stateful workflows requiring sequencing and context carry-forward",
+      "workflows": {
+        "run-workflow-orchestrator": [
+          "parse ordered actions from user message",
+          "map each action to codenova.task or codenova.orchestrator",
+          "execute actions sequentially with context carry-forward",
+          "collect artifacts and summarize final outcome"
+        ],
+        "connect-git": [
+          "git fetch origin",
+          "report new/updated refs"
+        ],
+        "review-pr": [
+          "git fetch",
+          "gh pr view",
+          "gh pr diff",
+          "load reviewnetskill net-review",
+          "codenova.analyze per *.cs",
+          "test-coverage-audit",
+          "structured code review"
+        ],
+        "review-branch": [
+          "git fetch",
+          "gh pr list (branch filter)",
+          "diff",
+          "load reviewnetskill net-review",
+          "test-coverage-audit",
+          "structured review"
+        ],
+        "review-file": [
+          "read attached/local file",
+          "load reviewnetskill net-review (A-L)",
+          "test-coverage-audit (H rules)",
+          "structured review report"
+        ],
+        "review-impact": [
+          "resolve method/symbol",
+          "grep_search all callers (2 levels)",
+          "assess risk per caller",
+          "identify missing test coverage",
+          "blast radius report"
+        ],
+        "git-fetch": [
+          "git fetch origin",
+          "summarize updated refs"
+        ]
+      }
+    },
+    "task": {
+      "invocation": "codenova.task.run(task, params)",
+      "description": "Single-step, stateless operations producing one discrete output",
+      "tasks": {
+        "hello": "Greet and confirm CodeNova is active",
+        "help": "Show available commands",
+        "get-rally-item": "Fetch a Rally work item by ID (DE/US/TA auto-detected)",
+        "pr-diff": "Retrieve and display the full diff for a PR number",
+        "git-status": "Show current branch and working tree status",
+        "ask": "Answer HS domain questions with deep workspace discovery",
+        "tax-skill": "Answer tax domain questions using indexed knowledge assets in .github/instructions/isf/taxskill/",
+        "ohip-skill": "Answer OHIP domain Q&A and execute OHIP implementation modes using indexed knowledge assets in .github/instructions/isf/ohipskill/",
+        "synxisnom-skill": "Answer SynXis nomenclature questions â€” app IDs, domain codes, solution files, and naming conventions using indexed knowledge assets in .github/instructions/isf/synxisnomskill/",
+        "architect-skill": "Design architecture artifacts from SON requirements including SRD, impact analysis, AD2, ADRs, and story breakdown using indexed templates in .github/instructions/isf/architectskill/",
+        "review-synxis-guidelines": "Review C# code against SynXis Developer Guidelines using indexed reviewnetskill assets (Categories A-L)",
+        "review-synxis-checklist": "Run quick PR gate checklist from indexed PR_CHECKLIST.md",
+        "review-file": "Review a locally changed or attached .cs file against net-review rules + run test audit (H rules)",
+        "review-impact": "Resolve a method or symbol, find all callers in the workspace, assess blast radius, and report risk",
+        "analyze-jenkins": "Analyze Jenkins build log from URL"
+      }
+    }
+  },
+  "taxSkill": {
+    "skillIndex": ".github/instructions/isf/taxskill/tax.skillindex",
+    "assets": {
+      "tax-business": ".github/instructions/isf/taxskill/TAX_CALCULATION_BUSINESS_GUIDE.md",
+      "tax-developer": ".github/instructions/isf/taxskill/TAX_CALCULATION_DEVELOPER_GUIDE.md",
+      "tax-shopping": ".github/instructions/isf/taxskill/TAX_CALCULATION_SHOPPING_AVAILABILITY.md"
+    },
+    "intentTriggers": {
+      "direct": [
+        "tax",
+        "taxes",
+        "tax calculation",
+        "tax logic",
+        "tax rules",
+        "tax fee",
+        "tax rate",
+        "tax types"
+      ],
+      "contextual": [
+        "hotel tax",
+        "room tax",
+        "booking tax",
+        "reservation tax",
+        "fee calculation",
+        "tax in shopping"
+      ],
+      "technical": [
+        "TaxCalculation",
+        "TaxType",
+        "TaxRule",
+        "ITaxCalculator",
+        "tax subsystem",
+        "tax breakdown"
+      ]
+    },
+    "subjectToAssetMap": {
+      "business/rules/config": [
+        "tax-business"
+      ],
+      "implementation/code": [
+        "tax-developer"
+      ],
+      "shopping/availability": [
+        "tax-shopping"
+      ],
+      "general": [
+        "tax-business",
+        "tax-developer",
+        "tax-shopping"
+      ]
+    },
+    "refreshCommand": "codenova, refresh tax skill",
+    "refreshSearchTargets": [
+      "*.cs"
+    ],
+    "refreshKeywords": [
+      "TaxCalculation",
+      "TaxRule",
+      "ITaxCalculator",
+      "TaxType",
+      "TaxFee",
+      "TaxRate",
+      "ApplyTax",
+      "CalculateTax"
+    ],
+    "autoRefresh": {
+      "layer1": {
+        "mechanism": "Copilot instruction auto-trigger",
+        "description": "Copilot silently runs refresh protocol whenever it edits or reviews a .cs file containing a tax identifier. Appends 'ðŸ“‹ Tax Skill Auto-Refresh' section to the response.",
+        "configuredIn": ".github/instructions/codenova.instructions.md"
+      },
+      "layer2": {
+        "mechanism": "Git post-commit hook",
+        "description": "Fires after every commit. Detects committed .cs files that touch tax identifiers and prints a reminder in the terminal.",
+        "scriptFile": "GitHelpers/post-commit",
+        "installWith": "GitHelpers/copyHooksIntoGitDir.bat"
+      },
+      "layer3": {
+        "mechanism": "VS Code FileSystemWatcher background task",
+        "description": "PowerShell watcher starts automatically when the folder is opened. Monitors all *.cs files for tax identifier saves and prints a panel notification.",
+        "taskFile": ".vscode/tasks.json",
+        "scriptFile": "scripts/codenova-tax-watcher.ps1",
+        "runOn": "folderOpen"
+      }
+    }
+  },
+  "promptFiles": {
+    "isfFramework": ".github/prompts/isf-framework.prompt.md",
+    "isfPromptsGuide": ".github/prompts/isf-prompts-guide.md",
+    "isfInstructionsGuide": ".github/instructions/isf-instructions-guide.md",
+    "deepDiscover": ".github/prompts/codenova-deep-discover.prompt.md",
+    "taxSkill": ".github/prompts/codenova-tax-skill.prompt.md",
+    "ohipSkill": ".github/prompts/codenova-ohip.prompt.md",
+    "architectSkill": ".github/prompts/codenova-architect-skill.prompt.md"
+  },
+  "ohipSkill": {
+    "skillIndex": ".github/instructions/isf/ohipskill/ohip.skillindex",
+    "assets": {
+      "ohip-overview": ".github/instructions/isf/ohipskill/OHIP_DOMAIN_OVERVIEW.md",
+      "ohip-registry": ".github/instructions/isf/ohipskill/OHIP_ACTION_REGISTRY.md",
+      "ohip-neweventtype": ".github/instructions/isf/ohipskill/neweventtype.md",
+      "ohip-eventhandler": ".github/instructions/isf/ohipskill/eventhandler.md",
+      "ohip-apiintegration": ".github/instructions/isf/ohipskill/apiintegration.md",
+      "ohip-dtomapping": ".github/instructions/isf/ohipskill/dtomapping.md",
+      "ohip-tests": ".github/instructions/isf/ohipskill/testing.md",
+      "ohip-validate": ".github/instructions/isf/ohipskill/validate.md",
+      "ohip-preflight": ".github/instructions/isf/ohipskill/preflight.md",
+      "ohip-input": ".github/instructions/isf/ohipskill/ohip-action-input.yaml"
+    },
+    "intentTriggers": {
+      "identity": [
+        "ohip",
+        "oracle hospitality",
+        "OHIP action",
+        "action type",
+        "DumboBroker",
+        "InterfaceBusinessOHIP"
+      ],
+      "implementation": [
+        "ohip neweventtype",
+        "ohip eventhandler",
+        "ohip apiintegration",
+        "ohip dtomapping",
+        "ohip tests",
+        "ohip validate",
+        "ohip endtoend"
+      ],
+      "technical": [
+        "OhipActionType",
+        "OhipConstants",
+        "OhipRequestBuilder",
+        "OhipEventMessageTypeFilter"
+      ]
+    },
+    "modes": {
+      "neweventtype": "Register new OHIP event type (enums, constants, mappings)",
+      "eventhandler": "Create business event handler and request builder",
+      "apiintegration": "Implement DumboBroker API integration layer (optional)",
+      "dtomapping": "Generate DTO assembler skeleton + handler",
+      "tests": "Generate unit tests with >=80% coverage",
+      "validate": "Validate implementation completeness",
+      "endtoend": "Full: neweventtype -> eventhandler -> apiintegration -> dtomapping -> tests -> validate",
+      "preflight": "Validate input YAML only, no code generation"
+    },
+    "extensionHandoff": "codenova.ohip.<mode>",
+    "noCrawlGuarantee": true
+  },
+  "reviewnetSkill": {
+    "skillIndex": ".github/instructions/isf/reviewnetskill/reviewnet.skillindex",
+    "assets": {
+      "net-review": ".github/instructions/isf/reviewnetskill/REVIEW_GUIDELINES.md",
+      "net-checklist": ".github/instructions/isf/reviewnetskill/PR_CHECKLIST.md"
+    },
+    "intentTriggers": {
+      "prReview": [
+        "review pr",
+        "review code",
+        "review c#",
+        "review diff",
+        "check pr",
+        "approve pr",
+        "pr feedback"
+      ],
+      "fileReview": [
+        "review this file",
+        "review my changes",
+        "review the attached file",
+        "review locally changed",
+        "review context"
+      ],
+      "impactReview": [
+        "review impact",
+        "blast radius",
+        "what calls this",
+        "who calls this",
+        "review callers of",
+        "impact of changing"
+      ],
+      "guidelineCheck": [
+        "hs guidelines",
+        "developer guidelines",
+        "coding standards",
+        "code violations",
+        "review against standards"
+      ],
+      "quickScan": [
+        "pr checklist",
+        "gate checklist",
+        "pre-submit check",
+        "quick review",
+        "scan pr"
+      ],
+      "specificRules": [
+        "ConfigureAwait",
+        "WCF removal",
+        "ActivityId",
+        "ServiceFx",
+        "NHibernate",
+        "CloseProxy",
+        "spring.net",
+        "OperationResult"
+      ],
+      "testCoverage": [
+        "test coverage",
+        "missing tests",
+        "add tests",
+        "check tests",
+        "unit test audit",
+        "what tests are missing"
+      ]
+    },
+    "subjectToAssetMap": {
+      "full PR review / file review / code review": [
+        "net-review"
+      ],
+      "quick pre-submit scan / checklist": [
+        "net-checklist"
+      ],
+      "ambiguous": [
+        "net-checklist"
+      ]
+    },
+    "categories": {
+      "A": "Async / await",
+      "B": "WCF removal",
+      "C": "Dependency injection",
+      "D": "Logging (ActivityId)",
+      "E": "Collections",
+      "F": "NHibernate",
+      "G": "Code quality",
+      "H": "Test coverage (always audited)",
+      "I": "Security (all rules blocking)",
+      "J": "Performance & complexity",
+      "K": "SOLID principles",
+      "L": "Maintainability & resilience"
+    },
+    "testCoverageAudit": {
+      "alwaysRun": true,
+      "appliesTo": [
+        "review-pr",
+        "review-file",
+        "review-branch"
+      ],
+      "reportFormat": "âœ… covered | âš ï¸ partially | âŒ no test found",
+      "stubConvention": "MethodName_ExpectedResult_WhenCondition",
+      "blockIfNoTestProject": true
+    },
+    "noCrawlGuarantee": true
+  },
+  "synxisnomSkill": {
+    "skillIndex": ".github/instructions/isf/synxisnomskill/synxisnom.skillindex",
+    "assets": {
+      "nom-overview": ".github/instructions/isf/synxisnomskill/SYNXIS_NOMENCLATURE_OVERVIEW.md",
+      "nom-appid": ".github/instructions/isf/synxisnomskill/SYNXIS_APP_ID_REGISTRY.md",
+      "nom-solutions": ".github/instructions/isf/synxisnomskill/SYNXIS_SOLUTION_FILE_MAP.md"
+    },
+    "intentTriggers": {
+      "direct": [
+        "app code",
+        "app id",
+        "application id",
+        "application code",
+        "nom",
+        "nomenclature",
+        "app name",
+        "service code"
+      ],
+      "domain": [
+        "what domain",
+        "which domain",
+        "domain breakdown",
+        "HSS-",
+        "PRC-",
+        "ARI-",
+        "CHC-",
+        "SV-",
+        "GD-",
+        "UI-"
+      ],
+      "pathOrNs": [
+        "solution file",
+        "which solution",
+        "namespace",
+        "project path",
+        "naming convention",
+        "how are apps named"
+      ],
+      "techStack": [
+        "tech stack",
+        "frameworks",
+        "infrastructure used",
+        "build tools"
+      ]
+    },
+    "subjectToAssetMap": {
+      "domain/overview/count/techstack": [
+        "nom-overview"
+      ],
+      "specific app ID lookup": [
+        "nom-appid"
+      ],
+      "solution/path/namespace": [
+        "nom-solutions"
+      ],
+      "general/ambiguous": [
+        "nom-overview"
+      ]
+    },
+    "refreshCommand": "codenova, refresh nom skill",
+    "noCrawlGuarantee": true
+  },
+  "architectSkill": {
+    "skillIndex": ".github/instructions/isf/architectskill/architect.skillindex",
+    "assets": {
+      "arch-overview": ".github/instructions/isf/architectskill/ARCHITECT_DOMAIN_OVERVIEW.md",
+      "arch-son-srd": ".github/instructions/isf/architectskill/SON_TO_SRD_TEMPLATE.md",
+      "arch-impact": ".github/instructions/isf/architectskill/IMPACT_ANALYSIS_TEMPLATE.md",
+      "arch-ad2": ".github/instructions/isf/architectskill/AD2_TEMPLATE.md",
+      "arch-adr": ".github/instructions/isf/architectskill/ADR_TEMPLATE.md",
+      "arch-stories": ".github/instructions/isf/architectskill/STORY_BREAKDOWN_TEMPLATE.md"
+    },
+    "intentTriggers": {
+      "direct": [
+        "architect",
+        "archon",
+        "architecture",
+        "ad2",
+        "srd",
+        "statement of need",
+        "son",
+        "impact analysis"
+      ],
+      "contextual": [
+        "architecture design",
+        "solution design",
+        "requirements traceability",
+        "story breakdown",
+        "adr",
+        "tradeoff analysis"
+      ]
+    },
+    "subjectToAssetMap": {
+      "son/requirements/srd": [
+        "arch-son-srd"
+      ],
+      "impact/dependencies/blast": [
+        "arch-impact"
+      ],
+      "architecture/ad2/design": [
+        "arch-ad2"
+      ],
+      "decision/adr/tradeoff": [
+        "arch-adr"
+      ],
+      "stories/backlog": [
+        "arch-stories"
+      ],
+      "general": [
+        "arch-overview"
+      ]
+    },
+    "noCrawlGuarantee": true
+  },
+  "deepDiscover": {
+    "protocol": "deep-discover",
+    "steps": [
+      {
+        "step": 0,
+        "name": "BRAIN_LOOKUP",
+        "file": ".github/instructions/codenova.bridge",
+        "description": "Consult brain db first â€” CONFIRMED skips Step 2; INFERRED or UNKNOWN continues"
+      },
+      {
+        "step": 1,
+        "name": "PARSE",
+        "description": "Extract and normalize the entity, acronym, term, or concept from the user message"
+      },
+      {
+        "step": 2,
+        "name": "SEARCH",
+        "description": "grep_search (exact + regex) and semantic_search â€” SKIP if Step 0 was CONFIRMED",
+        "skipIf": "CONFIRMED"
+      },
+      {
+        "step": 3,
+        "name": "CROSS_REFERENCE",
+        "description": "Correlate across source code, solution files, deploy configs, QA projects, infrastructure"
+      },
+      {
+        "step": 4,
+        "name": "SYNTHESIZE",
+        "description": "Produce structured report: definition, architecture position, key files, deployment details, QA coverage, related components"
+      },
+      {
+        "step": 5,
+        "name": "CONFIDENCE",
+        "description": "State what is confirmed vs. inferred; offer Rally fetch if evidence is insufficient"
+      }
+    ],
+    "searchTargets": [
+      "*.cs",
+      "*.csproj",
+      "*.sln",
+      "*.xml",
+      "*.json",
+      "*.config",
+      "*.md"
+    ],
+    "brainFile": ".github/instructions/codenova.bridge"
+  },
+  "intentTriggers": {
+    "ohip": [
+      "ohip",
+      "oracle hospitality",
+      "OHIP action",
+      "action type",
+      "DumboBroker",
+      "InterfaceBusinessOHIP",
+      "OhipActionType",
+      "OhipConstants",
+      "ohip neweventtype",
+      "ohip eventhandler",
+      "ohip apiintegration",
+      "ohip dtomapping",
+      "ohip endtoend"
+    ],
+    "nom": [
+      "app code",
+      "app id",
+      "application id",
+      "application code",
+      "nom",
+      "nomenclature",
+      "app name",
+      "service code",
+      "what domain",
+      "which domain",
+      "domain breakdown",
+      "HSS-",
+      "PRC-",
+      "ARI-",
+      "CHC-",
+      "SV-",
+      "GD-",
+      "UI-",
+      "solution file",
+      "which solution",
+      "namespace",
+      "project path",
+      "naming convention",
+      "how are apps named",
+      "tech stack",
+      "refresh nom skill"
+    ],
+    "tax": [
+      "tax",
+      "taxes",
+      "tax calculation",
+      "tax logic",
+      "tax rules",
+      "tax fee",
+      "tax rate",
+      "tax types",
+      "hotel tax",
+      "room tax",
+      "booking tax",
+      "reservation tax",
+      "fee calculation",
+      "tax in shopping",
+      "TaxCalculation",
+      "TaxType",
+      "TaxRule",
+      "ITaxCalculator",
+      "tax subsystem",
+      "tax breakdown"
+    ],
+    "architect": [
+      "architect",
+      "archon",
+      "architecture",
+      "ad2",
+      "srd",
+      "statement of need",
+      "son",
+      "impact analysis",
+      "architecture design",
+      "solution design",
+      "story breakdown",
+      "adr"
+    ],
+    "ask": [
+      "ask",
+      "what is",
+      "what are",
+      "what does",
+      "what's",
+      "tell me about",
+      "describe",
+      "could you explain"
+    ],
+    "explain": [
+      "explain",
+      "elaborate",
+      "clarify",
+      "break down",
+      "help me understand",
+      "walk me through",
+      "how does",
+      "how do"
+    ],
+    "discover": [
+      "discover",
+      "find out about",
+      "explore",
+      "investigate",
+      "research",
+      "dig into",
+      "look into",
+      "uncover"
+    ],
+    "search": [
+      "search for",
+      "scan workspace",
+      "scan for",
+      "look for",
+      "look up",
+      "find",
+      "find out",
+      "locate",
+      "where is",
+      "where are",
+      "show me",
+      "scan the codebase"
+    ],
+    "identify": [
+      "identify",
+      "detect",
+      "recognize",
+      "determine",
+      "define",
+      "show me what"
+    ],
+    "summarize": [
+      "summarize",
+      "overview",
+      "give me a summary of",
+      "recap",
+      "outline"
+    ],
+    "analyze": [
+      "analyze",
+      "examine",
+      "inspect",
+      "assess",
+      "evaluate"
+    ],
+    "execute": [
+      "execute task for",
+      "run discovery on",
+      "perform task for",
+      "trigger task for",
+      "perform todo",
+      "run workflow",
+      "workflow orchestrator",
+      "step 1",
+      "1)"
+    ]
+  },
+  "commands": [
+    {
+      "command": "codenova, hello",
+      "executor": "codenova.task",
+      "task": "hello",
+      "description": "Greet and confirm CodeNova is active"
+    },
+    {
+      "command": "codenova, are you ready",
+      "executor": "codenova.task",
+      "task": "hello",
+      "description": "Greet and confirm CodeNova is ready"
+    },
+    {
+      "command": "codenova, help",
+      "executor": "codenova.task",
+      "task": "help",
+      "description": "Show available commands"
+    },
+    {
+      "command": "codenova, get <ID>",
+      "executor": "codenova.task",
+      "task": "get-rally-item",
+      "description": "Fetch a Rally work item (DE/US/TA prefix auto-detected)"
+    },
+    {
+      "command": "codenova, ask <question>",
+      "executor": "codenova.task",
+      "task": "ask",
+      "description": "Deep workspace discovery + answer"
+    },
+    {
+      "command": "codenova, what is <term>",
+      "executor": "codenova.task",
+      "task": "ask",
+      "description": "Discover and explain a term or component"
+    },
+    {
+      "command": "codenova, explain <topic>",
+      "executor": "codenova.task",
+      "task": "ask",
+      "description": "Deep explain with workspace evidence"
+    },
+    {
+      "command": "codenova, discover <subject>",
+      "executor": "codenova.task",
+      "task": "ask",
+      "description": "Full workspace discovery on a subject"
+    },
+    {
+      "command": "codenova, summarize <topic>",
+      "executor": "codenova.task",
+      "task": "ask",
+      "description": "Summarize a component or concept"
+    },
+    {
+      "command": "codenova, identify <subject>",
+      "executor": "codenova.task",
+      "task": "ask",
+      "description": "Identify and describe an artifact or component"
+    },
+    {
+      "command": "codenova, perform todo: <steps>",
+      "executor": "codenova.orchestrator",
+      "workflow": "run-workflow-orchestrator",
+      "description": "Run multi-step action lists through workflow orchestration (e.g., Rally fetch -> analysis -> AD2 generation)"
+    },
+    {
+      "command": "codenova, <any ohip intent>",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Answer from indexed OHIP knowledge assets"
+    },
+    {
+      "command": "codenova, ohip neweventtype",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Register new OHIP event type"
+    },
+    {
+      "command": "codenova, ohip eventhandler",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Create business event handler and request builder"
+    },
+    {
+      "command": "codenova, ohip apiintegration",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Implement DumboBroker API integration layer"
+    },
+    {
+      "command": "codenova, ohip dtomapping",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Generate DTO assembler skeleton and handler"
+    },
+    {
+      "command": "codenova, ohip tests",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Generate unit tests with >=80% coverage"
+    },
+    {
+      "command": "codenova, ohip validate",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Validate OHIP implementation completeness"
+    },
+    {
+      "command": "codenova, ohip endtoend",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Full OHIP implementation end-to-end"
+    },
+    {
+      "command": "codenova, ohip preflight",
+      "executor": "codenova.task",
+      "task": "ohip-skill",
+      "description": "Validate OHIP input YAML only"
+    },
+    {
+      "command": "codenova, <any tax intent>",
+      "executor": "codenova.task",
+      "task": "tax-skill",
+      "description": "Answer from indexed tax knowledge assets"
+    },
+    {
+      "command": "codenova, refresh tax skill",
+      "executor": "codenova.task",
+      "task": "tax-skill",
+      "description": "Scan codebase and report guide accuracy vs. live code"
+    },
+    {
+      "command": "codenova, <any nom intent>",
+      "executor": "codenova.task",
+      "task": "synxisnom-skill",
+      "description": "Answer SynXis nomenclature questions from indexed knowledge"
+    },
+    {
+      "command": "codenova, refresh nom skill",
+      "executor": "codenova.task",
+      "task": "synxisnom-skill",
+      "description": "Compare skill assets against SynxisCodeMapping.json and report drift"
+    },
+    {
+      "command": "codenova, architect <subject>",
+      "executor": "codenova.task",
+      "task": "architect-skill",
+      "description": "Generate architecture artifacts (SRD, impact, AD2, ADR, stories) from SON/requirements"
+    },
+    {
+      "command": "codenova, archon <subject>",
+      "executor": "codenova.task",
+      "task": "architect-skill",
+      "description": "Alias for architect intent using the same architecture skill workflow"
+    },
+    {
+      "command": "codenova, review synxis-guidelines <appId>",
+      "executor": "codenova.task",
+      "task": "review-synxis-guidelines",
+      "description": "Review C# code against SynXis .NET platform rules (Categories A-L)"
+    },
+    {
+      "command": "codenova, review synxis-checklist <appId>",
+      "executor": "codenova.task",
+      "task": "review-synxis-checklist",
+      "description": "Run quick PR gate checklist (includes test coverage gate)"
+    },
+    {
+      "command": "codenova, review branch <name>",
+      "executor": "codenova.orchestrator",
+      "workflow": "review-branch",
+      "description": "Review branch changes + test audit"
+    },
+    {
+      "command": "codenova, review <file.cs>",
+      "executor": "codenova.orchestrator",
+      "workflow": "review-file",
+      "description": "Review a locally changed or attached file against net-review rules + test audit"
+    },
+    {
+      "command": "codenova, review impact <method>",
+      "executor": "codenova.orchestrator",
+      "workflow": "review-impact",
+      "description": "Blast-radius analysis: find all callers, assess risk, identify missing tests"
+    },
+    {
+      "command": "codenova, analyze jenkins <url>",
+      "executor": "codenova.task",
+      "task": "analyze-jenkins",
+      "description": "Analyze Jenkins build log"
+    },
+    {
+      "command": "codenova, connect git",
+      "executor": "codenova.orchestrator",
+      "workflow": "connect-git",
+      "description": "Connect to and fetch the registered Git repository"
+    },
+    {
+      "command": "codenova, review pr <number>",
+      "executor": "codenova.orchestrator",
+      "workflow": "review-pr",
+      "description": "Fetch and review a GitHub Pull Request by number"
+    },
+    {
+      "command": "codenova, pr diff <number>",
+      "executor": "codenova.task",
+      "task": "pr-diff",
+      "description": "Retrieve the full diff for a GitHub Pull Request"
+    },
+    {
+      "command": "codenova, git fetch",
+      "executor": "codenova.orchestrator",
+      "workflow": "git-fetch",
+      "description": "Fetch latest refs from all configured remote repositories"
+    },
+    {
+      "command": "codenova, git status",
+      "executor": "codenova.task",
+      "task": "git-status",
+      "description": "Show current branch and working tree status"
+    }
+  ],
+  "databases": {
+    "enabled": true,
+    "connections": [
+      {
+        "name": "T4",
+        "type": "Oracle",
+        "connectionString": "Data Source=ht4nidboraltp01.sab-dev-sh-t4-db-ora-9996.dev.sabre-gcp.com:1521/CRPMT401;User Id=<functional user>;Password=<functional pwd>"
+      }
+    ]
+  },
+  "repositories": {
+    "localPaths": [
+      "."
+    ],
+    "remotePaths": [
+      "https://github.com/sabre-internal/shs_synxis.projectx.git"
+    ]
+  },
+  "preferences": {
+    "autoInitialize": true,
+    "enableLogging": true
+  },
+  "defaultRepository": "shs_synxis.projectx"
+}

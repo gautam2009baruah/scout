@@ -1,0 +1,18 @@
+# TaxCalculationSkill Index
+# Format: [Description | type | options]::path
+# Tax calculation business logic and developer documentation
+#
+# RootPath: ${workspaceRoot}
+# All asset paths below are relative to RootPath.
+
+# Business Guide - Tax types, rules, and configuration
+[Tax Calculation Business Guide | *.md files | tax-business]::.github/instructions/isf/taxskill/TAX_CALCULATION_BUSINESS_GUIDE.md
+
+# Developer Guide - Implementation details and code patterns
+[Tax Calculation Developer Guide | *.md files | tax-developer]::.github/instructions/isf/taxskill/TAX_CALCULATION_DEVELOPER_GUIDE.md
+
+# Shopping Availability - default compact asset for low-token routing
+[Tax in Shopping Availability (Quick) | *.md files | tax-shopping]::.github/instructions/isf/taxskill/TAX_CALCULATION_SHOPPING_QUICK_GUIDE.md
+
+# Shopping Availability - deep implementation reference (load only when explicitly requested)
+[Tax in Shopping Availability (Deep) | *.md files | tax-shopping-deep]::.github/instructions/isf/taxskill/TAX_CALCULATION_SHOPPING_AVAILABILITY.md
