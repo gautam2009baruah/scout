@@ -16,10 +16,26 @@ DROP TABLE IF EXISTS api_clients CASCADE;
 DROP TABLE IF EXISTS trigger_execution_logs CASCADE;
 DROP TABLE IF EXISTS orchestration_triggers CASCADE;
 
--- Drop old trigger-related columns from orchestrations table
-DROP INDEX IF EXISTS orchestrations_trigger_type_idx;
-ALTER TABLE orchestrations DROP COLUMN IF EXISTS trigger_type CASCADE;
-ALTER TABLE orchestrations DROP COLUMN IF EXISTS trigger_config CASCADE;
+-- Drop old trigger-related columns from orchestrations table (if it exists)
+-- Use DO block to handle case where table doesn't exist yet
+DO $$ 
+BEGIN
+  -- Drop index if it exists
+  IF EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'orchestrations_trigger_type_idx') THEN
+    DROP INDEX orchestrations_trigger_type_idx;
+  END IF;
+  
+  -- Drop columns if table and columns exist
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orchestrations') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orchestrations' AND column_name = 'trigger_type') THEN
+      ALTER TABLE orchestrations DROP COLUMN trigger_type CASCADE;
+    END IF;
+    
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orchestrations' AND column_name = 'trigger_config') THEN
+      ALTER TABLE orchestrations DROP COLUMN trigger_config CASCADE;
+    END IF;
+  END IF;
+END $$;
 
 -- ============================================================================
 -- PART 2: Create orchestration_triggers table
@@ -233,13 +249,23 @@ CREATE INDEX idx_chatbot_trigger_sessions_triggered_at ON chatbot_trigger_sessio
 -- PART 10: Add display_description to orchestration_nodes
 -- ============================================================================
 
-ALTER TABLE orchestration_nodes 
-  ADD COLUMN IF NOT EXISTS display_description text;
-
-COMMENT ON COLUMN orchestration_nodes.display_description IS 'Optional user-friendly description shown in the visual designer';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orchestration_nodes') THEN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'orchestration_nodes' AND column_name = 'display_description') THEN
+      ALTER TABLE orchestration_nodes ADD COLUMN display_description text;
+      COMMENT ON COLUMN orchestration_nodes.display_description IS 'Optional user-friendly description shown in the visual designer';
+    END IF;
+  END IF;
+END $$;
 
 -- ============================================================================
 -- Final comment update for orchestrations
 -- ============================================================================
 
-COMMENT ON TABLE orchestrations IS 'Visual workflow orchestration definitions. Trigger configuration is now handled via orchestration_triggers table.';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'orchestrations') THEN
+    COMMENT ON TABLE orchestrations IS 'Visual workflow orchestration definitions. Trigger configuration is now handled via orchestration_triggers table.';
+  END IF;
+END $$;

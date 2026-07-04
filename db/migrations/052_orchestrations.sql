@@ -9,8 +9,6 @@ CREATE TABLE IF NOT EXISTS orchestrations (
   description text,
   version integer NOT NULL DEFAULT 1,
   status text NOT NULL DEFAULT 'draft', -- draft, published
-  trigger_type text NOT NULL, -- manual, chatbot, schedule, webhook, api, email, file_upload
-  trigger_config jsonb NOT NULL DEFAULT '{}',
   variables jsonb NOT NULL DEFAULT '{}', -- default variables/schema
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
@@ -23,7 +21,6 @@ CREATE TABLE IF NOT EXISTS orchestrations (
 
 CREATE INDEX IF NOT EXISTS orchestrations_company_idx ON orchestrations(company_id);
 CREATE INDEX IF NOT EXISTS orchestrations_status_idx ON orchestrations(status);
-CREATE INDEX IF NOT EXISTS orchestrations_trigger_type_idx ON orchestrations(trigger_type);
 
 -- Nodes within an orchestration
 CREATE TABLE IF NOT EXISTS orchestration_nodes (
