@@ -197,9 +197,17 @@ export async function publishOrchestration(
     throw new Error("Cannot publish: Trigger node must be configured");
   }
 
+  // Increment version number before creating snapshot
+  const newVersion = orchestration.version + 1;
+  await pool.query(
+    `UPDATE orchestrations SET version = $1, updated_at = now() WHERE id = $2`,
+    [newVersion, id]
+  );
+
+  // Create version snapshot with new version number
   await createOrchestrationVersion({
     orchestrationId: id,
-    version: orchestration.version,
+    version: newVersion,
     snapshot: { orchestration, nodes, connections },
     createdByEmail: publishedByEmail,
     changeNotes: "Published",
