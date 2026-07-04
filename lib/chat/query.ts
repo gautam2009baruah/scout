@@ -27,6 +27,8 @@ export type ChatQueryResponse = {
     requiresConfirmation: boolean;
     confidence: number;
   };
+  matchedPhrase?: string;
+  matchedIntent?: string;
 };
 
 export class ChatQueryError extends Error {
