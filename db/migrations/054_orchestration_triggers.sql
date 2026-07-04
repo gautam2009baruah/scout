@@ -2,7 +2,32 @@
 -- Adds trigger configuration and execution logging tables
 
 -- ============================================================================
--- Step 1: Drop and recreate indexes that may reference missing columns
+-- Step 0: EMERGENCY CLEANUP - Drop table and recreate if in bad state
+-- If table exists but is missing trigger_type column, drop and recreate
+-- ============================================================================
+DO $$
+BEGIN
+  -- Check if table exists but missing trigger_type column (broken state)
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables 
+    WHERE table_name = 'orchestration_triggers'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'orchestration_triggers' 
+    AND column_name = 'trigger_type'
+  ) THEN
+    -- Table exists but broken, drop everything
+    RAISE NOTICE 'Detected broken orchestration_triggers table, dropping and recreating...';
+    
+    DROP TABLE IF EXISTS trigger_execution_logs CASCADE;
+    DROP TABLE IF EXISTS orchestration_triggers CASCADE;
+    
+    RAISE NOTICE 'Dropped broken tables, will recreate below';
+  END IF;
+END $$;
+
+-- ============================================================================
+-- Step 1: Drop orphaned indexes that may reference missing columns
 -- ============================================================================
 DROP INDEX IF EXISTS orchestration_triggers_type_idx;
 DROP INDEX IF EXISTS orchestration_triggers_orchestration_idx;
