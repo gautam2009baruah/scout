@@ -147,6 +147,9 @@
         try {
           let stepResult = null;
 
+          console.log(`🔍 Step type: ${step.nodeType}`);
+          console.log(`🔍 Step config:`, step.config);
+
           // Execute based on node type
           if (step.nodeType === 'workflow' && step.workflowId && step.guideData) {
             // Check phrase matching
@@ -169,15 +172,21 @@
               }
             }
 
+            console.log(`🎮 Starting workflow execution: ${step.label}`);
             // Execute workflow with any auto-fill data from context
             stepResult = await executeWorkflowStep(step, context);
+            console.log(`✅ Workflow completed:`, stepResult);
           }
           else if (step.nodeType === 'data_capture') {
+            console.log(`📋 Starting data capture execution: ${step.label}`);
             // Execute data capture
             stepResult = await executeDataCaptureStep(step);
+            console.log(`✅ Data capture completed:`, stepResult);
             // Merge captured data into context for next steps
             if (stepResult && stepResult.capturedData) {
               context = { ...context, ...stepResult.capturedData };
+              console.log(`📊 Updated context with captured data:`, context);
+            }
             }
           }
           else if (step.nodeType === 'end') {
@@ -343,16 +352,27 @@
     }
 
     return new Promise((resolve, reject) => {
+      console.log(`⏳ Waiting for workflow completion...`);
+      
       // Monitor for completion
+      let checkCount = 0;
       const checkCompletion = setInterval(() => {
+        checkCount++;
         const progressKey = `scout-adoption-progress:${guide.id}:main`;
         const progressValue = localStorage.getItem(progressKey);
         const hasTooltip = document.querySelector('.scout-adoption-tooltip') !== null;
 
+        // Log every 10 checks (every 5 seconds)
+        if (checkCount % 10 === 0) {
+          console.log(`⏳ Still waiting... (check ${checkCount})`);
+          console.log(`   Progress key exists: ${!!progressValue}`);
+          console.log(`   Tooltip exists: ${hasTooltip}`);
+        }
+
         // Workflow is complete when progress key is removed AND tooltip is gone
         if (!progressValue && !hasTooltip) {
           clearInterval(checkCompletion);
-          console.log(`✅ Workflow completed: ${step.label}`);
+          console.log(`✅ Workflow completed after ${checkCount} checks: ${step.label}`);
           
           // Clean up auto-fill data
           delete window.__scoutWorkflowAutoFillData;
@@ -366,10 +386,13 @@
       setTimeout(() => {
         clearInterval(checkCompletion);
         delete window.__scoutWorkflowAutoFillData;
+        console.error(`⏱️ Workflow execution timeout after ${timeout}ms`);
         reject(new Error('Workflow execution timeout'));
       }, timeout);
 
+      console.log(`▶️ Starting Scout Player for: ${step.label}`);
       player.start();
+      console.log(`▶️ Player.start() called`);
     });
   }
 

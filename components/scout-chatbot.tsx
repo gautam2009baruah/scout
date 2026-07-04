@@ -550,6 +550,10 @@ export function ScoutChatbot({
     });
     const body = await response.json().catch(() => null);
 
+    console.log('📥 Chat API Response:', body);
+    console.log('🔍 Has orchestration_trigger?:', !!body?.orchestration_trigger);
+    console.log('🔍 Trigger data:', body?.orchestration_trigger);
+
     if (!response.ok) {
       throw new Error(typeof body?.message === "string" ? body.message : "Chat query failed.");
     }
