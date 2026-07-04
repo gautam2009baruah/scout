@@ -118,9 +118,20 @@ export async function matchChatbotTriggers(
     cachedTriggers = result.rows;
     cacheTimestamp = now;
     triggers = cachedTriggers;
+    
+    console.log(`📊 Found ${triggers.length} active chatbot triggers`);
+    if (triggers.length > 0) {
+      console.log('📋 Triggers:', triggers.map(t => ({ 
+        id: t.id, 
+        name: t.name, 
+        orchestration: t.orchestration_name,
+        phrases: t.config.triggerPhrases 
+      })));
+    }
   }
   
   if (!triggers || triggers.length === 0) {
+    console.log('⚠️ No active triggers found');
     return null;
   }
   

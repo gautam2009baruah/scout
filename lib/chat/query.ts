@@ -228,7 +228,11 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   // OPTIMIZATION: Pre-filter for orchestration triggers
   // Only check triggers for action-oriented messages (saves 70-90% of LLM calls)
-  if (shouldCheckTriggers(question)) {
+  console.log(`🔍 Checking if message should check triggers: "${question}"`);
+  const passedFilter = shouldCheckTriggers(question);
+  console.log(`🔍 Pre-filter result: ${passedFilter}`);
+  
+  if (passedFilter) {
     console.log('🎯 Message passed pre-filter, checking orchestration triggers...');
     
     try {
@@ -238,6 +242,8 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         user.email,
         companyId
       );
+
+      console.log('🔍 Trigger match result:', triggerMatch);
 
       if (triggerMatch) {
         console.log(`✅ Matched orchestration: ${triggerMatch.orchestrationName} (confidence: ${triggerMatch.confidence})`);
