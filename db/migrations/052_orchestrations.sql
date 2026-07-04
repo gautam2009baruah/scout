@@ -26,7 +26,7 @@ CREATE INDEX IF NOT EXISTS orchestrations_status_idx ON orchestrations(status);
 CREATE TABLE IF NOT EXISTS orchestration_nodes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   orchestration_id uuid NOT NULL,
-  node_type text NOT NULL, -- workflow, ai_extraction, ai_decision, condition, human_approval, notification, variable, end
+  node_type text NOT NULL, -- trigger, workflow, data_capture, ai_extraction, ai_decision, condition, human_approval, notification, variable, end
   label text NOT NULL,
   position_x integer NOT NULL,
   position_y integer NOT NULL,

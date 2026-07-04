@@ -181,6 +181,7 @@ export async function executeWorkflowNode(
         parameters: workflowInputs,
         timeout: config.timeout || 300000,
         headless: false, // Always visible so user can login if needed
+        closeBrowserAfter: config.closeBrowserAfter !== false, // Default true, can be set to false for data capture
       });
 
       if (!browserResult.success) {
@@ -208,6 +209,11 @@ export async function executeWorkflowNode(
         },
         config.outputMapping
       );
+
+      // Include browser page reference if kept open
+      if (browserResult.page) {
+        output._browserPage = browserResult.page;
+      }
 
       return { success: true, output };
     }

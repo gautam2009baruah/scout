@@ -8,6 +8,7 @@ import type {
   NodeExecutionStatus,
   NodeConfig,
   WorkflowNodeConfig,
+  DataCaptureNodeConfig,
   AIExtractionNodeConfig,
   ConditionNodeConfig,
   AIDecisionNodeConfig,
@@ -17,6 +18,7 @@ import type {
 } from "@/shared/orchestrationTypes";
 
 import { executeWorkflowNode } from "./nodes/workflow-node";
+import { executeDataCaptureNode } from "./nodes/data-capture-node";
 import { executeAIExtractionNode } from "./nodes/ai-extraction-node";
 import { executeAIDecisionNode } from "./nodes/ai-decision-node";
 import { executeConditionNode } from "./nodes/condition-node";
@@ -236,6 +238,9 @@ export class OrchestrationEngine {
 
       case "workflow":
         return await executeWorkflowNode(config as WorkflowNodeConfig, this.context);
+
+      case "data_capture":
+        return await executeDataCaptureNode(config as DataCaptureNodeConfig, this.context);
 
       case "ai_extraction":
         return await executeAIExtractionNode(config as AIExtractionNodeConfig, this.context);

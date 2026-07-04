@@ -38,6 +38,7 @@ export type Orchestration = {
 export type NodeType =
   | "trigger"
   | "workflow"
+  | "data_capture"
   | "ai_extraction"
   | "ai_decision"
   | "condition"
@@ -63,6 +64,7 @@ export type OrchestrationNode = {
 export type NodeConfig =
   | TriggerNodeConfig
   | WorkflowNodeConfig
+  | DataCaptureNodeConfig
   | AIExtractionNodeConfig
   | AIDecisionNodeConfig
   | ConditionNodeConfig
@@ -97,6 +99,33 @@ export type WorkflowNodeConfig = {
   continueOnFailure: boolean;
   timeout?: number;
   triggerPhrases?: string[]; // Which trigger phrases execute this workflow (multi-select)
+  closeBrowserAfter?: boolean; // Whether to close browser after completion (default true)
+};
+
+export type DataCaptureMode = "dom" | "ai" | "hybrid" | "comprehensive";
+
+export type DataCaptureFieldConfig = {
+  name: string; // Field name for captured data
+  label?: string; // Display label for review screen
+  selectors?: string[]; // DOM selectors to try (in order)
+  textPattern?: string; // Regex pattern to extract from page text
+  aiPrompt?: string; // AI prompt if DOM/pattern fails
+  required?: boolean; // Whether field is required
+  defaultValue?: unknown; // Default value if not found
+};
+
+export type DataCaptureNodeConfig = {
+  type: "data_capture";
+  mode: DataCaptureMode; // Capture strategy
+  fieldsToCapture?: DataCaptureFieldConfig[]; // Specific fields to capture
+  autoCapture?: boolean; // Also capture all form fields automatically
+  showReviewScreen?: boolean; // Show review overlay (default true)
+  allowEdit?: boolean; // Allow user to edit captured values (default true)
+  autoReviewTimeout?: number; // Auto-continue after N seconds (0 = require click)
+  pageWaitMs?: number; // Wait before capturing (for dynamic content)
+  outputVariable?: string; // Where to store captured data (default "capturedData")
+  closeBrowserAfter?: boolean; // Whether to close browser after capture
+  continueOnFailure?: boolean; // Continue even if required fields missing
 };
 
 export type AIExtractionNodeConfig = {

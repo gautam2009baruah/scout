@@ -16,6 +16,7 @@ export type BrowserExecutionOptions = {
   parameters: Record<string, unknown>;
   timeout?: number;
   headless?: boolean;
+  closeBrowserAfter?: boolean; // Whether to close browser page after completion
 };
 
 export type BrowserExecutionResult = {
@@ -26,6 +27,7 @@ export type BrowserExecutionResult = {
   error?: string;
   screenshot?: string;
   duration?: number;
+  page?: Page; // Browser page reference (if not closed)
 };
 
 let globalBrowser: Browser | null = null;
@@ -857,6 +859,18 @@ export async function executeBrowserWorkflow(
     console.log(`✅ Workflow player injected and started in ${duration}ms`);
     console.log(`📊 Total steps: ${options.steps.length}`);
 
+    // Close browser page if requested
+    if (options.closeBrowserAfter !== false) {
+      try {
+        await page.close();
+        console.log(`🌐 Browser page closed`);
+      } catch (e) {
+        console.warn("⚠️ Could not close browser page:", e);
+      }
+    } else {
+      console.log(`🌐 Browser page kept open for next node (data capture)`);
+    }
+
     return {
       success: true,
       executionId,
@@ -866,6 +880,7 @@ export async function executeBrowserWorkflow(
         totalSteps: options.steps.length,
       },
       duration,
+      page: options.closeBrowserAfter !== false ? undefined : page, // Pass page if keeping open
     };
   } catch (error) {
     console.error("❌ Browser workflow execution failed:", error);
@@ -878,10 +893,8 @@ export async function executeBrowserWorkflow(
       duration: Date.now() - startTime,
     };
   } finally {
-    // Keep the browser and page open so user can interact with the Scout Player
-    // The page will remain open with the Scout tooltips/highlights running
-    console.log(`\n🌐 Browser remains open for interaction`);
-    console.log(`📍 You can now follow the Scout Player tooltips in the browser\n`);
+    // Browser page lifecycle is handled in the return block above based on closeBrowserAfter option
+    // If kept open, it will be passed to the next node (e.g., data_capture)
   }
 }
 
