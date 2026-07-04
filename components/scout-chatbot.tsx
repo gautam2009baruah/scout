@@ -328,6 +328,54 @@ export function ScoutChatbot({
     };
   }, [scoutBaseUrl, targetAppId, targetAppName]);
 
+  // Listen for clicks on orchestration links
+  useEffect(() => {
+    function handleOrchestrationClick(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      
+      if (target.tagName === 'A') {
+        const href = target.getAttribute('href');
+        
+        if (href?.startsWith('#orchestration:')) {
+          event.preventDefault();
+          const executionId = href.replace('#orchestration:', '');
+          
+          console.log('🎯 User clicked orchestration link:', executionId);
+          
+          const pending = (window as any).__pendingOrchestration;
+          if (pending && pending.executionId === executionId) {
+            console.log('🚀 Starting orchestration execution...');
+            
+            // Method 1: If in iframe, send postMessage to parent
+            if (window.parent && window.parent !== window) {
+              console.log('📤 Method 1: Posting message to parent window (iframe mode)');
+              window.parent.postMessage({
+                type: 'SCOUT_START_EXECUTION',
+                payload: pending,
+              }, '*');
+            } 
+            // Method 2: If same window, dispatch custom event
+            else {
+              console.log('📤 Method 2: Dispatching custom event (same window mode)');
+              const event = new CustomEvent('SCOUT_START_EXECUTION', {
+                detail: pending,
+                bubbles: true,
+                cancelable: false,
+              });
+              window.dispatchEvent(event);
+            }
+            
+            // Clean up
+            delete (window as any).__pendingOrchestration;
+          }
+        }
+      }
+    }
+    
+    document.addEventListener('click', handleOrchestrationClick);
+    return () => document.removeEventListener('click', handleOrchestrationClick);
+  }, []);
+
   function setOpen(nextValue: boolean) {
     setIsOpen(nextValue);
     onOpenChange?.(nextValue);
@@ -563,16 +611,15 @@ export function ScoutChatbot({
       onConversationChange?.(body.conversation_id);
     }
 
-    // Check for orchestration trigger (in-context execution)
+    // Check for orchestration trigger (but don't auto-execute - let user click)
+    // The orchestration info is included in the answer text with a clickable link
     if (body?.orchestration_trigger && !body.orchestration_trigger.requiresConfirmation) {
       const trigger = body.orchestration_trigger;
+      console.log('🎯 Orchestration option available:', trigger);
+      console.log('💡 User can click the orchestration link in the message to execute');
       
-      console.log('🎯 Orchestration auto-execute triggered:', trigger);
-      console.log('📤 Triggering orchestration execution...');
-      console.log('🪟 window.parent:', window.parent);
-      console.log('🪟 Is iframe?:', window.parent !== window);
-      
-      const payload = {
+      // Store trigger data for when user clicks the link
+      (window as any).__pendingOrchestration = {
         executionId: trigger.executionId,
         orchestrationId: trigger.orchestrationId,
         orchestrationName: trigger.orchestrationName,
@@ -584,27 +631,6 @@ export function ScoutChatbot({
         },
         context: {},
       };
-      
-      // Method 1: If in iframe, send postMessage to parent
-      if (window.parent && window.parent !== window) {
-        console.log('📤 Method 1: Posting message to parent window (iframe mode)');
-        window.parent.postMessage({
-          type: 'SCOUT_START_EXECUTION',
-          payload: payload,
-        }, '*');
-        console.log('✅ Message posted to parent window');
-      } 
-      // Method 2: If same window, dispatch custom event
-      else {
-        console.log('📤 Method 2: Dispatching custom event (same window mode)');
-        const event = new CustomEvent('SCOUT_START_EXECUTION', {
-          detail: payload,
-          bubbles: true,
-          cancelable: false,
-        });
-        window.dispatchEvent(event);
-        console.log('✅ Custom event dispatched');
-      }
     }
 
     return typeof body?.answer === "string" ? body.answer : undefined;

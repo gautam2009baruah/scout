@@ -348,8 +348,15 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       }
     });
 
+    let modifiedGreeting = greeting;
+    
+    if (orchestrationMatch) {
+      const orchestrationOption = `**🎯 Orchestration Available:**\n**"${orchestrationMatch.orchestrationName}"** - Execute with data capture\n[Click here to start](#orchestration:${orchestrationMatch.executionId})\n\n---\n\n`;
+      modifiedGreeting = orchestrationOption + greeting;
+    }
+    
     const response: ChatQueryResponse = {
-      answer: greeting,
+      answer: modifiedGreeting,
       citations: [],
       conversation_id: conversationId,
       retrieved_chunk_count: 0
@@ -383,8 +390,15 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       }
     });
 
+    let modifiedMessage = INSUFFICIENT_CONTEXT_MESSAGE;
+    
+    if (orchestrationMatch) {
+      const orchestrationOption = `**🎯 Orchestration Available:**\n**"${orchestrationMatch.orchestrationName}"** - Execute with data capture\n[Click here to start](#orchestration:${orchestrationMatch.executionId})\n\n---\n\n`;
+      modifiedMessage = orchestrationOption + INSUFFICIENT_CONTEXT_MESSAGE;
+    }
+    
     const response: ChatQueryResponse = {
-      answer: INSUFFICIENT_CONTEXT_MESSAGE,
+      answer: modifiedMessage,
       citations: [],
       conversation_id: conversationId,
       retrieved_chunk_count: 0
@@ -418,8 +432,15 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       }
     });
 
+    let modifiedExtractiveAnswer = extractiveAnswer;
+    
+    if (orchestrationMatch) {
+      const orchestrationOption = `**🎯 Orchestration Available:**\n**"${orchestrationMatch.orchestrationName}"** - Execute with data capture\n[Click here to start](#orchestration:${orchestrationMatch.executionId})\n\n---\n\n`;
+      modifiedExtractiveAnswer = orchestrationOption + extractiveAnswer;
+    }
+    
     const response: ChatQueryResponse = {
-      answer: extractiveAnswer,
+      answer: modifiedExtractiveAnswer,
       citations: retrieval.citations,
       conversation_id: conversationId,
       retrieved_chunk_count: retrieval.chunks.length
@@ -455,17 +476,26 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   });
 
   // Include orchestration trigger if matched (alongside normal response)
+  let modifiedAnswer = finalAnswer;
+  
+  if (orchestrationMatch) {
+    console.log(`✅ Including orchestration trigger in response: ${orchestrationMatch.orchestrationName}`);
+    
+    // Prepend orchestration option to the answer
+    const orchestrationOption = `\n\n**🎯 Orchestration Available:**\n**"${orchestrationMatch.orchestrationName}"** - Execute with data capture\n[Click here to start orchestration](#orchestration:${orchestrationMatch.executionId})\n\n---\n\n`;
+    modifiedAnswer = orchestrationOption + finalAnswer;
+  }
+  
   const response: ChatQueryResponse = {
-    answer: finalAnswer,
+    answer: modifiedAnswer,
     citations: retrieval.citations,
     conversation_id: conversationId,
     retrieved_chunk_count: retrieval.chunks.length
   };
 
   if (orchestrationMatch) {
-    console.log(`✅ Including orchestration trigger in response: ${orchestrationMatch.orchestrationName}`);
     response.orchestration_trigger = orchestrationMatch;
-    response.matchedPhrase = question; // Include the original query for matching
+    response.matchedPhrase = question;
     response.matchedIntent = orchestrationMatch.orchestrationName;
   }
 
