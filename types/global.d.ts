@@ -11,6 +11,9 @@ declare global {
     
     // Scout Player class for workflow execution
     _ScoutPlayerClass?: any;
+    
+    // Scout Player workflow completion callback
+    __scoutWorkflowComplete?: () => void;
   }
 }
 

@@ -697,10 +697,52 @@ async function injectAndExecuteScoutPlayer(
 
     console.log(`✅ Scout Player started successfully`);
     console.log(`⏱️  Workflow is now running. Browser will stay open.`);
+    console.log(`⏳ Waiting for you to complete all workflow steps...`);
     
-    // For automated orchestrations, we'll just wait a bit and return success
-    // The workflow runs in the browser with user guidance
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Expose a completion callback that browser code can call
+    let workflowCompleteResolver: (() => void) | null = null;
+    const workflowCompletePromise = new Promise<void>((resolve) => {
+      workflowCompleteResolver = resolve;
+    });
+    
+    await page.exposeFunction('__scoutWorkflowComplete', () => {
+      console.log("\n🎉 Workflow completed! Continuing to next node...\n");
+      if (workflowCompleteResolver) {
+        workflowCompleteResolver();
+        workflowCompleteResolver = null; // Prevent double-calling
+      }
+    });
+
+    // Monitor for workflow completion by polling localStorage
+    // Scout Player removes localStorage key when all steps complete
+    const storageKey = `scout-adoption-progress:${workflowId}:main`;
+    page.evaluate((key: string) => {
+      const checkInterval = setInterval(() => {
+        // Check if player instance is stopped or localStorage key is gone
+        const player = (window as any)._scoutPlayerInstance;
+        const progressExists = localStorage.getItem(key) !== null;
+        const hasTooltip = document.querySelector('.scout-adoption-tooltip') !== null;
+        
+        // Workflow is complete when:
+        // 1. Player stopped (player.stopped === true) OR
+        // 2. Progress key removed AND no tooltip visible
+        if ((player && player.stopped) || (!progressExists && !hasTooltip)) {
+          console.log("🏁 Scout Player workflow detected as complete");
+          clearInterval(checkInterval);
+          if (window.__scoutWorkflowComplete) {
+            window.__scoutWorkflowComplete();
+          }
+        }
+      }, 500); // Check every 500ms
+    }, storageKey);
+
+    // Wait for user to complete all workflow steps (with timeout)
+    await Promise.race([
+      workflowCompletePromise,
+      new Promise<void>((_, reject) => 
+        setTimeout(() => reject(new Error("Workflow timeout - user did not complete all steps")), timeout)
+      )
+    ]);
 
     return { success: true };
     
