@@ -917,6 +917,100 @@ export function ScoutChatbot({
   );
 }
 
+/**
+ * Parse markdown text and convert links to clickable elements
+ * Supports: [text](url) and **bold** formatting
+ */
+function parseMarkdownText(text: string): ReactNode {
+  // Match markdown links: [text](url)
+  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+  // Match bold text: **text**
+  const boldRegex = /\*\*([^*]+)\*\*/g;
+  
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  
+  // First pass: find all markdown patterns
+  const patterns: Array<{ start: number; end: number; type: 'link' | 'bold'; data: any }> = [];
+  
+  // Find links
+  while ((match = linkRegex.exec(text)) !== null) {
+    patterns.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      type: 'link',
+      data: { text: match[1], url: match[2] }
+    });
+  }
+  
+  // Find bold text
+  linkRegex.lastIndex = 0;
+  while ((match = boldRegex.exec(text)) !== null) {
+    // Only add if not inside a link
+    const insideLink = patterns.some(p => p.type === 'link' && match!.index >= p.start && match!.index < p.end);
+    if (!insideLink) {
+      patterns.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        type: 'bold',
+        data: { text: match[1] }
+      });
+    }
+  }
+  
+  // Sort patterns by start position
+  patterns.sort((a, b) => a.start - b.start);
+  
+  // Build React nodes
+  patterns.forEach((pattern, idx) => {
+    // Add text before this pattern
+    if (pattern.start > lastIndex) {
+      parts.push(text.substring(lastIndex, pattern.start));
+    }
+    
+    // Add the pattern element
+    if (pattern.type === 'link') {
+      parts.push(
+        <a
+          key={`link-${idx}`}
+          href={pattern.data.url}
+          className="text-blue-600 hover:text-blue-800 underline cursor-pointer font-medium"
+          onClick={(e) => {
+            // If it's an orchestration link, let the existing click handler manage it
+            if (pattern.data.url.startsWith('#orchestration:')) {
+              // Let the link click bubble up naturally
+              return;
+            }
+            // For external links, open in new tab
+            if (pattern.data.url.startsWith('http')) {
+              e.preventDefault();
+              window.open(pattern.data.url, '_blank', 'noopener,noreferrer');
+            }
+          }}
+        >
+          {pattern.data.text}
+        </a>
+      );
+    } else if (pattern.type === 'bold') {
+      parts.push(
+        <strong key={`bold-${idx}`} className="font-semibold">
+          {pattern.data.text}
+        </strong>
+      );
+    }
+    
+    lastIndex = pattern.end;
+  });
+  
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : text;
+}
+
 function MessageBubble({
   message,
   onStartWorkflow,
@@ -946,7 +1040,7 @@ function MessageBubble({
               : "rounded-tr-md bg-[var(--scout-brand)] text-white"
           )}
         >
-          {message.text}
+          {parseMarkdownText(message.text)}
         </div>
         {message.workflowSuggestion && (
           <div className="mt-2">
