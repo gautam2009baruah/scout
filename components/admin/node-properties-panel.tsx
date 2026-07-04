@@ -1863,13 +1863,18 @@ function DataCaptureConfig({ config, updateConfig }: any) {
         <input
           type="checkbox"
           id="closeBrowserAfter"
-          checked={config.closeBrowserAfter !== false}
+          checked={config.closeBrowserAfter === true}
           onChange={(e) => updateConfig({ closeBrowserAfter: e.target.checked })}
           className="h-4 w-4"
         />
         <label htmlFor="closeBrowserAfter" className="text-sm font-medium text-slate-700">
           Close browser after capture
         </label>
+        <div className="ml-auto">
+          <span className="text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded">
+            💡 Usually keep unchecked for chained workflows
+          </span>
+        </div>
       </div>
     </div>
   );
