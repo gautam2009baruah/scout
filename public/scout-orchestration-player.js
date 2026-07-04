@@ -584,7 +584,7 @@
   async function executeServerSideNode(executionId, nodeIndex, step, context) {
     console.log(`🔄 Executing server-side node: ${step.nodeType}`);
 
-    const response = await fetch(`${config.apiBaseUrl}/api/orchestrations/${executionId}/continue`, {
+    const response = await fetch(`${config.apiBaseUrl}/api/orchestrations/execute/${executionId}/continue`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

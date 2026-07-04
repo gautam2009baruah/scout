@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 
 /**
  * Continue orchestration execution after client-side node completes
- * POST /api/orchestrations/[id]/continue
+ * POST /api/orchestrations/execute/[executionId]/continue
  * 
  * Body: {
  *   nodeIndex: number,    // Index of the node that just completed on client
@@ -13,10 +13,10 @@ export const runtime = "nodejs";
  */
 export async function POST(
   request: NextRequest,
-  routeContext: { params: Promise<{ id: string }> }
+  routeContext: { params: Promise<{ executionId: string }> }
 ) {
   try {
-    const { id: executionId } = await routeContext.params;
+    const { executionId } = await routeContext.params;
     const body = await request.json().catch(() => null);
 
     if (!body || typeof body.nodeIndex !== 'number' || !body.context) {
