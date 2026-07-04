@@ -71,34 +71,4 @@ COMMENT ON TABLE orchestration_triggers IS 'Trigger configurations for orchestra
 COMMENT ON TABLE trigger_execution_logs IS 'Audit logs for trigger executions';
 COMMENT ON COLUMN orchestration_triggers.config IS 'Encrypted trigger configuration including sensitive data';
 COMMENT ON COLUMN trigger_execution_logs.payload IS 'Trigger payload that initiated the execution';
-COMMENT ON TABLE trigger_execution_logs IS 'Audit logs for trigger executions';
-COMMENT ON COLUMN orchestration_triggers.config IS 'Encrypted trigger configuration including sensitive data';
-COMMENT ON COLUMN trigger_execution_logs.payload IS 'Trigger payload that initiated the execution';
 
--- Trigger execution logs table
-CREATE TABLE IF NOT EXISTS trigger_execution_logs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  trigger_id uuid NOT NULL,
-  orchestration_id uuid NOT NULL,
-  execution_id uuid, -- NULL if orchestration failed to start
-  status text NOT NULL CHECK (status IN ('received', 'validated', 'started', 'failed')),
-  payload jsonb NOT NULL DEFAULT '{}',
-  error_message text,
-  triggered_at timestamptz NOT NULL DEFAULT now(),
-  triggered_by text,
-  CONSTRAINT trigger_execution_logs_trigger_fk FOREIGN KEY (trigger_id) REFERENCES orchestration_triggers(id) ON DELETE CASCADE,
-  CONSTRAINT trigger_execution_logs_orchestration_fk FOREIGN KEY (orchestration_id) REFERENCES orchestrations(id) ON DELETE CASCADE,
-  CONSTRAINT trigger_execution_logs_execution_fk FOREIGN KEY (execution_id) REFERENCES orchestration_executions(id) ON DELETE SET NULL
-);
-
-CREATE INDEX IF NOT EXISTS trigger_execution_logs_trigger_idx ON trigger_execution_logs(trigger_id);
-CREATE INDEX IF NOT EXISTS trigger_execution_logs_orchestration_idx ON trigger_execution_logs(orchestration_id);
-CREATE INDEX IF NOT EXISTS trigger_execution_logs_execution_idx ON trigger_execution_logs(execution_id);
-CREATE INDEX IF NOT EXISTS trigger_execution_logs_status_idx ON trigger_execution_logs(status);
-CREATE INDEX IF NOT EXISTS trigger_execution_logs_triggered_at_idx ON trigger_execution_logs(triggered_at);
-
--- Comments
-COMMENT ON TABLE orchestration_triggers IS 'Trigger configurations for orchestrations';
-COMMENT ON TABLE trigger_execution_logs IS 'Audit logs for trigger executions';
-COMMENT ON COLUMN orchestration_triggers.config IS 'Encrypted trigger configuration including sensitive data';
-COMMENT ON COLUMN trigger_execution_logs.payload IS 'Trigger payload that initiated the execution';
