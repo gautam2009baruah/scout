@@ -1,375 +1,78 @@
-Implement a **Visual Drag-and-Drop Workflow Orchestration Designer** that allows users to orchestrate existing Scout workflows, AI actions, human approvals, and external triggers into a complete business process.
+API TRIGGER PROMPT
 
-## Objective
+Implement API Trigger for Orchestration Studio.
 
-Transform Scout from a workflow player into an enterprise orchestration platform where users can visually build business processes by connecting reusable nodes.
+Behavior:
 
-The orchestration engine should execute nodes sequentially or conditionally while sharing a common execution context.
+* API trigger allows authenticated systems to start an orchestration using REST API.
+* Add endpoint:
 
----
+POST /api/orchestrations/{orchestrationId}/execute
 
-## Core Concepts
+* Authentication should use existing auth system/API key system.
+* Trigger configuration should include:
 
-### Orchestration
-
-An orchestration is a graph consisting of nodes and connections.
-
-Each orchestration has:
-
-* Name
-* Description
-* Version
-* Status (Draft / Published)
-* Variables
-* Execution Context
-* Trigger
-* Nodes
-* Connections
-
----
-
-## Designer
-
-Create a drag-and-drop canvas.
-
-Features:
-
-* Zoom
-* Pan
-* Grid
-* Auto alignment
-* Multi-select
-* Copy/Paste
-* Undo/Redo
-* Delete
-* Validation
-* Save Draft
-* Publish
-
-Each node should have configurable properties.
-
-Connections should allow branching.
-
----
-
-## Node Library
-
-Implement the following node types.
-
-### Trigger
-
-* Manual
-* Chatbot
-* Schedule
-* Webhook
-* API
-* Email
-* File Upload
-
----
-
-### Workflow Node
-
-Executes an existing Scout workflow.
-
-Configuration:
-
-* Workflow
-* Version
-* Input variable mapping
-* Output mapping
-* Continue on failure
-
----
-
-### AI Extraction Node
-
-Uses the existing active AI provider.
-
-Input:
-
-* Email
-* Document
-* Text
-* Variables
-
-Output:
-
-Structured JSON validated against a schema.
-
----
-
-### AI Decision Node
-
-Uses the existing AI provider to decide which path to take.
-
-Example:
-
-Customer email
-
-↓
-
-Refund
-
-↓
-
-Refund Workflow
-
-or
-
-Complaint
-
-↓
-
-Support Workflow
-
-Configuration:
-
-* Prompt
-* Expected outputs
-* Branch mapping
-
----
-
-### Condition Node
-
-Supports:
-
-* equals
-* contains
-* greater than
-* less than
-* exists
-* empty
-
-Multiple outputs:
-
-True
-
-False
-
----
-
-### Human Approval Node
-
-Pauses execution.
-
-Approver receives request.
-
-Actions:
-
-Approve
-
-Reject
-
-Edit variables
-
-Continue orchestration after approval.
-
----
-
-### Notification Node
-
-Send:
-
-* Email
-* Teams
-* Slack
-* Internal notification
-
-Use variables inside templates.
-
----
-
-### Variable Node
-
-Create
-
-Update
-
-Transform
-
-Variables.
-
----
-
-### End Node
-
-Finish orchestration.
-
----
-
-## Execution Context
-
-Every node should share one execution context.
-
-Example:
+  * allowed API clients
+  * required request schema
+  * optional rate limit
+  * enabled/disabled
+* Validate request payload before execution.
+* Store payload in execution context:
 
 {
-customer,
-invoice,
-email,
-extractedData,
-aiResult,
-workflowOutputs
+"trigger": {
+"type": "api",
+"clientId": "...",
+"requestBody": {},
+"requestedAt": "timestamp"
+}
 }
 
-Nodes can read and update this context.
+Requirements:
 
-Avoid passing dozens of parameters between nodes.
+* Support API key or OAuth client if existing system supports it.
+* Add API documentation panel in UI.
+* Add request/response examples.
+* Return execution ID and status.
+* Log all API trigger attempts.
 
----
+WEBHOOK TRIGGER PROMPT
 
-## Variable Mapping
+Implement Webhook Trigger for Orchestration Studio.
 
-Support expressions such as:
+Behavior:
 
-{{customer.name}}
+* Webhook trigger exposes a unique endpoint for an orchestration.
+* Trigger configuration should include:
 
-{{invoice.number}}
+  * generated webhook URL
+  * secret token
+  * allowed HTTP methods, default POST
+  * optional IP allowlist
+  * payload schema validation
+  * enabled/disabled
+* Incoming webhook should validate secret before execution.
+* Support secret through header:
 
-{{email.subject}}
+X-Scout-Webhook-Secret: <secret>
 
-{{workflow.CreateInvoice.invoiceId}}
+* Store incoming request body in context:
 
----
+{
+"trigger": {
+"type": "webhook",
+"headers": {},
+"query": {},
+"body": {},
+"receivedAt": "timestamp"
+}
+}
 
-## Execution Engine
+Requirements:
 
-Build an orchestration runtime.
-
-Responsibilities:
-
-* Execute nodes
-* Follow connections
-* Maintain execution context
-* Handle conditions
-* Wait for approvals
-* Resume execution
-* Handle retries
-* Record execution history
-
----
-
-## Analytics
-
-Track:
-
-* Execution count
-* Success rate
-* Failed node
-* Average duration
-* AI usage
-* Human approval time
-* Workflow usage
-* Time saved
-
-Reuse the existing analytics infrastructure.
-
----
-
-## Versioning
-
-Support:
-
-Draft
-
-Publish
-
-Rollback
-
-Clone
-
-Compare versions
-
----
-
-## Permissions
-
-Support role-based access.
-
-Examples:
-
-Designer
-
-Trainer
-
-Viewer
-
-Operator
-
-Admin
-
----
-
-## Extensibility
-
-Design the node system using a plugin architecture.
-
-Each node should implement a common interface such as:
-
-* validate()
-* execute()
-* serialize()
-* deserialize()
-* renderProperties()
-
-Adding a new node type should require minimal changes to the core engine.
-
----
-
-## Initial Node Set
-
-Implement:
-
-* Manual Trigger
-* Workflow
-* AI Extraction
-* AI Decision
-* Condition
-* Human Approval
-* Notification
-* Variable
-* End
-
-Future node types (leave extension points):
-
-* Loop
-* Parallel execution
-* Switch
-* Delay
-* Database
-* REST API
-* Browser Automation
-* File System
-* Queue
-* Custom Plugin
-
----
-
-## UI
-
-Create a modern drag-and-drop designer similar to enterprise workflow tools.
-
-Include:
-
-* Left toolbox (node palette)
-* Center canvas
-* Right properties panel
-* Bottom execution/log panel
-* Top toolbar (Run, Validate, Save Draft, Publish)
-
-Support node validation with visual error indicators.
-
----
-
-## Implementation Requirements
-
-* Reuse the existing Scout workflow engine instead of duplicating execution logic.
-* Workflow nodes should execute existing workflows exactly as they do today.
-* Reuse the existing active AI provider for AI Extraction and AI Decision nodes.
-* Reuse the existing analytics, self-healing, versioning, and approval infrastructure wherever possible.
-* Keep the orchestration engine modular, extensible, and independent of specific AI providers or external services.
-
-The final architecture should position Scout as an enterprise AI orchestration platform capable of combining workflows, AI reasoning, human approvals, and business rules into complete end-to-end business processes.
-But, remember, existing modules must not be broken. This should be a different page. 
+* Never expose secret after generation.
+* Allow secret rotation.
+* Reject invalid signatures/secrets.
+* Return execution ID after successful trigger.
+* Log accepted and rejected webhook calls.
+* Add sample curl command in UI.

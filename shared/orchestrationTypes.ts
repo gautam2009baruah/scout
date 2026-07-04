@@ -22,8 +22,6 @@ export type Orchestration = {
   description: string | null;
   version: number;
   status: OrchestrationStatus;
-  triggerType: OrchestrationTriggerType;
-  triggerConfig: Record<string, unknown>;
   variables: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;

@@ -29,8 +29,7 @@ type OrchestrationRow = {
   description: string | null;
   version: number;
   status: OrchestrationStatus;
-  trigger_type: string;
-  trigger_config: Record<string, unknown>;
+
   variables: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
@@ -48,8 +47,6 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
     description: row.description,
     version: row.version,
     status: row.status,
-    triggerType: row.trigger_type as any,
-    triggerConfig: row.trigger_config,
     variables: row.variables,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
@@ -64,23 +61,19 @@ export async function createOrchestration(data: {
   companyId: string;
   name: string;
   description?: string | null;
-  triggerType: string;
-  triggerConfig?: Record<string, unknown>;
   variables?: Record<string, unknown>;
   createdByEmail: string;
 }): Promise<Orchestration> {
   const pool = getPool();
   const result = await pool.query<OrchestrationRow>(
     `INSERT INTO orchestrations 
-     (company_id, name, description, trigger_type, trigger_config, variables, created_by_email, updated_by_email)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+     (company_id, name, description, variables, created_by_email, updated_by_email)
+     VALUES ($1, $2, $3, $4, $5, $5)
      RETURNING *`,
     [
       data.companyId,
       data.name,
       data.description || null,
-      data.triggerType,
-      JSON.stringify(data.triggerConfig || {}),
       JSON.stringify(data.variables || {}),
       data.createdByEmail,
     ]
@@ -129,8 +122,6 @@ export async function updateOrchestration(
   data: {
     name?: string;
     description?: string | null;
-    triggerType?: string;
-    triggerConfig?: Record<string, unknown>;
     variables?: Record<string, unknown>;
     updatedByEmail: string;
   }
@@ -148,16 +139,6 @@ export async function updateOrchestration(
   if (data.description !== undefined) {
     params.push(data.description);
     updates.push(`description = $${params.length}`);
-  }
-
-  if (data.triggerType !== undefined) {
-    params.push(data.triggerType);
-    updates.push(`trigger_type = $${params.length}`);
-  }
-
-  if (data.triggerConfig !== undefined) {
-    params.push(JSON.stringify(data.triggerConfig));
-    updates.push(`trigger_config = $${params.length}`);
   }
 
   if (data.variables !== undefined) {

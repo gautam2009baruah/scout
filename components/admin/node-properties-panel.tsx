@@ -36,7 +36,23 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
   const config = node.data.config || {};
   const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
   const [panelHeight, setPanelHeight] = useState(600);
+  const [containerBounds, setContainerBounds] = useState({ width: 1200, height: 800 });
   const nodeRef = useRef<HTMLDivElement>(null);
+
+  // Calculate container bounds on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const updateBounds = () => {
+        setContainerBounds({
+          width: window.innerWidth,
+          height: window.innerHeight - 180 // Account for header/footer
+        });
+      };
+      updateBounds();
+      window.addEventListener('resize', updateBounds);
+      return () => window.removeEventListener('resize', updateBounds);
+    }
+  }, []);
 
   const updateConfig = (updates: Record<string, any>) => {
     onUpdate({
@@ -114,8 +130,8 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
         newHeight = startHeight + deltaY;
       }
       
-      setPanelWidth(Math.max(300, Math.min(newWidth, window.innerWidth - 32)));
-      setPanelHeight(Math.max(400, Math.min(newHeight, window.innerHeight - 100)));
+      setPanelWidth(Math.max(300, Math.min(newWidth, containerBounds.width - 40)));
+      setPanelHeight(Math.max(400, Math.min(newHeight, containerBounds.height - 100)));
     };
 
     const handleMouseUp = () => {
@@ -132,38 +148,48 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [panelWidth, panelHeight]);
+  }, [panelWidth, panelHeight, containerBounds]);
 
   return (
     <Draggable
       handle=".drag-handle"
       nodeRef={nodeRef}
-      defaultPosition={{ 
-        x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - panelWidth - 40) : 600, 
-        y: 80 
+      position={{ 
+        x: Math.max(20, containerBounds.width - panelWidth - 40), 
+        y: 20 
       }}
-      bounds="parent"
+      bounds={{ 
+        left: 20, 
+        top: 20, 
+        right: containerBounds.width - panelWidth - 20, 
+        bottom: containerBounds.height - 100 
+      }}
+      onStart={(e) => {
+        // Prevent dragging when clicking on resize handles
+        if ((e.target as HTMLElement).classList.contains('resize-handle')) {
+          return false;
+        }
+      }}
     >
       <div 
         ref={nodeRef}
-        className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden z-50"
+        className="absolute bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden"
         style={{ 
           width: `${panelWidth}px`,
           height: `${panelHeight}px`,
-          maxWidth: typeof window !== 'undefined' ? `${window.innerWidth - 32}px` : '90vw',
-          maxHeight: typeof window !== 'undefined' ? `${window.innerHeight - 100}px` : '90vh'
+          zIndex: 50
         }}
       >
-        {/* Resize Handles - All borders */}
-        <div className="resize-handle absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
-        <div className="resize-handle absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
-        <div className="resize-handle absolute left-0 top-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
-        <div className="resize-handle absolute left-0 bottom-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
-        {/* Corner Handles */}
-        <div className="resize-handle absolute left-0 top-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tl-lg" />
-        <div className="resize-handle absolute right-0 top-0 w-4 h-4 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tr-lg" />
-        <div className="resize-handle absolute left-0 bottom-0 w-4 h-4 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-bl-lg" />
-        <div className="resize-handle absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-br-lg" />
+        {/* Resize Handles - All borders with higher z-index */}
+        <div className="resize-handle absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors z-10" />
+        <div className="resize-handle absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors z-10" />
+        <div className="resize-handle absolute left-0 top-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors z-10" />
+        <div className="resize-handle absolute left-0 bottom-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors z-10" />
+        {/* Corner Handles with highest z-index */}
+        <div className="resize-handle absolute left-0 top-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tl-lg z-20" />
+        <div className="resize-handle absolute right-0 top-0 w-4 h-4 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tr-lg z-20" />
+        <div className="resize-handle absolute left-0 bottom-0 w-4 h-4 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-bl-lg z-20" />
+        <div className="resize-handle absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-br-lg z-20" />
         
         <div className="flex flex-col h-full">
           {/* Header */}

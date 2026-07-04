@@ -56,12 +56,12 @@ export async function POST(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { companyId, name, description, triggerType, triggerConfig, variables } = body;
+    const { companyId, name, description, variables } = body;
 
     // Validate required fields
-    if (!companyId || !name || !triggerType) {
+    if (!companyId || !name) {
       return NextResponse.json(
-        { message: "Missing required fields: companyId, name, triggerType" },
+        { message: "Missing required fields: companyId, name" },
         { status: 400 }
       );
     }
@@ -72,8 +72,6 @@ export async function POST(request: NextRequest) {
       companyId,
       name,
       description,
-      triggerType,
-      triggerConfig,
       variables,
       createdByEmail: session.user.email,
     });
@@ -98,7 +96,7 @@ export async function PUT(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { id, name, description, triggerType, triggerConfig, variables, publish } = body;
+    const { id, name, description, variables, publish } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -119,8 +117,6 @@ export async function PUT(request: NextRequest) {
     const orchestration = await updateOrchestration(id, {
       name,
       description,
-      triggerType,
-      triggerConfig,
       variables,
       updatedByEmail: session.user.email,
     });

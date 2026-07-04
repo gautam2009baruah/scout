@@ -235,8 +235,6 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
           companyId: orchestration.companyId,
           name: orchestration.name,
           description: orchestration.description,
-          triggerType: orchestration.triggerType,
-          triggerConfig: orchestration.triggerConfig,
           variables: orchestration.variables,
         }),
       });
@@ -483,7 +481,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden">
+    <div className="flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden relative">
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
