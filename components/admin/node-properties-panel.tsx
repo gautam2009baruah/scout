@@ -36,23 +36,7 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
   const config = node.data.config || {};
   const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
   const [panelHeight, setPanelHeight] = useState(600);
-  const [containerBounds, setContainerBounds] = useState({ width: 1200, height: 800 });
   const nodeRef = useRef<HTMLDivElement>(null);
-
-  // Calculate container bounds on mount
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const updateBounds = () => {
-        setContainerBounds({
-          width: window.innerWidth,
-          height: window.innerHeight - 180 // Account for header/footer
-        });
-      };
-      updateBounds();
-      window.addEventListener('resize', updateBounds);
-      return () => window.removeEventListener('resize', updateBounds);
-    }
-  }, []);
 
   const updateConfig = (updates: Record<string, any>) => {
     onUpdate({
@@ -90,20 +74,22 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
         startWidth = panelWidth;
         startHeight = panelHeight;
         
-        // Determine resize direction from cursor position
+        // Determine resize direction from which handle was clicked
         const rect = resizeElement.getBoundingClientRect();
-        const isLeft = e.clientX - rect.left < 10;
-        const isRight = rect.right - e.clientX < 10;
-        const isTop = e.clientY - rect.top < 10;
-        const isBottom = rect.bottom - e.clientY < 10;
+        const clickX = e.clientX - rect.left;
+        const clickY = e.clientY - rect.top;
         
         resizeDirection = '';
-        if (isTop) resizeDirection += 'top';
-        if (isBottom) resizeDirection += 'bottom';
-        if (isLeft) resizeDirection += 'left';
-        if (isRight) resizeDirection += 'right';
+        
+        // Check which edge/corner based on click position (8px for corners, 4px for edges)
+        if (clickX < 8) resizeDirection += 'left';
+        else if (clickX > rect.width - 8) resizeDirection += 'right';
+        
+        if (clickY < 8) resizeDirection += 'top';
+        else if (clickY > rect.height - 8) resizeDirection += 'bottom';
         
         e.preventDefault();
+        e.stopPropagation();
       }
     };
 
@@ -130,8 +116,8 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
         newHeight = startHeight + deltaY;
       }
       
-      setPanelWidth(Math.max(300, Math.min(newWidth, containerBounds.width - 40)));
-      setPanelHeight(Math.max(400, Math.min(newHeight, containerBounds.height - 100)));
+      setPanelWidth(Math.max(300, Math.min(newWidth, typeof window !== 'undefined' ? window.innerWidth - 32 : 1200)));
+      setPanelHeight(Math.max(400, Math.min(newHeight, typeof window !== 'undefined' ? window.innerHeight - 100 : 800)));
     };
 
     const handleMouseUp = () => {
@@ -148,48 +134,73 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [panelWidth, panelHeight, containerBounds]);
+  }, [panelWidth, panelHeight]);
 
   return (
     <Draggable
       handle=".drag-handle"
       nodeRef={nodeRef}
-      position={{ 
-        x: Math.max(20, containerBounds.width - panelWidth - 40), 
-        y: 20 
+      defaultPosition={{ 
+        x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - panelWidth - 32) : 600, 
+        y: 80 
       }}
       bounds={{ 
-        left: 20, 
-        top: 20, 
-        right: containerBounds.width - panelWidth - 20, 
-        bottom: containerBounds.height - 100 
+        left: 16, 
+        top: 16, 
+        right: typeof window !== 'undefined' ? window.innerWidth - 300 : 1000, 
+        bottom: typeof window !== 'undefined' ? window.innerHeight - 200 : 800 
       }}
       onStart={(e) => {
         // Prevent dragging when clicking on resize handles
-        if ((e.target as HTMLElement).classList.contains('resize-handle')) {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('resize-handle') || target.closest('.resize-handle')) {
           return false;
         }
       }}
     >
       <div 
         ref={nodeRef}
-        className="absolute bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden"
+        className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden"
         style={{ 
           width: `${panelWidth}px`,
           height: `${panelHeight}px`,
           zIndex: 50
         }}
       >
-        {/* Resize Handles - All borders with higher z-index */}
-        <div className="resize-handle absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors z-10" />
-        <div className="resize-handle absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors z-10" />
-        <div className="resize-handle absolute left-0 top-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors z-10" />
-        <div className="resize-handle absolute left-0 bottom-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors z-10" />
+        {/* Resize Handles - All borders with higher z-index and pointer events */}
+        <div 
+          className="resize-handle absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+          style={{ zIndex: 10, width: '4px', left: 0 }}
+        />
+        <div 
+          className="resize-handle absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+          style={{ zIndex: 10, width: '4px', right: 0 }}
+        />
+        <div 
+          className="resize-handle absolute left-0 top-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+          style={{ zIndex: 10, height: '4px', top: 0 }}
+        />
+        <div 
+          className="resize-handle absolute left-0 bottom-0 right-0 h-1 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
+          style={{ zIndex: 10, height: '4px', bottom: 0 }}
+        />
         {/* Corner Handles with highest z-index */}
-        <div className="resize-handle absolute left-0 top-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tl-lg z-20" />
-        <div className="resize-handle absolute right-0 top-0 w-4 h-4 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tr-lg z-20" />
-        <div className="resize-handle absolute left-0 bottom-0 w-4 h-4 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-bl-lg z-20" />
-        <div className="resize-handle absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-br-lg z-20" />
+        <div 
+          className="resize-handle absolute left-0 top-0 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-50 rounded-tl-lg" 
+          style={{ zIndex: 20, width: '8px', height: '8px' }}
+        />
+        <div 
+          className="resize-handle absolute right-0 top-0 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-50 rounded-tr-lg" 
+          style={{ zIndex: 20, width: '8px', height: '8px' }}
+        />
+        <div 
+          className="resize-handle absolute left-0 bottom-0 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-50 rounded-bl-lg" 
+          style={{ zIndex: 20, width: '8px', height: '8px' }}
+        />
+        <div 
+          className="resize-handle absolute right-0 bottom-0 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-50 rounded-br-lg" 
+          style={{ zIndex: 20, width: '8px', height: '8px' }}
+        />
         
         <div className="flex flex-col h-full">
           {/* Header */}

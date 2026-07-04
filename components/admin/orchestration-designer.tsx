@@ -481,7 +481,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden relative">
+    <div className="flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
