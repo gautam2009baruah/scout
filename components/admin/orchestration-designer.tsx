@@ -109,6 +109,8 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
   const [manualTriggerConfig, setManualTriggerConfig] = useState<ManualTriggerConfig | null>(null);
   const [executionMonitorId, setExecutionMonitorId] = useState<string | null>(null);
   const [isListOpen, setIsListOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
 
   // Load orchestration data when orchestration changes
   useEffect(() => {
@@ -220,8 +222,9 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
 
   // Save orchestration
   const saveOrchestration = async () => {
-    if (!orchestration) return;
+    if (!orchestration || isSaving) return;
 
+    setIsSaving(true);
     try {
       // Save/update orchestration
       const response = await fetch("/api/admin/orchestrations", {
@@ -292,17 +295,20 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
     } catch (error) {
       console.error("Error saving orchestration:", error);
       alert(error instanceof Error ? error.message : "Failed to save orchestration");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   // Publish orchestration
   const publishOrchestration = async () => {
-    if (!orchestration) return;
+    if (!orchestration || isPublishing) return;
 
     if (!confirm("Publish this orchestration? This will make it available for execution.")) {
       return;
     }
 
+    setIsPublishing(true);
     try {
       // First, save the orchestration to ensure database has latest nodes
       console.log("📝 Saving orchestration before publishing...");
@@ -329,6 +335,8 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
     } catch (error) {
       console.error("Error publishing orchestration:", error);
       alert(error instanceof Error ? error.message : "Failed to publish orchestration");
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -404,6 +412,76 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
     }
   };
 
+  // Execute orchestration from list (loads nodes first)
+  const executeFromList = async (orch: Orchestration) => {
+    try {
+      if (orch.status !== "published") {
+        alert("Please publish the orchestration before executing it.");
+        return;
+      }
+
+      // Load nodes for this orchestration
+      const response = await fetch(`/api/admin/orchestrations/${orch.id}/nodes`);
+      if (!response.ok) {
+        throw new Error("Failed to load orchestration nodes");
+      }
+
+      const data = await response.json();
+      const loadedNodes = data.nodes || [];
+      
+      // Find trigger node
+      const triggerNode = loadedNodes.find((n: any) => n.nodeType === "trigger");
+      
+      if (!triggerNode) {
+        alert("This orchestration has no trigger node.");
+        return;
+      }
+
+      const triggerConfig: ManualTriggerConfig = {
+        type: triggerNode.config?.triggerType || "manual",
+        inputFields: triggerNode.config?.inputFields || [],
+      };
+
+      // Ensure trigger record exists
+      const triggerResponse = await fetch(
+        `/api/admin/orchestrations/triggers?orchestrationId=${orch.id}&triggerType=manual&status=active`
+      );
+
+      if (!triggerResponse.ok) {
+        throw new Error("Failed to get trigger configuration");
+      }
+
+      const triggerData = await triggerResponse.json();
+      
+      if (!triggerData.triggers || triggerData.triggers.length === 0) {
+        // Create trigger record
+        const createResponse = await fetch("/api/admin/orchestrations/triggers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            orchestrationId: orch.id,
+            triggerType: "manual",
+            name: "Manual Trigger",
+            description: "Manually start this orchestration",
+            config: triggerConfig,
+          }),
+        });
+
+        if (!createResponse.ok) {
+          throw new Error("Failed to create manual trigger");
+        }
+      }
+
+      // Load this orchestration and show manual trigger dialog
+      setOrchestration(orch);
+      setManualTriggerConfig(triggerConfig);
+      setIsManualTriggerOpen(true);
+    } catch (error) {
+      console.error("Error preparing orchestration for execution:", error);
+      alert(error instanceof Error ? error.message : "Failed to prepare orchestration");
+    }
+  };
+
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden">
       {/* Toolbar */}
@@ -429,20 +507,22 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
           ) : (
             <>
               <button
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={saveOrchestration}
+                disabled={isSaving || isPublishing}
                 type="button"
               >
                 <Save className="h-4 w-4" />
-                Save Draft
+                {isSaving ? "Saving..." : "Save Draft"}
               </button>
               <button
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 onClick={publishOrchestration}
+                disabled={isSaving || isPublishing}
                 type="button"
               >
                 <Upload className="h-4 w-4" />
-                Publish
+                {isPublishing ? "Publishing..." : "Publish"}
               </button>
               <button
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
@@ -542,6 +622,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
                 type: "smoothstep",
                 markerEnd: { type: MarkerType.ArrowClosed },
               }}
+              proOptions={{ hideAttribution: true }}
             >
               <Background variant={BackgroundVariant.Dots} gap={15} size={1} />
               <Controls />
@@ -631,6 +712,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
             setOrchestration(loadedOrchestration);
             // Nodes and edges will be loaded by the useEffect
           }}
+          onExecute={executeFromList}
           onClose={() => setIsListOpen(false)}
           currentOrchestrationId={orchestration?.id}
         />
@@ -651,48 +733,11 @@ function CreateOrchestrationDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [companyId, setCompanyId] = useState(companies[0]?.id || "");
-  const [triggerType, setTriggerType] = useState<"manual" | "chatbot" | "schedule" | "webhook">("manual");
   const [creating, setCreating] = useState(false);
-
-  // Webhook configuration
-  const [webhookMethods, setWebhookMethods] = useState<Array<"GET" | "POST" | "PUT">>(["POST"]);
-  const [webhookIPs, setWebhookIPs] = useState("");
-
-  // Schedule configuration
-  const [scheduleExpression, setScheduleExpression] = useState("0 0 * * *");
-  const [scheduleTimezone, setScheduleTimezone] = useState("UTC");
 
   const handleCreate = async () => {
     setCreating(true);
     try {
-      // Build trigger config based on type
-      let triggerConfig = {};
-      if (triggerType === "webhook") {
-        triggerConfig = {
-          type: "webhook",
-          allowedMethods: webhookMethods,
-          allowedIPs: webhookIPs ? webhookIPs.split(",").map(ip => ip.trim()).filter(ip => ip) : undefined,
-          enabled: true,
-        };
-      } else if (triggerType === "schedule") {
-        triggerConfig = {
-          type: "schedule",
-          cronExpression: scheduleExpression,
-          timezone: scheduleTimezone,
-          enabled: true,
-        };
-      } else if (triggerType === "manual") {
-        triggerConfig = {
-          type: "manual",
-          inputFields: [],
-        };
-      } else if (triggerType === "chatbot") {
-        triggerConfig = {
-          type: "chatbot",
-          enabled: true,
-        };
-      }
-
       const response = await fetch("/api/admin/orchestrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -700,8 +745,6 @@ function CreateOrchestrationDialog({
           companyId,
           name,
           description,
-          triggerType,
-          triggerConfig,
           variables: {},
         }),
       });
@@ -760,124 +803,6 @@ function CreateOrchestrationDialog({
               ))}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-600">Trigger Type</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={triggerType}
-              onChange={(e) => setTriggerType(e.target.value as any)}
-            >
-              <option value="manual">Manual</option>
-              <option value="chatbot">Chatbot</option>
-              <option value="schedule">Schedule</option>
-              <option value="webhook">Webhook</option>
-            </select>
-          </div>
-
-          {/* Webhook Configuration */}
-          {triggerType === "webhook" && (
-            <div className="space-y-3 border-l-4 border-blue-500 bg-blue-50 p-4 rounded">
-              <h4 className="text-sm font-semibold text-slate-700">Webhook Settings</h4>
-              
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-2">
-                  Allowed HTTP Methods
-                </label>
-                <div className="flex gap-3">
-                  {(["GET", "POST", "PUT"] as const).map((method) => (
-                    <label key={method} className="flex items-center">
-                      <input
-                        type="checkbox"
-                        checked={webhookMethods.includes(method)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setWebhookMethods([...webhookMethods, method]);
-                          } else {
-                            setWebhookMethods(webhookMethods.filter((m) => m !== method));
-                          }
-                        }}
-                        className="mr-2"
-                      />
-                      <span className="text-sm">{method}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">
-                  IP Allowlist (optional)
-                </label>
-                <input
-                  type="text"
-                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                  value={webhookIPs}
-                  onChange={(e) => setWebhookIPs(e.target.value)}
-                  placeholder="192.168.1.1, 10.0.0.5"
-                />
-                <p className="text-xs text-slate-500 mt-1">Comma-separated IP addresses</p>
-              </div>
-
-              <p className="text-xs text-blue-700">
-                ℹ️ A unique webhook URL and secret will be generated after creation
-              </p>
-            </div>
-          )}
-
-          {/* Schedule Configuration */}
-          {triggerType === "schedule" && (
-            <div className="space-y-3 border-l-4 border-purple-500 bg-purple-50 p-4 rounded">
-              <h4 className="text-sm font-semibold text-slate-700">Schedule Settings</h4>
-              
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">
-                  Cron Expression
-                </label>
-                <input
-                  type="text"
-                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
-                  value={scheduleExpression}
-                  onChange={(e) => setScheduleExpression(e.target.value)}
-                  placeholder="0 0 * * *"
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Format: minute hour day month weekday (e.g., "0 0 * * *" = daily at midnight)
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-600 mb-1">
-                  Timezone
-                </label>
-                <input
-                  type="text"
-                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                  value={scheduleTimezone}
-                  onChange={(e) => setScheduleTimezone(e.target.value)}
-                  placeholder="UTC"
-                />
-                <p className="text-xs text-slate-500 mt-1">e.g., UTC, America/New_York, Europe/London</p>
-              </div>
-            </div>
-          )}
-
-          {/* Manual Trigger Info */}
-          {triggerType === "manual" && (
-            <div className="border-l-4 border-green-500 bg-green-50 p-3 rounded">
-              <p className="text-xs text-green-700">
-                ℹ️ Manual triggers can be executed from the UI with custom input fields (configurable after creation)
-              </p>
-            </div>
-          )}
-
-          {/* Chatbot Trigger Info */}
-          {triggerType === "chatbot" && (
-            <div className="border-l-4 border-orange-500 bg-orange-50 p-3 rounded">
-              <p className="text-xs text-orange-700">
-                ℹ️ Chatbot triggers are automatically invoked when users interact with the Scout chatbot
-              </p>
-            </div>
-          )}
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <button

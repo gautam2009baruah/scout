@@ -63,28 +63,64 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
     let startY = 0;
     let startWidth = 0;
     let startHeight = 0;
+    let resizeDirection = '';
 
     const handleMouseDown = (e: MouseEvent) => {
-      if ((e.target as HTMLElement).classList.contains('resize-handle')) {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('resize-handle')) {
         isResizing = true;
         startX = e.clientX;
         startY = e.clientY;
         startWidth = panelWidth;
         startHeight = panelHeight;
+        
+        // Determine resize direction from cursor position
+        const rect = resizeElement.getBoundingClientRect();
+        const isLeft = e.clientX - rect.left < 10;
+        const isRight = rect.right - e.clientX < 10;
+        const isTop = e.clientY - rect.top < 10;
+        const isBottom = rect.bottom - e.clientY < 10;
+        
+        resizeDirection = '';
+        if (isTop) resizeDirection += 'top';
+        if (isBottom) resizeDirection += 'bottom';
+        if (isLeft) resizeDirection += 'left';
+        if (isRight) resizeDirection += 'right';
+        
         e.preventDefault();
       }
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
-      const deltaX = startX - e.clientX; // Inverted for right-side resize
+      
+      const deltaX = e.clientX - startX;
       const deltaY = e.clientY - startY;
-      setPanelWidth(Math.max(300, startWidth + deltaX));
-      setPanelHeight(Math.max(400, startHeight + deltaY));
+      
+      let newWidth = startWidth;
+      let newHeight = startHeight;
+      
+      // Handle horizontal resize
+      if (resizeDirection.includes('left')) {
+        newWidth = startWidth - deltaX;
+      } else if (resizeDirection.includes('right')) {
+        newWidth = startWidth + deltaX;
+      }
+      
+      // Handle vertical resize
+      if (resizeDirection.includes('top')) {
+        newHeight = startHeight - deltaY;
+      } else if (resizeDirection.includes('bottom')) {
+        newHeight = startHeight + deltaY;
+      }
+      
+      setPanelWidth(Math.max(300, Math.min(newWidth, window.innerWidth - 32)));
+      setPanelHeight(Math.max(400, Math.min(newHeight, window.innerHeight - 100)));
     };
 
     const handleMouseUp = () => {
       isResizing = false;
+      resizeDirection = '';
     };
 
     document.addEventListener('mousedown', handleMouseDown);
@@ -103,22 +139,31 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
       handle=".drag-handle"
       nodeRef={nodeRef}
       defaultPosition={{ 
-        x: typeof window !== 'undefined' ? window.innerWidth - panelWidth - 40 : 600, 
+        x: typeof window !== 'undefined' ? Math.max(16, window.innerWidth - panelWidth - 40) : 600, 
         y: 80 
       }}
+      bounds="parent"
     >
       <div 
         ref={nodeRef}
         className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl overflow-hidden z-50"
         style={{ 
           width: `${panelWidth}px`,
-          height: `${panelHeight}px`
+          height: `${panelHeight}px`,
+          maxWidth: typeof window !== 'undefined' ? `${window.innerWidth - 32}px` : '90vw',
+          maxHeight: typeof window !== 'undefined' ? `${window.innerHeight - 100}px` : '90vh'
         }}
       >
-        {/* Resize Handles */}
+        {/* Resize Handles - All borders */}
         <div className="resize-handle absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
+        <div className="resize-handle absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
+        <div className="resize-handle absolute left-0 top-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
         <div className="resize-handle absolute left-0 bottom-0 right-0 h-2 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-20 transition-colors" />
-        <div className="resize-handle absolute left-0 bottom-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tl-lg" />
+        {/* Corner Handles */}
+        <div className="resize-handle absolute left-0 top-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tl-lg" />
+        <div className="resize-handle absolute right-0 top-0 w-4 h-4 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-tr-lg" />
+        <div className="resize-handle absolute left-0 bottom-0 w-4 h-4 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-bl-lg" />
+        <div className="resize-handle absolute right-0 bottom-0 w-4 h-4 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-40 rounded-br-lg" />
         
         <div className="flex flex-col h-full">
           {/* Header */}
@@ -278,54 +323,84 @@ function TriggerConfig({ config, updateConfig }: any) {
             <div className="space-y-2">
               {inputFields.map((field, index) => (
                 <div key={index} className="bg-white border border-slate-200 rounded p-3 space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-                      placeholder="e.g. session_name"
-                      value={field.name || ""}
-                      onChange={(e) => {
-                        const updated = [...inputFields];
-                        updated[index].name = e.target.value;
-                        setInputFields(updated);
-                      }}
-                    />
-                    <input
-                      type="text"
-                      className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
-                      placeholder="e.g. Training Session Title"
-                      value={field.label || ""}
-                      onChange={(e) => {
-                        const updated = [...inputFields];
-                        updated[index].label = e.target.value;
-                        setInputFields(updated);
-                      }}
-                    />
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <label className="w-24 text-xs font-medium text-slate-600">Field Name:</label>
+                      <input
+                        type="text"
+                        className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                        placeholder="e.g. session_name"
+                        value={field.name || ""}
+                        onChange={(e) => {
+                          const updated = [...inputFields];
+                          updated[index].name = e.target.value;
+                          setInputFields(updated);
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="w-24 text-xs font-medium text-slate-600">Label:</label>
+                      <input
+                        type="text"
+                        className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                        placeholder="e.g. Training Session Title"
+                        value={field.label || ""}
+                        onChange={(e) => {
+                          const updated = [...inputFields];
+                          updated[index].label = e.target.value;
+                          setInputFields(updated);
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="w-24 text-xs font-medium text-slate-600">Type:</label>
+                      <select
+                        className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                        value={field.type || "text"}
+                        onChange={(e) => {
+                          const updated = [...inputFields];
+                          updated[index].type = e.target.value;
+                          setInputFields(updated);
+                        }}
+                      >
+                        <option value="text">Text</option>
+                        <option value="textarea">Text Area</option>
+                        <option value="number">Number</option>
+                        <option value="email">Email</option>
+                        <option value="date">Date</option>
+                        <option value="select">Select</option>
+                        <option value="boolean">Boolean</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
                     <button
                       type="button"
-                      className="p-1 text-red-600 hover:bg-red-50 rounded"
+                      className="p-1 text-red-600 hover:bg-red-50 rounded text-sm flex items-center gap-1"
                       onClick={() => setInputFields(inputFields.filter((_, i) => i !== index))}
                     >
                       <Minus className="h-4 w-4" />
+                      Remove
                     </button>
                   </div>
-                  <div className="flex gap-2">
-                    <select
-                      className="w-32 rounded border border-slate-300 px-2 py-1 text-sm"
-                      value={field.type || "text"}
-                      onChange={(e) => {
-                        const updated = [...inputFields];
-                        updated[index].type = e.target.value;
-                        setInputFields(updated);
-                      }}
-                    >
-                      <option value="text">Text</option>
-                      <option value="number">Number</option>
-                      <option value="boolean">Boolean</option>
-                      <option value="select">Select</option>
-                      <option value="textarea">Textarea</option>
-                    </select>
-                    <label className="flex items-center gap-1 text-sm">
+                  {field.type === "select" && (
+                    <div className="pl-4">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Options (one per line):</label>
+                      <textarea
+                        className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                        rows={3}
+                        placeholder="Option 1&#10;Option 2&#10;Option 3"
+                        value={field.options?.join("\n") || ""}
+                        onChange={(e) => {
+                          const updated = [...inputFields];
+                          updated[index].options = e.target.value.split("\n").filter(o => o.trim());
+                          setInputFields(updated);
+                        }}
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 pl-4">
+                    <label className="flex items-center gap-2 text-sm">
                       <input
                         type="checkbox"
                         checked={field.required || false}
@@ -335,7 +410,7 @@ function TriggerConfig({ config, updateConfig }: any) {
                           setInputFields(updated);
                         }}
                       />
-                      Required
+                      <span className="text-xs text-slate-600">Required</span>
                     </label>
                   </div>
                 </div>

@@ -12,6 +12,7 @@ import type { Orchestration } from "@/shared/orchestrationTypes";
 interface OrchestrationListProps {
   onLoad: (orchestration: Orchestration) => void;
   onClose: () => void;
+  onExecute: (orchestration: Orchestration) => void;
   currentOrchestrationId?: string;
 }
 
@@ -21,7 +22,7 @@ const STATUS_COLORS = {
   archived: "bg-red-100 text-red-700",
 };
 
-export function OrchestrationList({ onLoad, onClose, currentOrchestrationId }: OrchestrationListProps) {
+export function OrchestrationList({ onLoad, onClose, onExecute, currentOrchestrationId }: OrchestrationListProps) {
   const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "draft" | "published">("all");
@@ -202,8 +203,8 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId }: O
                       {orch.status === "published" && (
                         <button
                           onClick={() => {
-                            // TODO: Implement quick execute
-                            alert("Quick execute coming soon! Load the orchestration and click Execute.");
+                            onExecute(orch);
+                            onClose();
                           }}
                           className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                           title="Execute"

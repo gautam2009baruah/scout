@@ -90,17 +90,6 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                       </Link>
                       <Link
                         className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
-                          isOrchestrationDesignerActive
-                            ? "bg-slate-950 text-white shadow-sm"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                        }`}
-                        href={ORCHESTRATION_DESIGNER_HREF}
-                      >
-                        <GitBranch className="h-4 w-4" />
-                        Orchestration Designer
-                      </Link>
-                      <Link
-                        className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
                           isSelfHealingReviewActive
                             ? "bg-slate-950 text-white shadow-sm"
                             : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
@@ -129,6 +118,19 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
             {contentStructureModule ? <NavLink active={active} activeHref={activeHref} module={contentStructureModule} /> : null}
             {guidedWorkflowsModule ? <NavLink active={active} activeHref={activeHref} module={guidedWorkflowsModule} /> : null}
+            {guidedWorkflowsModule ? (
+              <Link
+                className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
+                  isOrchestrationDesignerActive
+                    ? "bg-slate-950 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                }`}
+                href={ORCHESTRATION_DESIGNER_HREF}
+              >
+                <GitBranch className="h-4 w-4" />
+                Orchestration Designer
+              </Link>
+            ) : null}
           </nav>
         </aside>
 
