@@ -289,37 +289,36 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         
         console.log('✅ Orchestration match stored, continuing to workflow check...');
       } else if (triggerMatch && triggerMatch.requiresConfirmation) {
-        console.log('⚠️ Orchestration requires confirmation, skipping combined response');
-        // For confirmation flows, return early as before
-        await appendConversationExchange({
-          companyId,
-          userId,
-          conversationId,
-          question,
-          answer: triggerMatch.confirmationMessage,
-          citations: [],
-          metadata: {
-            llm_provider: 'orchestration',
-            llm_model: 'trigger-match',
-            latency_ms: Date.now() - startedAt,
-            retrieved_chunk_count: 0,
-            token_usage_summary: null
-          }
-        });
-
-        return {
-          answer: triggerMatch.confirmationMessage,
-          citations: [],
-          conversation_id: conversationId,
-          retrieved_chunk_count: 0,
-          orchestration_trigger: {
+        console.log('✅ Orchestration requires confirmation, storing match and continuing to show combined response');
+        
+        // Create execution even for confirmation flows (so we have executionId for the link)
+        const execution = await createExecution({
+          orchestrationId: triggerMatch.orchestrationId,
+          orchestrationVersion: 1,
+          context: triggerMatch.extractedVariables,
+          triggerData: {
+            triggerType: 'chatbot',
             triggerId: triggerMatch.triggerId,
-            orchestrationId: triggerMatch.orchestrationId,
-            orchestrationName: triggerMatch.orchestrationName,
-            requiresConfirmation: true,
+            userMessage: question,
+            matchedPhrase: triggerMatch.matchedPhrase,
+            intent: triggerMatch.intent,
+            matchedIntent: triggerMatch.intent,
             confidence: triggerMatch.confidence
-          }
+          },
+          triggeredBy: user.email
+        });
+        
+        // Store match but DON'T return early - continue to show combined response
+        orchestrationMatch = {
+          triggerId: triggerMatch.triggerId,
+          orchestrationId: triggerMatch.orchestrationId,
+          orchestrationName: triggerMatch.orchestrationName,
+          executionId: execution.id,
+          requiresConfirmation: true,
+          confidence: triggerMatch.confidence
         };
+        
+        console.log('✅ Orchestration match stored, continuing to workflow/RAG...');
       } else {
         console.log('ℹ️ No orchestration trigger matched');
       }
