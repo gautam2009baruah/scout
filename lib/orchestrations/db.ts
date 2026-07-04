@@ -236,6 +236,7 @@ export async function publishOrchestration(
           config: {
             type: 'chatbot',
             intentName: orchestration.name.toLowerCase().replace(/\s+/g, '_'),
+            triggerPhrases: triggerNodeConfig.triggerPhrases || triggerNodeConfig.examplePhrases || [],
             examplePhrases: triggerNodeConfig.examplePhrases || [],
             requiredVariables: triggerNodeConfig.requiredVariables || [],
             confirmationRequired: triggerNodeConfig.confirmationRequired !== false,
