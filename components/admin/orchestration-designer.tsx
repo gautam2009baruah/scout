@@ -54,6 +54,7 @@ type CompanyOption = { id: string; name: string };
 const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: string }> = [
   { type: "trigger", label: "Trigger", icon: "⚡", color: "#10b981" },
   { type: "workflow", label: "Workflow", icon: "🔄", color: "#3b82f6" },
+  { type: "data_capture", label: "Data Capture", icon: "📋", color: "#0ea5e9" },
   { type: "ai_extraction", label: "AI Extraction", icon: "🤖", color: "#8b5cf6" },
   { type: "ai_decision", label: "AI Decision", icon: "🧠", color: "#a855f7" },
   { type: "condition", label: "Condition", icon: "❓", color: "#f59e0b" },

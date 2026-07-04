@@ -15,6 +15,7 @@ import { MultiSelectDropdown } from "./multi-select-dropdown";
 const NODE_CONFIGS = [
   { type: "trigger", label: "Trigger", icon: "⚡" },
   { type: "workflow", label: "Workflow", icon: "🔄" },
+  { type: "data_capture", label: "Data Capture", icon: "📋" },
   { type: "ai_extraction", label: "AI Extraction", icon: "🤖" },
   { type: "ai_decision", label: "AI Decision", icon: "🧠" },
   { type: "condition", label: "Condition", icon: "❓" },
@@ -257,6 +258,7 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
         {/* Node-specific configuration */}
         {nodeType === "trigger" && <TriggerConfig config={config} updateConfig={updateConfig} />}
         {nodeType === "workflow" && <WorkflowConfig config={config} updateConfig={updateConfig} nodes={nodes} />}
+        {nodeType === "data_capture" && <DataCaptureConfig config={config} updateConfig={updateConfig} />}
         {nodeType === "ai_extraction" && <AIExtractionConfig config={config} updateConfig={updateConfig} />}
         {nodeType === "ai_decision" && <AIDecisionConfig config={config} updateConfig={updateConfig} />}
         {nodeType === "condition" && <ConditionConfig config={config} updateConfig={updateConfig} />}
@@ -1628,6 +1630,228 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
           onChange={(e) => updateConfig({ timeout: parseInt(e.target.value) || 300000 })}
         />
         <p className="mt-1 text-xs text-slate-500">Default: 300000 (5 minutes)</p>
+      </div>
+    </div>
+  );
+}
+
+function DataCaptureConfig({ config, updateConfig }: any) {
+  const [fields, setFields] = useState<Array<{ name: string; label: string; selectors: string; aiPrompt: string; required: boolean }>>(
+    (config.fieldsToCapture || []).map((f: any) => ({
+      name: f.name || "",
+      label: f.label || "",
+      selectors: (f.selectors || []).join(", "),
+      aiPrompt: f.aiPrompt || "",
+      required: f.required || false
+    }))
+  );
+
+  useEffect(() => {
+    const fieldsToCapture = fields
+      .filter(f => f.name)
+      .map(f => ({
+        name: f.name,
+        label: f.label || f.name,
+        selectors: f.selectors.split(",").map(s => s.trim()).filter(Boolean),
+        aiPrompt: f.aiPrompt || undefined,
+        required: f.required
+      }));
+    updateConfig({ fieldsToCapture });
+  }, [fields]);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Capture Mode <span className="text-red-500">*</span>
+        </label>
+        <select
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={config.mode || "hybrid"}
+          onChange={(e) => updateConfig({ mode: e.target.value })}
+        >
+          <option value="dom">DOM Only (Fast, HTML forms)</option>
+          <option value="ai">AI Only (Slow, complex UIs)</option>
+          <option value="hybrid">Hybrid (Recommended)</option>
+          <option value="comprehensive">Comprehensive (All methods)</option>
+        </select>
+        <p className="mt-1 text-xs text-slate-500">
+          Hybrid tries DOM first, then AI fallback. Comprehensive tries all methods.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="autoCapture"
+          checked={config.autoCapture || false}
+          onChange={(e) => updateConfig({ autoCapture: e.target.checked })}
+          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+        />
+        <label htmlFor="autoCapture" className="text-sm font-medium text-slate-700">
+          Auto-discover all form fields
+        </label>
+      </div>
+      <p className="text-xs text-slate-500 -mt-2 ml-6">
+        Automatically captures all input, select, and textarea elements
+      </p>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-2">
+          Specific Fields to Capture
+        </label>
+        <div className="space-y-3">
+          {fields.map((field, index) => (
+            <div key={index} className="p-3 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Field {index + 1}</span>
+                <button
+                  type="button"
+                  className="p-1 text-red-600 hover:bg-red-50 rounded"
+                  onClick={() => setFields(fields.filter((_, i) => i !== index))}
+                >
+                  <Minus className="h-3 w-3" />
+                </button>
+              </div>
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                placeholder="Field name (e.g., leaveType)"
+                value={field.name}
+                onChange={(e) => {
+                  const updated = [...fields];
+                  updated[index].name = e.target.value;
+                  setFields(updated);
+                }}
+              />
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                placeholder="Label (e.g., Leave Type)"
+                value={field.label}
+                onChange={(e) => {
+                  const updated = [...fields];
+                  updated[index].label = e.target.value;
+                  setFields(updated);
+                }}
+              />
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
+                placeholder="Selectors: #id, [name='field'], .class"
+                value={field.selectors}
+                onChange={(e) => {
+                  const updated = [...fields];
+                  updated[index].selectors = e.target.value;
+                  setFields(updated);
+                }}
+              />
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                placeholder="AI prompt (optional)"
+                value={field.aiPrompt}
+                onChange={(e) => {
+                  const updated = [...fields];
+                  updated[index].aiPrompt = e.target.value;
+                  setFields(updated);
+                }}
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={field.required}
+                  onChange={(e) => {
+                    const updated = [...fields];
+                    updated[index].required = e.target.checked;
+                    setFields(updated);
+                  }}
+                  className="h-3 w-3"
+                />
+                <label className="text-xs text-slate-600">Required field</label>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400"
+            onClick={() => setFields([...fields, { name: "", label: "", selectors: "", aiPrompt: "", required: false }])}
+          >
+            <Plus className="h-4 w-4" />
+            Add Field
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="showReviewScreen"
+          checked={config.showReviewScreen !== false}
+          onChange={(e) => updateConfig({ showReviewScreen: e.target.checked })}
+          className="h-4 w-4"
+        />
+        <label htmlFor="showReviewScreen" className="text-sm font-medium text-slate-700">
+          Show review screen to user
+        </label>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="allowEdit"
+          checked={config.allowEdit !== false}
+          onChange={(e) => updateConfig({ allowEdit: e.target.checked })}
+          className="h-4 w-4"
+        />
+        <label htmlFor="allowEdit" className="text-sm font-medium text-slate-700">
+          Allow user to edit captured values
+        </label>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Auto-continue timeout (seconds)
+        </label>
+        <input
+          type="number"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={config.autoReviewTimeout || 0}
+          onChange={(e) => updateConfig({ autoReviewTimeout: parseInt(e.target.value) || 0 })}
+          placeholder="0 = requires user click"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          0 = requires user to click Continue. 5 = auto-continues after 5 seconds.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Output Variable Name
+        </label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+          value={config.outputVariable || "capturedData"}
+          onChange={(e) => updateConfig({ outputVariable: e.target.value })}
+          placeholder="capturedData"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Access captured values as {'{{capturedData.fieldName}}'}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="closeBrowserAfter"
+          checked={config.closeBrowserAfter !== false}
+          onChange={(e) => updateConfig({ closeBrowserAfter: e.target.checked })}
+          className="h-4 w-4"
+        />
+        <label htmlFor="closeBrowserAfter" className="text-sm font-medium text-slate-700">
+          Close browser after capture
+        </label>
       </div>
     </div>
   );
