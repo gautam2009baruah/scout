@@ -139,6 +139,15 @@ export async function matchChatbotTriggers(
   const bestMatch = await findBestIntentMatch(userMessage, triggers);
   
   if (!bestMatch) {
+    console.log('⚠️ No AI match found, trying fallback string matching...');
+    
+    // Fallback: simple string matching on trigger phrases
+    const fallbackMatch = findFallbackMatch(userMessage, triggers);
+    if (fallbackMatch) {
+      console.log(`✅ Fallback match found: ${fallbackMatch.trigger.name}`);
+      return buildTriggerMatch(fallbackMatch.trigger, fallbackMatch.confidence, {}, userMessage, config);
+    }
+    
     return null;
   }
   
@@ -164,7 +173,86 @@ export async function matchChatbotTriggers(
     }
   }
   
-  // Check for missing required variables
+  // Build and return trigger match
+  return buildTriggerMatch(trigger, confidence, extractedVariables, userMessage, config);
+}
+
+/**
+ * Simple fallback matching using string similarity on trigger phrases
+ */
+function findFallbackMatch(
+  userMessage: string,
+  triggers: Array<{
+    id: string;
+    orchestration_id: string;
+    orchestration_name: string;
+    name: string;
+    config: ChatbotTriggerConfig;
+  }>
+): { trigger: typeof triggers[0]; confidence: number } | null {
+  const normalizedMessage = userMessage.toLowerCase().trim();
+  let bestMatch: { trigger: typeof triggers[0]; confidence: number } | null = null;
+  let highestScore = 0;
+
+  for (const trigger of triggers) {
+    const phrases = trigger.config.triggerPhrases || trigger.config.examplePhrases || [];
+    
+    if (!phrases || phrases.length === 0) {
+      console.log(`⚠️ Trigger "${trigger.name}" has no phrases configured, skipping`);
+      continue;
+    }
+
+    for (const phrase of phrases) {
+      const normalizedPhrase = phrase.toLowerCase().trim();
+      
+      // Exact match
+      if (normalizedMessage === normalizedPhrase) {
+        return { trigger, confidence: 1.0 };
+      }
+      
+      // Contains match
+      if (normalizedMessage.includes(normalizedPhrase) || normalizedPhrase.includes(normalizedMessage)) {
+        const score = Math.min(normalizedMessage.length, normalizedPhrase.length) / 
+                      Math.max(normalizedMessage.length, normalizedPhrase.length);
+        if (score > highestScore) {
+          highestScore = score;
+          bestMatch = { trigger, confidence: score };
+        }
+      }
+      
+      // Word overlap
+      const messageWords = new Set(normalizedMessage.split(/\s+/));
+      const phraseWords = new Set(normalizedPhrase.split(/\s+/));
+      const overlap = [...messageWords].filter(w => phraseWords.has(w)).length;
+      const maxWords = Math.max(messageWords.size, phraseWords.size);
+      const overlapScore = overlap / maxWords;
+      
+      if (overlapScore > highestScore && overlapScore > 0.5) {
+        highestScore = overlapScore;
+        bestMatch = { trigger, confidence: overlapScore };
+      }
+    }
+  }
+
+  return bestMatch && highestScore >= 0.6 ? bestMatch : null;
+}
+
+/**
+ * Build TriggerMatch response object
+ */
+function buildTriggerMatch(
+  trigger: {
+    id: string;
+    orchestration_id: string;
+    orchestration_name: string;
+    name: string;
+    config: ChatbotTriggerConfig;
+  },
+  confidence: number,
+  extractedVariables: Record<string, unknown>,
+  userMessage: string,
+  config: ChatbotTriggerConfig
+): TriggerMatch {
   const missingVariables: string[] = [];
   if (config.requiredVariables) {
     for (const varDef of config.requiredVariables) {
@@ -173,7 +261,7 @@ export async function matchChatbotTriggers(
       }
     }
   }
-  
+
   return {
     triggerId: trigger.id,
     orchestrationId: trigger.orchestration_id,
@@ -240,13 +328,25 @@ If the user message doesn't clearly match any intent, set matchedIndex to null a
       ""
     );
     
-    const parsed = JSON.parse(response);
+    console.log('🤖 AI response:', response.substring(0, 100) + '...');
+    
+    let parsed;
+    try {
+      parsed = JSON.parse(response);
+    } catch (parseError) {
+      console.error('❌ Failed to parse AI response as JSON:', parseError);
+      console.error('Response was:', response.substring(0, 200));
+      return null; // Will trigger fallback
+    }
     
     if (!parsed.matchedIndex || parsed.matchedIndex < 1 || parsed.matchedIndex > triggers.length) {
+      console.log('ℹ️ AI returned no match or invalid index');
       return null;
     }
     
     const trigger = triggers[parsed.matchedIndex - 1];
+    
+    console.log(`✅ AI matched trigger: ${trigger.name} (confidence: ${parsed.confidence})`);
     
     return {
       trigger,
