@@ -12,6 +12,8 @@
   'use strict';
 
   console.log('🎬 Scout Orchestration Player loaded');
+  console.log('📍 Current URL:', window.location.href);
+  console.log('🔧 Configuration:', window.ScoutOrchestrationConfig || 'Using defaults');
 
   // State
   let overlayElement = null;
@@ -24,11 +26,14 @@
     scoutPlayerUrl: '/scout-adoption-player.js',
   };
 
+  console.log('⚙️ API Base URL:', config.apiBaseUrl);
+
   /**
    * Initialize orchestration player
    */
   function init() {
-    console.log('🎬 Initializing Scout Orchestration Player');
+    console.log('🎬 Initializing Scout Orchestration Player...');
+    console.log('✅ Event listener registered for postMessage');
     
     // Register message listener
     window.addEventListener('message', handleMessage);
@@ -38,10 +43,14 @@
     
     // Send ready message to chatbot iframes
     setTimeout(() => {
+      const iframes = document.querySelectorAll('iframe[data-scout-chatbot], iframe[src*="scout"]');
+      console.log(`📡 Found ${iframes.length} chatbot iframe(s)`);
+      
       sendMessageToChatbot({
         type: 'SCOUT_PLAYER_READY',
         payload: { ready: true },
       });
+      console.log('✅ Sent SCOUT_PLAYER_READY to chatbot iframes');
     }, 1000);
   }
 
@@ -56,7 +65,7 @@
       return;
     }
 
-    console.log('📨 Received message:', message.type);
+    console.log('📨 Received Scout message:', message.type, message);
 
     switch (message.type) {
       case 'SCOUT_START_EXECUTION':

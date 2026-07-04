@@ -564,10 +564,13 @@ export function ScoutChatbot({
       const trigger = body.orchestration_trigger;
       
       console.log('🎯 Orchestration auto-execute triggered:', trigger);
+      console.log('📤 Sending SCOUT_START_EXECUTION to parent window...');
+      console.log('🪟 window.parent:', window.parent);
+      console.log('🪟 Is iframe?:', window.parent !== window);
       
       // Send postMessage to parent window to start in-context execution
       if (window.parent && window.parent !== window) {
-        window.parent.postMessage({
+        const payload = {
           type: 'SCOUT_START_EXECUTION',
           payload: {
             executionId: trigger.executionId,
@@ -581,7 +584,13 @@ export function ScoutChatbot({
             },
             context: {},
           },
-        }, '*'); // TODO: Use specific origin for security
+        };
+        
+        console.log('📤 Posting message:', payload);
+        window.parent.postMessage(payload, '*'); // TODO: Use specific origin for security
+        console.log('✅ Message posted to parent window');
+      } else {
+        console.warn('⚠️ Not in iframe - cannot send postMessage to parent');
       }
     }
 
