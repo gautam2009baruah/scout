@@ -19,8 +19,29 @@ export async function executeWorkflowNode(
   success: boolean;
   output?: Record<string, unknown>;
   error?: string;
+  skipped?: boolean;
 }> {
   try {
+    // Check trigger phrase matching (for chatbot triggers)
+    if (config.triggerPhrases && config.triggerPhrases.length > 0) {
+      const matchedPhrase = context.matchedPhrase as string | undefined;
+      const matchedIntent = context.matchedIntent as string | undefined;
+      
+      // If trigger phrases are specified, check if current phrase matches
+      if (matchedPhrase && !config.triggerPhrases.includes(matchedPhrase)) {
+        console.log(`[WorkflowNode] Skipping - matched phrase "${matchedPhrase}" not in trigger phrases: ${config.triggerPhrases.join(", ")}`);
+        return { success: true, skipped: true };
+      }
+      
+      // Also check matched intent if available
+      if (matchedIntent && !config.triggerPhrases.some(p => p.toLowerCase().includes(matchedIntent.toLowerCase()))) {
+        console.log(`[WorkflowNode] Skipping - matched intent "${matchedIntent}" not in trigger phrases`);
+        return { success: true, skipped: true };
+      }
+      
+      console.log(`[WorkflowNode] ✅ Phrase match confirmed: "${matchedPhrase || matchedIntent}" in ${config.triggerPhrases.join(", ")}`);
+    }
+
     if (!config.workflowId) {
       throw new Error("Workflow ID is required");
     }

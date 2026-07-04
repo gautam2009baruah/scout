@@ -49,6 +49,7 @@ export type TriggerMatch = {
   orchestrationName: string;
   confidence: number;
   intent: string;
+  matchedPhrase: string; // The actual user message that matched
   extractedVariables: Record<string, unknown>;
   requiresConfirmation: boolean;
   confirmationMessage: string;
@@ -168,6 +169,7 @@ export async function matchChatbotTriggers(
     orchestrationName: trigger.orchestration_name,
     confidence,
     intent: config.intentName,
+    matchedPhrase: userMessage,
     extractedVariables,
     requiresConfirmation: config.confirmationRequired,
     confirmationMessage: config.confirmationMessage || 

@@ -10,6 +10,7 @@ import { X, Trash2, Plus, Minus, Move, Maximize2 } from "lucide-react";
 import type { Node } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
 import Draggable from "react-draggable";
+import { MultiSelectDropdown } from "./multi-select-dropdown";
 
 const NODE_CONFIGS = [
   { type: "trigger", label: "Trigger", icon: "⚡" },
@@ -58,6 +59,12 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
   const updateLabel = (label: string) => {
     onUpdate({
       data: { ...node.data, label },
+    });
+  };
+
+  const updateDisplayDescription = (displayDescription: string) => {
+    onUpdate({
+      data: { ...node.data, displayDescription },
     });
   };
 
@@ -228,6 +235,23 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
             placeholder="Enter a descriptive label"
           />
           <p className="mt-1 text-xs text-slate-500">Display name for this node</p>
+        </div>
+
+        {/* Common: Display Description for Execution Plan */}
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">
+            Step Description <span className="text-slate-500 text-xs font-normal">(for execution plan)</span>
+          </label>
+          <input
+            type="text"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            value={node.data.displayDescription || ""}
+            onChange={(e) => updateDisplayDescription(e.target.value)}
+            placeholder="e.g., Extract rate code from email, Fill rate form, Send confirmation"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Human-readable description shown to users when orchestration is triggered
+          </p>
         </div>
 
         {/* Node-specific configuration */}
@@ -963,6 +987,24 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
   const [fetchingWorkflowId, setFetchingWorkflowId] = useState<string | null>(null);
   const workflowCacheRef = useRef<Map<string, any>>(new Map());
 
+  // Extract available trigger phrases from trigger node
+  const availableTriggerPhrases = (() => {
+    const triggerNode = nodes.find((n: any) => n.data?.nodeType === "trigger");
+    if (!triggerNode) return [];
+
+    const triggerConfig = triggerNode.data?.config || {};
+    
+    // Get phrases from chatbot trigger configuration
+    if (triggerConfig.triggerType === "chatbot" && triggerConfig.examplePhrases) {
+      return triggerConfig.examplePhrases.map((phrase: string) => ({
+        label: phrase,
+        value: phrase
+      }));
+    }
+
+    return [];
+  })();
+
   // Extract available fields from trigger node
   const availableFields = (() => {
     const triggerNode = nodes.find((n: any) => n.data?.nodeType === "trigger");
@@ -1195,6 +1237,30 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
           </>
         )}
       </div>
+
+      {/* Trigger Phrases Multi-Select (only show for chatbot triggers) */}
+      {availableTriggerPhrases.length > 0 && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">
+            Execute When User Says <span className="text-slate-500 text-xs font-normal">(optional)</span>
+          </label>
+          <MultiSelectDropdown
+            label="Trigger Phrases"
+            options={availableTriggerPhrases}
+            selectedValues={config.triggerPhrases || []}
+            onChange={(values) => updateConfig({ triggerPhrases: values })}
+            emptyLabel="Select phrases that trigger this workflow..."
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Select which chatbot phrases should execute this workflow. Leave empty to execute for any phrase.
+          </p>
+          {config.triggerPhrases && config.triggerPhrases.length > 0 && (
+            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
+              ✅ This workflow will execute when user says: <strong>{config.triggerPhrases.join(", ")}</strong>
+            </div>
+          )}
+        </div>
+      )}
 
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">Target URL</label>

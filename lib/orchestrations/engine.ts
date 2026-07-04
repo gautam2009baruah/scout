@@ -208,15 +208,23 @@ export class OrchestrationEngine {
         console.log("  - Nested: {{trigger.input.fieldName}}");
         console.log("▓".repeat(80) + "\n");
         
+        // Extract matched phrase and intent for workflow node routing
+        const matchedPhrase = (triggerData as any).matchedPhrase || (triggerData as any).userMessage;
+        const matchedIntent = (triggerData as any).intent || (triggerData as any).matchedIntent;
+        
         return {
           success: true,
           output: {
             ...triggerData, // Spread to root for easy access
+            matchedPhrase, // For workflow node phrase matching
+            matchedIntent, // For workflow node intent matching
             trigger: {
               input: triggerData, // Also available under trigger.input
               timestamp: this.execution.startedAt,
               startedBy: this.execution.triggeredBy,
               startedAt: this.execution.startedAt,
+              matchedPhrase, // Also available under trigger.matchedPhrase
+              matchedIntent, // Also available under trigger.matchedIntent
             },
             // Pass user info for workflow execution
             _system: {

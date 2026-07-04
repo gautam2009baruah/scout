@@ -54,6 +54,7 @@ export type OrchestrationNode = {
   positionX: number;
   positionY: number;
   config: NodeConfig;
+  displayDescription?: string; // Human-readable step description for execution plan
   createdAt: string;
   updatedAt: string;
 };
@@ -95,6 +96,7 @@ export type WorkflowNodeConfig = {
   outputMapping: Record<string, string>; // workflow outputs to variables
   continueOnFailure: boolean;
   timeout?: number;
+  triggerPhrases?: string[]; // Which trigger phrases execute this workflow (multi-select)
 };
 
 export type AIExtractionNodeConfig = {

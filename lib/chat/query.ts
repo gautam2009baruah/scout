@@ -285,7 +285,9 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
               triggerType: 'chatbot',
               triggerId: triggerMatch.triggerId,
               userMessage: question,
+              matchedPhrase: triggerMatch.matchedPhrase,
               intent: triggerMatch.intent,
+              matchedIntent: triggerMatch.intent,
               confidence: triggerMatch.confidence
             },
             triggeredBy: user.email

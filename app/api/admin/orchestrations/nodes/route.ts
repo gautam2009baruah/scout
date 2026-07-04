@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { orchestrationId, nodeType, label, positionX, positionY, config } = body;
+    const { orchestrationId, nodeType, label, positionX, positionY, config, displayDescription } = body;
 
     if (!orchestrationId || !nodeType || !label) {
       return NextResponse.json(
@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
       positionX: positionX || 0,
       positionY: positionY || 0,
       config: config || {},
+      displayDescription,
     });
 
     return NextResponse.json({ node }, { status: 201 });
@@ -82,7 +83,7 @@ export async function PUT(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { id, label, positionX, positionY, config } = body;
+    const { id, label, positionX, positionY, config, displayDescription } = body;
 
     if (!id) {
       return NextResponse.json({ message: "Missing required field: id" }, { status: 400 });
@@ -94,6 +95,7 @@ export async function PUT(request: NextRequest) {
       positionX,
       positionY,
       config,
+      displayDescription,
     });
 
     return NextResponse.json({ node });

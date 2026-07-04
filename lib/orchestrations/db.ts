@@ -232,6 +232,7 @@ type NodeRow = {
   position_x: number;
   position_y: number;
   config: Record<string, unknown>;
+  display_description?: string;
   created_at: Date;
   updated_at: Date;
 };
@@ -245,6 +246,7 @@ function mapNodeRow(row: NodeRow): OrchestrationNode {
     positionX: row.position_x,
     positionY: row.position_y,
     config: row.config as any,
+    displayDescription: row.display_description,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
   };
@@ -257,12 +259,13 @@ export async function createNode(data: {
   positionX: number;
   positionY: number;
   config: Record<string, unknown>;
+  displayDescription?: string;
 }): Promise<OrchestrationNode> {
   const pool = getPool();
   const result = await pool.query<NodeRow>(
     `INSERT INTO orchestration_nodes 
-     (orchestration_id, node_type, label, position_x, position_y, config)
-     VALUES ($1, $2, $3, $4, $5, $6)
+     (orchestration_id, node_type, label, position_x, position_y, config, display_description)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
     [
       data.orchestrationId,
@@ -271,6 +274,7 @@ export async function createNode(data: {
       data.positionX,
       data.positionY,
       JSON.stringify(data.config),
+      data.displayDescription,
     ]
   );
 
@@ -304,6 +308,7 @@ export async function updateNode(
     positionX?: number;
     positionY?: number;
     config?: Record<string, unknown>;
+    displayDescription?: string;
   }
 ): Promise<OrchestrationNode> {
   const pool = getPool();
@@ -329,6 +334,11 @@ export async function updateNode(
   if (data.config !== undefined) {
     params.push(JSON.stringify(data.config));
     updates.push(`config = $${params.length}`);
+  }
+
+  if (data.displayDescription !== undefined) {
+    params.push(data.displayDescription);
+    updates.push(`display_description = $${params.length}`);
   }
 
   params.push(id);
