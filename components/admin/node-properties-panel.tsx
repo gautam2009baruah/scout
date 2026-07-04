@@ -1621,6 +1621,24 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
         </label>
       </div>
 
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="workflow-closeBrowserAfter"
+          className="rounded border-slate-300"
+          checked={config.closeBrowserAfter !== false}
+          onChange={(e) => updateConfig({ closeBrowserAfter: e.target.checked })}
+        />
+        <label htmlFor="workflow-closeBrowserAfter" className="text-sm text-slate-700">
+          Close browser after workflow
+        </label>
+        <div className="ml-auto">
+          <span className="text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded">
+            ⚠️ Uncheck if using data capture
+          </span>
+        </div>
+      </div>
+
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">Timeout (ms)</label>
         <input
