@@ -703,7 +703,7 @@ function TriggerConfig({ config, updateConfig }: any) {
             <label htmlFor="confirmationRequired" className="text-sm text-slate-700">Require user confirmation</label>
           </div>
 
-          {config.confirmationRequired && (
+          {config.confirmationRequired !== false && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Confirmation Message (optional)</label>
               <textarea

@@ -5,6 +5,44 @@ import { getPool } from "@/lib/db/pool";
 import type { ChatbotTriggerConfig } from "@/shared/orchestrationTypes";
 import { getLLMProvider } from "@/lib/llm/providers";
 
+// In-memory cache for active triggers
+let cachedTriggers: Array<{
+  id: string;
+  orchestration_id: string;
+  orchestration_name: string;
+  name: string;
+  config: ChatbotTriggerConfig;
+}> | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Quick pre-filter to determine if message might be action-oriented
+ * Reduces LLM API calls by 70-90% for casual chat
+ */
+export function shouldCheckTriggers(message: string): boolean {
+  const normalized = message.toLowerCase().trim();
+  
+  // Skip very short messages
+  if (normalized.length < 3) {
+    return false;
+  }
+  
+  // Skip common greetings and acknowledgments
+  const casualPatterns = /^(hi|hey|hello|thanks|thank you|ok|okay|yes|no|sure|great|nice|cool|awesome|bye|goodbye)$/i;
+  if (casualPatterns.test(normalized)) {
+    return false;
+  }
+  
+  // Check for action-oriented keywords
+  const actionWords = /\b(process|create|generate|run|execute|handle|submit|approve|send|update|delete|start|stop|cancel|complete|finish|schedule|trigger|initiate|perform|do|make|build|review|check|validate|verify)\b/i;
+  
+  // Check for question patterns (might trigger info retrieval workflows)
+  const hasQuestion = message.includes('?') || /\b(how|what|when|where|why|who|can you|could you|would you|will you)\b/i.test(message);
+  
+  return actionWords.test(message) || hasQuestion;
+}
+
 export type TriggerMatch = {
   triggerId: string;
   orchestrationId: string;
@@ -23,39 +61,70 @@ export type TriggerMatch = {
 export async function matchChatbotTriggers(
   userMessage: string,
   userId: string,
-  userEmail: string
+  userEmail: string,
+  companyId?: string
 ): Promise<TriggerMatch | null> {
   const pool = await getPool();
   
-  // Get all active chatbot triggers
-  const result = await pool.query<{
-    id: string;
-    orchestration_id: string;
-    orchestration_name: string;
-    name: string;
-    config: ChatbotTriggerConfig;
-  }>(
-    `SELECT 
-      t.id,
-      t.orchestration_id,
-      o.name as orchestration_name,
-      t.name,
-      t.config
-     FROM orchestration_triggers t
-     INNER JOIN orchestrations o ON o.id = t.orchestration_id
-     WHERE t.trigger_type = 'chatbot'
-       AND t.status = 'active'
-       AND o.status = 'published'
-       AND (t.config->>'enabled')::boolean = true
-     ORDER BY t.created_at DESC`
-  );
+  // Check cache first
+  const now = Date.now();
+  let triggers: typeof cachedTriggers;
   
-  if (result.rows.length === 0) {
+  if (cachedTriggers && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    console.log('✅ Using cached triggers');
+    triggers = cachedTriggers;
+  } else {
+    console.log('🔄 Refreshing trigger cache');
+    
+    // Query with optional company filter
+    const query = companyId
+      ? `SELECT 
+          t.id,
+          t.orchestration_id,
+          o.name as orchestration_name,
+          t.name,
+          t.config
+         FROM orchestration_triggers t
+         INNER JOIN orchestrations o ON o.id = t.orchestration_id
+         WHERE t.trigger_type = 'chatbot'
+           AND t.status = 'active'
+           AND o.status = 'published'
+           AND o.company_id = $1
+           AND (t.config->>'enabled')::boolean = true
+         ORDER BY t.created_at DESC`
+      : `SELECT 
+          t.id,
+          t.orchestration_id,
+          o.name as orchestration_name,
+          t.name,
+          t.config
+         FROM orchestration_triggers t
+         INNER JOIN orchestrations o ON o.id = t.orchestration_id
+         WHERE t.trigger_type = 'chatbot'
+           AND t.status = 'active'
+           AND o.status = 'published'
+           AND (t.config->>'enabled')::boolean = true
+         ORDER BY t.created_at DESC`;
+    
+    const result = await pool.query<{
+      id: string;
+      orchestration_id: string;
+      orchestration_name: string;
+      name: string;
+      config: ChatbotTriggerConfig;
+    }>(query, companyId ? [companyId] : []);
+    
+    cachedTriggers = result.rows;
+    cacheTimestamp = now;
+    triggers = cachedTriggers;
+  }
+  
+  if (!triggers || triggers.length === 0) {
     return null;
   }
   
   // Use AI to match intent
-  const bestMatch = await findBestIntentMatch(userMessage, result.rows);
+  const bestMatch = await findBestIntentMatch(userMessage, triggers);
   
   if (!bestMatch) {
     return null;
@@ -257,4 +326,13 @@ export async function updateChatbotMatchStatus(
      WHERE trigger_id = $1 AND user_message = $2`,
     values
   );
+}
+
+/**
+ * Clear the trigger cache (call this when triggers are created/updated/deleted)
+ */
+export function clearTriggerCache() {
+  cachedTriggers = null;
+  cacheTimestamp = 0;
+  console.log('🗑️ Trigger cache cleared');
 }

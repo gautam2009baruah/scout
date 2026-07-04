@@ -13,6 +13,7 @@ import {
 } from "@/lib/orchestrations/triggers";
 import type { TriggerConfig, OrchestrationTriggerType, TriggerStatus, WebhookTriggerConfig } from "@/shared/orchestrationTypes";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import { clearTriggerCache } from "@/lib/orchestrations/chatbot-trigger-matcher";
 
 // GET - List triggers or get by ID
 export async function GET(request: NextRequest) {
@@ -111,6 +112,11 @@ export async function POST(request: NextRequest) {
       createdByEmail: session.user.email,
     });
 
+    // Clear cache if chatbot trigger was created
+    if (triggerType === 'chatbot') {
+      clearTriggerCache();
+    }
+
     // Add webhook URL to response if this is a webhook trigger
     const response: any = { ...trigger };
     if (triggerType === "webhook") {
@@ -167,6 +173,12 @@ export async function PUT(request: NextRequest) {
     if (status !== undefined) updates.status = status;
 
     const trigger = await updateTrigger(id, updates);
+    
+    // Clear cache if chatbot trigger was updated
+    if (trigger.triggerType === 'chatbot') {
+      clearTriggerCache();
+    }
+    
     return NextResponse.json(trigger);
   } catch (error) {
     console.error("Error updating trigger:", error);
@@ -192,7 +204,17 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
+    // Get trigger type before deletion to check if cache needs clearing
+    const trigger = await getTriggerById(id);
+    const wasChatbotTrigger = trigger?.triggerType === 'chatbot';
+
     await deleteTrigger(id);
+    
+    // Clear cache if chatbot trigger was deleted
+    if (wasChatbotTrigger) {
+      clearTriggerCache();
+    }
+    
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting trigger:", error);

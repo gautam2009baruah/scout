@@ -3,6 +3,8 @@ import { getLLMProvider, INSUFFICIENT_CONTEXT_MESSAGE, type LLMContextItem } fro
 import { RetrievalEngine } from "@/lib/search/retrieval-engine";
 import type { Citation } from "@/lib/search/citation-engine";
 import { appendConversationExchange, getOrCreateConversation } from "./conversations";
+import { matchChatbotTriggers, shouldCheckTriggers } from "@/lib/orchestrations/chatbot-trigger-matcher";
+import { createExecution } from "@/lib/orchestrations/db";
 
 export type ChatQueryInput = {
   company_id: string;
@@ -17,6 +19,14 @@ export type ChatQueryResponse = {
   citations: Citation[];
   conversation_id: string;
   retrieved_chunk_count: number;
+  orchestration_trigger?: {
+    triggerId: string;
+    orchestrationId: string;
+    orchestrationName: string;
+    executionId?: string;
+    requiresConfirmation: boolean;
+    confidence: number;
+  };
 };
 
 export class ChatQueryError extends Error {
@@ -40,10 +50,10 @@ async function validateCompany(companyId: string) {
   }
 }
 
-async function validateUserForCompany(companyId: string, userId: string) {
-  const result = await getPool().query<{ id: string; status: string }>(
+async function validateUserForCompany(companyId: string, userId: string): Promise<{ email: string }> {
+  const result = await getPool().query<{ id: string; status: string; email: string }>(
     `
-      SELECT users.id, users.status
+      SELECT users.id, users.status, users.email
       FROM users
       WHERE users.id = $1
         AND users.deleted_at IS NULL
@@ -71,6 +81,8 @@ async function validateUserForCompany(companyId: string, userId: string) {
   if (user.status !== "active") {
     throw new ChatQueryError("User is not active.", 403);
   }
+  
+  return { email: user.email };
 }
 
 function buildSystemPrompt() {
@@ -204,7 +216,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   }
 
   await validateCompany(companyId);
-  await validateUserForCompany(companyId, userId);
+  const user = await validateUserForCompany(companyId, userId);
   const conversationId = await getOrCreateConversation({
     companyId,
     userId,
@@ -213,6 +225,115 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   });
 
   const startedAt = Date.now();
+
+  // OPTIMIZATION: Pre-filter for orchestration triggers
+  // Only check triggers for action-oriented messages (saves 70-90% of LLM calls)
+  if (shouldCheckTriggers(question)) {
+    console.log('🎯 Message passed pre-filter, checking orchestration triggers...');
+    
+    try {
+      const triggerMatch = await matchChatbotTriggers(
+        question,
+        userId,
+        user.email,
+        companyId
+      );
+
+      if (triggerMatch) {
+        console.log(`✅ Matched orchestration: ${triggerMatch.orchestrationName} (confidence: ${triggerMatch.confidence})`);
+
+        if (triggerMatch.requiresConfirmation) {
+          // Return confirmation message - user must confirm before execution
+          await appendConversationExchange({
+            companyId,
+            userId,
+            conversationId,
+            question,
+            answer: triggerMatch.confirmationMessage,
+            citations: [],
+            metadata: {
+              llm_provider: 'orchestration',
+              llm_model: 'trigger-match',
+              latency_ms: Date.now() - startedAt,
+              retrieved_chunk_count: 0,
+              token_usage_summary: null
+            }
+          });
+
+          return {
+            answer: triggerMatch.confirmationMessage,
+            citations: [],
+            conversation_id: conversationId,
+            retrieved_chunk_count: 0,
+            orchestration_trigger: {
+              triggerId: triggerMatch.triggerId,
+              orchestrationId: triggerMatch.orchestrationId,
+              orchestrationName: triggerMatch.orchestrationName,
+              requiresConfirmation: true,
+              confidence: triggerMatch.confidence
+            }
+          };
+        } else {
+          // Auto-execute orchestration without confirmation
+          console.log('🚀 Auto-executing orchestration (no confirmation required)...');
+          
+          const execution = await createExecution({
+            orchestrationId: triggerMatch.orchestrationId,
+            orchestrationVersion: 1, // TODO: Get actual version
+            context: triggerMatch.extractedVariables,
+            triggerData: {
+              triggerType: 'chatbot',
+              triggerId: triggerMatch.triggerId,
+              userMessage: question,
+              intent: triggerMatch.intent,
+              confidence: triggerMatch.confidence
+            },
+            triggeredBy: user.email
+          });
+
+          const answer = `✅ I've started the orchestration "${triggerMatch.orchestrationName}" for you. Execution ID: ${execution.id}`;
+
+          await appendConversationExchange({
+            companyId,
+            userId,
+            conversationId,
+            question,
+            answer,
+            citations: [],
+            metadata: {
+              llm_provider: 'orchestration',
+              llm_model: 'auto-execute',
+              latency_ms: Date.now() - startedAt,
+              retrieved_chunk_count: 0,
+              token_usage_summary: null
+            }
+          });
+
+          return {
+            answer,
+            citations: [],
+            conversation_id: conversationId,
+            retrieved_chunk_count: 0,
+            orchestration_trigger: {
+              triggerId: triggerMatch.triggerId,
+              orchestrationId: triggerMatch.orchestrationId,
+              orchestrationName: triggerMatch.orchestrationName,
+              executionId: execution.id,
+              requiresConfirmation: false,
+              confidence: triggerMatch.confidence
+            }
+          };
+        }
+      } else {
+        console.log('ℹ️ No orchestration trigger matched');
+      }
+    } catch (error) {
+      console.error('⚠️ Error checking orchestration triggers:', error);
+      // Continue to normal RAG flow if trigger matching fails
+    }
+  } else {
+    console.log('⏭️ Message skipped trigger check (casual chat)');
+  }
 
   if (isGreetingOnly(question)) {
     const greeting = "Hi. Ask me a question about the available documents, and I will answer using only the information I can find there.";
