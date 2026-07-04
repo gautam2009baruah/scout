@@ -358,22 +358,23 @@
    */
   async function executeDataCaptureStep(step) {
     console.log(`📋 Executing data capture: ${step.label}`);
+    console.log('📋 Data capture config:', step.config);
 
     const config = step.config || {};
     const capturedData = {};
 
-    // Auto-discover form fields if configured
-    if (config.autoCapture) {
+    // Auto-discover form fields (enabled by default unless explicitly disabled)
+    if (config.autoCapture !== false) {
       console.log('🔍 Auto-discovering form fields...');
       const fields = discoverFormFields();
-      console.log(`📊 Discovered ${fields.length} fields`);
+      console.log(`📊 Discovered ${fields.length} fields:`, fields);
 
       for (const field of fields) {
         capturedData[field.name] = field.value;
       }
     }
 
-    // Capture specific fields if configured
+    // Capture specific fields if configured (overrides auto-discovered values)
     if (config.fieldsToCapture && config.fieldsToCapture.length > 0) {
       console.log(`📋 Capturing ${config.fieldsToCapture.length} specific fields...`);
 
@@ -381,18 +382,24 @@
         const value = captureField(fieldConfig);
         if (value !== null && value !== undefined) {
           capturedData[fieldConfig.name] = value;
+        } else {
+          console.warn(`⚠️ Could not capture field: ${fieldConfig.name}`);
         }
       }
     }
 
     console.log(`✅ Captured ${Object.keys(capturedData).length} fields:`, capturedData);
 
-    // Show review screen if configured
-    if (config.showReviewScreen !== false) {
+    // Show review screen if configured AND there's data to show
+    if (config.showReviewScreen !== false && Object.keys(capturedData).length > 0) {
+      console.log('📋 Showing data capture review screen...');
       const confirmed = await showDataCaptureReview(capturedData, config);
       if (!confirmed) {
         throw new Error('Data capture cancelled by user');
       }
+      console.log('✅ Data capture confirmed by user');
+    } else if (Object.keys(capturedData).length === 0) {
+      console.warn('⚠️ No data captured! Check that form fields exist on the page.');
     }
 
     // Return captured data
@@ -492,6 +499,10 @@
    * Show data capture review overlay
    */
   function showDataCaptureReview(capturedData, config) {
+    console.log('🎨 Creating data capture review overlay...');
+    console.log('📊 Data to review:', capturedData);
+    console.log('⚙️ Review config:', config);
+    
     return new Promise((resolve) => {
       // Create overlay
       const overlay = document.createElement('div');

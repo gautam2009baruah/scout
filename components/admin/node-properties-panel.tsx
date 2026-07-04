@@ -1702,7 +1702,7 @@ function DataCaptureConfig({ config, updateConfig }: any) {
         <input
           type="checkbox"
           id="autoCapture"
-          checked={config.autoCapture || false}
+          checked={config.autoCapture !== false}
           onChange={(e) => updateConfig({ autoCapture: e.target.checked })}
           className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
         />
@@ -1711,7 +1711,7 @@ function DataCaptureConfig({ config, updateConfig }: any) {
         </label>
       </div>
       <p className="text-xs text-slate-500 -mt-2 ml-6">
-        Automatically captures all input, select, and textarea elements
+        Automatically captures all input, select, and textarea elements (enabled by default)
       </p>
 
       <div>
