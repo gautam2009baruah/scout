@@ -510,7 +510,7 @@ export function ScoutChatbot({
     try {
       const customReply = onSendMessage
         ? await onSendMessage(trimmed, nextHistory)
-        : createMockWorkflowReply(trimmed, workflowSessions) ?? await sendChatQuery(trimmed);
+        : await sendChatQuery(trimmed); // Always use real API, skip mock workflows
       const assistantReply = resolveReply(customReply);
 
       window.setTimeout(
@@ -527,7 +527,7 @@ export function ScoutChatbot({
           setIsTyping(false);
           inputRef.current?.focus();
         },
-        onSendMessage ? 120 : 700
+        120 // Real API response delay
       );
     } catch (error) {
       setMessages((current) => [
