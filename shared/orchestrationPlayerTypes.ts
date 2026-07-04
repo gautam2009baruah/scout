@@ -88,4 +88,14 @@ export interface ExecutionStep {
   startedAt?: string;
   completedAt?: string;
   error?: string;
+  nodeType?: string; // Type of node (workflow, data_capture, api_call, etc.)
+  config?: Record<string, unknown>; // Node configuration
+  // Workflow-specific
+  workflowId?: string;
+  guideData?: unknown[];
+  targetUrl?: string;
+  triggerPhrases?: string[];
+  matchRequired?: boolean;
+  inputMapping?: Record<string, string>;
+  timeout?: number;
 }

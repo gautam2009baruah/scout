@@ -110,6 +110,8 @@ async function buildExecutionPlan(
       label: node.label,
       description: node.displayDescription,
       status: 'pending',
+      nodeType: node.nodeType, // Include node type for client-side routing
+      config: node.config, // Include full config for node execution
     };
 
     // Add workflow-specific data
@@ -126,11 +128,19 @@ async function buildExecutionPlan(
             (step as any).targetUrl = extractTargetUrl(guide.recordedActions);
             (step as any).triggerPhrases = workflowConfig.triggerPhrases;
             (step as any).matchRequired = workflowConfig.triggerPhrases && workflowConfig.triggerPhrases.length > 0;
+            (step as any).inputMapping = workflowConfig.inputMapping; // For auto-fill
+            (step as any).timeout = workflowConfig.timeout || 300000; // Default 5 minutes
           }
         } catch (error) {
           console.error(`Failed to fetch guide for workflow ${workflowConfig.workflowId}:`, error);
         }
       }
+    }
+
+    // Add data_capture specific data
+    if (node.nodeType === 'data_capture' && node.config) {
+      // Config is already included above, just ensure it has what the client needs
+      (step as any).config = node.config;
     }
 
     steps.push(step);

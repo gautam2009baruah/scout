@@ -78,6 +78,7 @@ Use this option for clients whose websites are built with WordPress, PHP, Larave
 ```html
 <div id="scout-chatbot"></div>
 <script src="/scout-chatbot-embed.js"></script>
+<script src="/scout-orchestration-player.js"></script>
 <script>
   ScoutChatbot.init({
     mount: "#scout-chatbot",
@@ -90,6 +91,8 @@ Use this option for clients whose websites are built with WordPress, PHP, Larave
   });
 </script>
 ```
+
+**Note:** Include `/scout-orchestration-player.js` to enable in-context workflow execution and data capture triggered by the chatbot.
 
 Open the plain HTML demo at:
 

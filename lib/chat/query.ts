@@ -274,8 +274,8 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
             }
           };
         } else {
-          // Auto-execute orchestration without confirmation
-          console.log('🚀 Auto-executing orchestration (no confirmation required)...');
+          // Return orchestration trigger for client-side execution
+          console.log('🎬 Returning orchestration trigger for client-side execution...');
           
           const execution = await createExecution({
             orchestrationId: triggerMatch.orchestrationId,
@@ -293,7 +293,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
             triggeredBy: user.email
           });
 
-          const answer = `✅ I've started the orchestration "${triggerMatch.orchestrationName}" for you. Execution ID: ${execution.id}`;
+          const answer = `✅ Starting "${triggerMatch.orchestrationName}"...`;
 
           await appendConversationExchange({
             companyId,

@@ -125,8 +125,10 @@
         });
 
         try {
-          // Check if this is a workflow step
-          if (step.workflowId && step.guideData) {
+          let stepResult = null;
+
+          // Execute based on node type
+          if (step.nodeType === 'workflow' && step.workflowId && step.guideData) {
             // Check phrase matching
             if (step.matchRequired && step.triggerPhrases) {
               const matches = step.triggerPhrases.some(phrase =>
@@ -147,8 +149,25 @@
               }
             }
 
-            // Execute workflow
-            await executeWorkflowStep(step);
+            // Execute workflow with any auto-fill data from context
+            stepResult = await executeWorkflowStep(step, context);
+          }
+          else if (step.nodeType === 'data_capture') {
+            // Execute data capture
+            stepResult = await executeDataCaptureStep(step);
+            // Merge captured data into context for next steps
+            if (stepResult && stepResult.capturedData) {
+              context = { ...context, ...stepResult.capturedData };
+            }
+          }
+          else if (step.nodeType === 'end') {
+            // End node - just mark as completed
+            console.log('🏁 Reached end node');
+          }
+          else {
+            // Server-side node (api_call, notification, etc.)
+            console.log(`🔄 Sending to server for execution: ${step.nodeType}`);
+            stepResult = await executeServerSideNode(executionId, i, step, context);
           }
 
           // Mark as completed
@@ -254,7 +273,7 @@
   /**
    * Execute workflow step using Scout Player
    */
-  async function executeWorkflowStep(step) {
+  async function executeWorkflowStep(step, context) {
     console.log(`🎮 Executing workflow: ${step.label}`);
 
     if (!window.AdoptionPlayer) {
@@ -281,39 +300,346 @@
       preWorkflowConfirmationEnabled: false,
     };
 
+    // Prepare auto-fill parameters from context if available
+    const autoFillParams = {};
+    if (context && step.inputMapping) {
+      for (const [key, value] of Object.entries(step.inputMapping)) {
+        // Resolve template variables from context
+        const resolvedValue = resolveVariable(value, context);
+        if (resolvedValue !== undefined) {
+          autoFillParams[key] = resolvedValue;
+        }
+      }
+    }
+
+    console.log(`🔧 Auto-fill parameters:`, autoFillParams);
+
     // Create and start player
     const player = new window.AdoptionPlayer(guide);
 
+    // If we have auto-fill parameters, inject them into the page for Scout Player to use
+    if (Object.keys(autoFillParams).length > 0) {
+      window.__scoutWorkflowAutoFillData = autoFillParams;
+    }
+
     return new Promise((resolve, reject) => {
+      // Monitor for completion
       const checkCompletion = setInterval(() => {
         const progressKey = `scout-adoption-progress:${guide.id}:main`;
-        const progress = localStorage.getItem(progressKey);
+        const progressValue = localStorage.getItem(progressKey);
+        const hasTooltip = document.querySelector('.scout-adoption-tooltip') !== null;
 
-        if (progress) {
-          try {
-            const progressData = JSON.parse(progress);
-            const totalSteps = guide.recordedActions.length;
-
-            if (progressData.currentIndex >= totalSteps - 1) {
-              clearInterval(checkCompletion);
-              console.log(`✅ Workflow completed: ${step.label}`);
-              resolve();
-            }
-          } catch (e) {
-            // Continue checking
-          }
+        // Workflow is complete when progress key is removed AND tooltip is gone
+        if (!progressValue && !hasTooltip) {
+          clearInterval(checkCompletion);
+          console.log(`✅ Workflow completed: ${step.label}`);
+          
+          // Clean up auto-fill data
+          delete window.__scoutWorkflowAutoFillData;
+          
+          resolve();
         }
       }, 500);
 
+      // Timeout after configured time (default 5 minutes)
+      const timeout = step.timeout || 300000;
       setTimeout(() => {
         clearInterval(checkCompletion);
+        delete window.__scoutWorkflowAutoFillData;
         reject(new Error('Workflow execution timeout'));
-      }, 60000);
+      }, timeout);
 
       player.start();
     });
   }
 
+  /**
+   * Execute data capture step
+   */
+  async function executeDataCaptureStep(step) {
+    console.log(`📋 Executing data capture: ${step.label}`);
+
+    const config = step.config || {};
+    const capturedData = {};
+
+    // Auto-discover form fields if configured
+    if (config.autoCapture) {
+      console.log('🔍 Auto-discovering form fields...');
+      const fields = discoverFormFields();
+      console.log(`📊 Discovered ${fields.length} fields`);
+
+      for (const field of fields) {
+        capturedData[field.name] = field.value;
+      }
+    }
+
+    // Capture specific fields if configured
+    if (config.fieldsToCapture && config.fieldsToCapture.length > 0) {
+      console.log(`📋 Capturing ${config.fieldsToCapture.length} specific fields...`);
+
+      for (const fieldConfig of config.fieldsToCapture) {
+        const value = captureField(fieldConfig);
+        if (value !== null && value !== undefined) {
+          capturedData[fieldConfig.name] = value;
+        }
+      }
+    }
+
+    console.log(`✅ Captured ${Object.keys(capturedData).length} fields:`, capturedData);
+
+    // Show review screen if configured
+    if (config.showReviewScreen !== false) {
+      const confirmed = await showDataCaptureReview(capturedData, config);
+      if (!confirmed) {
+        throw new Error('Data capture cancelled by user');
+      }
+    }
+
+    // Return captured data
+    const outputVar = config.outputVariable || 'capturedData';
+    return {
+      [outputVar]: capturedData,
+      capturedData: capturedData, // Always include for easy access
+    };
+  }
+
+  /**
+   * Discover all form fields on the page
+   */
+  function discoverFormFields() {
+    const fields = [];
+    const inputs = document.querySelectorAll('input, select, textarea');
+
+    inputs.forEach(element => {
+      // Skip hidden, submit, button inputs
+      if (element.type === 'hidden' || element.type === 'submit' || element.type === 'button') {
+        return;
+      }
+
+      const name = element.name || element.id || '';
+      if (!name) return;
+
+      let value = '';
+      if (element.tagName === 'SELECT') {
+        value = element.value || '';
+      } else if (element.type === 'checkbox') {
+        value = element.checked;
+      } else if (element.type === 'radio') {
+        if (element.checked) {
+          value = element.value;
+        } else {
+          return; // Skip unchecked radio buttons
+        }
+      } else {
+        value = element.value || '';
+      }
+
+      // Try to find label
+      let label = '';
+      if (element.id) {
+        const labelEl = document.querySelector(`label[for="${element.id}"]`);
+        if (labelEl) {
+          label = labelEl.textContent.trim();
+        }
+      }
+      if (!label && element.placeholder) {
+        label = element.placeholder;
+      }
+      if (!label && element.getAttribute('aria-label')) {
+        label = element.getAttribute('aria-label');
+      }
+
+      fields.push({
+        name: name,
+        label: label || name,
+        value: value,
+      });
+    });
+
+    return fields;
+  }
+
+  /**
+   * Capture a specific field based on configuration
+   */
+  function captureField(fieldConfig) {
+    // Try selectors first
+    if (fieldConfig.selectors && fieldConfig.selectors.length > 0) {
+      for (const selector of fieldConfig.selectors) {
+        try {
+          const element = document.querySelector(selector);
+          if (element) {
+            if (element.tagName === 'SELECT') {
+              return element.value;
+            } else if (element.type === 'checkbox') {
+              return element.checked;
+            } else if (element.type === 'radio' && element.checked) {
+              return element.value;
+            } else {
+              return element.value;
+            }
+          }
+        } catch (e) {
+          // Invalid selector, continue
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Show data capture review overlay
+   */
+  function showDataCaptureReview(capturedData, config) {
+    return new Promise((resolve) => {
+      // Create overlay
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 999999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: system-ui, -apple-system, sans-serif;
+      `;
+
+      const panel = document.createElement('div');
+      panel.style.cssText = `
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        max-width: 600px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+      `;
+
+      const title = document.createElement('h2');
+      title.textContent = '📋 Review Captured Data';
+      title.style.cssText = 'margin: 0 0 16px; font-size: 20px; font-weight: 600;';
+
+      const table = document.createElement('table');
+      table.style.cssText = 'width: 100%; border-collapse: collapse; margin-bottom: 24px;';
+
+      let tableHTML = '<thead><tr><th style="text-align: left; padding: 8px; border-bottom: 2px solid #e5e7eb;">Field</th><th style="text-align: left; padding: 8px; border-bottom: 2px solid #e5e7eb;">Value</th></tr></thead><tbody>';
+      
+      for (const [key, value] of Object.entries(capturedData)) {
+        const displayValue = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value);
+        tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(key)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(displayValue)}</td></tr>`;
+      }
+
+      tableHTML += '</tbody>';
+      table.innerHTML = tableHTML;
+
+      const buttonContainer = document.createElement('div');
+      buttonContainer.style.cssText = 'display: flex; gap: 12px; justify-content: flex-end;';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancel';
+      cancelBtn.style.cssText = 'padding: 10px 20px; border: 1px solid #d1d5db; background: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;';
+      cancelBtn.onclick = () => {
+        overlay.remove();
+        resolve(false);
+      };
+
+      const continueBtn = document.createElement('button');
+      continueBtn.textContent = 'Continue';
+      continueBtn.style.cssText = 'padding: 10px 20px; border: none; background: #3b82f6; color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;';
+      continueBtn.onclick = () => {
+        overlay.remove();
+        resolve(true);
+      };
+
+      buttonContainer.appendChild(cancelBtn);
+      buttonContainer.appendChild(continueBtn);
+
+      panel.appendChild(title);
+      panel.appendChild(table);
+      panel.appendChild(buttonContainer);
+      overlay.appendChild(panel);
+      document.body.appendChild(overlay);
+
+      // Auto-continue if configured
+      if (config.autoReviewTimeout && config.autoReviewTimeout > 0) {
+        setTimeout(() => {
+          if (document.body.contains(overlay)) {
+            overlay.remove();
+            resolve(true);
+          }
+        }, config.autoReviewTimeout * 1000);
+      }
+    });
+  }
+
+  /**
+   * Execute server-side node (API call, notification, etc.)
+   */
+  async function executeServerSideNode(executionId, nodeIndex, step, context) {
+    console.log(`🔄 Executing server-side node: ${step.nodeType}`);
+
+    const response = await fetch(`${config.apiBaseUrl}/api/orchestrations/${executionId}/continue`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nodeIndex: nodeIndex,
+        context: context,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server-side execution failed: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result.output;
+  }
+
+  /**
+   * Resolve variable from context (supports {{variable}} templates)
+   */
+  function resolveVariable(template, context) {
+    if (typeof template !== 'string') {
+      return template;
+    }
+
+    // Replace {{variable}} patterns
+    return template.replace(/\{\{([^}]+)\}\}/g, (match, varName) => {
+      const trimmedName = varName.trim();
+      
+      // Support nested access like {{trigger.input.name}}
+      const parts = trimmedName.split('.');
+      let value = context;
+      for (const part of parts) {
+        if (value && typeof value === 'object' && part in value) {
+          value = value[part];
+        } else {
+          return match; // Keep original if not found
+        }
+      }
+      
+      return value !== undefined ? value : match;
+    });
+  }
+
+  /**
+   * Escape HTML for safe display
+   */
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  /**
+   * Execute workflow step using Scout Player
+   */
   /**
    * Send message to chatbot iframe
    */
