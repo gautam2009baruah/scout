@@ -559,6 +559,32 @@ export function ScoutChatbot({
       onConversationChange?.(body.conversation_id);
     }
 
+    // Check for orchestration trigger (in-context execution)
+    if (body?.orchestration_trigger && !body.orchestration_trigger.requiresConfirmation) {
+      const trigger = body.orchestration_trigger;
+      
+      console.log('🎯 Orchestration auto-execute triggered:', trigger);
+      
+      // Send postMessage to parent window to start in-context execution
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'SCOUT_START_EXECUTION',
+          payload: {
+            executionId: trigger.executionId,
+            orchestrationId: trigger.orchestrationId,
+            orchestrationName: trigger.orchestrationName,
+            triggerData: {
+              triggerId: trigger.triggerId,
+              confidence: trigger.confidence,
+              matchedPhrase: body.matchedPhrase,
+              matchedIntent: body.matchedIntent,
+            },
+            context: {},
+          },
+        }, '*'); // TODO: Use specific origin for security
+      }
+    }
+
     return typeof body?.answer === "string" ? body.answer : undefined;
   }
 

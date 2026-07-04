@@ -5,7 +5,6 @@
 CREATE TABLE IF NOT EXISTS orchestration_triggers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   orchestration_id uuid NOT NULL,
-  trigger_type text NOT NULL CHECK (trigger_type IN ('manual', 'chatbot', 'schedule', 'webhook', 'api', 'email', 'file_upload')),
   name text NOT NULL,
   description text,
   config jsonb NOT NULL DEFAULT '{}', -- Encrypted sensitive data
@@ -18,6 +17,19 @@ CREATE TABLE IF NOT EXISTS orchestration_triggers (
   updated_by_email text,
   CONSTRAINT orchestration_triggers_orchestration_fk FOREIGN KEY (orchestration_id) REFERENCES orchestrations(id) ON DELETE CASCADE
 );
+
+-- Add trigger_type column if it doesn't exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'orchestration_triggers' 
+    AND column_name = 'trigger_type'
+  ) THEN
+    ALTER TABLE orchestration_triggers 
+    ADD COLUMN trigger_type text NOT NULL DEFAULT 'manual' CHECK (trigger_type IN ('manual', 'chatbot', 'schedule', 'webhook', 'api', 'email', 'file_upload'));
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS orchestration_triggers_orchestration_idx ON orchestration_triggers(orchestration_id);
 CREATE INDEX IF NOT EXISTS orchestration_triggers_type_idx ON orchestration_triggers(trigger_type);

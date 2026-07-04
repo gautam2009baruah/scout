@@ -17,6 +17,8 @@ import type {
   NodeExecutionStatus,
   ApprovalStatus,
 } from "@/shared/orchestrationTypes";
+import { createTrigger } from "./triggers";
+import { clearTriggerCache } from "./chatbot-trigger-matcher";
 
 // ============================================================================
 // Orchestrations
@@ -202,6 +204,54 @@ export async function publishOrchestration(
     createdByEmail: publishedByEmail,
     changeNotes: "Published",
   });
+
+  // Auto-create orchestration_triggers record for chatbot triggers
+  const triggerNodeConfig = triggerNode.config as any;
+  if (triggerNodeConfig.triggerType === 'chatbot' && triggerNodeConfig.examplePhrases && triggerNodeConfig.examplePhrases.length > 0) {
+    console.log('📝 Auto-creating chatbot trigger record...');
+    
+    try {
+      // Check if trigger already exists
+      const existingTriggers = await pool.query(
+        `SELECT id FROM orchestration_triggers 
+         WHERE orchestration_id = $1 AND trigger_type = 'chatbot'`,
+        [id]
+      );
+      
+      if (existingTriggers.rows.length === 0) {
+        // Create new chatbot trigger
+        await createTrigger({
+          orchestrationId: id,
+          triggerType: 'chatbot',
+          name: `${orchestration.name} - Chatbot Trigger`,
+          description: `Auto-created chatbot trigger for ${orchestration.name}`,
+          config: {
+            type: 'chatbot',
+            intentName: orchestration.name.toLowerCase().replace(/\s+/g, '_'),
+            examplePhrases: triggerNodeConfig.examplePhrases || [],
+            requiredVariables: triggerNodeConfig.requiredVariables || [],
+            confirmationRequired: triggerNodeConfig.confirmationRequired !== false,
+            confirmationMessage: triggerNodeConfig.confirmationMessage || undefined,
+            allowedRoles: triggerNodeConfig.allowedRoles || [],
+            allowedUsers: triggerNodeConfig.allowedUsers || [],
+            minConfidence: triggerNodeConfig.minConfidence || 0.7,
+            enabled: triggerNodeConfig.enabled !== false,
+          },
+          createdByEmail: publishedByEmail,
+        });
+        
+        console.log('✅ Chatbot trigger created successfully');
+        
+        // Clear cache so new trigger is immediately available
+        clearTriggerCache();
+      } else {
+        console.log('ℹ️ Chatbot trigger already exists, skipping creation');
+      }
+    } catch (error) {
+      console.error('⚠️ Failed to auto-create chatbot trigger:', error);
+      // Don't fail the publish if trigger creation fails
+    }
+  }
 
   // Update status to published
   const result = await pool.query<OrchestrationRow>(
