@@ -611,9 +611,9 @@ export function ScoutChatbot({
       onConversationChange?.(body.conversation_id);
     }
 
-    // Check for orchestration trigger (but don't auto-execute - let user click)
+    // Check for orchestration trigger (store for link click)
     // The orchestration info is included in the answer text with a clickable link
-    if (body?.orchestration_trigger && !body.orchestration_trigger.requiresConfirmation) {
+    if (body?.orchestration_trigger) {
       const trigger = body.orchestration_trigger;
       console.log('🎯 Orchestration option available:', trigger);
       console.log('💡 User can click the orchestration link in the message to execute');
@@ -631,6 +631,8 @@ export function ScoutChatbot({
         },
         context: {},
       };
+      
+      console.log('✅ Stored __pendingOrchestration:', (window as any).__pendingOrchestration);
     }
 
     return typeof body?.answer === "string" ? body.answer : undefined;
@@ -977,11 +979,51 @@ function parseMarkdownText(text: string): ReactNode {
           href={pattern.data.url}
           className="text-blue-600 hover:text-blue-800 underline cursor-pointer font-medium"
           onClick={(e) => {
-            // If it's an orchestration link, let the existing click handler manage it
+            console.log('🔗 Link clicked:', pattern.data.url);
+            
+            // If it's an orchestration link, handle it directly
             if (pattern.data.url.startsWith('#orchestration:')) {
-              // Let the link click bubble up naturally
+              e.preventDefault();
+              const executionId = pattern.data.url.replace('#orchestration:', '');
+              
+              console.log('🎯 Orchestration link clicked, executionId:', executionId);
+              
+              const pending = (window as any).__pendingOrchestration;
+              console.log('📦 Pending orchestration:', pending);
+              
+              if (pending && pending.executionId === executionId) {
+                console.log('🚀 Starting orchestration execution...');
+                
+                // Method 1: If in iframe, send postMessage to parent
+                if (window.parent && window.parent !== window) {
+                  console.log('📤 Method 1: Posting message to parent window (iframe mode)');
+                  window.parent.postMessage({
+                    type: 'SCOUT_START_EXECUTION',
+                    payload: pending,
+                  }, '*');
+                } 
+                // Method 2: If same window, dispatch custom event
+                else {
+                  console.log('📤 Method 2: Dispatching custom event (same window mode)');
+                  const customEvent = new CustomEvent('SCOUT_START_EXECUTION', {
+                    detail: pending,
+                    bubbles: true,
+                    cancelable: false,
+                  });
+                  window.dispatchEvent(customEvent);
+                }
+                
+                // Clean up
+                delete (window as any).__pendingOrchestration;
+              } else {
+                console.error('❌ No matching pending orchestration found');
+                console.error('   Expected executionId:', executionId);
+                console.error('   Pending executionId:', pending?.executionId);
+              }
+              
               return;
             }
+            
             // For external links, open in new tab
             if (pattern.data.url.startsWith('http')) {
               e.preventDefault();
