@@ -226,6 +226,16 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   const startedAt = Date.now();
 
+  // Store orchestration trigger match (if found) but don't return early
+  let orchestrationMatch: {
+    triggerId: string;
+    orchestrationId: string;
+    orchestrationName: string;
+    executionId?: string;
+    requiresConfirmation: boolean;
+    confidence: number;
+  } | null = null;
+
   // OPTIMIZATION: Pre-filter for orchestration triggers
   // Only check triggers for action-oriented messages (saves 70-90% of LLM calls)
   console.log(`🔍 Checking if message should check triggers: "${question}"`);
@@ -245,93 +255,69 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
       console.log('🔍 Trigger match result:', triggerMatch);
 
-      if (triggerMatch) {
+      if (triggerMatch && !triggerMatch.requiresConfirmation) {
         console.log(`✅ Matched orchestration: ${triggerMatch.orchestrationName} (confidence: ${triggerMatch.confidence})`);
+        
+        // Create execution for auto-execute orchestration
+        const execution = await createExecution({
+          orchestrationId: triggerMatch.orchestrationId,
+          orchestrationVersion: 1,
+          context: triggerMatch.extractedVariables,
+          triggerData: {
+            triggerType: 'chatbot',
+            triggerId: triggerMatch.triggerId,
+            userMessage: question,
+            matchedPhrase: triggerMatch.matchedPhrase,
+            intent: triggerMatch.intent,
+            matchedIntent: triggerMatch.intent,
+            confidence: triggerMatch.confidence
+          },
+          triggeredBy: user.email
+        });
 
-        if (triggerMatch.requiresConfirmation) {
-          // Return confirmation message - user must confirm before execution
-          await appendConversationExchange({
-            companyId,
-            userId,
-            conversationId,
-            question,
-            answer: triggerMatch.confirmationMessage,
-            citations: [],
-            metadata: {
-              llm_provider: 'orchestration',
-              llm_model: 'trigger-match',
-              latency_ms: Date.now() - startedAt,
-              retrieved_chunk_count: 0,
-              token_usage_summary: null
-            }
-          });
-
-          return {
-            answer: triggerMatch.confirmationMessage,
-            citations: [],
-            conversation_id: conversationId,
+        // Store for later inclusion in response
+        orchestrationMatch = {
+          triggerId: triggerMatch.triggerId,
+          orchestrationId: triggerMatch.orchestrationId,
+          orchestrationName: triggerMatch.orchestrationName,
+          executionId: execution.id,
+          requiresConfirmation: false,
+          confidence: triggerMatch.confidence
+        };
+        
+        console.log('✅ Orchestration match stored, continuing to workflow check...');
+      } else if (triggerMatch && triggerMatch.requiresConfirmation) {
+        console.log('⚠️ Orchestration requires confirmation, skipping combined response');
+        // For confirmation flows, return early as before
+        await appendConversationExchange({
+          companyId,
+          userId,
+          conversationId,
+          question,
+          answer: triggerMatch.confirmationMessage,
+          citations: [],
+          metadata: {
+            llm_provider: 'orchestration',
+            llm_model: 'trigger-match',
+            latency_ms: Date.now() - startedAt,
             retrieved_chunk_count: 0,
-            orchestration_trigger: {
-              triggerId: triggerMatch.triggerId,
-              orchestrationId: triggerMatch.orchestrationId,
-              orchestrationName: triggerMatch.orchestrationName,
-              requiresConfirmation: true,
-              confidence: triggerMatch.confidence
-            }
-          };
-        } else {
-          // Return orchestration trigger for client-side execution
-          console.log('🎬 Returning orchestration trigger for client-side execution...');
-          
-          const execution = await createExecution({
+            token_usage_summary: null
+          }
+        });
+
+        return {
+          answer: triggerMatch.confirmationMessage,
+          citations: [],
+          conversation_id: conversationId,
+          retrieved_chunk_count: 0,
+          orchestration_trigger: {
+            triggerId: triggerMatch.triggerId,
             orchestrationId: triggerMatch.orchestrationId,
-            orchestrationVersion: 1, // TODO: Get actual version
-            context: triggerMatch.extractedVariables,
-            triggerData: {
-              triggerType: 'chatbot',
-              triggerId: triggerMatch.triggerId,
-              userMessage: question,
-              matchedPhrase: triggerMatch.matchedPhrase,
-              intent: triggerMatch.intent,
-              matchedIntent: triggerMatch.intent,
-              confidence: triggerMatch.confidence
-            },
-            triggeredBy: user.email
-          });
-
-          const answer = `✅ Starting "${triggerMatch.orchestrationName}"...`;
-
-          await appendConversationExchange({
-            companyId,
-            userId,
-            conversationId,
-            question,
-            answer,
-            citations: [],
-            metadata: {
-              llm_provider: 'orchestration',
-              llm_model: 'auto-execute',
-              latency_ms: Date.now() - startedAt,
-              retrieved_chunk_count: 0,
-              token_usage_summary: null
-            }
-          });
-
-          return {
-            answer,
-            citations: [],
-            conversation_id: conversationId,
-            retrieved_chunk_count: 0,
-            orchestration_trigger: {
-              triggerId: triggerMatch.triggerId,
-              orchestrationId: triggerMatch.orchestrationId,
-              orchestrationName: triggerMatch.orchestrationName,
-              executionId: execution.id,
-              requiresConfirmation: false,
-              confidence: triggerMatch.confidence
-            }
-          };
-        }
+            orchestrationName: triggerMatch.orchestrationName,
+            requiresConfirmation: true,
+            confidence: triggerMatch.confidence
+          }
+        };
       } else {
         console.log('ℹ️ No orchestration trigger matched');
       }
@@ -362,12 +348,20 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       }
     });
 
-    return {
+    const response: ChatQueryResponse = {
       answer: greeting,
       citations: [],
       conversation_id: conversationId,
       retrieved_chunk_count: 0
     };
+    
+    if (orchestrationMatch) {
+      response.orchestration_trigger = orchestrationMatch;
+      response.matchedPhrase = question;
+      response.matchedIntent = orchestrationMatch.orchestrationName;
+    }
+    
+    return response;
   }
 
   const retrieval = await RetrievalEngine.retrieve(companyId, userId, question, topK);
@@ -389,12 +383,20 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       }
     });
 
-    return {
+    const response: ChatQueryResponse = {
       answer: INSUFFICIENT_CONTEXT_MESSAGE,
       citations: [],
       conversation_id: conversationId,
       retrieved_chunk_count: 0
     };
+    
+    if (orchestrationMatch) {
+      response.orchestration_trigger = orchestrationMatch;
+      response.matchedPhrase = question;
+      response.matchedIntent = orchestrationMatch.orchestrationName;
+    }
+    
+    return response;
   }
 
   const extractiveAnswer = buildExtractiveAnswer(question, retrieval.chunks);
@@ -416,12 +418,20 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       }
     });
 
-    return {
+    const response: ChatQueryResponse = {
       answer: extractiveAnswer,
       citations: retrieval.citations,
       conversation_id: conversationId,
       retrieved_chunk_count: retrieval.chunks.length
     };
+    
+    if (orchestrationMatch) {
+      response.orchestration_trigger = orchestrationMatch;
+      response.matchedPhrase = question;
+      response.matchedIntent = orchestrationMatch.orchestrationName;
+    }
+    
+    return response;
   }
 
   const provider = await getLLMProvider();
@@ -444,10 +454,20 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
   });
 
-  return {
+  // Include orchestration trigger if matched (alongside normal response)
+  const response: ChatQueryResponse = {
     answer: finalAnswer,
     citations: retrieval.citations,
     conversation_id: conversationId,
     retrieved_chunk_count: retrieval.chunks.length
   };
+
+  if (orchestrationMatch) {
+    console.log(`✅ Including orchestration trigger in response: ${orchestrationMatch.orchestrationName}`);
+    response.orchestration_trigger = orchestrationMatch;
+    response.matchedPhrase = question; // Include the original query for matching
+    response.matchedIntent = orchestrationMatch.orchestrationName;
+  }
+
+  return response;
 }
