@@ -713,28 +713,38 @@ async function injectAndExecuteScoutPlayer(
       }
     });
 
-    // Monitor for workflow completion by polling localStorage
+    // Monitor for workflow completion by polling localStorage and tooltip
     // Scout Player removes localStorage key when all steps complete
     const storageKey = `scout-adoption-progress:${workflowId}:main`;
     page.evaluate((key: string) => {
+      console.log(`🔍 Starting workflow completion monitor (key: ${key})`);
+      
       const checkInterval = setInterval(() => {
-        // Check if player instance is stopped or localStorage key is gone
-        const player = (window as any)._scoutPlayerInstance;
         const progressExists = localStorage.getItem(key) !== null;
         const hasTooltip = document.querySelector('.scout-adoption-tooltip') !== null;
         
-        // Workflow is complete when:
-        // 1. Player stopped (player.stopped === true) OR
-        // 2. Progress key removed AND no tooltip visible
-        if ((player && player.stopped) || (!progressExists && !hasTooltip)) {
-          console.log("🏁 Scout Player workflow detected as complete");
+        console.log(`⏱️ Poll: progress=${progressExists}, tooltip=${hasTooltip}`);
+        
+        // Workflow is complete when progress key is removed AND tooltip is gone
+        if (!progressExists && !hasTooltip) {
+          console.log("🏁 Scout Player workflow detected as complete!");
           clearInterval(checkInterval);
-          if (window.__scoutWorkflowComplete) {
-            window.__scoutWorkflowComplete();
-          }
+          
+          // Add a small delay to ensure page is fully settled
+          setTimeout(() => {
+            if (window.__scoutWorkflowComplete) {
+              console.log("✅ Calling completion callback...");
+              window.__scoutWorkflowComplete();
+            } else {
+              console.error("❌ __scoutWorkflowComplete not found!");
+            }
+          }, 500);
         }
       }, 500); // Check every 500ms
     }, storageKey);
+
+    // Give the polling a moment to start
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     // Wait for user to complete all workflow steps (with timeout)
     await Promise.race([
