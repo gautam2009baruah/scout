@@ -21,7 +21,7 @@ export async function executeDataCaptureNode(
     if (!page) {
       throw new Error(
         "Data capture requires a browser page from a previous workflow node. " +
-        "Make sure the workflow node has 'closeBrowserAfter: false' in its configuration."
+        "Make sure the workflow node is configured to keep the browser open (uncheck 'Close browser after workflow')."
       );
     }
 
@@ -190,17 +190,8 @@ export async function executeDataCaptureNode(
 
     console.log("\n✅ DATA CAPTURE COMPLETED");
     console.log(`📊 Captured ${Object.keys(capturedData).length} fields`);
+    console.log("🌐 Browser stays open for next node");
     console.log("█".repeat(80) + "\n");
-
-    // Close browser if configured
-    if (config.closeBrowserAfter) {
-      try {
-        await page.close();
-        console.log("🌐 Browser page closed");
-      } catch (e) {
-        console.warn("⚠️ Could not close browser page:", e);
-      }
-    }
 
     // Return captured data
     const outputVar = config.outputVariable || "capturedData";
@@ -209,7 +200,7 @@ export async function executeDataCaptureNode(
       output: {
         [outputVar]: capturedData,
         _captureStats: captureStats,
-        _browserPage: config.closeBrowserAfter ? undefined : page, // Pass page if keeping open
+        _browserPage: page, // Always pass page to next node
       }
     };
 

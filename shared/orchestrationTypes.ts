@@ -124,7 +124,6 @@ export type DataCaptureNodeConfig = {
   autoReviewTimeout?: number; // Auto-continue after N seconds (0 = require click)
   pageWaitMs?: number; // Wait before capturing (for dynamic content)
   outputVariable?: string; // Where to store captured data (default "capturedData")
-  closeBrowserAfter?: boolean; // Whether to close browser after capture
   continueOnFailure?: boolean; // Continue even if required fields missing
 };
 
