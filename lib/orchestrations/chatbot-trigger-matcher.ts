@@ -145,7 +145,13 @@ export async function matchChatbotTriggers(
     const fallbackMatch = findFallbackMatch(userMessage, triggers);
     if (fallbackMatch) {
       console.log(`✅ Fallback match found: ${fallbackMatch.trigger.name}`);
-      return buildTriggerMatch(fallbackMatch.trigger, fallbackMatch.confidence, {}, userMessage, config);
+      return buildTriggerMatch(
+        fallbackMatch.trigger, 
+        fallbackMatch.confidence, 
+        {}, 
+        userMessage, 
+        fallbackMatch.trigger.config
+      );
     }
     
     return null;
@@ -223,7 +229,7 @@ function findFallbackMatch(
       // Word overlap
       const messageWords = new Set(normalizedMessage.split(/\s+/));
       const phraseWords = new Set(normalizedPhrase.split(/\s+/));
-      const overlap = [...messageWords].filter(w => phraseWords.has(w)).length;
+      const overlap = Array.from(messageWords).filter(w => phraseWords.has(w)).length;
       const maxWords = Math.max(messageWords.size, phraseWords.size);
       const overlapScore = overlap / maxWords;
       

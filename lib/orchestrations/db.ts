@@ -215,8 +215,8 @@ export async function publishOrchestration(
 
   // Auto-create orchestration_triggers record for chatbot triggers
   const triggerNodeConfig = triggerNode.config as any;
-  if (triggerNodeConfig.triggerType === 'chatbot' && triggerNodeConfig.examplePhrases && triggerNodeConfig.examplePhrases.length > 0) {
-    console.log('📝 Auto-creating chatbot trigger record...');
+  if (triggerNodeConfig.triggerType === 'chatbot') {
+    console.log('📝 Auto-creating/updating chatbot trigger record...');
     
     try {
       // Check if trigger already exists
@@ -226,6 +226,20 @@ export async function publishOrchestration(
         [id]
       );
       
+      const chatbotTriggerConfig = {
+        type: 'chatbot' as const,
+        intentName: orchestration.name.toLowerCase().replace(/\s+/g, '_'),
+        triggerPhrases: triggerNodeConfig.triggerPhrases || triggerNodeConfig.examplePhrases || [],
+        examplePhrases: triggerNodeConfig.examplePhrases || [],
+        requiredVariables: triggerNodeConfig.requiredVariables || [],
+        confirmationRequired: triggerNodeConfig.confirmationRequired !== false,
+        confirmationMessage: triggerNodeConfig.confirmationMessage || undefined,
+        allowedRoles: triggerNodeConfig.allowedRoles || [],
+        allowedUsers: triggerNodeConfig.allowedUsers || [],
+        minConfidence: triggerNodeConfig.minConfidence || 0.7,
+        enabled: triggerNodeConfig.enabled !== false,
+      };
+      
       if (existingTriggers.rows.length === 0) {
         // Create new chatbot trigger
         await createTrigger({
@@ -233,31 +247,35 @@ export async function publishOrchestration(
           triggerType: 'chatbot',
           name: `${orchestration.name} - Chatbot Trigger`,
           description: `Auto-created chatbot trigger for ${orchestration.name}`,
-          config: {
-            type: 'chatbot',
-            intentName: orchestration.name.toLowerCase().replace(/\s+/g, '_'),
-            triggerPhrases: triggerNodeConfig.triggerPhrases || triggerNodeConfig.examplePhrases || [],
-            examplePhrases: triggerNodeConfig.examplePhrases || [],
-            requiredVariables: triggerNodeConfig.requiredVariables || [],
-            confirmationRequired: triggerNodeConfig.confirmationRequired !== false,
-            confirmationMessage: triggerNodeConfig.confirmationMessage || undefined,
-            allowedRoles: triggerNodeConfig.allowedRoles || [],
-            allowedUsers: triggerNodeConfig.allowedUsers || [],
-            minConfidence: triggerNodeConfig.minConfidence || 0.7,
-            enabled: triggerNodeConfig.enabled !== false,
-          },
+          config: chatbotTriggerConfig,
           createdByEmail: publishedByEmail,
         });
         
         console.log('✅ Chatbot trigger created successfully');
-        
-        // Clear cache so new trigger is immediately available
-        clearTriggerCache();
       } else {
-        console.log('ℹ️ Chatbot trigger already exists, skipping creation');
+        // Update existing trigger
+        const triggerId = existingTriggers.rows[0].id;
+        await pool.query(
+          `UPDATE orchestration_triggers 
+           SET name = $1, 
+               description = $2, 
+               config = $3,
+               updated_at = NOW()
+           WHERE id = $4`,
+          [
+            `${orchestration.name} - Chatbot Trigger`,
+            `Auto-created chatbot trigger for ${orchestration.name}`,
+            JSON.stringify(chatbotTriggerConfig),
+            triggerId
+          ]
+        );
+        console.log('✅ Chatbot trigger updated successfully');
       }
+      
+      // Clear cache so updated trigger is immediately available
+      clearTriggerCache();
     } catch (error) {
-      console.error('⚠️ Failed to auto-create chatbot trigger:', error);
+      console.error('⚠️ Failed to auto-create/update chatbot trigger:', error);
       // Don't fail the publish if trigger creation fails
     }
   }
