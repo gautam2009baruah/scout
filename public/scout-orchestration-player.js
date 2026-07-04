@@ -187,7 +187,6 @@
               context = { ...context, ...stepResult.capturedData };
               console.log(`📊 Updated context with captured data:`, context);
             }
-            }
           }
           else if (step.nodeType === 'end') {
             // End node - just mark as completed
