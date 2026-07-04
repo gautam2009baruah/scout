@@ -463,6 +463,7 @@ export type WebhookTriggerConfig = {
 export type ChatbotTriggerConfig = {
   type: "chatbot";
   intentName: string; // Name of the intent that triggers this
+  triggerPhrases: string[]; // User phrases that trigger this orchestration
   examplePhrases: string[]; // Example user phrases for intent matching
   requiredVariables?: Array<{
     name: string;
