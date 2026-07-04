@@ -39,13 +39,12 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
   const [position, setPosition] = useState({ x: 0, y: 80 });
   const nodeRef = useRef<HTMLDivElement>(null);
 
-  // Calculate initial position after mount to ensure it's fully visible
+  // Calculate initial position after mount to ensure it's fully visible on LEFT side
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const x = Math.max(16, window.innerWidth - panelWidth - 32);
-      setPosition({ x, y: 80 });
+      setPosition({ x: 32, y: 80 });
     }
-  }, [panelWidth]);
+  }, []);
 
   const updateConfig = (updates: Record<string, any>) => {
     onUpdate({
@@ -168,48 +167,13 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
         style={{ 
           width: `${panelWidth}px`,
           height: `${panelHeight}px`,
-          zIndex: 9999,
-          overflow: 'visible'
+          zIndex: 9999
         }}
       >
-        {/* Resize Handles - All 4 edges */}
-        <div 
-          className="resize-handle resize-left absolute left-0 top-0 bottom-0 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
-          style={{ width: '8px', zIndex: 1000 }}
-        />
-        <div 
-          className="resize-handle resize-right absolute right-0 top-0 bottom-0 cursor-ew-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
-          style={{ width: '8px', zIndex: 1000 }}
-        />
-        <div 
-          className="resize-handle resize-top absolute left-0 top-0 right-0 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
-          style={{ height: '8px', zIndex: 1000 }}
-        />
-        <div 
-          className="resize-handle resize-bottom absolute left-0 bottom-0 right-0 cursor-ns-resize hover:bg-blue-500 hover:bg-opacity-30 transition-colors" 
-          style={{ height: '8px', zIndex: 1000 }}
-        />
-        {/* Corner Handles with highest z-index */}
-        <div 
-          className="resize-handle resize-topleft absolute left-0 top-0 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-50" 
-          style={{ width: '12px', height: '12px', zIndex: 1001 }}
-        />
-        <div 
-          className="resize-handle resize-topright absolute right-0 top-0 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-50" 
-          style={{ width: '12px', height: '12px', zIndex: 1001 }}
-        />
-        <div 
-          className="resize-handle resize-bottomleft absolute left-0 bottom-0 cursor-nesw-resize hover:bg-blue-500 hover:bg-opacity-50" 
-          style={{ width: '12px', height: '12px', zIndex: 1001 }}
-        />
-        <div 
-          className="resize-handle resize-bottomright absolute right-0 bottom-0 cursor-nwse-resize hover:bg-blue-500 hover:bg-opacity-50" 
-          style={{ width: '12px', height: '12px', zIndex: 1001 }}
-        />
         
         <div className="flex flex-col h-full">
           {/* Header */}
-          <div className="drag-handle bg-gradient-to-r from-slate-700 to-slate-600 p-4 cursor-move border-b-2 border-slate-500 flex-shrink-0" style={{ position: 'relative', zIndex: 1002 }}>
+          <div className="drag-handle bg-gradient-to-r from-slate-700 to-slate-600 p-4 cursor-move border-b-2 border-slate-500 flex-shrink-0">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
                 <Move className="h-4 w-4 text-slate-300" />
@@ -249,7 +213,7 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
           </div>
 
           {/* Content - Scrollable */}
-          <div className="flex-1 overflow-y-auto bg-white" style={{ position: 'relative', zIndex: 1002 }}>
+          <div className="flex-1 overflow-y-auto bg-white">
             <div className="p-4 space-y-4">
         {/* Common: Label */}
         <div>
@@ -291,6 +255,41 @@ export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDel
             </div>
           </div>
         </div>
+
+        {/* Resize Handles - Rendered LAST so they're on top */}
+        <div 
+          className="resize-handle resize-left absolute left-0 top-0 bottom-0 cursor-ew-resize bg-blue-400 bg-opacity-0 hover:bg-opacity-40 transition-all" 
+          style={{ width: '6px', left: '-3px', zIndex: 10000 }}
+        />
+        <div 
+          className="resize-handle resize-right absolute right-0 top-0 bottom-0 cursor-ew-resize bg-blue-400 bg-opacity-0 hover:bg-opacity-40 transition-all" 
+          style={{ width: '6px', right: '-3px', zIndex: 10000 }}
+        />
+        <div 
+          className="resize-handle resize-top absolute left-0 top-0 right-0 cursor-ns-resize bg-blue-400 bg-opacity-0 hover:bg-opacity-40 transition-all" 
+          style={{ height: '6px', top: '-3px', zIndex: 10000 }}
+        />
+        <div 
+          className="resize-handle resize-bottom absolute left-0 bottom-0 right-0 cursor-ns-resize bg-blue-400 bg-opacity-0 hover:bg-opacity-40 transition-all" 
+          style={{ height: '6px', bottom: '-3px', zIndex: 10000 }}
+        />
+        {/* Corner Handles */}
+        <div 
+          className="resize-handle resize-topleft absolute cursor-nwse-resize bg-blue-500 bg-opacity-0 hover:bg-opacity-60 transition-all rounded-tl-lg" 
+          style={{ width: '12px', height: '12px', left: '-3px', top: '-3px', zIndex: 10001 }}
+        />
+        <div 
+          className="resize-handle resize-topright absolute cursor-nesw-resize bg-blue-500 bg-opacity-0 hover:bg-opacity-60 transition-all rounded-tr-lg" 
+          style={{ width: '12px', height: '12px', right: '-3px', top: '-3px', zIndex: 10001 }}
+        />
+        <div 
+          className="resize-handle resize-bottomleft absolute cursor-nesw-resize bg-blue-500 bg-opacity-0 hover:bg-opacity-60 transition-all rounded-bl-lg" 
+          style={{ width: '12px', height: '12px', left: '-3px', bottom: '-3px', zIndex: 10001 }}
+        />
+        <div 
+          className="resize-handle resize-bottomright absolute cursor-nwse-resize bg-blue-500 bg-opacity-0 hover:bg-opacity-60 transition-all rounded-br-lg" 
+          style={{ width: '12px', height: '12px', right: '-3px', bottom: '-3px', zIndex: 10001 }}
+        />
       </div>
     </Draggable>
   );
