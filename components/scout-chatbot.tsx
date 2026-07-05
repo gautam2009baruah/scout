@@ -266,6 +266,21 @@ export function ScoutChatbot({
     setPanelPosition(defaultOpen ? getDefaultChatPosition(position, nextSize) : getBottomRightChatPosition(launcherSize));
   }, [defaultOpen, position, variant]);
 
+  // Listen for minimize events from orchestration links
+  useEffect(() => {
+    const handleMinimize = () => {
+      console.log('📩 Received SCOUT_MINIMIZE_CHATBOT event');
+      if (variant === "floating") {
+        closeFloatingChat();
+      } else {
+        setOpen(false);
+      }
+    };
+
+    window.addEventListener('SCOUT_MINIMIZE_CHATBOT', handleMinimize);
+    return () => window.removeEventListener('SCOUT_MINIMIZE_CHATBOT', handleMinimize);
+  }, [variant]);
+
   useEffect(() => {
     nextMessageId.current = messages.length + 1;
     writeStoredMessages(messageStorageKey, messages);
@@ -967,6 +982,13 @@ function parseMarkdownText(text: string): ReactNode {
               
               if (orchestrationData) {
                 console.log('🚀 Starting orchestration execution...');
+                
+                // Dispatch minimize event for the component to handle
+                const minimizeEvent = new CustomEvent('SCOUT_MINIMIZE_CHATBOT', {
+                  bubbles: true,
+                  cancelable: false,
+                });
+                window.dispatchEvent(minimizeEvent);
                 
                 // Method 1: If in iframe, send postMessage to parent
                 if (window.parent && window.parent !== window) {

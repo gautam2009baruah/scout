@@ -379,7 +379,7 @@
       let checkCount = 0;
       const checkCompletion = setInterval(() => {
         checkCount++;
-        const progressKey = `scout-adoption-progress:${guide.id}:main`;
+        const progressKey = `scout-adoption-progress:${step.workflowId}:main`;
         const progressValue = localStorage.getItem(progressKey);
         const hasTooltip = document.querySelector('.scout-adoption-tooltip') !== null;
 
@@ -410,10 +410,6 @@
         console.error(`⏱️ Workflow execution timeout after ${timeout}ms`);
         reject(new Error('Workflow execution timeout'));
       }, timeout);
-
-      console.log(`▶️ Starting Scout Player for: ${step.label}`);
-      player.start();
-      console.log(`▶️ Player.start() called`);
     });
   }
 
