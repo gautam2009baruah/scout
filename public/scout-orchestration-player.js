@@ -519,156 +519,316 @@
   }
 
   /**
-   * Extract metadata from a DOM element (similar to what Scout training captures)
+   * Extract comprehensive metadata from a DOM element (matches Scout's ElementIdentity)
    */
   function extractElementMetadata(element) {
-    const metadata = {
+    // Get accessible name (label)
+    function getAccessibleName(el) {
+      const ariaLabel = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || '';
+      if (ariaLabel) return ariaLabel;
+      
+      if (el.id) {
+        const label = document.querySelector(`label[for="${el.id}"]`);
+        if (label) return label.textContent?.trim() || '';
+      }
+      
+      const parentLabel = el.closest('label');
+      if (parentLabel) return parentLabel.textContent?.trim() || '';
+      
+      return '';
+    }
+    
+    // Get nearby heading
+    function getNearbyHeading(el) {
+      let current = el;
+      while (current && current !== document.body) {
+        const heading = current.querySelector('h1, h2, h3, h4, h5, h6');
+        if (heading) return heading.textContent?.trim() || '';
+        current = current.parentElement;
+      }
+      return '';
+    }
+    
+    // Get form title
+    function getFormTitle(el) {
+      const form = el.closest('form');
+      if (!form) return '';
+      const legend = form.querySelector('legend');
+      if (legend) return legend.textContent?.trim() || '';
+      const heading = form.querySelector('h1, h2, h3, h4, h5, h6');
+      if (heading) return heading.textContent?.trim() || '';
+      return '';
+    }
+    
+    // Get dialog title
+    function getDialogTitle(el) {
+      const dialog = el.closest('[role="dialog"], [role="alertdialog"], dialog');
+      if (!dialog) return '';
+      const title = dialog.querySelector('[role="heading"], h1, h2, h3, .modal-title, .dialog-title');
+      return title?.textContent?.trim() || '';
+    }
+    
+    // Get card title  
+    function getCardTitle(el) {
+      const card = el.closest('[class*="card"], [role="article"]');
+      if (!card) return '';
+      const title = card.querySelector('[class*="card-title"], [class*="card-header"], h1, h2, h3, h4');
+      return title?.textContent?.trim() || '';
+    }
+    
+    // Get element text
+    function getElementText(el) {
+      if (el instanceof HTMLInputElement) {
+        return el.value || el.placeholder || '';
+      }
+      if (el instanceof HTMLSelectElement) {
+        const selectedOption = el.selectedOptions[0];
+        return selectedOption?.textContent?.trim() || '';
+      }
+      return el.innerText || el.textContent || '';
+    }
+    
+    // Get all data-* attributes
+    const dataAttributes = {};
+    for (const attr of element.attributes) {
+      if (attr.name.startsWith('data-')) {
+        dataAttributes[attr.name] = attr.value;
+      }
+    }
+    
+    const accessibleName = getAccessibleName(element);
+    const parent = element.parentElement;
+    
+    return {
       tagName: element.tagName.toLowerCase(),
-      type: element.type || '',
+      role: element.getAttribute('role') || '',
+      accessibleName: accessibleName,
+      text: getElementText(element),
+      ariaLabel: element.getAttribute('aria-label') || '',
+      labelText: accessibleName, // Use accessible name as label text
+      placeholder: element.placeholder || '',
+      inputType: element.type || '',
+      selectedOptionText: element instanceof HTMLSelectElement ? element.selectedOptions[0]?.text || '' : '',
       name: element.name || '',
       id: element.id || '',
-      placeholder: element.placeholder || '',
-      ariaLabel: element.getAttribute('aria-label') || '',
-      value: element.value || '',
+      dataAttributes: dataAttributes,
+      nearbyHeading: getNearbyHeading(element),
+      parentContainerText: parent?.textContent?.trim()?.slice(0, 100) || '',
+      previousSiblingText: element.previousElementSibling?.textContent?.trim()?.slice(0, 50) || '',
+      nextSiblingText: element.nextElementSibling?.textContent?.trim()?.slice(0, 50) || '',
+      parentTagName: parent?.tagName?.toLowerCase() || '',
+      parentRole: parent?.getAttribute('role') || '',
+      parentAccessibleName: parent ? getAccessibleName(parent) : '',
+      parentText: parent?.textContent?.trim()?.slice(0, 100) || '',
+      formTitle: getFormTitle(element),
+      dialogTitle: getDialogTitle(element),
+      cardTitle: getCardTitle(element),
+      url: window.location.href,
+      path: window.location.pathname
     };
-    
-    // Try multiple ways to find label
-    let labelText = '';
-    
-    // Method 1: label[for=id]
-    if (element.id) {
-      const label = document.querySelector(`label[for="${element.id}"]`);
-      if (label) {
-        labelText = label.textContent.trim();
-      }
-    }
-    
-    // Method 2: parent label
-    if (!labelText) {
-      const parentLabel = element.closest('label');
-      if (parentLabel) {
-        labelText = parentLabel.textContent.trim();
-      }
-    }
-    
-    // Method 3: preceding sibling label
-    if (!labelText) {
-      let sibling = element.previousElementSibling;
-      while (sibling) {
-        if (sibling.tagName === 'LABEL') {
-          labelText = sibling.textContent.trim();
-          break;
-        }
-        sibling = sibling.previousElementSibling;
-      }
-    }
-    
-    // Method 4: nearby text (div/span before the input)
-    if (!labelText) {
-      const parent = element.parentElement;
-      if (parent) {
-        // Look for text in previous siblings
-        let prev = element.previousElementSibling;
-        if (prev && (prev.tagName === 'DIV' || prev.tagName === 'SPAN')) {
-          const text = prev.textContent.trim();
-          if (text && text.length < 50) { // Reasonable label length
-            labelText = text;
-          }
-        }
-      }
-    }
-    
-    metadata.labelText = labelText;
-    
-    // Get accessible name
-    metadata.accessibleName = element.getAttribute('aria-label') || labelText || '';
-    
-    return metadata;
   }
 
   /**
-   * Find matching captured field based on element metadata
+   * Find matching captured field based on element metadata (uses Scout's weighted scoring)
    */
   function findMatchingCapturedField(elementMetadata, capturedData) {
     console.log('🔍 Attempting to match highlighted control...');
     console.log('   Element metadata:', {
       tagName: elementMetadata.tagName,
-      type: elementMetadata.type,
-      name: elementMetadata.name || '(none)',
-      id: elementMetadata.id || '(none)',
+      inputType: elementMetadata.inputType,
+      accessibleName: elementMetadata.accessibleName || '(none)',
       labelText: elementMetadata.labelText || '(none)',
       placeholder: elementMetadata.placeholder || '(none)',
-      ariaLabel: elementMetadata.ariaLabel || '(none)'
+      ariaLabel: elementMetadata.ariaLabel || '(none)',
+      formTitle: elementMetadata.formTitle || '(none)',
+      nearbyHeading: elementMetadata.nearbyHeading || '(none)'
     });
-    
-    let bestMatch = null;
+
+    // Weights for different types of matches (matches Scout's ruleBasedMatcher)
+    const MATCH_WEIGHTS = {
+      text: 25,
+      role: 20,
+      ariaLabel: 20,
+      labelText: 18,
+      tagName: 15,
+      placeholder: 12,
+      accessibleName: 15,
+      nearbyHeading: 10,
+      parentContext: 8,
+      formTitle: 8,
+      dialogTitle: 8,
+      cardTitle: 8,
+      inputType: 10,
+      name: 12,
+      id: 10
+    };
+
+    // Text similarity function (fuzzy matching)
+    function textSimilarity(a, b) {
+      if (!a || !b) return 0;
+      
+      const normalize = str => String(str).toLowerCase().replace(/\s+/g, ' ').replace(/[^a-z0-9\s]/g, '').trim();
+      const normA = normalize(a);
+      const normB = normalize(b);
+      
+      if (!normA || !normB) return 0;
+      if (normA === normB) return 1.0;
+      
+      // Check if one contains the other
+      if (normA.includes(normB) || normB.includes(normA)) {
+        return 0.8;
+      }
+      
+      // Calculate word overlap
+      const wordsA = normA.split(' ');
+      const wordsB = normB.split(' ');
+      const intersection = wordsA.filter(word => wordsB.includes(word));
+      
+      if (intersection.length === 0) return 0;
+      
+      const union = new Set([...wordsA, ...wordsB]);
+      return intersection.length / union.size;
+    }
+
     let bestScore = 0;
+    let bestMatch = null;
     let bestFieldName = '';
     const scores = {};
-    
+
     for (const [fieldName, fieldData] of Object.entries(capturedData)) {
-      const capturedMetadata = fieldData.metadata?.elementIdentity || {};
-      let score = 0;
-      
       console.log(`   Checking against captured field: "${fieldName}"`);
-      console.log('     Captured label:', fieldData.label || '(none)');
-      console.log('     Captured metadata:', {
+      console.log(`     Captured label: ${fieldData.label}`);
+      
+      const capturedMetadata = fieldData.metadata?.elementIdentity || {};
+      console.log(`     Captured metadata:`, {
         tagName: capturedMetadata.tagName || '(none)',
         labelText: capturedMetadata.labelText || '(none)',
         placeholder: capturedMetadata.placeholder || '(none)',
-        name: capturedMetadata.name || '(none)',
-        id: capturedMetadata.id || '(none)'
+        accessibleName: capturedMetadata.accessibleName || '(none)',
+        formTitle: capturedMetadata.formTitle || '(none)',
+        nearbyHeading: capturedMetadata.nearbyHeading || '(none)'
       });
       
-      // Exact matches
-      if (elementMetadata.labelText && elementMetadata.labelText.toLowerCase() === (capturedMetadata.labelText || '').toLowerCase()) {
-        score += 100;
-        console.log('     +100 labelText exact match');
+      let score = 0;
+      const matchedBy = [];
+
+      // Tag name match (required baseline)
+      if (elementMetadata.tagName && capturedMetadata.tagName === elementMetadata.tagName) {
+        score += MATCH_WEIGHTS.tagName;
+        matchedBy.push('tagName');
       }
-      if (elementMetadata.name && elementMetadata.name === capturedMetadata.name) {
-        score += 90;
-        console.log('     +90 name exact match');
+
+      // Input type match
+      if (elementMetadata.inputType && capturedMetadata.inputType === elementMetadata.inputType) {
+        score += MATCH_WEIGHTS.inputType;
+        matchedBy.push('inputType');
       }
-      if (elementMetadata.id && elementMetadata.id === capturedMetadata.id) {
-        score += 90;
-        console.log('     +90 id exact match');
-      }
-      if (elementMetadata.placeholder && elementMetadata.placeholder === capturedMetadata.placeholder) {
-        score += 80;
-        console.log('     +80 placeholder exact match');
-      }
-      
-      // Label comparison
-      if (elementMetadata.labelText && fieldData.label && 
-          elementMetadata.labelText.toLowerCase() === fieldData.label.toLowerCase()) {
-        score += 100;
-        console.log('     +100 label exact match');
-      }
-      
-      // Normalized comparison
-      const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const elementNorm = normalize(elementMetadata.labelText || elementMetadata.placeholder || '');
-      const capturedNorm = normalize(capturedMetadata.labelText || fieldData.label || '');
-      
-      if (elementNorm && capturedNorm && elementNorm === capturedNorm) {
-        score += 70;
-        console.log('     +70 normalized match');
+
+      // Accessible name / label text (highest priority for form fields)
+      if (elementMetadata.accessibleName && capturedMetadata.accessibleName) {
+        const similarity = textSimilarity(elementMetadata.accessibleName, capturedMetadata.accessibleName);
+        if (similarity > 0.5) {
+          score += similarity * MATCH_WEIGHTS.accessibleName;
+          matchedBy.push(`accessibleName(${Math.round(similarity * 100)}%)`);
+        }
       }
       
+      if (elementMetadata.labelText && capturedMetadata.labelText) {
+        const similarity = textSimilarity(elementMetadata.labelText, capturedMetadata.labelText);
+        if (similarity > 0.5) {
+          score += similarity * MATCH_WEIGHTS.labelText;
+          matchedBy.push(`labelText(${Math.round(similarity * 100)}%)`);
+        }
+      }
+
+      // Placeholder match
+      if (elementMetadata.placeholder && capturedMetadata.placeholder) {
+        const similarity = textSimilarity(elementMetadata.placeholder, capturedMetadata.placeholder);
+        if (similarity > 0.5) {
+          score += similarity * MATCH_WEIGHTS.placeholder;
+          matchedBy.push(`placeholder(${Math.round(similarity * 100)}%)`);
+        }
+      }
+
+      // Aria label match
+      if (elementMetadata.ariaLabel && capturedMetadata.ariaLabel) {
+        const similarity = textSimilarity(elementMetadata.ariaLabel, capturedMetadata.ariaLabel);
+        if (similarity > 0.5) {
+          score += similarity * MATCH_WEIGHTS.ariaLabel;
+          matchedBy.push(`ariaLabel(${Math.round(similarity * 100)}%)`);
+        }
+      }
+
+      // Nearby heading match (context)
+      if (elementMetadata.nearbyHeading && capturedMetadata.nearbyHeading) {
+        const similarity = textSimilarity(elementMetadata.nearbyHeading, capturedMetadata.nearbyHeading);
+        if (similarity > 0.5) {
+          score += similarity * MATCH_WEIGHTS.nearbyHeading;
+          matchedBy.push(`nearbyHeading(${Math.round(similarity * 100)}%)`);
+        }
+      }
+
+      // Form title match (context)
+      if (elementMetadata.formTitle && capturedMetadata.formTitle) {
+        const similarity = textSimilarity(elementMetadata.formTitle, capturedMetadata.formTitle);
+        if (similarity > 0.5) {
+          score += similarity * MATCH_WEIGHTS.formTitle;
+          matchedBy.push(`formTitle(${Math.round(similarity * 100)}%)`);
+        }
+      }
+
+      // Dialog title match (context)
+      if (elementMetadata.dialogTitle && capturedMetadata.dialogTitle) {
+        const similarity = textSimilarity(elementMetadata.dialogTitle, capturedMetadata.dialogTitle);
+        if (similarity > 0.5) {
+          score += similarity * MATCH_WEIGHTS.dialogTitle;
+          matchedBy.push(`dialogTitle(${Math.round(similarity * 100)}%)`);
+        }
+      }
+
+      // Card title match (context)
+      if (elementMetadata.cardTitle && capturedMetadata.cardTitle) {
+        const similarity = textSimilarity(elementMetadata.cardTitle, capturedMetadata.cardTitle);
+        if (similarity > 0.5) {
+          score += similarity * MATCH_WEIGHTS.cardTitle;
+          matchedBy.push(`cardTitle(${Math.round(similarity * 100)}%)`);
+        }
+      }
+
+      // Name attribute exact match
+      if (elementMetadata.name && capturedMetadata.name && elementMetadata.name === capturedMetadata.name) {
+        score += MATCH_WEIGHTS.name;
+        matchedBy.push('name');
+      }
+
+      // ID exact match
+      if (elementMetadata.id && capturedMetadata.id && elementMetadata.id === capturedMetadata.id) {
+        score += MATCH_WEIGHTS.id;
+        matchedBy.push('id');
+      }
+
+      // Role match
+      if (elementMetadata.role && capturedMetadata.role && elementMetadata.role === capturedMetadata.role) {
+        score += MATCH_WEIGHTS.role;
+        matchedBy.push('role');
+      }
+
+      console.log(`     Matched by: ${matchedBy.join(', ') || '(none)'}`);
       console.log(`     Total score: ${score}`);
       scores[fieldName] = score;
-      
+
       if (score > bestScore) {
         bestScore = score;
         bestMatch = fieldData;
         bestFieldName = fieldName;
       }
     }
-    
-    console.log(`   Best match: "${bestFieldName}" with score ${bestScore} (threshold: 70)`);
-    
-    // Only return match if score is high enough
-    return bestScore >= 70 ? bestMatch : null;
+
+    const MIN_THRESHOLD = 50; // Minimum score to accept a match (Scout's default)
+    console.log(`   Best match: "${bestFieldName}" with score ${bestScore} (threshold: ${MIN_THRESHOLD})`);
+
+    // Only return match if score meets threshold
+    return bestScore >= MIN_THRESHOLD ? bestMatch : null;
   }
 
   /**
@@ -992,6 +1152,9 @@
         
         console.log(`📝 Captured field: ${name} = "${value}" (label: "${label}")`);
         
+        // Extract full metadata using the comprehensive function
+        const fullMetadata = extractElementMetadata(element);
+        
         fields.push({
           name: name,
           label: label,
@@ -999,15 +1162,7 @@
           element: element.tagName,
           type: element.type || 'text',
           metadata: {
-            elementIdentity: {
-              tagName: element.tagName.toLowerCase(),
-              type: element.type || 'text',
-              labelText: label,
-              id: element.id || '',
-              name: element.name || '',
-              placeholder: element.placeholder || '',
-              ariaLabel: element.getAttribute('aria-label') || ''
-            }
+            elementIdentity: fullMetadata // Store full Scout-compatible metadata
           },
         });
       } catch (e) {
