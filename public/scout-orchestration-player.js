@@ -407,18 +407,33 @@
               (node.classList?.contains('scout-adoption-tooltip') || 
                node.querySelector?.('.scout-adoption-tooltip'))) {
             
-            console.log('🎯 Scout tooltip detected, checking for auto-fill match...');
+            console.log('🎯 Scout tooltip detected, looking for highlighted control...');
             
-            // Find the highlighted element using multiple strategies
+            // Scout highlights the actual control separately from the tooltip
+            // Look for the highlighted input element (NOT the tooltip!)
             let highlightedElement = null;
             const strategies = [];
             
-            // Strategy 1: Check for Scout's highlight markers
-            highlightedElement = document.querySelector('[data-scout-step-active="true"]') ||
-                               document.querySelector('.scout-adoption-highlight') ||
-                               document.querySelector('[data-scout-highlight]') ||
-                               document.querySelector('[data-scout-active]');
-            if (highlightedElement) strategies.push('scout-markers');
+            // Strategy 1: Check for Scout's highlight markers on INPUT elements
+            const markedInputs = document.querySelectorAll([
+              'input[data-scout-step-active="true"]',
+              'select[data-scout-step-active="true"]', 
+              'textarea[data-scout-step-active="true"]',
+              'input[data-scout-highlight]',
+              'select[data-scout-highlight]',
+              'textarea[data-scout-highlight]',
+              'input.scout-adoption-highlight',
+              'select.scout-adoption-highlight',
+              'textarea.scout-adoption-highlight',
+              'input[data-scout-active]',
+              'select[data-scout-active]',
+              'textarea[data-scout-active]'
+            ].join(', '));
+            
+            if (markedInputs.length > 0) {
+              highlightedElement = markedInputs[0];
+              strategies.push('scout-markers');
+            }
             
             // Strategy 2: Check focused element
             if (!highlightedElement && document.activeElement && 
@@ -427,67 +442,37 @@
               strategies.push('focused-element');
             }
             
-            // Strategy 3: Check for elements with recent style changes (Scout may add inline styles)
+            // Strategy 3: Look for inputs with visual highlighting (Scout may add inline styles)
             if (!highlightedElement) {
-              const styledInputs = document.querySelectorAll('input[style], select[style], textarea[style]');
-              for (const input of styledInputs) {
-                const style = input.getAttribute('style');
-                if (style && (style.includes('outline') || style.includes('box-shadow') || 
-                             style.includes('border') || style.includes('z-index'))) {
+              const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+              for (const input of allInputs) {
+                if (input.offsetParent === null) continue; // Skip hidden
+                
+                // Check for highlight styles
+                const computedStyle = window.getComputedStyle(input);
+                const inlineStyle = input.getAttribute('style') || '';
+                
+                // Scout might add outline, box-shadow, or z-index to highlight
+                if (inlineStyle.includes('outline') || 
+                    inlineStyle.includes('box-shadow') ||
+                    inlineStyle.includes('z-index') ||
+                    computedStyle.outline !== 'none' && computedStyle.outline.includes('px')) {
                   highlightedElement = input;
-                  strategies.push('styled-element');
+                  strategies.push('visual-highlight');
                   break;
                 }
               }
             }
             
-            // Strategy 4: Find closest visible input to tooltip
+            // Strategy 4: Check for parent with highlight that contains input
             if (!highlightedElement) {
-              const tooltipElement = node.classList?.contains('scout-adoption-tooltip') ? node : 
-                                    node.querySelector('.scout-adoption-tooltip');
-              if (tooltipElement) {
-                const rect = tooltipElement.getBoundingClientRect();
-                const inputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
-                
-                let minDistance = Infinity;
-                let closestInput = null;
-                for (const input of inputs) {
-                  if (input.offsetParent === null) continue; // Skip hidden
-                  
-                  const inputRect = input.getBoundingClientRect();
-                  const distance = Math.sqrt(
-                    Math.pow(rect.left - inputRect.left, 2) + 
-                    Math.pow(rect.top - inputRect.top, 2)
-                  );
-                  if (distance < minDistance) {
-                    minDistance = distance;
-                    closestInput = input;
-                  }
-                }
-                
-                if (closestInput && minDistance < 300) {
-                  highlightedElement = closestInput;
-                  strategies.push(`proximity-${Math.round(minDistance)}px`);
-                }
-              }
-            }
-            
-            // Strategy 5: Check tooltip's data attributes for target reference
-            if (!highlightedElement) {
-              const tooltipElement = node.classList?.contains('scout-adoption-tooltip') ? node : 
-                                    node.querySelector('.scout-adoption-tooltip');
-              if (tooltipElement) {
-                // Check various possible data attributes
-                const targetSelector = tooltipElement.getAttribute('data-target') ||
-                                     tooltipElement.getAttribute('data-element') ||
-                                     tooltipElement.getAttribute('data-selector');
-                if (targetSelector) {
-                  try {
-                    highlightedElement = document.querySelector(targetSelector);
-                    if (highlightedElement) strategies.push('tooltip-data-attr');
-                  } catch (e) {
-                    // Invalid selector
-                  }
+              const highlightedParents = document.querySelectorAll('.scout-adoption-highlight, [data-scout-highlight]');
+              for (const parent of highlightedParents) {
+                const input = parent.querySelector('input, select, textarea');
+                if (input && input.offsetParent !== null) {
+                  highlightedElement = input;
+                  strategies.push('highlighted-parent');
+                  break;
                 }
               }
             }
@@ -496,7 +481,7 @@
             
             // If we found an input element, try to match and fill it
             if (highlightedElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
-              console.log('🔍 Highlighted element:', highlightedElement.tagName, highlightedElement.type, highlightedElement.name || highlightedElement.id || '(no name/id)');
+              console.log('🔍 Highlighted control:', highlightedElement.tagName, highlightedElement.type, highlightedElement.name || highlightedElement.id || '(no name/id)');
               
               // Extract metadata and try to match
               // Extract metadata and try to match
@@ -538,27 +523,37 @@
                   console.log('⚠️ No match found in captured data for this element');
                 }
             } else {
-              console.log('⚠️ Could not find highlighted input element');
-              console.log('   Available inputs on page:', document.querySelectorAll('input, select, textarea').length);
+              console.log('⚠️ Could not find highlighted control (input/select/textarea)');
               
-              // Log tooltip info for debugging
-              const tooltipElement = node.classList?.contains('scout-adoption-tooltip') ? node : 
-                                    node.querySelector('.scout-adoption-tooltip');
-              if (tooltipElement) {
-                console.log('   Tooltip text:', tooltipElement.textContent?.substring(0, 50));
-                console.log('   Tooltip position:', tooltipElement.getBoundingClientRect());
-                console.log('   Tooltip classes:', tooltipElement.className);
-                
-                // Log all data attributes
-                const dataAttrs = {};
-                for (const attr of tooltipElement.attributes) {
-                  if (attr.name.startsWith('data-')) {
-                    dataAttrs[attr.name] = attr.value;
-                  }
-                }
-                if (Object.keys(dataAttrs).length > 0) {
-                  console.log('   Tooltip data attributes:', dataAttrs);
-                }
+              // Debug: Show what's on the page
+              const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+              const visibleInputs = Array.from(allInputs).filter(i => i.offsetParent !== null);
+              console.log('   Total inputs on page:', allInputs.length, '(', visibleInputs.length, 'visible)');
+              
+              // Check if any inputs have Scout markers
+              const markedInputs = document.querySelectorAll([
+                'input[data-scout-step-active]',
+                'select[data-scout-step-active]',
+                'textarea[data-scout-step-active]',
+                'input[data-scout-highlight]',
+                'select[data-scout-highlight]',
+                'textarea[data-scout-highlight]',
+                'input.scout-adoption-highlight',
+                'select.scout-adoption-highlight',
+                'textarea.scout-adoption-highlight'
+              ].join(', '));
+              
+              if (markedInputs.length > 0) {
+                console.log('   Found', markedInputs.length, 'inputs with Scout markers but they were filtered out');
+                console.log('   First marked input:', markedInputs[0].tagName, markedInputs[0].type);
+              } else {
+                console.log('   No inputs found with Scout highlight markers');
+              }
+              
+              // Check what element types DO have Scout markers
+              const anyMarked = document.querySelectorAll('[data-scout-step-active], [data-scout-highlight], .scout-adoption-highlight');
+              if (anyMarked.length > 0) {
+                console.log('   Elements with Scout markers (non-input):', Array.from(anyMarked).map(e => e.tagName).join(', '));
               }
             }
           }
