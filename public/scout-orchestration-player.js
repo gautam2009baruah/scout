@@ -823,6 +823,7 @@
       console.log(`📊 Captured ${workflowFields.length} fields from workflow:`, workflowFields);
 
       for (const field of workflowFields) {
+        console.log(`   📝 Storing field: "${field.name}" = "${field.value}" (label: "${field.label}")`);
         // Store full field object with metadata (not just value)
         capturedData[field.name] = {
           value: field.value,
@@ -832,6 +833,8 @@
           metadata: field.metadata,
         };
       }
+      
+      console.log(`✅ Stored ${Object.keys(capturedData).length} fields in capturedData object`);
     } else {
       console.log('⚠️ No guide data available, skipping data capture');
       console.log('⚠️ step.guideData:', step.guideData);
@@ -952,6 +955,17 @@
         if (!name) {
           name = `field_${fields.length}`;
           label = label || name;
+        }
+        
+        // Ensure unique name (prevent duplicate keys from overwriting)
+        const originalName = name;
+        let counter = 2;
+        while (fields.some(f => f.name === name)) {
+          name = `${originalName}_${counter}`;
+          counter++;
+        }
+        if (name !== originalName) {
+          console.log(`   ⚠️ Duplicate name detected, renamed: "${originalName}" → "${name}"`);
         }
         
         // Get value
