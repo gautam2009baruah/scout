@@ -556,6 +556,7 @@
     window.__scoutTooltipObserver = observer;
     window.__scoutTooltipWorkflowId = workflowId;
     window.__scoutTooltipFilledCount = 0; // Track fills globally
+    window.__scoutTooltipMainStepsCount = guideData?.filter(s => s.stepPurpose === 'main').length || 0; // Total main steps
     
     // Also store filledCount updater
     window.__scoutTooltipIncrementFilled = () => {
@@ -732,7 +733,7 @@
           clearInterval(checkCompletion);
           
           // Log completion summary
-          const mainStepsInGuide = guideData?.filter(s => s.stepPurpose === 'main').length || 0;
+          const mainStepsInGuide = window.__scoutTooltipMainStepsCount || 0;
           const actuallyFilled = window.__scoutTooltipFilledCount || 0;
           console.log(`✅ Workflow completed after ${checkCount} checks: ${step.label}`);
           console.log(`   📊 Auto-fill summary: ${actuallyFilled}/${mainStepsInGuide} main steps filled`);
@@ -746,6 +747,7 @@
             delete window.__scoutTooltipObserver;
             delete window.__scoutTooltipWorkflowId;
             delete window.__scoutTooltipFilledCount;
+            delete window.__scoutTooltipMainStepsCount;
             delete window.__scoutTooltipIncrementFilled;
             console.log('🧹 Cleaned up tooltip monitor');
           }
@@ -765,6 +767,7 @@
           delete window.__scoutTooltipObserver;
           delete window.__scoutTooltipWorkflowId;
           delete window.__scoutTooltipFilledCount;
+          delete window.__scoutTooltipMainStepsCount;
           delete window.__scoutTooltipIncrementFilled;
         }
         console.error(`⏱️ Workflow execution timeout after ${timeout}ms`);
