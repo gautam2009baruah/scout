@@ -124,15 +124,15 @@
 
       console.log(`📋 Execution plan loaded: ${executionPlan.length} steps`);
 
-      // Show overlay
-      showOverlay({
-        executionId,
-        orchestrationName,
-        status: 'running',
-        completedSteps: 0,
-        totalSteps: executionPlan.length,
-        steps: executionPlan,
-      });
+      // Overlay disabled per user request - no progress screen shown
+      // showOverlay({
+      //   executionId,
+      //   orchestrationName,
+      //   status: 'running',
+      //   completedSteps: 0,
+      //   totalSteps: executionPlan.length,
+      //   steps: executionPlan,
+      // });
 
       // Load Scout Player
       await loadScoutPlayer();
@@ -993,17 +993,11 @@
   }
 
   /**
-   * Show overlay
+   * Show overlay (disabled - user doesn't want progress overlay)
    */
   function showOverlay(state) {
-    if (!overlayElement) {
-      overlayElement = document.createElement('div');
-      overlayElement.className = 'scout-orchestration-overlay';
-      document.body.appendChild(overlayElement);
-    }
-
-    currentExecution = state;
-    renderOverlay();
+    // Overlay disabled per user request
+    return;
   }
 
   /**
@@ -1026,72 +1020,11 @@
   }
 
   /**
-   * Render overlay
+   * Render overlay (disabled - user doesn't want progress overlay)
    */
   function renderOverlay() {
-    if (!overlayElement || !currentExecution) return;
-
-    const state = currentExecution;
-    const progress = state.totalSteps > 0 ? (state.completedSteps / state.totalSteps) * 100 : 0;
-
-    const statusIcon = {
-      running: '⚡',
-      completed: '✅',
-      error: '❌',
-    }[state.status] || '⏺️';
-
-    const stepIcon = {
-      completed: '<span style="color: #10b981;">✓</span>',
-      running: '<span style="color: #3b82f6;">⚡</span>',
-      error: '<span style="color: #ef4444;">✗</span>',
-      skipped: '<span style="color: #9ca3af;">○</span>',
-      pending: '<span style="color: #d1d5db;">○</span>',
-    };
-
-    overlayElement.innerHTML = `
-      <div class="scout-orchestration-header ${state.status}">
-        <div class="scout-orchestration-header-content">
-          <span class="scout-orchestration-icon">${statusIcon}</span>
-          <div>
-            <div class="scout-orchestration-title">Scout Orchestration</div>
-            <div class="scout-orchestration-subtitle">${state.orchestrationName}</div>
-          </div>
-        </div>
-        ${state.status === 'completed' ? '<button class="scout-orchestration-close" onclick="window.ScoutOrchestrationPlayer.hideOverlay()">Close</button>' : ''}
-      </div>
-      ${state.totalSteps > 0 ? `
-        <div class="scout-orchestration-progress">
-          <div class="scout-orchestration-progress-text">
-            <span>Progress</span>
-            <span>${state.completedSteps} / ${state.totalSteps} steps</span>
-          </div>
-          <div class="scout-orchestration-progress-bar">
-            <div class="scout-orchestration-progress-fill" style="width: ${progress}%"></div>
-          </div>
-        </div>
-      ` : ''}
-      ${state.steps && state.steps.length > 0 ? `
-        <div class="scout-orchestration-steps">
-          ${state.steps.map(step => `
-            <div class="scout-orchestration-step">
-              <div class="scout-orchestration-step-icon">${stepIcon[step.status] || stepIcon.pending}</div>
-              <div class="scout-orchestration-step-content">
-                <div class="scout-orchestration-step-label">${step.label}</div>
-                ${step.description ? `<div class="scout-orchestration-step-desc">${step.description}</div>` : ''}
-                ${step.error ? `<div class="scout-orchestration-step-desc" style="color: #ef4444;">${step.error}</div>` : ''}
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      ` : ''}
-      ${state.message || state.error ? `
-        <div class="scout-orchestration-message">
-          <div class="scout-orchestration-message-box ${state.error ? 'error' : 'info'}">
-            ${state.error || state.message}
-          </div>
-        </div>
-      ` : ''}
-    `;
+    // Overlay disabled per user request
+    return;
   }
 
   // Expose public API
