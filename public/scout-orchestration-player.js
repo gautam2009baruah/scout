@@ -123,6 +123,7 @@
     const { executionId, orchestrationId, orchestrationName, triggerData, targetAppId, scoutBaseUrl } = payload;
     let context = payload.context || {}; // Use let so we can reassign when capturing data
     let pendingClearData = null; // Track captured data keys to clear after next step (one-step retention)
+    let dataCapturedAtStep = -1; // Track which step captured the data
     
     // Update config with targetAppId from payload
     if (targetAppId) {
@@ -175,15 +176,6 @@
 
       for (let i = 0; i < executionPlan.length; i++) {
         const step = executionPlan[i];
-
-        // Clear captured data from previous step (ensures data only flows to immediate next node)
-        if (pendingClearData) {
-          console.log(`🧹 Clearing captured data from previous step: [${pendingClearData.join(', ')}]`);
-          for (const key of pendingClearData) {
-            delete context[key];
-          }
-          pendingClearData = null;
-        }
 
         console.log(`▶️ Executing step ${i + 1}/${executionPlan.length}: ${step.label}`);
 
@@ -268,9 +260,10 @@
             if (stepResult && stepResult.capturedData) {
               const capturedKeys = Object.keys(stepResult.capturedData);
               context = { ...context, ...stepResult.capturedData };
-              // Schedule these keys for cleanup after next step
+              // Schedule these keys for cleanup after next step completes
               pendingClearData = capturedKeys;
-              console.log(`📊 Updated context with captured data (will be cleared after next step):`, capturedKeys);
+              dataCapturedAtStep = i; // Track which step captured the data
+              console.log(`📊 Updated context with captured data (will be cleared after step ${i + 2}):`, capturedKeys);
             }
           }
           else if (step.nodeType === 'end') {
@@ -293,6 +286,17 @@
           });
 
           console.log(`✅ Step completed: ${step.label}`);
+
+          // Clear captured data AFTER the consuming step completes (one-step retention)
+          // Only clear if: 1) there's pending data, 2) current step is AFTER the capture step
+          if (pendingClearData && i > dataCapturedAtStep) {
+            console.log(`🧹 Clearing captured data after step ${i + 1} (data from step ${dataCapturedAtStep + 1}): [${pendingClearData.join(', ')}]`);
+            for (const key of pendingClearData) {
+              delete context[key];
+            }
+            pendingClearData = null;
+            dataCapturedAtStep = -1;
+          }
 
         } catch (stepError) {
           console.error(`❌ Step failed: ${step.label}`, stepError);
