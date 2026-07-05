@@ -406,14 +406,89 @@
             
             console.log('🎯 Scout tooltip detected, attempting auto-fill...');
             
-            // Find the target element Scout is highlighting
-            // Scout usually adds data attributes or classes to the highlighted element
-            const highlightedElement = document.querySelector('[data-scout-step-active="true"]') ||
-                                      document.querySelector('.scout-adoption-highlight') ||
-                                      document.activeElement;
+            // Find the actual tooltip element
+            const tooltipElement = node.classList?.contains('scout-adoption-tooltip') ? node : 
+                                  node.querySelector('.scout-adoption-tooltip');
+            
+            // Check if this tooltip is for a workflow step (not just a general message)
+            // Scout tooltips for steps usually have specific content or attributes
+            if (tooltipElement) {
+              const tooltipText = tooltipElement.textContent || '';
+              // Skip tooltips that are just messages (e.g., "Starting workflow", "Complete!")
+              if (tooltipText.toLowerCase().includes('starting') || 
+                  tooltipText.toLowerCase().includes('complete') ||
+                  tooltipText.toLowerCase().includes('finished')) {
+                console.log('⏭️ Skipping non-step tooltip:', tooltipText.substring(0, 50));
+                continue;
+              }
+            }
+            
+            // Try multiple strategies to find the target element Scout is highlighting
+            let highlightedElement = null;
+            
+            // Strategy 1: Check if tooltip has a reference to target element
+            if (tooltipElement) {
+              const targetId = tooltipElement.getAttribute('data-target-id') || 
+                             tooltipElement.getAttribute('data-element-id');
+              if (targetId) {
+                highlightedElement = document.getElementById(targetId);
+              }
+            }
+            
+            // Strategy 2: Look for elements with Scout's highlight classes/attributes
+            if (!highlightedElement) {
+              highlightedElement = document.querySelector('[data-scout-step-active="true"]') ||
+                                 document.querySelector('.scout-adoption-highlight') ||
+                                 document.querySelector('.scout-highlight') ||
+                                 document.querySelector('[data-scout-highlight]');
+            }
+            
+            // Strategy 3: Check currently focused element (Scout might focus it)
+            if (!highlightedElement && document.activeElement && 
+                ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+              highlightedElement = document.activeElement;
+              console.log('  📍 Using focused element');
+            }
+            
+            // Strategy 4: Find input elements near the tooltip's position
+            if (!highlightedElement && tooltipElement) {
+              const rect = tooltipElement.getBoundingClientRect();
+              const inputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+              
+              // Find closest visible input to tooltip
+              let minDistance = Infinity;
+              for (const input of inputs) {
+                // Skip already filled or hidden inputs
+                if (filledElements.has(input) || input.offsetParent === null) continue;
+                
+                const inputRect = input.getBoundingClientRect();
+                const distance = Math.sqrt(
+                  Math.pow(rect.left - inputRect.left, 2) + 
+                  Math.pow(rect.top - inputRect.top, 2)
+                );
+                if (distance < minDistance && distance < 300) { // Within 300px
+                  minDistance = distance;
+                  highlightedElement = input;
+                }
+              }
+              if (highlightedElement) {
+                console.log(`  📍 Found input ${minDistance.toFixed(0)}px from tooltip`);
+              }
+            }
+            
+            // Strategy 5: Check recently modified elements (Scout may have just added attributes)
+            if (!highlightedElement) {
+              const recentlyModified = document.querySelector('input[style*="outline"], select[style*="outline"], textarea[style*="outline"]') ||
+                                      document.querySelector('input[style*="box-shadow"], select[style*="box-shadow"], textarea[style*="box-shadow"]') ||
+                                      document.querySelector('input[style*="border"], select[style*="border"], textarea[style*="border"]');
+              if (recentlyModified) {
+                highlightedElement = recentlyModified;
+                console.log('  📍 Using recently styled element');
+              }
+            }
             
             if (highlightedElement && !filledElements.has(highlightedElement)) {
-              console.log('🔍 Highlighted element:', highlightedElement.tagName, highlightedElement.type);
+              console.log('🔍 Highlighted element:', highlightedElement.tagName, highlightedElement.type, highlightedElement.name || highlightedElement.id || '(no name/id)');
               
               // Only auto-fill input elements
               if (['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
@@ -457,7 +532,12 @@
                 } else {
                   console.log('⚠️ No matching captured field found for this element');
                 }
+              } else {
+                console.log(`⚠️ Highlighted element is ${highlightedElement.tagName}, not an input field - skipping`);
               }
+            } else if (tooltipElement) {
+              console.log('⚠️ Could not find highlighted input element near tooltip');
+              console.log('   Tried strategies: tooltip data attributes, Scout classes, proximity, styles');
             }
           }
         }
