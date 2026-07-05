@@ -92,6 +92,7 @@
   async function handleStartExecution(payload) {
     const { executionId, orchestrationId, orchestrationName, triggerData, targetAppId, scoutBaseUrl } = payload;
     let context = payload.context || {}; // Use let so we can reassign when capturing data
+    let pendingClearData = null; // Track captured data keys to clear after next step (one-step retention)
     
     // Update config with targetAppId from payload
     if (targetAppId) {
@@ -144,6 +145,15 @@
 
       for (let i = 0; i < executionPlan.length; i++) {
         const step = executionPlan[i];
+
+        // Clear captured data from previous step (ensures data only flows to immediate next node)
+        if (pendingClearData) {
+          console.log(`🧹 Clearing captured data from previous step: [${pendingClearData.join(', ')}]`);
+          for (const key of pendingClearData) {
+            delete context[key];
+          }
+          pendingClearData = null;
+        }
 
         console.log(`▶️ Executing step ${i + 1}/${executionPlan.length}: ${step.label}`);
 
@@ -224,10 +234,13 @@
             }
             
             console.log(`✅ Data capture completed:`, stepResult);
-            // Merge captured data into context for next steps
+            // Merge captured data into context for NEXT step only (one-step retention)
             if (stepResult && stepResult.capturedData) {
+              const capturedKeys = Object.keys(stepResult.capturedData);
               context = { ...context, ...stepResult.capturedData };
-              console.log(`📊 Updated context with captured data:`, context);
+              // Schedule these keys for cleanup after next step
+              pendingClearData = capturedKeys;
+              console.log(`📊 Updated context with captured data (will be cleared after next step):`, capturedKeys);
             }
           }
           else if (step.nodeType === 'end') {
@@ -391,7 +404,7 @@
     const workflowConfig = step.config || {};
     if (workflowConfig.autoFillFromDataCapture && step.guideData && context) {
       console.log('🤖 Auto-fill enabled, attempting smart field matching...');
-      console.log('📊 Context data:', context);
+      console.log('📊 Context data (from immediately preceding data_capture only):', context);
       console.log('📊 Workflow guide data:', step.guideData?.length, 'steps');
       
       // Filter context to only include captured data fields (objects with value/metadata)
