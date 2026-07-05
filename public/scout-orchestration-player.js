@@ -450,6 +450,7 @@
           }
         }
       }
+    });
     
     // Function to find and fill the highlighted control
     function findAndFillHighlightedControl(element) {
