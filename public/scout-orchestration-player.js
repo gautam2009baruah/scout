@@ -409,159 +409,164 @@
             
             console.log('🎯 Scout tooltip detected, looking for highlighted control...');
             
-            // Scout focuses the actual control - check document.activeElement FIRST!
-            let highlightedElement = null;
-            const strategies = [];
-            
-            // Strategy 1: Check focused element (Scout focuses the control!)
-            console.log('   Checking document.activeElement...');
-            if (document.activeElement) {
-              console.log(`     activeElement: ${document.activeElement.tagName} (${document.activeElement.type || 'no type'})`);
-              
-              if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-                highlightedElement = document.activeElement;
-                strategies.push('focused-element');
-                console.log('     ✅ Using focused element (Scout put cursor here)');
-              } else {
-                console.log(`     ⏭️ activeElement is ${document.activeElement.tagName}, not an input`);
-              }
-            } else {
-              console.log('     ⚠️ No activeElement');
-            }
-            
-            // Strategy 2: Check for Scout's highlight markers on INPUT elements (fallback)
-            if (!highlightedElement) {
-              console.log('   Checking for Scout markers...');
-              const markedInputs = document.querySelectorAll([
-                'input[data-scout-step-active="true"]',
-                'select[data-scout-step-active="true"]', 
-                'textarea[data-scout-step-active="true"]',
-                'input[data-scout-highlight]',
-                'select[data-scout-highlight]',
-                'textarea[data-scout-highlight]',
-                'input.scout-adoption-highlight',
-                'select.scout-adoption-highlight',
-                'textarea.scout-adoption-highlight',
-                'input[data-scout-active]',
-                'select[data-scout-active]',
-                'textarea[data-scout-active]'
-              ].join(', '));
-              
-              if (markedInputs.length > 0) {
-                highlightedElement = markedInputs[0];
-                strategies.push('scout-markers');
-                console.log(`     ✅ Found ${markedInputs.length} marked inputs, using first`);
-              } else {
-                console.log('     ⏭️ No marked inputs found');
-              }
-            }
-            
-            // Strategy 3: Visual highlighting (last resort fallback)
-            if (!highlightedElement) {
-              console.log('   Checking visual highlighting as fallback...');
-              const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
-              
-              for (const input of allInputs) {
-                if (input.offsetParent === null) continue;
-                
-                const computedStyle = window.getComputedStyle(input);
-                const inlineStyle = input.getAttribute('style') || '';
-                
-                if (inlineStyle.includes('outline') || 
-                    inlineStyle.includes('box-shadow') ||
-                    inlineStyle.includes('z-index') ||
-                    (computedStyle.outline !== 'none' && computedStyle.outline.includes('px'))) {
-                  highlightedElement = input;
-                  strategies.push('visual-highlight-fallback');
-                  console.log('     ✅ Found visually highlighted input');
-                  break;
-                }
-              }
-            }
-            
-            console.log(`   Detection result: ${strategies.length > 0 ? strategies.join(', ') : 'NONE'}`);
-            
-            // If we found an input element, try to match and fill it
-            if (highlightedElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
-              console.log('🔍 Highlighted control:', highlightedElement.tagName, highlightedElement.type, highlightedElement.name || highlightedElement.id || '(no name/id)');
-              
-              // Extract metadata and try to match
-              // Extract metadata and try to match
-                const elementMetadata = extractElementMetadata(highlightedElement);
-                console.log('📊 Element metadata:', elementMetadata);
-                
-                // Try to match with ANY field in captured data
-                const matchedField = findMatchingCapturedField(elementMetadata, capturedData);
-                
-                if (matchedField) {
-                  console.log(`✅ Match found: "${matchedField.label}" → filling with "${matchedField.value}"`);
-                  
-                  // Auto-fill the element
-                  if (highlightedElement.tagName === 'SELECT') {
-                    const options = Array.from(highlightedElement.options);
-                    const matchingOption = options.find(opt => 
-                      opt.value === matchedField.value || opt.text === matchedField.value
-                    );
-                    if (matchingOption) {
-                      highlightedElement.value = matchingOption.value;
-                    } else {
-                      highlightedElement.value = matchedField.value;
-                    }
-                  } else if (highlightedElement.type === 'checkbox') {
-                    highlightedElement.checked = !!matchedField.value;
-                  } else if (highlightedElement.type === 'radio') {
-                    highlightedElement.checked = highlightedElement.value === matchedField.value;
-                  } else {
-                    highlightedElement.value = matchedField.value;
-                  }
-                  
-                  // Trigger events
-                  highlightedElement.dispatchEvent(new Event('input', { bubbles: true }));
-                  highlightedElement.dispatchEvent(new Event('change', { bubbles: true }));
-                  
-                  fillCount++;
-                  console.log(`🎉 Auto-filled: ${highlightedElement.tagName} with "${matchedField.value}" (total fills: ${fillCount})`);
-                } else {
-                  console.log('⚠️ No match found in captured data for this element');
-                }
-            } else {
-              console.log('⚠️ Could not find highlighted control (input/select/textarea)');
-              
-              // Debug: Show what's on the page
-              const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
-              const visibleInputs = Array.from(allInputs).filter(i => i.offsetParent !== null);
-              console.log('   Total inputs on page:', allInputs.length, '(', visibleInputs.length, 'visible)');
-              
-              // Check if any inputs have Scout markers
-              const markedInputs = document.querySelectorAll([
-                'input[data-scout-step-active]',
-                'select[data-scout-step-active]',
-                'textarea[data-scout-step-active]',
-                'input[data-scout-highlight]',
-                'select[data-scout-highlight]',
-                'textarea[data-scout-highlight]',
-                'input.scout-adoption-highlight',
-                'select.scout-adoption-highlight',
-                'textarea.scout-adoption-highlight'
-              ].join(', '));
-              
-              if (markedInputs.length > 0) {
-                console.log('   Found', markedInputs.length, 'inputs with Scout markers but they were filtered out');
-                console.log('   First marked input:', markedInputs[0].tagName, markedInputs[0].type);
-              } else {
-                console.log('   No inputs found with Scout highlight markers');
-              }
-              
-              // Check what element types DO have Scout markers
-              const anyMarked = document.querySelectorAll('[data-scout-step-active], [data-scout-highlight], .scout-adoption-highlight');
-              if (anyMarked.length > 0) {
-                console.log('   Elements with Scout markers (non-input):', Array.from(anyMarked).map(e => e.tagName).join(', '));
-              }
-            }
+            // Wait a moment for Scout to finish focusing the element
+            setTimeout(() => {
+              findAndFillHighlightedControl();
+            }, 100); // 100ms delay for Scout to focus
           }
         }
       }
     });
+    
+    // Function to find and fill the highlighted control
+    function findAndFillHighlightedControl() {
+      // Scout focuses the actual control - check document.activeElement FIRST!
+      let highlightedElement = null;
+      const strategies = [];
+      
+      // Strategy 1: Check focused element (Scout focuses the control!)
+      console.log('   Checking document.activeElement...');
+      if (document.activeElement) {
+        console.log(`     activeElement: ${document.activeElement.tagName} (${document.activeElement.type || 'no type'})`);
+        
+        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+          highlightedElement = document.activeElement;
+          strategies.push('focused-element');
+          console.log('     ✅ Using focused element (Scout put cursor here)');
+        } else {
+          console.log(`     ⏭️ activeElement is ${document.activeElement.tagName}, not an input`);
+        }
+      }
+      
+      // Strategy 2: Check for Scout's highlight markers on INPUT elements (fallback)
+      if (!highlightedElement) {
+        console.log('   Checking for Scout markers...');
+        const markedInputs = document.querySelectorAll([
+          'input[data-scout-step-active="true"]',
+          'select[data-scout-step-active="true"]', 
+          'textarea[data-scout-step-active="true"]',
+          'input[data-scout-highlight]',
+          'select[data-scout-highlight]',
+          'textarea[data-scout-highlight]',
+          'input.scout-adoption-highlight',
+          'select.scout-adoption-highlight',
+          'textarea.scout-adoption-highlight',
+          'input[data-scout-active]',
+          'select[data-scout-active]',
+          'textarea[data-scout-active]'
+        ].join(', '));
+        
+        if (markedInputs.length > 0) {
+          highlightedElement = markedInputs[0];
+          strategies.push('scout-markers');
+          console.log(`     ✅ Found ${markedInputs.length} marked inputs, using first`);
+        } else {
+          console.log('     ⏭️ No marked inputs found');
+        }
+      }
+      
+      // Strategy 3: Visual highlighting (last resort fallback)
+      if (!highlightedElement) {
+        console.log('   Checking visual highlighting as fallback...');
+        const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+        
+        for (const input of allInputs) {
+          if (input.offsetParent === null) continue;
+          
+          const computedStyle = window.getComputedStyle(input);
+          const inlineStyle = input.getAttribute('style') || '';
+          
+          if (inlineStyle.includes('outline') || 
+              inlineStyle.includes('box-shadow') ||
+              inlineStyle.includes('z-index') ||
+              (computedStyle.outline !== 'none' && computedStyle.outline.includes('px'))) {
+            highlightedElement = input;
+            strategies.push('visual-highlight-fallback');
+            console.log('     ✅ Found visually highlighted input');
+            break;
+          }
+        }
+      }
+      
+      console.log(`   Detection result: ${strategies.length > 0 ? strategies.join(', ') : 'NONE'}`);
+      
+      // If we found an input element, try to match and fill it
+      if (highlightedElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
+        console.log('🔍 Highlighted control:', highlightedElement.tagName, highlightedElement.type, highlightedElement.name || highlightedElement.id || '(no name/id)');
+        
+        // Extract metadata and try to match
+        const elementMetadata = extractElementMetadata(highlightedElement);
+        console.log('📊 Element metadata:', elementMetadata);
+        
+        // Try to match with ANY field in captured data
+        const matchedField = findMatchingCapturedField(elementMetadata, capturedData);
+        
+        if (matchedField) {
+          console.log(`✅ Match found: "${matchedField.label}" → filling with "${matchedField.value}"`);
+          
+          // Auto-fill the element
+          if (highlightedElement.tagName === 'SELECT') {
+            const options = Array.from(highlightedElement.options);
+            const matchingOption = options.find(opt => 
+              opt.value === matchedField.value || opt.text === matchedField.value
+            );
+            if (matchingOption) {
+              highlightedElement.value = matchingOption.value;
+            } else {
+              highlightedElement.value = matchedField.value;
+            }
+          } else if (highlightedElement.type === 'checkbox') {
+            highlightedElement.checked = !!matchedField.value;
+          } else if (highlightedElement.type === 'radio') {
+            highlightedElement.checked = highlightedElement.value === matchedField.value;
+          } else {
+            highlightedElement.value = matchedField.value;
+          }
+          
+          // Trigger events
+          highlightedElement.dispatchEvent(new Event('input', { bubbles: true }));
+          highlightedElement.dispatchEvent(new Event('change', { bubbles: true }));
+          
+          fillCount++;
+          console.log(`🎉 Auto-filled: ${highlightedElement.tagName} with "${matchedField.value}" (total fills: ${fillCount})`);
+        } else {
+          console.log('⚠️ No match found in captured data for this element');
+        }
+      } else {
+        console.log('⚠️ Could not find highlighted control (input/select/textarea)');
+        
+        // Debug: Show what's on the page
+        const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+        const visibleInputs = Array.from(allInputs).filter(i => i.offsetParent !== null);
+        console.log('   Total inputs on page:', allInputs.length, '(', visibleInputs.length, 'visible)');
+        
+        // Check if any inputs have Scout markers
+        const markedInputs = document.querySelectorAll([
+          'input[data-scout-step-active]',
+          'select[data-scout-step-active]',
+          'textarea[data-scout-step-active]',
+          'input[data-scout-highlight]',
+          'select[data-scout-highlight]',
+          'textarea[data-scout-highlight]',
+          'input.scout-adoption-highlight',
+          'select.scout-adoption-highlight',
+          'textarea.scout-adoption-highlight'
+        ].join(', '));
+        
+        if (markedInputs.length > 0) {
+          console.log('   Found', markedInputs.length, 'inputs with Scout markers but they were filtered out');
+          console.log('   First marked input:', markedInputs[0].tagName, markedInputs[0].type);
+        } else {
+          console.log('   No inputs found with Scout highlight markers');
+        }
+        
+        // Check what element types DO have Scout markers
+        const anyMarked = document.querySelectorAll('[data-scout-step-active], [data-scout-highlight], .scout-adoption-highlight');
+        if (anyMarked.length > 0) {
+          console.log('   Elements with Scout markers (non-input):', Array.from(anyMarked).map(e => e.tagName).join(', '));
+        }
+      }
+    } // End of findAndFillHighlightedControl
     
     // Start observing
     observer.observe(document.body, {
