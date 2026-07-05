@@ -37,6 +37,33 @@ export function UserMenu({ name }: { name: string }) {
   async function logout() {
     setLoggingOut(true);
     try {
+      // Clear chatbot conversation history from sessionStorage
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        const keysToRemove: string[] = [];
+        
+        // Find all chatbot-related keys
+        for (let i = 0; i < window.sessionStorage.length; i++) {
+          const key = window.sessionStorage.key(i);
+          if (key && key.startsWith('scout-chatbot:')) {
+            keysToRemove.push(key);
+          }
+        }
+        
+        // Remove all chatbot keys
+        keysToRemove.forEach(key => {
+          window.sessionStorage.removeItem(key);
+        });
+        
+        console.log(`🧹 Cleared ${keysToRemove.length} chatbot session items on logout`);
+      }
+      
+      // Clear orchestration executions from window
+      if (typeof window !== 'undefined' && (window as any).__orchestrationExecutions) {
+        const count = Object.keys((window as any).__orchestrationExecutions).length;
+        delete (window as any).__orchestrationExecutions;
+        console.log(`🧹 Cleared ${count} orchestration executions on logout`);
+      }
+      
       await fetch("/api/admin/auth/logout", { method: "POST" });
     } finally {
       window.location.href = "/control-panel/login";
