@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin";
 import { OrchestrationDesigner } from "@/components/admin/orchestration-designer";
 import { getMasterData } from "@/lib/admin/administration";
+import { listGuidedWorkflowTargetApps } from "@/lib/admin/guided-workflows";
 import { MODULE_KEYS, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
@@ -27,7 +28,10 @@ export default async function OrchestrationDesignerPage() {
 
   requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
-  const [{ companies }] = await Promise.all([getMasterData()]);
+  const [{ companies }, targetApps] = await Promise.all([
+    getMasterData(),
+    listGuidedWorkflowTargetApps(session),
+  ]);
 
   return (
     <AdminShell
@@ -36,7 +40,7 @@ export default async function OrchestrationDesignerPage() {
       session={session}
       title="Orchestration Designer"
     >
-      <OrchestrationDesigner companies={companies} />
+      <OrchestrationDesigner companies={companies} targetApps={targetApps} />
     </AdminShell>
   );
 }

@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { companyId, name, description, variables } = body;
+    const { companyId, targetAppId, name, description, variables } = body;
 
     // Validate required fields
     if (!companyId || !name) {
@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
     const { createOrchestration } = await import("@/lib/orchestrations/db");
     const orchestration = await createOrchestration({
       companyId,
+      targetAppId,
       name,
       description,
       variables,

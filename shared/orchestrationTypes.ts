@@ -18,6 +18,7 @@ export type OrchestrationTriggerType =
 export type Orchestration = {
   id: string;
   companyId: string;
+  targetAppId?: string | null;
   name: string;
   description: string | null;
   version: number;

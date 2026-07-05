@@ -50,6 +50,7 @@ import { ExecutionMonitor } from "./execution-monitor";
 import { OrchestrationList } from "./orchestration-list";
 
 type CompanyOption = { id: string; name: string };
+type TargetAppOption = { id: string; name: string; companyId: string };
 
 const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: string }> = [
   { type: "trigger", label: "Trigger", icon: "⚡", color: "#10b981" },
@@ -98,7 +99,7 @@ const nodeTypes: NodeTypes = {
   custom: CustomNode,
 };
 
-export function OrchestrationDesigner({ companies }: { companies: CompanyOption[] }) {
+export function OrchestrationDesigner({ companies, targetApps }: { companies: CompanyOption[]; targetApps: TargetAppOption[] }) {
   const [orchestration, setOrchestration] = useState<Orchestration | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -673,6 +674,7 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
       {isCreateDialogOpen && (
         <CreateOrchestrationDialog
           companies={companies}
+          targetApps={targetApps}
           onClose={() => setIsCreateDialogOpen(false)}
           onCreate={(newOrchestration) => {
             setOrchestration(newOrchestration);
@@ -722,17 +724,29 @@ export function OrchestrationDesigner({ companies }: { companies: CompanyOption[
 
 function CreateOrchestrationDialog({
   companies,
+  targetApps,
   onClose,
   onCreate,
 }: {
   companies: CompanyOption[];
+  targetApps: TargetAppOption[];
   onClose: () => void;
   onCreate: (orchestration: Orchestration) => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [companyId, setCompanyId] = useState(companies[0]?.id || "");
+  const [targetAppId, setTargetAppId] = useState("");
   const [creating, setCreating] = useState(false);
+
+  // Filter target apps by selected company
+  const companyTargetApps = targetApps.filter(app => app.companyId === companyId);
+
+  // Update target app when company changes
+  const handleCompanyChange = (newCompanyId: string) => {
+    setCompanyId(newCompanyId);
+    setTargetAppId(""); // Reset target app when company changes
+  };
 
   const handleCreate = async () => {
     setCreating(true);
@@ -742,6 +756,7 @@ function CreateOrchestrationDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyId,
+          targetAppId,
           name,
           description,
           variables: {},
@@ -793,11 +808,26 @@ function CreateOrchestrationDialog({
             <select
               className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
               value={companyId}
-              onChange={(e) => setCompanyId(e.target.value)}
+              onChange={(e) => handleCompanyChange(e.target.value)}
             >
               {companies.map((company) => (
                 <option key={company.id} value={company.id}>
                   {company.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-600">Target App</label>
+            <select
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              value={targetAppId}
+              onChange={(e) => setTargetAppId(e.target.value)}
+            >
+              <option value="">Select target app...</option>
+              {companyTargetApps.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.name}
                 </option>
               ))}
             </select>
@@ -814,7 +844,7 @@ function CreateOrchestrationDialog({
           </button>
           <button
             className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-            disabled={!name || !companyId || creating}
+            disabled={!name || !companyId || !targetAppId || creating}
             onClick={handleCreate}
             type="button"
           >

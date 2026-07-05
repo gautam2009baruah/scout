@@ -27,6 +27,7 @@ import { clearTriggerCache } from "./chatbot-trigger-matcher";
 type OrchestrationRow = {
   id: string;
   company_id: string;
+  target_app_id?: string | null;
   name: string;
   description: string | null;
   version: number;
@@ -45,6 +46,7 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
   return {
     id: row.id,
     companyId: row.company_id,
+    targetAppId: row.target_app_id || null,
     name: row.name,
     description: row.description,
     version: row.version,
@@ -61,6 +63,7 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
 
 export async function createOrchestration(data: {
   companyId: string;
+  targetAppId?: string | null;
   name: string;
   description?: string | null;
   variables?: Record<string, unknown>;
@@ -69,11 +72,12 @@ export async function createOrchestration(data: {
   const pool = getPool();
   const result = await pool.query<OrchestrationRow>(
     `INSERT INTO orchestrations 
-     (company_id, name, description, variables, created_by_email, updated_by_email)
-     VALUES ($1, $2, $3, $4, $5, $5)
+     (company_id, target_app_id, name, description, variables, created_by_email, updated_by_email)
+     VALUES ($1, $2, $3, $4, $5, $6, $6)
      RETURNING *`,
     [
       data.companyId,
+      data.targetAppId || null,
       data.name,
       data.description || null,
       JSON.stringify(data.variables || {}),
