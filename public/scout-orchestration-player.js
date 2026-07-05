@@ -395,8 +395,22 @@
     console.log('👀 Setting up Scout tooltip monitor for auto-fill...');
     console.log('📊 Using', guideData?.length || 0, 'workflow steps with Scout selectors');
     
+    // Count main vs navigation steps
+    if (guideData) {
+      const mainSteps = guideData.filter(s => s.stepPurpose === 'main').length;
+      const navSteps = guideData.filter(s => s.stepPurpose === 'navigation').length;
+      console.log(`   📋 Breakdown: ${mainSteps} main steps, ${navSteps} navigation steps`);
+      
+      // Log each step for debugging
+      guideData.forEach((step, idx) => {
+        const identity = step.elementIdentity || {};
+        console.log(`   Step ${idx + 1}: ${step.stepPurpose || 'unknown'} - ${identity.labelText || identity.placeholder || step.stepDescription || 'N/A'}`);
+      });
+    }
+    
     const filledElements = new Set(); // Track which elements we've already filled
     let currentStepIndex = 0; // Track which workflow step we're on
+    let filledCount = 0; // Track successful fills
     
     // Observer for tooltip appearing
     const observer = new MutationObserver((mutations) => {
@@ -408,6 +422,7 @@
                node.querySelector?.('.scout-adoption-tooltip'))) {
             
             console.log('🎯 Scout tooltip detected, attempting auto-fill...');
+            console.log(`   Current step index: ${currentStepIndex}, Total steps: ${guideData?.length || 0}`);
             
             // Skip if no guide data available
             if (!guideData || currentStepIndex >= guideData.length) {
@@ -500,8 +515,13 @@
                   
                   // Mark as filled
                   filledElements.add(highlightedElement);
+                  filledCount++;
+                  if (window.__scoutTooltipIncrementFilled) {
+                    window.__scoutTooltipIncrementFilled();
+                  }
                   
                   console.log(`🎉 Auto-filled: ${highlightedElement.tagName} with "${matchedField.value}"`);
+                  console.log(`   ✅ Successfully filled field ${filledCount}`);
                   
                   // Move to next step for next tooltip
                   currentStepIndex++;
@@ -535,6 +555,12 @@
     // Store observer reference to clean up later
     window.__scoutTooltipObserver = observer;
     window.__scoutTooltipWorkflowId = workflowId;
+    window.__scoutTooltipFilledCount = 0; // Track fills globally
+    
+    // Also store filledCount updater
+    window.__scoutTooltipIncrementFilled = () => {
+      window.__scoutTooltipFilledCount = (window.__scoutTooltipFilledCount || 0) + 1;
+    };
     
     console.log('✅ Tooltip monitor active');
   }
@@ -704,7 +730,14 @@
         // Workflow is complete when progress key is removed AND tooltip is gone
         if (!progressValue && !hasTooltip) {
           clearInterval(checkCompletion);
+          
+          // Log completion summary
+          const mainStepsInGuide = guideData?.filter(s => s.stepPurpose === 'main').length || 0;
+          const actuallyFilled = window.__scoutTooltipFilledCount || 0;
           console.log(`✅ Workflow completed after ${checkCount} checks: ${step.label}`);
+          console.log(`   📊 Auto-fill summary: ${actuallyFilled}/${mainStepsInGuide} main steps filled`);
+          
+          // Clean up auto-fill data and observer
           
           // Clean up auto-fill data and observer
           delete window.__scoutWorkflowAutoFillData;
@@ -712,6 +745,8 @@
             window.__scoutTooltipObserver.disconnect();
             delete window.__scoutTooltipObserver;
             delete window.__scoutTooltipWorkflowId;
+            delete window.__scoutTooltipFilledCount;
+            delete window.__scoutTooltipIncrementFilled;
             console.log('🧹 Cleaned up tooltip monitor');
           }
           
@@ -729,6 +764,8 @@
           window.__scoutTooltipObserver.disconnect();
           delete window.__scoutTooltipObserver;
           delete window.__scoutTooltipWorkflowId;
+          delete window.__scoutTooltipFilledCount;
+          delete window.__scoutTooltipIncrementFilled;
         }
         console.error(`⏱️ Workflow execution timeout after ${timeout}ms`);
         reject(new Error('Workflow execution timeout'));
