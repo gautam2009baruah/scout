@@ -869,8 +869,14 @@
     for (const step of workflowSteps) {
       const stepIdentity = step.elementIdentity || {};
       
-      // Skip non-input steps
-      if (!['input', 'change', 'select'].includes(step.type)) {
+      // Skip non-input steps (only match input, change, select, click on input fields)
+      if (!['input', 'change', 'select', 'click'].includes(step.type)) {
+        continue;
+      }
+      
+      // Skip if no selector candidates (can't fill without selector)
+      if (!step.selectorCandidates?.length && !stepIdentity.selectorCandidates?.length) {
+        console.log(`⏭️ Skipping step (no selectors): ${stepIdentity.labelText || step.stepDescription}`);
         continue;
       }
       
@@ -885,7 +891,11 @@
         id: (stepIdentity.id || '').toLowerCase().trim(),
       };
       
-      console.log(`🔍 Matching workflow field:`, workflowIdentifiers);
+      console.log(`🔍 Matching workflow field:`, {
+        label: workflowIdentifiers.labelText,
+        name: workflowIdentifiers.name,
+        id: workflowIdentifiers.id,
+      });
       
       let bestMatch = null;
       let bestScore = 0;
@@ -907,30 +917,68 @@
           label: (capturedFieldData.label || '').toLowerCase().trim(),
         };
         
+        console.log(`  ↔️ Comparing with captured: ${capturedFieldData.label} (name: ${capturedIdentifiers.name}, fieldName: ${capturedFieldName})`);
+        
         // Calculate match score
         let score = 0;
+        const scoreDetails = [];
         
         // Exact matches (highest priority)
-        if (workflowIdentifiers.labelText && workflowIdentifiers.labelText === capturedIdentifiers.labelText) score += 100;
-        if (workflowIdentifiers.name && workflowIdentifiers.name === capturedIdentifiers.name) score += 90;
-        if (workflowIdentifiers.id && workflowIdentifiers.id === capturedIdentifiers.id) score += 90;
-        if (workflowIdentifiers.ariaLabel && workflowIdentifiers.ariaLabel === capturedIdentifiers.ariaLabel) score += 80;
+        if (workflowIdentifiers.labelText && workflowIdentifiers.labelText === capturedIdentifiers.labelText) {
+          score += 100;
+          scoreDetails.push('labelText exact match: +100');
+        }
+        if (workflowIdentifiers.name && workflowIdentifiers.name === capturedIdentifiers.name) {
+          score += 90;
+          scoreDetails.push('name exact match: +90');
+        }
+        if (workflowIdentifiers.id && workflowIdentifiers.id === capturedIdentifiers.id) {
+          score += 90;
+          scoreDetails.push('id exact match: +90');
+        }
+        if (workflowIdentifiers.ariaLabel && workflowIdentifiers.ariaLabel === capturedIdentifiers.ariaLabel) {
+          score += 80;
+          scoreDetails.push('ariaLabel exact match: +80');
+        }
+        
+        // Also compare workflow field against captured field's label (important!)
+        if (workflowIdentifiers.labelText && capturedIdentifiers.label && 
+            workflowIdentifiers.labelText === capturedIdentifiers.label) {
+          score += 100;
+          scoreDetails.push('workflow labelText = captured label: +100');
+        }
         
         // Partial matches (medium priority)
         if (workflowIdentifiers.labelText && capturedIdentifiers.labelText && 
             (workflowIdentifiers.labelText.includes(capturedIdentifiers.labelText) || 
-             capturedIdentifiers.labelText.includes(workflowIdentifiers.labelText))) score += 60;
+             capturedIdentifiers.labelText.includes(workflowIdentifiers.labelText))) {
+          score += 60;
+          scoreDetails.push('labelText partial match: +60');
+        }
+        
+        if (workflowIdentifiers.labelText && capturedIdentifiers.label && 
+            (workflowIdentifiers.labelText.includes(capturedIdentifiers.label) || 
+             capturedIdentifiers.label.includes(workflowIdentifiers.labelText))) {
+          score += 60;
+          scoreDetails.push('workflow labelText vs captured label partial: +60');
+        }
         
         if (workflowIdentifiers.placeholder && capturedIdentifiers.placeholder && 
             (workflowIdentifiers.placeholder.includes(capturedIdentifiers.placeholder) || 
-             capturedIdentifiers.placeholder.includes(workflowIdentifiers.placeholder))) score += 40;
+             capturedIdentifiers.placeholder.includes(workflowIdentifiers.placeholder))) {
+          score += 40;
+          scoreDetails.push('placeholder partial match: +40');
+        }
         
         // Normalize and compare (handle camelCase, snake_case, spaces)
         const normalizeString = (str) => str.replace(/[^a-z0-9]/g, '');
         const workflowNormalized = normalizeString(workflowIdentifiers.labelText || workflowIdentifiers.name);
         const capturedNormalized = normalizeString(capturedIdentifiers.labelText || capturedIdentifiers.label || capturedIdentifiers.fieldName);
         
-        if (workflowNormalized && capturedNormalized && workflowNormalized === capturedNormalized) score += 70;
+        if (workflowNormalized && capturedNormalized && workflowNormalized === capturedNormalized) {
+          score += 70;
+          scoreDetails.push(`normalized match: +70 (${workflowNormalized} = ${capturedNormalized})`);
+        }
         
         // Common semantic matches (lower priority)
         const semanticPairs = [
@@ -948,7 +996,15 @@
         for (const synonyms of semanticPairs) {
           const workflowInGroup = synonyms.some(syn => workflowNormalized.includes(syn));
           const capturedInGroup = synonyms.some(syn => capturedNormalized.includes(syn));
-          if (workflowInGroup && capturedInGroup) score += 50;
+          if (workflowInGroup && capturedInGroup) {
+            score += 50;
+            scoreDetails.push(`semantic match: +50 (${synonyms[0]} group)`);
+          }
+        }
+        
+        // Log score if any points earned
+        if (score > 0) {
+          console.log(`    Score: ${score} - ${scoreDetails.join(', ')}`);
         }
         
         // Update best match if this score is higher
@@ -958,12 +1014,13 @@
             capturedFieldName,
             capturedValue: capturedFieldData.value,
             score,
+            scoreDetails,
           };
         }
       }
       
-      // Only use matches with score >= 50 (to avoid false positives)
-      if (bestMatch && bestScore >= 50) {
+      // Only use matches with score >= 40 (lower threshold for better matching)
+      if (bestMatch && bestScore >= 40) {
         // Get selector for this workflow step
         const selector = step.selectorCandidates?.[0]?.value || 
                         stepIdentity.selectorCandidates?.[0]?.value;
@@ -974,10 +1031,15 @@
             confidence: bestScore,
             capturedField: bestMatch.capturedFieldName,
           };
-          console.log(`✅ Matched: ${stepIdentity.labelText || 'unknown'} ← ${bestMatch.capturedFieldName} (score: ${bestScore})`);
+          console.log(`✅ MATCHED: "${stepIdentity.labelText || 'unknown'}" ← "${bestMatch.capturedFieldName}" (score: ${bestScore})`);
+          console.log(`   Details: ${bestMatch.scoreDetails.join(', ')}`);
+        } else {
+          console.warn(`⚠️ Match found but no selector available for: ${stepIdentity.labelText || 'unknown'}`);
         }
       } else if (bestMatch) {
-        console.log(`⚠️ Low confidence match skipped: ${stepIdentity.labelText || 'unknown'} ← ${bestMatch.capturedFieldName} (score: ${bestScore})`);
+        console.log(`❌ Low confidence - skipped: "${stepIdentity.labelText || 'unknown'}" ← "${bestMatch.capturedFieldName}" (score: ${bestScore}, need >=40)`);
+      } else {
+        console.log(`❌ No match found for: "${stepIdentity.labelText || 'unknown'}"`);
       }
     }
     
