@@ -867,22 +867,39 @@
     console.log('📊 Workflow steps:', workflowSteps.length);
     console.log('📊 Captured fields:', Object.keys(capturedData).length);
     
+    // Debug: show all workflow step types and descriptions
+    console.log('📋 Workflow step details:');
+    workflowSteps.forEach((step, idx) => {
+      console.log(`  Step ${idx}: type="${step.type}", label="${step.elementIdentity?.labelText || step.stepDescription}", hasSelectors=${!!(step.selectorCandidates?.length || step.elementIdentity?.selectorCandidates?.length)}`);
+    });
+    
+    // Debug: show captured data details
+    console.log('📦 Captured data details:');
+    for (const [key, value] of Object.entries(capturedData)) {
+      console.log(`  Field: "${key}", label="${value.label}", value="${value.value}"`);
+    }
+    
     const matches = {};
     
     // Iterate through workflow steps (target fields)
     for (const step of workflowSteps) {
       const stepIdentity = step.elementIdentity || {};
       
+      console.log(`\n🔍 Processing step: type="${step.type}", label="${stepIdentity.labelText || step.stepDescription}"`);
+      
       // Skip non-input steps (only match input, change, select, click on input fields)
       if (!['input', 'change', 'select', 'click'].includes(step.type)) {
+        console.log(`  ⏭️ Skipping: not an input step (type: ${step.type})`);
         continue;
       }
       
       // Skip if no selector candidates (can't fill without selector)
       if (!step.selectorCandidates?.length && !stepIdentity.selectorCandidates?.length) {
-        console.log(`⏭️ Skipping step (no selectors): ${stepIdentity.labelText || step.stepDescription}`);
+        console.log(`  ⏭️ Skipping: no selectors available`);
         continue;
       }
+      
+      console.log(`  ✅ Step qualifies for matching (type: ${step.type}, has selectors)`);
       
       // Get all possible identifiers for this workflow field
       const workflowIdentifiers = {
