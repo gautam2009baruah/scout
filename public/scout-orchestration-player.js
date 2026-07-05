@@ -1062,9 +1062,28 @@
       
       // Only use matches with score >= 40 (lower threshold for better matching)
       if (bestMatch && bestScore >= 40) {
-        // Get selector for this workflow step
-        const selector = step.selectorCandidates?.[0]?.value || 
-                        stepIdentity.selectorCandidates?.[0]?.value;
+        // Get selector for this workflow step (prioritize queryable selectors)
+        let selector = null;
+        
+        // Try to find a valid CSS or XPath selector (not label-text type)
+        const allCandidates = [...(step.selectorCandidates || []), ...(stepIdentity.selectorCandidates || [])];
+        
+        // Prioritize: placeholder > css > xpath (skip label-text as it's not a valid DOM selector)
+        const validCandidate = allCandidates.find(c => 
+          c.type && ['placeholder', 'css', 'xpath'].includes(c.type)
+        );
+        
+        if (validCandidate) {
+          selector = validCandidate.value;
+          console.log(`   Using selector: type="${validCandidate.type}", value="${selector}"`);
+        } else {
+          // Fallback: use first selector if it doesn't look like label text
+          const fallback = allCandidates[0];
+          if (fallback && fallback.value && !fallback.value.match(/^[A-Z]/)) {
+            selector = fallback.value;
+            console.log(`   Using fallback selector: "${selector}"`);
+          }
+        }
         
         if (selector) {
           matches[selector] = {
@@ -1075,7 +1094,8 @@
           console.log(`✅ MATCHED: "${stepIdentity.labelText || 'unknown'}" ← "${bestMatch.capturedFieldName}" (score: ${bestScore})`);
           console.log(`   Details: ${bestMatch.scoreDetails.join(', ')}`);
         } else {
-          console.warn(`⚠️ Match found but no selector available for: ${stepIdentity.labelText || 'unknown'}`);
+          console.warn(`⚠️ Match found but no valid selector available for: ${stepIdentity.labelText || 'unknown'}`);
+          console.warn(`   Available selectors:`, allCandidates.map(c => `${c.type}: ${c.value}`));
         }
       } else if (bestMatch) {
         console.log(`❌ Low confidence - skipped: "${stepIdentity.labelText || 'unknown'}" ← "${bestMatch.capturedFieldName}" (score: ${bestScore}, need >=40)`);
