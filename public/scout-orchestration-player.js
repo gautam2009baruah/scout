@@ -408,11 +408,12 @@
                node.querySelector?.('.scout-adoption-tooltip'))) {
             
             console.log('🎯 Scout tooltip detected, looking for highlighted control...');
+            console.log('   ⏱️ Waiting 5 seconds for Scout to focus element...');
             
             // Wait a moment for Scout to finish focusing the element
             setTimeout(() => {
               findAndFillHighlightedControl();
-            }, 500); // 500ms delay for testing - Scout needs time to focus
+            }, 5000); // 5 seconds delay for testing - see if Scout ever focuses
           }
         }
       }
