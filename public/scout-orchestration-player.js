@@ -898,10 +898,19 @@
       
       console.log(`\n🔍 Processing step: type="${step.type}", label="${stepIdentity.labelText || step.stepDescription}"`);
       
-      // Skip non-input steps (only match input, change, select, click on input fields)
-      if (!['input', 'change', 'select', 'click'].includes(step.type)) {
-        console.log(`  ⏭️ Skipping: not an input step (type: ${step.type})`);
+      // Check if this is an input-related step based on elementIdentity.tagName
+      const isInputElement = stepIdentity.tagName && ['input', 'select', 'textarea'].includes(stepIdentity.tagName.toLowerCase());
+      const isInputStep = ['input', 'change', 'select', 'click', 'manual-select'].includes(step.type);
+      
+      // Skip non-input steps (unless the element itself is an input field)
+      if (!isInputStep && !isInputElement) {
+        console.log(`  ⏭️ Skipping: not an input step (type: ${step.type}, tagName: ${stepIdentity.tagName})`);
         continue;
+      }
+      
+      // If it's an input element but wrong step type, allow it (Scout recorded as manual-select)
+      if (isInputElement) {
+        console.log(`  ✅ Input element detected (tagName: ${stepIdentity.tagName}), proceeding with matching`);
       }
       
       // Skip if no selector candidates (can't fill without selector)
