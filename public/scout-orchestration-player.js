@@ -486,10 +486,11 @@
     for (const step of steps) {
       // Get selector candidates from the step
       let selectorCandidates = step.selectorCandidates;
+      let elementIdentity = step.elementIdentity;
       
       // If step has elementIdentity, use those selectors instead
-      if (step.elementIdentity && step.elementIdentity.selectorCandidates) {
-        selectorCandidates = step.elementIdentity.selectorCandidates;
+      if (elementIdentity && elementIdentity.selectorCandidates) {
+        selectorCandidates = elementIdentity.selectorCandidates;
       }
       
       if (!selectorCandidates || selectorCandidates.length === 0) {
@@ -506,16 +507,58 @@
         try {
           const element = document.querySelector(selector);
           if (element && (element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA')) {
-            // Get field name
-            let name = element.name || element.id || '';
-            if (!name && element.placeholder) {
-              name = element.placeholder.toLowerCase().replace(/\s+/g, '_');
+            
+            // Get label from training data (same logic as training plugin)
+            // Priority: labelText > ariaLabel > accessibleName > nearbyHeading > text > placeholder
+            let label = '';
+            if (elementIdentity) {
+              label = elementIdentity.labelText || 
+                      elementIdentity.ariaLabel || 
+                      elementIdentity.accessibleName || 
+                      elementIdentity.nearbyHeading ||
+                      elementIdentity.text ||
+                      elementIdentity.placeholder ||
+                      step.stepDescription ||
+                      '';
+            } else {
+              // Fallback to step data
+              label = step.stepDescription || step.elementText || step.labelText || step.ariaLabel || '';
             }
-            if (!name && element.getAttribute('aria-label')) {
-              name = element.getAttribute('aria-label').toLowerCase().replace(/\s+/g, '_');
+            
+            // If still no label, try to find it from DOM
+            if (!label && element.id) {
+              const labelEl = document.querySelector(`label[for="${element.id}"]`);
+              if (labelEl) {
+                label = labelEl.textContent.trim();
+              }
             }
+            
+            // If still no label, use aria-label or placeholder from element
+            if (!label) {
+              label = element.getAttribute('aria-label') || element.placeholder || '';
+            }
+            
+            // Get field name (use label for name, clean it up)
+            // This ensures the field name is user-friendly
+            let name = '';
+            if (label) {
+              // Convert label to a valid field name (lowercase, replace spaces with underscores)
+              name = label.toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9\s]/g, '') // Remove special characters
+                .replace(/\s+/g, '_') // Replace spaces with underscores
+                .substring(0, 50); // Limit length
+            }
+            
+            // Fallback to element attributes if no label-based name
+            if (!name) {
+              name = element.name || element.id || '';
+            }
+            
+            // Last resort fallback
             if (!name) {
               name = `field_${fields.length}`;
+              label = label || name;
             }
             
             // Get value
@@ -528,15 +571,6 @@
               value = element.value;
             } else {
               value = element.value || '';
-            }
-            
-            // Get label
-            let label = step.stepDescription || step.elementText || name;
-            if (element.id) {
-              const labelEl = document.querySelector(`label[for="${element.id}"]`);
-              if (labelEl) {
-                label = labelEl.textContent.trim();
-              }
             }
             
             console.log(`📝 Captured field: ${name} = "${value}" (label: "${label}")`);
