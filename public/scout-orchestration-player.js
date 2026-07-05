@@ -59,6 +59,36 @@
   }
 
   /**
+   * Query element by selector (handles both CSS and XPath)
+   */
+  function queryElement(selector) {
+    // Check if it's an XPath selector (starts with / or //)
+    if (selector.startsWith('/') || selector.startsWith('//')) {
+      try {
+        const result = document.evaluate(
+          selector,
+          document,
+          null,
+          XPathResult.FIRST_ORDERED_NODE_TYPE,
+          null
+        );
+        return result.singleNodeValue;
+      } catch (xpathError) {
+        console.warn(`⚠️ XPath evaluation failed for: ${selector}`, xpathError);
+        return null;
+      }
+    } else {
+      // CSS selector
+      try {
+        return document.querySelector(selector);
+      } catch (cssError) {
+        console.warn(`⚠️ CSS selector failed for: ${selector}`, cssError);
+        return null;
+      }
+    }
+  }
+
+  /**
    * Handle custom event (same window mode)
    */
   function handleCustomEvent(event) {
@@ -429,7 +459,7 @@
             let filledCount = 0;
             for (const [selector, matchData] of Object.entries(fieldMatches)) {
               try {
-                const element = document.querySelector(selector);
+                const element = queryElement(selector);
                 if (element) {
                   // Set value based on element type
                   if (element.tagName === 'SELECT') {
@@ -621,7 +651,7 @@
         const selector = candidate.value;
         
         try {
-          const element = document.querySelector(selector);
+          const element = queryElement(selector);
           if (element && (element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA')) {
             
             // Get label from training data (same logic as training plugin)
@@ -953,7 +983,7 @@
     if (fieldConfig.selectors && fieldConfig.selectors.length > 0) {
       for (const selector of fieldConfig.selectors) {
         try {
-          const element = document.querySelector(selector);
+          const element = queryElement(selector);
           if (element) {
             if (element.tagName === 'SELECT') {
               return element.value;
