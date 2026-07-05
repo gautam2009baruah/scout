@@ -87,6 +87,7 @@ async function buildExecutionPlan(
   // Traverse graph from trigger node
   const visited = new Set<string>();
   const queue = [triggerNode.id];
+  let lastWorkflowGuideData: any = null; // Track last workflow's guide data
 
   while (queue.length > 0) {
     const nodeId = queue.shift()!;
@@ -130,6 +131,9 @@ async function buildExecutionPlan(
             (step as any).matchRequired = workflowConfig.triggerPhrases && workflowConfig.triggerPhrases.length > 0;
             (step as any).inputMapping = workflowConfig.inputMapping; // For auto-fill
             (step as any).timeout = workflowConfig.timeout || 300000; // Default 5 minutes
+            
+            // Store guide data for next data_capture step
+            lastWorkflowGuideData = guide.recordedActions;
           }
         } catch (error) {
           console.error(`Failed to fetch guide for workflow ${workflowConfig.workflowId}:`, error);
@@ -139,7 +143,11 @@ async function buildExecutionPlan(
 
     // Add data_capture specific data
     if (node.nodeType === 'data_capture' && node.config) {
-      // Config is already included above, just ensure it has what the client needs
+      // Pass previous workflow's guide data so data capture knows which fields to capture
+      if (lastWorkflowGuideData) {
+        (step as any).guideData = lastWorkflowGuideData;
+        console.log(`📋 Passing workflow guide data to data_capture step: ${lastWorkflowGuideData.steps?.length || 0} steps`);
+      }
       (step as any).config = node.config;
     }
 

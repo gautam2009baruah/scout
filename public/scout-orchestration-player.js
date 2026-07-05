@@ -202,6 +202,8 @@
           }
           else if (step.nodeType === 'data_capture') {
             console.log(`📋 Starting data capture execution: ${step.label}`);
+            console.log(`🔍 Data capture step has guideData:`, step.guideData ? 'YES' : 'NO');
+            console.log(`🔍 GuideData length:`, step.guideData?.length);
             // Execute data capture
             stepResult = await executeDataCaptureStep(step);
             console.log(`✅ Data capture completed:`, stepResult);
@@ -424,9 +426,9 @@
     const capturedData = {};
 
     // Capture only fields from the workflow that was just executed
-    if (step.guideData && step.guideData.steps) {
+    if (step.guideData && Array.isArray(step.guideData) && step.guideData.length > 0) {
       console.log('🔍 Capturing data from workflow-highlighted fields...');
-      const workflowFields = captureFieldsFromWorkflowSteps(step.guideData.steps);
+      const workflowFields = captureFieldsFromWorkflowSteps(step.guideData);
       console.log(`📊 Captured ${workflowFields.length} fields from workflow:`, workflowFields);
 
       for (const field of workflowFields) {
@@ -434,6 +436,7 @@
       }
     } else {
       console.log('⚠️ No guide data available, skipping data capture');
+      console.log('⚠️ step.guideData:', step.guideData);
     }
 
     // Capture specific fields if configured (overrides auto-discovered values)
@@ -481,12 +484,25 @@
     console.log(`🔍 Processing ${steps.length} workflow steps...`);
     
     for (const step of steps) {
-      if (!step.selectors || step.selectors.length === 0) {
+      // Get selector candidates from the step
+      let selectorCandidates = step.selectorCandidates;
+      
+      // If step has elementIdentity, use those selectors instead
+      if (step.elementIdentity && step.elementIdentity.selectorCandidates) {
+        selectorCandidates = step.elementIdentity.selectorCandidates;
+      }
+      
+      if (!selectorCandidates || selectorCandidates.length === 0) {
         continue;
       }
       
-      // Try each selector to find the element
-      for (const selector of step.selectors) {
+      // Try each selector candidate to find the element
+      // Sort by confidence (highest first)
+      const sortedCandidates = [...selectorCandidates].sort((a, b) => b.confidence - a.confidence);
+      
+      for (const candidate of sortedCandidates) {
+        const selector = candidate.value;
+        
         try {
           const element = document.querySelector(selector);
           if (element && (element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA')) {
@@ -515,7 +531,7 @@
             }
             
             // Get label
-            let label = step.label || name;
+            let label = step.stepDescription || step.elementText || name;
             if (element.id) {
               const labelEl = document.querySelector(`label[for="${element.id}"]`);
               if (labelEl) {
