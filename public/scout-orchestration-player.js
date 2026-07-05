@@ -410,60 +410,48 @@
                node.querySelector?.('.scout-adoption-tooltip'))) {
             
             console.log('🎯 Scout tooltip detected');
-            console.log(`   Mode: ${hasAutoFillData ? 'AUTO-FILL' : 'DATA CAPTURE'}`);
+            console.log(`   Mode: ${hasAutoFillData ? 'AUTO-FILL + TRACKING' : 'TRACKING ONLY'}`);
             
-            // Define polling function
-            const startPolling = () => {
-              // Poll for Scout to focus the element
-              let attempts = 0;
-              const maxAttempts = 140; // 140 attempts × 50ms = 7 seconds max
+            // Poll for Scout to focus the element (adaptive polling handles timing)
+            let attempts = 0;
+            const maxAttempts = 140; // 140 attempts × 50ms = 7 seconds max
+            
+            const pollForFocus = () => {
+              attempts++;
               
-              const pollForFocus = () => {
-                attempts++;
+              // Check if Scout has focused an input element
+              if (document.activeElement && 
+                  ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
                 
-                // Check if Scout has focused an input element
-                if (document.activeElement && 
-                    ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-                  
-                  const element = document.activeElement;
-                  console.log(`   ✅ Element focused after ${attempts * 50}ms`);
-                  
-                  // ALWAYS track the element (for data capture)
-                  if (!window.__scoutDataCaptureElements.includes(element)) {
-                    window.__scoutDataCaptureElements.push(element);
-                    console.log(`   📋 Tracked: ${element.tagName} (total: ${window.__scoutDataCaptureElements.length})`);
-                  } else {
-                    console.log(`   ⏭️ Already tracked this element`);
-                  }
-                  
-                  // Try auto-fill ONLY if we have captured data
-                  if (hasAutoFillData) {
-                    findAndFillHighlightedControl(element);
-                  }
-                  
-                  // IMPORTANT: Continue polling to catch multiple controls in the same step
-                  if (attempts < maxAttempts) {
-                    setTimeout(pollForFocus, 50);
-                  }
-                  
-                } else if (attempts < maxAttempts) {
-                  setTimeout(pollForFocus, 50);
+                const element = document.activeElement;
+                console.log(`   ✅ Element focused after ${attempts * 50}ms`);
+                
+                // ALWAYS track the element (for data capture)
+                if (!window.__scoutDataCaptureElements.includes(element)) {
+                  window.__scoutDataCaptureElements.push(element);
+                  console.log(`   📋 Tracked: ${element.tagName} (total: ${window.__scoutDataCaptureElements.length})`);
                 } else {
-                  console.log(`   ⏱️ Polling timeout after ${attempts * 50}ms`);
+                  console.log(`   ⏭️ Already tracked this element`);
                 }
-              };
-              
-              pollForFocus();
+                
+                // Try auto-fill ONLY if we have captured data
+                if (hasAutoFillData) {
+                  findAndFillHighlightedControl(element);
+                }
+                
+                // IMPORTANT: Continue polling to catch multiple controls in the same step
+                if (attempts < maxAttempts) {
+                  setTimeout(pollForFocus, 50);
+                }
+                
+              } else if (attempts < maxAttempts) {
+                setTimeout(pollForFocus, 50);
+              } else {
+                console.log(`   ⏱️ Polling timeout after ${attempts * 50}ms`);
+              }
             };
             
-            // IMPORTANT: Only delay for auto-fill mode, not data capture
-            if (hasAutoFillData) {
-              console.log('   ⏳ Waiting 4s for Scout to highlight control (auto-fill mode)...');
-              setTimeout(startPolling, 4000); // Wait 4 seconds for Scout to highlight
-            } else {
-              console.log('   🚀 Starting immediate tracking (data capture mode)');
-              startPolling(); // Start immediately for data capture
-            }
+            pollForFocus();
           }
         }
       }
@@ -472,6 +460,7 @@
     // Function to find and fill the highlighted control
     function findAndFillHighlightedControl(element) {
       console.log('🔍 Auto-fill attempt for:', element.tagName, element.type, element.name || element.id || '(no name/id)');
+      console.log('📊 Available captured fields:', Object.keys(capturedData));
       
       // Extract metadata and try to match
       const elementMetadata = extractElementMetadata(element);
@@ -512,6 +501,7 @@
         console.log(`🎉 Auto-filled successfully (total fills: ${fillCount})`);
       } else {
         console.log('⚠️ No match found in captured data for this element');
+        console.log('   Available fields:', Object.keys(capturedData).map(k => `"${capturedData[k].label}"`).join(', '));
       }
     }
     
@@ -739,19 +729,29 @@
     if (workflowConfig.autoFillFromDataCapture && context) {
       console.log('🤖 Auto-fill enabled - will attempt to fill matched fields');
       console.log('📊 Context data available:', Object.keys(context).length, 'fields');
+      console.log('📊 Context keys:', Object.keys(context));
       
       // Filter context to only include captured data fields (objects with value/metadata)
       for (const [key, value] of Object.entries(context)) {
+        console.log(`   Checking context field "${key}":`, typeof value, value);
         if (value && typeof value === 'object' && 'value' in value && 'metadata' in value) {
           capturedData[key] = value;
+          console.log(`   ✅ Added to capturedData: "${key}" = "${value.value}"`);
+        } else {
+          console.log(`   ⏭️ Skipped (not captured data format)`);
         }
       }
       
+      console.log(`📋 Final capturedData:`, capturedData);
+      console.log(`📋 Fields available for auto-fill:`, Object.keys(capturedData));
+      
       if (Object.keys(capturedData).length === 0) {
-        console.log('⚠️ No captured data found in context');
+        console.log('⚠️ No captured data found in context - auto-fill will not work!');
       }
     } else {
       console.log('ℹ️ Auto-fill disabled for this workflow');
+      console.log(`   autoFillFromDataCapture: ${workflowConfig.autoFillFromDataCapture}`);
+      console.log(`   context exists: ${!!context}`);
     }
     
     // Set up unified monitor (tracks elements + auto-fills if data exists)
