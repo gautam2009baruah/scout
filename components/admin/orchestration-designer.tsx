@@ -66,8 +66,16 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: 
 ];
 
 // Custom Node Component
-const CustomNode = ({ data }: { data: any }) => {
+const CustomNode = ({ data, id }: { data: any; id: string }) => {
   const config = NODE_CONFIGS.find((n) => n.type === data.nodeType);
+  
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (data.onDelete) {
+      data.onDelete(id);
+    }
+  };
+  
   return (
     <div
       className="relative rounded-lg border-2 bg-white px-4 py-3 shadow-md"
@@ -83,6 +91,14 @@ const CustomNode = ({ data }: { data: any }) => {
         position={Position.Right}
         className="!h-3 !w-3 !border-2 !border-white !bg-slate-700"
       />
+      <button
+        className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-colors"
+        onClick={handleDelete}
+        title="Delete node"
+        type="button"
+      >
+        ×
+      </button>
       <div className="flex items-center gap-2">
         <span className="text-xl">{config?.icon}</span>
         <div className="flex-1">
@@ -130,6 +146,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             label: node.label,
             nodeType: node.nodeType,
             config: node.config,
+            onDelete: deleteNode,
           },
         }));
         setNodes(flowNodes);
@@ -151,6 +168,20 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         setEdges(flowEdges);
       });
   }, [orchestration?.id, setNodes, setEdges]);
+
+  // Delete node by ID
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      if (!confirm("Delete this node?")) return;
+      setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+      setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+      if (selectedNode?.id === nodeId) {
+        setSelectedNode(null);
+        setIsPropertiesOpen(false);
+      }
+    },
+    [selectedNode, setNodes, setEdges]
+  );
 
   // Handle connection creation
   const onConnect = useCallback(
@@ -206,11 +237,12 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           label: config?.label || "Node",
           nodeType,
           config: {},
+          onDelete: deleteNode,
         },
       };
       setNodes((nds) => [...nds, newNode]);
     },
-    [orchestration, setNodes]
+    [orchestration, setNodes, deleteNode]
   );
 
   // Delete selected node
@@ -303,6 +335,13 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   // Publish orchestration
   const publishOrchestration = async () => {
     if (!orchestration || isPublishing) return;
+
+    // Validate that there's an end node
+    const hasEndNode = nodes.some((node) => (node.data as any).nodeType === 'end');
+    if (!hasEndNode) {
+      alert('Cannot publish: Orchestration must have an End node. Please add an End node to complete the workflow.');
+      return;
+    }
 
     if (!confirm("Publish this orchestration? This will make it available for execution.")) {
       return;

@@ -423,15 +423,17 @@
     const config = step.config || {};
     const capturedData = {};
 
-    // Auto-discover form fields (enabled by default unless explicitly disabled)
-    if (config.autoCapture !== false) {
-      console.log('🔍 Auto-discovering form fields...');
-      const fields = discoverFormFields();
-      console.log(`📊 Discovered ${fields.length} fields:`, fields);
+    // Capture only fields from the workflow that was just executed
+    if (step.guideData && step.guideData.steps) {
+      console.log('🔍 Capturing data from workflow-highlighted fields...');
+      const workflowFields = captureFieldsFromWorkflowSteps(step.guideData.steps);
+      console.log(`📊 Captured ${workflowFields.length} fields from workflow:`, workflowFields);
 
-      for (const field of fields) {
+      for (const field of workflowFields) {
         capturedData[field.name] = field.value;
       }
+    } else {
+      console.log('⚠️ No guide data available, skipping data capture');
     }
 
     // Capture specific fields if configured (overrides auto-discovered values)
@@ -471,7 +473,80 @@
   }
 
   /**
-   * Discover all form fields on the page
+   * Capture fields from workflow steps (only fields that Scout Player highlighted)
+   */
+  function captureFieldsFromWorkflowSteps(steps) {
+    const fields = [];
+    
+    console.log(`🔍 Processing ${steps.length} workflow steps...`);
+    
+    for (const step of steps) {
+      if (!step.selectors || step.selectors.length === 0) {
+        continue;
+      }
+      
+      // Try each selector to find the element
+      for (const selector of step.selectors) {
+        try {
+          const element = document.querySelector(selector);
+          if (element && (element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA')) {
+            // Get field name
+            let name = element.name || element.id || '';
+            if (!name && element.placeholder) {
+              name = element.placeholder.toLowerCase().replace(/\s+/g, '_');
+            }
+            if (!name && element.getAttribute('aria-label')) {
+              name = element.getAttribute('aria-label').toLowerCase().replace(/\s+/g, '_');
+            }
+            if (!name) {
+              name = `field_${fields.length}`;
+            }
+            
+            // Get value
+            let value = '';
+            if (element.tagName === 'SELECT') {
+              value = element.value || '';
+            } else if (element.type === 'checkbox') {
+              value = element.checked;
+            } else if (element.type === 'radio' && element.checked) {
+              value = element.value;
+            } else {
+              value = element.value || '';
+            }
+            
+            // Get label
+            let label = step.label || name;
+            if (element.id) {
+              const labelEl = document.querySelector(`label[for="${element.id}"]`);
+              if (labelEl) {
+                label = labelEl.textContent.trim();
+              }
+            }
+            
+            console.log(`📝 Captured field: ${name} = "${value}" (label: "${label}")`);
+            
+            fields.push({
+              name: name,
+              label: label,
+              value: value,
+              element: element.tagName,
+              type: element.type || 'text',
+            });
+            
+            break; // Found the element, move to next step
+          }
+        } catch (e) {
+          console.warn(`⚠️ Failed to query selector: ${selector}`, e);
+        }
+      }
+    }
+    
+    console.log(`✅ Captured ${fields.length} fields from workflow steps`);
+    return fields;
+  }
+
+  /**
+   * Discover all form fields on the page (DEPRECATED - use captureFieldsFromWorkflowSteps)
    */
   function discoverFormFields() {
     const fields = [];
@@ -635,11 +710,23 @@
       const table = document.createElement('table');
       table.style.cssText = 'width: 100%; border-collapse: collapse; margin-bottom: 24px;';
 
+      const allowEdit = config.allowUserEdit !== false; // enabled by default
+      const editedData = { ...capturedData }; // Store edited values
+
       let tableHTML = '<thead><tr><th style="text-align: left; padding: 8px; border-bottom: 2px solid #e5e7eb;">Field</th><th style="text-align: left; padding: 8px; border-bottom: 2px solid #e5e7eb;">Value</th></tr></thead><tbody>';
       
       for (const [key, value] of Object.entries(capturedData)) {
         const displayValue = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value);
-        tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(key)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(displayValue)}</td></tr>`;
+        if (allowEdit) {
+          const inputId = `edit_${key.replace(/[^a-zA-Z0-9]/g, '_')}`;
+          if (typeof value === 'boolean') {
+            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(key)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="checkbox" id="${inputId}" ${value ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer;"></td></tr>`;
+          } else {
+            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(key)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="text" id="${inputId}" value="${escapeHtml(displayValue)}" style="width: 100%; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;"></td></tr>`;
+          }
+        } else {
+          tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(key)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(displayValue)}</td></tr>`;
+        }
       }
 
       tableHTML += '</tbody>';
@@ -660,6 +747,23 @@
       continueBtn.textContent = 'Continue';
       continueBtn.style.cssText = 'padding: 10px 20px; border: none; background: #3b82f6; color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500;';
       continueBtn.onclick = () => {
+        // Collect edited values if editing is enabled
+        if (allowEdit) {
+          for (const key of Object.keys(capturedData)) {
+            const inputId = `edit_${key.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const input = document.getElementById(inputId);
+            if (input) {
+              if (input.type === 'checkbox') {
+                editedData[key] = input.checked;
+              } else {
+                editedData[key] = input.value;
+              }
+            }
+          }
+          console.log('📝 User edited data:', editedData);
+          // Update capturedData with edited values
+          Object.assign(capturedData, editedData);
+        }
         overlay.remove();
         resolve(true);
       };
@@ -903,13 +1007,11 @@
   }
 
   /**
-   * Update overlay
+   * Update overlay (disabled - user doesn't want progress overlay)
    */
   function updateOverlay(updates) {
-    if (!currentExecution) return;
-
-    currentExecution = { ...currentExecution, ...updates };
-    renderOverlay();
+    // Overlay disabled per user request
+    return;
   }
 
   /**
