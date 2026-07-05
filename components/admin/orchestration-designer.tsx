@@ -92,12 +92,12 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
         className="!h-3 !w-3 !border-2 !border-white !bg-slate-700"
       />
       <button
-        className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-md hover:bg-red-600 transition-colors"
+        className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
         onClick={handleDelete}
         title="Delete node"
         type="button"
       >
-        ×
+        <Trash2 className="h-2.5 w-2.5" />
       </button>
       <div className="flex items-center gap-2">
         <span className="text-xl">{config?.icon}</span>
