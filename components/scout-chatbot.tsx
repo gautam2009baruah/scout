@@ -594,7 +594,13 @@ export function ScoutChatbot({
       
       // Initialize storage Map if needed
       if (!(window as any).__orchestrationExecutions) {
-        (window as any).__orchestrationExecutions = {};
+        // Try to load from sessionStorage first
+        try {
+          const stored = sessionStorage.getItem('scout-orchestration-executions');
+          (window as any).__orchestrationExecutions = stored ? JSON.parse(stored) : {};
+        } catch {
+          (window as any).__orchestrationExecutions = {};
+        }
       }
       
       // Store by executionId (supports multiple pending orchestrations)
@@ -614,6 +620,13 @@ export function ScoutChatbot({
       };
       
       (window as any).__orchestrationExecutions[trigger.executionId] = orchestrationData;
+      
+      // Persist to sessionStorage
+      try {
+        sessionStorage.setItem('scout-orchestration-executions', JSON.stringify((window as any).__orchestrationExecutions));
+      } catch (e) {
+        console.warn('Failed to store orchestration in sessionStorage:', e);
+      }
       
       console.log('✅ Stored orchestration execution:', orchestrationData);
       console.log('🔑 Stored executionId:', trigger.executionId);
@@ -973,7 +986,19 @@ function parseMarkdownText(text: string): ReactNode {
               
               console.log('🎯 Orchestration link clicked, executionId:', executionId);
               
-              const executions = (window as any).__orchestrationExecutions || {};
+              // Load from sessionStorage if not in memory
+              let executions = (window as any).__orchestrationExecutions;
+              if (!executions || Object.keys(executions).length === 0) {
+                try {
+                  const stored = sessionStorage.getItem('scout-orchestration-executions');
+                  executions = stored ? JSON.parse(stored) : {};
+                  (window as any).__orchestrationExecutions = executions;
+                  console.log('📦 Loaded orchestrations from sessionStorage:', Object.keys(executions));
+                } catch {
+                  executions = {};
+                }
+              }
+              
               const orchestrationData = executions[executionId];
               
               console.log('📦 Looking up orchestration for executionId:', executionId);

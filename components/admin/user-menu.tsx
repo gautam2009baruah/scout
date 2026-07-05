@@ -41,27 +41,27 @@ export function UserMenu({ name }: { name: string }) {
       if (typeof window !== 'undefined' && window.sessionStorage) {
         const keysToRemove: string[] = [];
         
-        // Find all chatbot-related keys
+        // Find all chatbot-related keys and orchestration keys
         for (let i = 0; i < window.sessionStorage.length; i++) {
           const key = window.sessionStorage.key(i);
-          if (key && key.startsWith('scout-chatbot:')) {
+          if (key && (key.startsWith('scout-chatbot:') || key === 'scout-orchestration-executions')) {
             keysToRemove.push(key);
           }
         }
         
-        // Remove all chatbot keys
+        // Remove all chatbot and orchestration keys
         keysToRemove.forEach(key => {
           window.sessionStorage.removeItem(key);
         });
         
-        console.log(`🧹 Cleared ${keysToRemove.length} chatbot session items on logout`);
+        console.log(`🧹 Cleared ${keysToRemove.length} session items on logout`);
       }
       
       // Clear orchestration executions from window
       if (typeof window !== 'undefined' && (window as any).__orchestrationExecutions) {
         const count = Object.keys((window as any).__orchestrationExecutions).length;
         delete (window as any).__orchestrationExecutions;
-        console.log(`🧹 Cleared ${count} orchestration executions on logout`);
+        console.log(`🧹 Cleared ${count} orchestration executions from memory`);
       }
       
       await fetch("/api/admin/auth/logout", { method: "POST" });
