@@ -409,10 +409,11 @@
               (node.classList?.contains('scout-adoption-tooltip') || 
                node.querySelector?.('.scout-adoption-tooltip'))) {
             
-            console.log('🎯 Scout tooltip detected, waiting 4s for Scout to highlight control...');
+            console.log('🎯 Scout tooltip detected');
+            console.log(`   Mode: ${hasAutoFillData ? 'AUTO-FILL' : 'DATA CAPTURE'}`);
             
-            // Wait 4 seconds for Scout to highlight and focus the element
-            setTimeout(() => {
+            // Define polling function
+            const startPolling = () => {
               // Poll for Scout to focus the element
               let attempts = 0;
               const maxAttempts = 140; // 140 attempts × 50ms = 7 seconds max
@@ -425,7 +426,7 @@
                     ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
                   
                   const element = document.activeElement;
-                  console.log(`   ✅ Element focused after ${attempts * 50}ms (+ 4s initial wait)`);
+                  console.log(`   ✅ Element focused after ${attempts * 50}ms`);
                   
                   // ALWAYS track the element (for data capture)
                   if (!window.__scoutDataCaptureElements.includes(element)) {
@@ -448,12 +449,21 @@
                 } else if (attempts < maxAttempts) {
                   setTimeout(pollForFocus, 50);
                 } else {
-                  console.log(`   ⏱️ Timeout after ${attempts * 50}ms (+ 4s initial wait)`);
+                  console.log(`   ⏱️ Polling timeout after ${attempts * 50}ms`);
                 }
               };
               
               pollForFocus();
-            }, 4000); // Wait 4 seconds for Scout to highlight the control
+            };
+            
+            // IMPORTANT: Only delay for auto-fill mode, not data capture
+            if (hasAutoFillData) {
+              console.log('   ⏳ Waiting 4s for Scout to highlight control (auto-fill mode)...');
+              setTimeout(startPolling, 4000); // Wait 4 seconds for Scout to highlight
+            } else {
+              console.log('   🚀 Starting immediate tracking (data capture mode)');
+              startPolling(); // Start immediately for data capture
+            }
           }
         }
       }
