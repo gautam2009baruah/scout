@@ -1054,16 +1054,20 @@
       let tableHTML = '<thead><tr><th style="text-align: left; padding: 8px; border-bottom: 2px solid #e5e7eb;">Field</th><th style="text-align: left; padding: 8px; border-bottom: 2px solid #e5e7eb;">Value</th></tr></thead><tbody>';
       
       for (const [key, value] of Object.entries(capturedData)) {
-        const displayValue = typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value);
+        // Extract actual value from object structure { value, label, type, metadata }
+        const actualValue = (value && typeof value === 'object' && 'value' in value) ? value.value : value;
+        const fieldLabel = (value && typeof value === 'object' && 'label' in value) ? value.label : key;
+        const displayValue = typeof actualValue === 'boolean' ? (actualValue ? 'Yes' : 'No') : String(actualValue);
+        
         if (allowEdit) {
           const inputId = `edit_${key.replace(/[^a-zA-Z0-9]/g, '_')}`;
-          if (typeof value === 'boolean') {
-            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(key)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="checkbox" id="${inputId}" ${value ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer;"></td></tr>`;
+          if (typeof actualValue === 'boolean') {
+            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(fieldLabel)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="checkbox" id="${inputId}" ${actualValue ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer;"></td></tr>`;
           } else {
-            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(key)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="text" id="${inputId}" value="${escapeHtml(displayValue)}" style="width: 100%; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;"></td></tr>`;
+            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(fieldLabel)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="text" id="${inputId}" value="${escapeHtml(displayValue)}" style="width: 100%; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;"></td></tr>`;
           }
         } else {
-          tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(key)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(displayValue)}</td></tr>`;
+          tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(fieldLabel)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(displayValue)}</td></tr>`;
         }
       }
 
@@ -1091,10 +1095,15 @@
             const inputId = `edit_${key.replace(/[^a-zA-Z0-9]/g, '_')}`;
             const input = document.getElementById(inputId);
             if (input) {
-              if (input.type === 'checkbox') {
-                editedData[key] = input.checked;
+              const newValue = input.type === 'checkbox' ? input.checked : input.value;
+              
+              // Preserve object structure if it exists
+              if (capturedData[key] && typeof capturedData[key] === 'object' && 'value' in capturedData[key]) {
+                // Update only the value property, keep metadata
+                editedData[key] = { ...capturedData[key], value: newValue };
               } else {
-                editedData[key] = input.value;
+                // Simple value
+                editedData[key] = newValue;
               }
             }
           }
