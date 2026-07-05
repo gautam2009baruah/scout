@@ -1066,6 +1066,20 @@
       
       // Only use matches with score >= 40 (lower threshold for better matching)
       if (bestMatch && bestScore >= 40) {
+        // Check if this step is on the current page (compare URLs)
+        const stepUrl = step.url || stepIdentity.url;
+        const currentUrl = window.location.href;
+        const currentPath = window.location.pathname;
+        
+        // If step has URL and it doesn't match current page, skip (workflow will navigate first)
+        if (stepUrl && !currentUrl.includes(stepUrl) && !stepUrl.includes(currentPath)) {
+          console.log(`  ⏭️ Skipping: field is on different page`);
+          console.log(`     Step URL: ${stepUrl}`);
+          console.log(`     Current URL: ${currentUrl}`);
+          console.log(`     Note: Scout Player will navigate during workflow execution`);
+          continue;
+        }
+        
         // Get selector for this workflow step (prioritize queryable selectors)
         let selector = null;
         
