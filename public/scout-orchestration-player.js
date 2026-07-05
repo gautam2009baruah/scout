@@ -206,6 +206,23 @@
             console.log(`🔍 GuideData length:`, step.guideData?.length);
             // Execute data capture
             stepResult = await executeDataCaptureStep(step);
+            
+            // Check if user cancelled
+            if (stepResult && stepResult.cancelled) {
+              console.log('ℹ️ Orchestration stopped: User cancelled data capture');
+              alert('You cancelled the data capture. The orchestration has been stopped.');
+              
+              // Mark as skipped
+              updateOverlay({
+                steps: executionPlan.map((s, idx) =>
+                  idx === i ? { ...s, status: 'skipped', completedAt: new Date().toISOString() } : s
+                ),
+              });
+              
+              // Stop execution gracefully
+              return;
+            }
+            
             console.log(`✅ Data capture completed:`, stepResult);
             // Merge captured data into context for next steps
             if (stepResult && stepResult.capturedData) {
@@ -460,7 +477,8 @@
       console.log('📋 Showing data capture review screen...');
       const confirmed = await showDataCaptureReview(capturedData, config);
       if (!confirmed) {
-        throw new Error('Data capture cancelled by user');
+        console.log('ℹ️ User cancelled data capture');
+        return { cancelled: true, message: 'Data capture was cancelled' };
       }
       console.log('✅ Data capture confirmed by user');
     } else if (Object.keys(capturedData).length === 0) {
