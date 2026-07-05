@@ -389,11 +389,14 @@
 
   /**
    * Set up monitor for Scout tooltips to auto-fill highlighted fields
+   * Uses Scout's own training selectors to find fields
    */
-  function setupScoutTooltipMonitor(capturedData, workflowId) {
+  function setupScoutTooltipMonitor(capturedData, workflowId, guideData) {
     console.log('👀 Setting up Scout tooltip monitor for auto-fill...');
+    console.log('📊 Using', guideData?.length || 0, 'workflow steps with Scout selectors');
     
     const filledElements = new Set(); // Track which elements we've already filled
+    let currentStepIndex = 0; // Track which workflow step we're on
     
     // Observer for tooltip appearing
     const observer = new MutationObserver((mutations) => {
@@ -406,84 +409,39 @@
             
             console.log('🎯 Scout tooltip detected, attempting auto-fill...');
             
-            // Find the actual tooltip element
-            const tooltipElement = node.classList?.contains('scout-adoption-tooltip') ? node : 
-                                  node.querySelector('.scout-adoption-tooltip');
-            
-            // Check if this tooltip is for a workflow step (not just a general message)
-            // Scout tooltips for steps usually have specific content or attributes
-            if (tooltipElement) {
-              const tooltipText = tooltipElement.textContent || '';
-              // Skip tooltips that are just messages (e.g., "Starting workflow", "Complete!")
-              if (tooltipText.toLowerCase().includes('starting') || 
-                  tooltipText.toLowerCase().includes('complete') ||
-                  tooltipText.toLowerCase().includes('finished')) {
-                console.log('⏭️ Skipping non-step tooltip:', tooltipText.substring(0, 50));
-                continue;
-              }
+            // Skip if no guide data available
+            if (!guideData || currentStepIndex >= guideData.length) {
+              console.log('⏭️ No more workflow steps to process');
+              continue;
             }
             
-            // Try multiple strategies to find the target element Scout is highlighting
+            // Get current workflow step (Scout processes steps sequentially)
+            const currentStep = guideData[currentStepIndex];
+            console.log(`📍 Processing workflow step ${currentStepIndex + 1}/${guideData.length}`);
+            console.log('  Step description:', currentStep.stepDescription || 'N/A');
+            
+            // Try to find element using Scout's own selector data
             let highlightedElement = null;
+            const elementIdentity = currentStep.elementIdentity || {};
+            const selectorCandidates = elementIdentity.selectorCandidates || [];
             
-            // Strategy 1: Check if tooltip has a reference to target element
-            if (tooltipElement) {
-              const targetId = tooltipElement.getAttribute('data-target-id') || 
-                             tooltipElement.getAttribute('data-element-id');
-              if (targetId) {
-                highlightedElement = document.getElementById(targetId);
-              }
-            }
-            
-            // Strategy 2: Look for elements with Scout's highlight classes/attributes
-            if (!highlightedElement) {
-              highlightedElement = document.querySelector('[data-scout-step-active="true"]') ||
-                                 document.querySelector('.scout-adoption-highlight') ||
-                                 document.querySelector('.scout-highlight') ||
-                                 document.querySelector('[data-scout-highlight]');
-            }
-            
-            // Strategy 3: Check currently focused element (Scout might focus it)
-            if (!highlightedElement && document.activeElement && 
-                ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-              highlightedElement = document.activeElement;
-              console.log('  📍 Using focused element');
-            }
-            
-            // Strategy 4: Find input elements near the tooltip's position
-            if (!highlightedElement && tooltipElement) {
-              const rect = tooltipElement.getBoundingClientRect();
-              const inputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+            // Try each selector candidate (Scout already prioritized them during training)
+            for (const candidate of selectorCandidates) {
+              // Skip label-text type selectors (not queryable)
+              if (candidate.type === 'label-text') continue;
               
-              // Find closest visible input to tooltip
-              let minDistance = Infinity;
-              for (const input of inputs) {
-                // Skip already filled or hidden inputs
-                if (filledElements.has(input) || input.offsetParent === null) continue;
+              try {
+                const selector = candidate.selector.replace(/\\/g, ''); // Unescape
+                const element = queryElement(selector);
                 
-                const inputRect = input.getBoundingClientRect();
-                const distance = Math.sqrt(
-                  Math.pow(rect.left - inputRect.left, 2) + 
-                  Math.pow(rect.top - inputRect.top, 2)
-                );
-                if (distance < minDistance && distance < 300) { // Within 300px
-                  minDistance = distance;
-                  highlightedElement = input;
+                if (element && ['INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName) &&
+                    !filledElements.has(element) && element.offsetParent !== null) {
+                  highlightedElement = element;
+                  console.log(`  ✅ Found using ${candidate.type} selector:`, selector.substring(0, 60));
+                  break;
                 }
-              }
-              if (highlightedElement) {
-                console.log(`  📍 Found input ${minDistance.toFixed(0)}px from tooltip`);
-              }
-            }
-            
-            // Strategy 5: Check recently modified elements (Scout may have just added attributes)
-            if (!highlightedElement) {
-              const recentlyModified = document.querySelector('input[style*="outline"], select[style*="outline"], textarea[style*="outline"]') ||
-                                      document.querySelector('input[style*="box-shadow"], select[style*="box-shadow"], textarea[style*="box-shadow"]') ||
-                                      document.querySelector('input[style*="border"], select[style*="border"], textarea[style*="border"]');
-              if (recentlyModified) {
-                highlightedElement = recentlyModified;
-                console.log('  📍 Using recently styled element');
+              } catch (err) {
+                // Selector failed, try next one
               }
             }
             
@@ -529,15 +487,24 @@
                   filledElements.add(highlightedElement);
                   
                   console.log(`🎉 Auto-filled: ${highlightedElement.tagName} with "${matchedField.value}"`);
+                  
+                  // Move to next step for next tooltip
+                  currentStepIndex++;
                 } else {
                   console.log('⚠️ No matching captured field found for this element');
+                  console.log('   Element:', elementIdentity.labelText || elementIdentity.placeholder || 'unknown');
+                  // Still move to next step
+                  currentStepIndex++;
                 }
               } else {
-                console.log(`⚠️ Highlighted element is ${highlightedElement.tagName}, not an input field - skipping`);
+                console.log(`⚠️ Found element is ${highlightedElement.tagName}, not an input field - skipping`);
+                currentStepIndex++;
               }
-            } else if (tooltipElement) {
-              console.log('⚠️ Could not find highlighted input element near tooltip');
-              console.log('   Tried strategies: tooltip data attributes, Scout classes, proximity, styles');
+            } else {
+              console.log('⚠️ Could not find element using Scout selectors');
+              console.log('   Tried', selectorCandidates.length, 'selector candidates from training data');
+              // Move to next step anyway
+              currentStepIndex++;
             }
           }
         }
@@ -686,7 +653,8 @@
       
       if (Object.keys(capturedData).length > 0) {
         // Set up mutation observer to watch for Scout tooltips
-        setupScoutTooltipMonitor(capturedData, step.workflowId);
+        // Pass guideData so we can use Scout's own selectors
+        setupScoutTooltipMonitor(capturedData, step.workflowId, step.guideData);
       } else {
         console.log('⚠️ No captured data found in context');
       }
