@@ -454,57 +454,67 @@
         if (Object.keys(fieldMatches).length > 0) {
           console.log(`🤖 Smart matching found ${Object.keys(fieldMatches).length} field mappings`);
           
-          // Apply auto-fill after a short delay to ensure page is ready
-          setTimeout(() => {
-            let filledCount = 0;
-            for (const [selector, matchData] of Object.entries(fieldMatches)) {
-              try {
-                const element = queryElement(selector);
-                if (element) {
-                  // Set value based on element type
-                  if (element.tagName === 'SELECT') {
-                    // For select elements, try to find matching option
-                    const options = Array.from(element.options);
-                    const matchingOption = options.find(opt => 
-                      opt.value === matchData.value || opt.text === matchData.value
-                    );
-                    if (matchingOption) {
-                      element.value = matchingOption.value;
+          // Apply auto-fill and WAIT for it to complete before starting workflow
+          await new Promise(resolve => {
+            setTimeout(() => {
+              let filledCount = 0;
+              for (const [selector, matchData] of Object.entries(fieldMatches)) {
+                try {
+                  const element = queryElement(selector);
+                  if (element) {
+                    // Set value based on element type
+                    if (element.tagName === 'SELECT') {
+                      // For select elements, try to find matching option
+                      const options = Array.from(element.options);
+                      const matchingOption = options.find(opt => 
+                        opt.value === matchData.value || opt.text === matchData.value
+                      );
+                      if (matchingOption) {
+                        element.value = matchingOption.value;
+                      } else {
+                        element.value = matchData.value;
+                      }
+                    } else if (element.type === 'checkbox') {
+                      element.checked = !!matchData.value;
+                    } else if (element.type === 'radio') {
+                      element.checked = element.value === matchData.value;
                     } else {
                       element.value = matchData.value;
                     }
-                  } else if (element.type === 'checkbox') {
-                    element.checked = !!matchData.value;
-                  } else if (element.type === 'radio') {
-                    element.checked = element.value === matchData.value;
+                    
+                    // Trigger change event so the page knows the field was updated
+                    element.dispatchEvent(new Event('input', { bubbles: true }));
+                    element.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    filledCount++;
+                    console.log(`✅ Auto-filled: ${selector} = "${matchData.value}" (confidence: ${matchData.confidence})`);
                   } else {
-                    element.value = matchData.value;
+                    console.warn(`⚠️ Element not found for selector: ${selector}`);
                   }
-                  
-                  // Trigger change event so the page knows the field was updated
-                  element.dispatchEvent(new Event('input', { bubbles: true }));
-                  element.dispatchEvent(new Event('change', { bubbles: true }));
-                  
-                  filledCount++;
-                  console.log(`✅ Auto-filled: ${selector} = "${matchData.value}" (confidence: ${matchData.confidence})`);
-                } else {
-                  console.warn(`⚠️ Element not found for selector: ${selector}`);
+                } catch (error) {
+                  console.error(`❌ Failed to auto-fill field with selector ${selector}:`, error);
                 }
-              } catch (error) {
-                console.error(`❌ Failed to auto-fill field with selector ${selector}:`, error);
               }
-            }
-            console.log(`🤖 Auto-fill complete: ${filledCount}/${Object.keys(fieldMatches).length} fields filled`);
-          }, 500); // Wait 500ms for page to be ready
+              console.log(`🤖 Auto-fill complete: ${filledCount}/${Object.keys(fieldMatches).length} fields filled`);
+              resolve(); // Resolve after auto-fill completes
+            }, 1000); // Increased to 1 second for better reliability after navigation
+          });
         } else {
           console.log('⚠️ Smart matching found no field mappings');
+          console.log('📊 Captured data keys:', Object.keys(capturedData));
+          console.log('📊 Workflow steps:', step.guideData?.map(s => s.elementIdentity?.labelText || s.stepDescription));
         }
       } else {
         console.log('⚠️ No captured data found in context');
+        console.log('📊 Context keys:', Object.keys(context));
       }
     } else {
       if (!workflowConfig.autoFillFromDataCapture) {
-        console.log('ℹ️ Auto-fill disabled for this workflow');
+        console.log('ℹ️ Auto-fill disabled for this workflow (enable in workflow config)');
+      } else if (!step.guideData) {
+        console.log('⚠️ No guide data available for auto-fill');
+      } else if (!context || Object.keys(context).length === 0) {
+        console.log('⚠️ No context data available for auto-fill');
       }
     }
 
