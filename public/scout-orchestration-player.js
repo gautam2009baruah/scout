@@ -588,16 +588,56 @@
       value: element.value || '',
     };
     
-    // Try to find label
+    // Try multiple ways to find label
+    let labelText = '';
+    
+    // Method 1: label[for=id]
     if (element.id) {
       const label = document.querySelector(`label[for="${element.id}"]`);
       if (label) {
-        metadata.labelText = label.textContent.trim();
+        labelText = label.textContent.trim();
       }
     }
     
+    // Method 2: parent label
+    if (!labelText) {
+      const parentLabel = element.closest('label');
+      if (parentLabel) {
+        labelText = parentLabel.textContent.trim();
+      }
+    }
+    
+    // Method 3: preceding sibling label
+    if (!labelText) {
+      let sibling = element.previousElementSibling;
+      while (sibling) {
+        if (sibling.tagName === 'LABEL') {
+          labelText = sibling.textContent.trim();
+          break;
+        }
+        sibling = sibling.previousElementSibling;
+      }
+    }
+    
+    // Method 4: nearby text (div/span before the input)
+    if (!labelText) {
+      const parent = element.parentElement;
+      if (parent) {
+        // Look for text in previous siblings
+        let prev = element.previousElementSibling;
+        if (prev && (prev.tagName === 'DIV' || prev.tagName === 'SPAN')) {
+          const text = prev.textContent.trim();
+          if (text && text.length < 50) { // Reasonable label length
+            labelText = text;
+          }
+        }
+      }
+    }
+    
+    metadata.labelText = labelText;
+    
     // Get accessible name
-    metadata.accessibleName = element.getAttribute('aria-label') || metadata.labelText || '';
+    metadata.accessibleName = element.getAttribute('aria-label') || labelText || '';
     
     return metadata;
   }
@@ -606,35 +646,82 @@
    * Find matching captured field based on element metadata
    */
   function findMatchingCapturedField(elementMetadata, capturedData) {
+    console.log('🔍 Attempting to match highlighted control...');
+    console.log('   Element metadata:', {
+      tagName: elementMetadata.tagName,
+      type: elementMetadata.type,
+      name: elementMetadata.name || '(none)',
+      id: elementMetadata.id || '(none)',
+      labelText: elementMetadata.labelText || '(none)',
+      placeholder: elementMetadata.placeholder || '(none)',
+      ariaLabel: elementMetadata.ariaLabel || '(none)'
+    });
+    
     let bestMatch = null;
     let bestScore = 0;
+    let bestFieldName = '';
+    const scores = {};
     
     for (const [fieldName, fieldData] of Object.entries(capturedData)) {
       const capturedMetadata = fieldData.metadata?.elementIdentity || {};
       let score = 0;
       
+      console.log(`   Checking against captured field: "${fieldName}"`);
+      console.log('     Captured label:', fieldData.label || '(none)');
+      console.log('     Captured metadata:', {
+        tagName: capturedMetadata.tagName || '(none)',
+        labelText: capturedMetadata.labelText || '(none)',
+        placeholder: capturedMetadata.placeholder || '(none)',
+        name: capturedMetadata.name || '(none)',
+        id: capturedMetadata.id || '(none)'
+      });
+      
       // Exact matches
-      if (elementMetadata.labelText && elementMetadata.labelText.toLowerCase() === (capturedMetadata.labelText || '').toLowerCase()) score += 100;
-      if (elementMetadata.name && elementMetadata.name === capturedMetadata.name) score += 90;
-      if (elementMetadata.id && elementMetadata.id === capturedMetadata.id) score += 90;
-      if (elementMetadata.placeholder && elementMetadata.placeholder === capturedMetadata.placeholder) score += 80;
+      if (elementMetadata.labelText && elementMetadata.labelText.toLowerCase() === (capturedMetadata.labelText || '').toLowerCase()) {
+        score += 100;
+        console.log('     +100 labelText exact match');
+      }
+      if (elementMetadata.name && elementMetadata.name === capturedMetadata.name) {
+        score += 90;
+        console.log('     +90 name exact match');
+      }
+      if (elementMetadata.id && elementMetadata.id === capturedMetadata.id) {
+        score += 90;
+        console.log('     +90 id exact match');
+      }
+      if (elementMetadata.placeholder && elementMetadata.placeholder === capturedMetadata.placeholder) {
+        score += 80;
+        console.log('     +80 placeholder exact match');
+      }
       
       // Label comparison
       if (elementMetadata.labelText && fieldData.label && 
-          elementMetadata.labelText.toLowerCase() === fieldData.label.toLowerCase()) score += 100;
+          elementMetadata.labelText.toLowerCase() === fieldData.label.toLowerCase()) {
+        score += 100;
+        console.log('     +100 label exact match');
+      }
       
       // Normalized comparison
       const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
       const elementNorm = normalize(elementMetadata.labelText || elementMetadata.placeholder || '');
       const capturedNorm = normalize(capturedMetadata.labelText || fieldData.label || '');
       
-      if (elementNorm && capturedNorm && elementNorm === capturedNorm) score += 70;
+      if (elementNorm && capturedNorm && elementNorm === capturedNorm) {
+        score += 70;
+        console.log('     +70 normalized match');
+      }
+      
+      console.log(`     Total score: ${score}`);
+      scores[fieldName] = score;
       
       if (score > bestScore) {
         bestScore = score;
         bestMatch = fieldData;
+        bestFieldName = fieldName;
       }
     }
+    
+    console.log(`   Best match: "${bestFieldName}" with score ${bestScore} (threshold: 70)`);
     
     // Only return match if score is high enough
     return bestScore >= 70 ? bestMatch : null;
