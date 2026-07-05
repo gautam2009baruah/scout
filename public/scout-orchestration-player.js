@@ -408,12 +408,31 @@
                node.querySelector?.('.scout-adoption-tooltip'))) {
             
             console.log('🎯 Scout tooltip detected, looking for highlighted control...');
-            console.log('   ⏱️ Waiting 5 seconds for Scout to focus element...');
             
-            // Wait a moment for Scout to finish focusing the element
-            setTimeout(() => {
-              findAndFillHighlightedControl();
-            }, 5000); // 5 seconds delay for testing - see if Scout ever focuses
+            // Poll for Scout to focus the element (don't rely on fixed delay)
+            let attempts = 0;
+            const maxAttempts = 40; // 40 attempts × 50ms = 2 seconds max
+            
+            const pollForFocus = () => {
+              attempts++;
+              
+              // Check if Scout has focused an input element
+              if (document.activeElement && 
+                  ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                console.log(`   ✅ Element focused after ${attempts * 50}ms`);
+                findAndFillHighlightedControl();
+              } else if (attempts < maxAttempts) {
+                // Keep polling
+                setTimeout(pollForFocus, 50); // Check every 50ms
+              } else {
+                // Timeout - Scout didn't focus, use fallback
+                console.log(`   ⏱️ Timeout after ${attempts * 50}ms, using fallback detection`);
+                findAndFillHighlightedControl();
+              }
+            };
+            
+            // Start polling immediately
+            pollForFocus();
           }
         }
       }
