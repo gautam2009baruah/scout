@@ -587,6 +587,8 @@ export function ScoutChatbot({
         executionId: trigger.executionId,
         orchestrationId: trigger.orchestrationId,
         orchestrationName: trigger.orchestrationName,
+        targetAppId: targetAppId || 'default-app',
+        scoutBaseUrl: scoutBaseUrl || window.location.origin,
         triggerData: {
           triggerId: trigger.triggerId,
           confidence: trigger.confidence,

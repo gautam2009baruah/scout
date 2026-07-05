@@ -23,7 +23,8 @@
   // Configuration (can be overridden via window.ScoutOrchestrationConfig)
   const config = window.ScoutOrchestrationConfig || {
     apiBaseUrl: window.location.origin,
-    scoutPlayerUrl: '/scout-adoption-player.js',
+    scoutPlayerUrl: '/scout-smart-adoption-player.js', // Use smart player (same as chatbot)
+    targetAppId: null, // Will be set from payload
   };
 
   console.log('⚙️ API Base URL:', config.apiBaseUrl);
@@ -89,10 +90,18 @@
    * Start orchestration execution
    */
   async function handleStartExecution(payload) {
-    const { executionId, orchestrationId, orchestrationName, triggerData } = payload;
+    const { executionId, orchestrationId, orchestrationName, triggerData, targetAppId, scoutBaseUrl } = payload;
     let context = payload.context || {}; // Use let so we can reassign when capturing data
+    
+    // Update config with targetAppId from payload
+    if (targetAppId) {
+      config.targetAppId = targetAppId;
+    }
+    if (scoutBaseUrl) {
+      config.apiBaseUrl = scoutBaseUrl;
+    }
 
-    console.log('🎬 Starting in-context execution:', { executionId, orchestrationName });
+    console.log('🎬 Starting in-context execution:', { executionId, orchestrationName, targetAppId });
 
     try {
       // Fetch execution plan
@@ -287,7 +296,7 @@
    * Load Scout Player script
    */
   async function loadScoutPlayer() {
-    if (scoutPlayerLoaded || window.AdoptionPlayer) {
+    if (scoutPlayerLoaded || window.ScoutAdoptionPlayer) {
       console.log('✅ Scout Player already loaded');
       scoutPlayerLoaded = true;
       return;
@@ -313,30 +322,40 @@
   }
 
   /**
-   * Execute workflow step using Scout Player
+   * Execute workflow step using Scout Player (SMART API - same as chatbot)
    */
   async function executeWorkflowStep(step, context) {
     console.log(`🎮 Executing workflow: ${step.label}`);
 
     // Wait for Scout Player to be available (with retry logic)
-    if (!window.AdoptionPlayer) {
+    if (!window.ScoutAdoptionPlayer) {
       console.log('⏳ Scout Player not immediately available, waiting...');
       
       let retries = 0;
       const maxRetries = 20; // 10 seconds max wait
       
-      while (!window.AdoptionPlayer && retries < maxRetries) {
+      while (!window.ScoutAdoptionPlayer && retries < maxRetries) {
         await new Promise(resolve => setTimeout(resolve, 500));
         retries++;
         console.log(`⏳ Waiting for Scout Player... (attempt ${retries}/${maxRetries})`);
       }
       
-      if (!window.AdoptionPlayer) {
-        throw new Error('Scout Player not loaded after waiting 10 seconds. Make sure scout-adoption-player.js is loaded.');
+      if (!window.ScoutAdoptionPlayer) {
+        throw new Error('Scout Player not loaded after waiting 10 seconds. Make sure scout-smart-adoption-player.js is loaded.');
       }
       
       console.log('✅ Scout Player is now available');
     }
+
+    // Initialize player handle (same as chatbot does)
+    console.log('🔧 Initializing Scout Player handle...');
+    const handle = await window.ScoutAdoptionPlayer.init({
+      scoutBaseUrl: config.apiBaseUrl,
+      targetAppId: config.targetAppId || 'default-app',
+      autoShowLauncher: false
+    });
+    
+    console.log('✅ Scout Player handle initialized');
 
     // Navigate to target URL if needed
     if (step.targetUrl && !window.location.href.includes(step.targetUrl)) {
@@ -349,40 +368,9 @@
       });
     }
 
-    // Create guide object
-    const guide = {
-      id: step.workflowId,
-      name: step.label,
-      description: step.description || '',
-      recordedActions: step.guideData,
-      preWorkflowConfirmationEnabled: false,
-    };
-
-    // Prepare auto-fill parameters from context if available
-    const autoFillParams = {};
-    if (context && step.inputMapping) {
-      for (const [key, value] of Object.entries(step.inputMapping)) {
-        // Resolve template variables from context
-        const resolvedValue = resolveVariable(value, context);
-        if (resolvedValue !== undefined) {
-          autoFillParams[key] = resolvedValue;
-        }
-      }
-    }
-
-    console.log(`🔧 Auto-fill parameters:`, autoFillParams);
-
-    // Create player
-    const player = new window.AdoptionPlayer(guide);
-
-    // If we have auto-fill parameters, inject them into the page for Scout Player to use
-    if (Object.keys(autoFillParams).length > 0) {
-      window.__scoutWorkflowAutoFillData = autoFillParams;
-    }
-
-    // Start the workflow!
-    console.log(`▶️ Starting workflow player for: ${step.workflowId}`);
-    player.play(step.workflowId);
+    // Start the workflow using the handle (same as chatbot)
+    console.log(`▶️ Starting workflow: ${step.workflowId}`);
+    handle.play(step.workflowId);
 
     return new Promise((resolve, reject) => {
       console.log(`⏳ Waiting for workflow completion...`);
