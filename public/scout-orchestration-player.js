@@ -155,13 +155,22 @@
           if (step.nodeType === 'workflow' && step.workflowId && step.guideData) {
             // Check phrase matching
             if (step.matchRequired && step.triggerPhrases) {
+              console.log(`🔍 Checking phrase match for workflow "${step.label}":`);
+              console.log(`   matchRequired: ${step.matchRequired}`);
+              console.log(`   triggerPhrases: ${JSON.stringify(step.triggerPhrases)}`);
+              console.log(`   matchedPhrase: "${matchedPhrase}"`);
+              console.log(`   matchedIntent: "${matchedIntent}"`);
+              
               const matches = step.triggerPhrases.some(phrase =>
                 phrase.toLowerCase() === matchedPhrase?.toLowerCase() ||
                 phrase.toLowerCase().includes(matchedIntent?.toLowerCase())
               );
 
+              console.log(`   Match result: ${matches}`);
+
               if (!matches) {
                 console.log(`⏭️ Skipping step "${step.label}" - phrase didn't match`);
+                console.log(`   To execute this workflow, trigger phrases must match the chatbot query`);
 
                 updateOverlay({
                   steps: executionPlan.map((s, idx) =>
@@ -171,6 +180,10 @@
 
                 continue;
               }
+              
+              console.log(`✅ Phrase matched! Proceeding with workflow execution`);
+            } else {
+              console.log(`ℹ️ No phrase matching required for workflow "${step.label}", executing unconditionally`);
             }
 
             console.log(`🎮 Starting workflow execution: ${step.label}`);
@@ -305,8 +318,24 @@
   async function executeWorkflowStep(step, context) {
     console.log(`🎮 Executing workflow: ${step.label}`);
 
+    // Wait for Scout Player to be available (with retry logic)
     if (!window.AdoptionPlayer) {
-      throw new Error('Scout Player not loaded');
+      console.log('⏳ Scout Player not immediately available, waiting...');
+      
+      let retries = 0;
+      const maxRetries = 20; // 10 seconds max wait
+      
+      while (!window.AdoptionPlayer && retries < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        retries++;
+        console.log(`⏳ Waiting for Scout Player... (attempt ${retries}/${maxRetries})`);
+      }
+      
+      if (!window.AdoptionPlayer) {
+        throw new Error('Scout Player not loaded after waiting 10 seconds. Make sure scout-adoption-player.js is loaded.');
+      }
+      
+      console.log('✅ Scout Player is now available');
     }
 
     // Navigate to target URL if needed
@@ -460,14 +489,42 @@
     const fields = [];
     const inputs = document.querySelectorAll('input, select, textarea');
 
-    inputs.forEach(element => {
+    console.log(`🔍 Found ${inputs.length} total input elements on page`);
+
+    inputs.forEach((element, index) => {
       // Skip hidden, submit, button inputs
       if (element.type === 'hidden' || element.type === 'submit' || element.type === 'button') {
+        console.log(`⏭️ Skipping ${element.type} input`);
         return;
       }
 
-      const name = element.name || element.id || '';
-      if (!name) return;
+      // Generate a unique identifier for the field
+      // Priority: name > id > generate from label/placeholder > fallback to index
+      let name = element.name || element.id || '';
+      
+      if (!name) {
+        // Try to generate name from label or placeholder
+        if (element.id) {
+          const labelEl = document.querySelector(`label[for="${element.id}"]`);
+          if (labelEl) {
+            name = labelEl.textContent.trim().toLowerCase().replace(/\s+/g, '_');
+          }
+        }
+        
+        if (!name && element.placeholder) {
+          name = element.placeholder.toLowerCase().replace(/\s+/g, '_');
+        }
+        
+        if (!name && element.getAttribute('aria-label')) {
+          name = element.getAttribute('aria-label').toLowerCase().replace(/\s+/g, '_');
+        }
+        
+        // Last resort: use element type and index
+        if (!name) {
+          name = `${element.tagName.toLowerCase()}_${index}`;
+          console.log(`⚠️ Generated fallback name for field: ${name}`);
+        }
+      }
 
       let value = '';
       if (element.tagName === 'SELECT') {
@@ -498,14 +555,22 @@
       if (!label && element.getAttribute('aria-label')) {
         label = element.getAttribute('aria-label');
       }
+      if (!label) {
+        label = name;
+      }
+
+      console.log(`📝 Discovered field: ${name} = "${value}" (label: "${label}")`);
 
       fields.push({
         name: name,
-        label: label || name,
+        label: label,
         value: value,
+        element: element.tagName,
+        type: element.type || 'text',
       });
     });
 
+    console.log(`✅ Discovered ${fields.length} capturable fields`);
     return fields;
   }
 
