@@ -328,54 +328,6 @@ export function ScoutChatbot({
     };
   }, [scoutBaseUrl, targetAppId, targetAppName]);
 
-  // Listen for clicks on orchestration links
-  useEffect(() => {
-    function handleOrchestrationClick(event: MouseEvent) {
-      const target = event.target as HTMLElement;
-      
-      if (target.tagName === 'A') {
-        const href = target.getAttribute('href');
-        
-        if (href?.startsWith('#orchestration:')) {
-          event.preventDefault();
-          const executionId = href.replace('#orchestration:', '');
-          
-          console.log('🎯 User clicked orchestration link:', executionId);
-          
-          const pending = (window as any).__pendingOrchestration;
-          if (pending && pending.executionId === executionId) {
-            console.log('🚀 Starting orchestration execution...');
-            
-            // Method 1: If in iframe, send postMessage to parent
-            if (window.parent && window.parent !== window) {
-              console.log('📤 Method 1: Posting message to parent window (iframe mode)');
-              window.parent.postMessage({
-                type: 'SCOUT_START_EXECUTION',
-                payload: pending,
-              }, '*');
-            } 
-            // Method 2: If same window, dispatch custom event
-            else {
-              console.log('📤 Method 2: Dispatching custom event (same window mode)');
-              const event = new CustomEvent('SCOUT_START_EXECUTION', {
-                detail: pending,
-                bubbles: true,
-                cancelable: false,
-              });
-              window.dispatchEvent(event);
-            }
-            
-            // Clean up
-            delete (window as any).__pendingOrchestration;
-          }
-        }
-      }
-    }
-    
-    document.addEventListener('click', handleOrchestrationClick);
-    return () => document.removeEventListener('click', handleOrchestrationClick);
-  }, []);
-
   function setOpen(nextValue: boolean) {
     setIsOpen(nextValue);
     onOpenChange?.(nextValue);
@@ -625,8 +577,13 @@ export function ScoutChatbot({
         console.error('   Full body:', body);
       }
       
-      // Store trigger data for when user clicks the link
-      (window as any).__pendingOrchestration = {
+      // Initialize storage Map if needed
+      if (!(window as any).__orchestrationExecutions) {
+        (window as any).__orchestrationExecutions = {};
+      }
+      
+      // Store by executionId (supports multiple pending orchestrations)
+      const orchestrationData = {
         executionId: trigger.executionId,
         orchestrationId: trigger.orchestrationId,
         orchestrationName: trigger.orchestrationName,
@@ -639,8 +596,11 @@ export function ScoutChatbot({
         context: {},
       };
       
-      console.log('✅ Stored __pendingOrchestration:', (window as any).__pendingOrchestration);
-      console.log('🔑 Stored executionId:', (window as any).__pendingOrchestration.executionId);
+      (window as any).__orchestrationExecutions[trigger.executionId] = orchestrationData;
+      
+      console.log('✅ Stored orchestration execution:', orchestrationData);
+      console.log('🔑 Stored executionId:', trigger.executionId);
+      console.log('📚 Total executions stored:', Object.keys((window as any).__orchestrationExecutions).length);
     }
 
     return typeof body?.answer === "string" ? body.answer : undefined;
@@ -996,10 +956,14 @@ function parseMarkdownText(text: string): ReactNode {
               
               console.log('🎯 Orchestration link clicked, executionId:', executionId);
               
-              const pending = (window as any).__pendingOrchestration;
-              console.log('📦 Pending orchestration:', pending);
+              const executions = (window as any).__orchestrationExecutions || {};
+              const orchestrationData = executions[executionId];
               
-              if (pending && pending.executionId === executionId) {
+              console.log('📦 Looking up orchestration for executionId:', executionId);
+              console.log('📚 Available executions:', Object.keys(executions));
+              console.log('📦 Found orchestration:', orchestrationData);
+              
+              if (orchestrationData) {
                 console.log('🚀 Starting orchestration execution...');
                 
                 // Method 1: If in iframe, send postMessage to parent
@@ -1007,26 +971,25 @@ function parseMarkdownText(text: string): ReactNode {
                   console.log('📤 Method 1: Posting message to parent window (iframe mode)');
                   window.parent.postMessage({
                     type: 'SCOUT_START_EXECUTION',
-                    payload: pending,
+                    payload: orchestrationData,
                   }, '*');
                 } 
                 // Method 2: If same window, dispatch custom event
                 else {
                   console.log('📤 Method 2: Dispatching custom event (same window mode)');
                   const customEvent = new CustomEvent('SCOUT_START_EXECUTION', {
-                    detail: pending,
+                    detail: orchestrationData,
                     bubbles: true,
                     cancelable: false,
                   });
                   window.dispatchEvent(customEvent);
                 }
                 
-                // Clean up
-                delete (window as any).__pendingOrchestration;
+                // Optional: Clean up after use (or keep for re-clicks)
+                // delete executions[executionId];
               } else {
-                console.error('❌ No matching pending orchestration found');
-                console.error('   Expected executionId:', executionId);
-                console.error('   Pending executionId:', pending?.executionId);
+                console.error('❌ No orchestration found for executionId:', executionId);
+                console.error('   Available execution IDs:', Object.keys(executions));
               }
               
               return;
