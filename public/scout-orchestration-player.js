@@ -867,6 +867,17 @@
     console.log('📊 Workflow steps:', workflowSteps.length);
     console.log('📊 Captured fields:', Object.keys(capturedData).length);
     
+    // Debug: show FULL structure of first workflow step to see what metadata is available
+    if (workflowSteps.length > 0) {
+      console.log('🔬 FULL structure of first workflow step:', JSON.stringify(workflowSteps[0], null, 2));
+    }
+    
+    // Debug: show FULL structure of first captured field to see what metadata is available
+    const firstCapturedKey = Object.keys(capturedData)[0];
+    if (firstCapturedKey) {
+      console.log('🔬 FULL structure of first captured field:', JSON.stringify(capturedData[firstCapturedKey], null, 2));
+    }
+    
     // Debug: show all workflow step types and descriptions
     console.log('📋 Workflow step details:');
     workflowSteps.forEach((step, idx) => {
