@@ -445,6 +445,8 @@
             // Strategy 3: Look for inputs with visual highlighting (Scout may add inline styles)
             if (!highlightedElement) {
               const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+              const highlightedInputs = [];
+              
               for (const input of allInputs) {
                 if (input.offsetParent === null) continue; // Skip hidden
                 
@@ -457,10 +459,38 @@
                     inlineStyle.includes('box-shadow') ||
                     inlineStyle.includes('z-index') ||
                     computedStyle.outline !== 'none' && computedStyle.outline.includes('px')) {
-                  highlightedElement = input;
-                  strategies.push('visual-highlight');
-                  break;
+                  
+                  // Extract label for this input
+                  const tempMeta = extractElementMetadata(input);
+                  highlightedInputs.push({
+                    element: input,
+                    tagName: input.tagName,
+                    type: input.type,
+                    label: tempMeta.labelText,
+                    name: input.name || '(none)',
+                    id: input.id || '(none)',
+                    zIndex: computedStyle.zIndex,
+                    outline: computedStyle.outline,
+                    boxShadow: computedStyle.boxShadow
+                  });
                 }
+              }
+              
+              if (highlightedInputs.length > 0) {
+                console.log(`   Found ${highlightedInputs.length} visually highlighted inputs:`);
+                highlightedInputs.forEach((info, idx) => {
+                  console.log(`     ${idx + 1}. ${info.tagName} - label: "${info.label}" (z-index: ${info.zIndex})`);
+                });
+                
+                // Pick the one with highest z-index (most prominently highlighted)
+                const sortedByZIndex = highlightedInputs.sort((a, b) => {
+                  const zIndexA = parseInt(a.zIndex) || 0;
+                  const zIndexB = parseInt(b.zIndex) || 0;
+                  return zIndexB - zIndexA; // Descending
+                });
+                
+                highlightedElement = sortedByZIndex[0].element;
+                strategies.push(`visual-highlight-best-of-${highlightedInputs.length}`);
               }
             }
             
@@ -473,6 +503,37 @@
                   highlightedElement = input;
                   strategies.push('highlighted-parent');
                   break;
+                }
+              }
+            }
+            
+            // Strategy 5: Check which visible input is described by or related to the tooltip
+            if (!highlightedElement) {
+              const tooltipElement = node.classList?.contains('scout-adoption-tooltip') ? node : 
+                                    node.querySelector('.scout-adoption-tooltip');
+              if (tooltipElement) {
+                // Check if tooltip has aria-describedby or data attributes pointing to element
+                const tooltipId = tooltipElement.id;
+                if (tooltipId) {
+                  const describedElement = document.querySelector(`[aria-describedby="${tooltipId}"]`);
+                  if (describedElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(describedElement.tagName)) {
+                    highlightedElement = describedElement;
+                    strategies.push('aria-describedby');
+                  }
+                }
+                
+                // Check for data-target or data-element-id
+                if (!highlightedElement) {
+                  const targetId = tooltipElement.getAttribute('data-target-id') ||
+                                 tooltipElement.getAttribute('data-element-id') ||
+                                 tooltipElement.getAttribute('data-target');
+                  if (targetId) {
+                    const targetElement = document.getElementById(targetId) || document.querySelector(targetId);
+                    if (targetElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(targetElement.tagName)) {
+                      highlightedElement = targetElement;
+                      strategies.push('tooltip-target-attr');
+                    }
+                  }
                 }
               }
             }
