@@ -372,13 +372,17 @@
 
     console.log(`🔧 Auto-fill parameters:`, autoFillParams);
 
-    // Create and start player
+    // Create player
     const player = new window.AdoptionPlayer(guide);
 
     // If we have auto-fill parameters, inject them into the page for Scout Player to use
     if (Object.keys(autoFillParams).length > 0) {
       window.__scoutWorkflowAutoFillData = autoFillParams;
     }
+
+    // Start the workflow!
+    console.log(`▶️ Starting workflow player for: ${step.workflowId}`);
+    player.play(step.workflowId);
 
     return new Promise((resolve, reject) => {
       console.log(`⏳ Waiting for workflow completion...`);
