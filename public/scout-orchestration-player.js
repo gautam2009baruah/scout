@@ -412,7 +412,7 @@
             // Wait a moment for Scout to finish focusing the element
             setTimeout(() => {
               findAndFillHighlightedControl();
-            }, 100); // 100ms delay for Scout to focus
+            }, 500); // 500ms delay for testing - Scout needs time to focus
           }
         }
       }
