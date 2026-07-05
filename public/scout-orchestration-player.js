@@ -388,6 +388,60 @@
   }
 
   /**
+   * Set up element tracker to record which elements Scout highlights during workflow
+   * Adds each highlighted element to window.__scoutDataCaptureElements for data capture
+   */
+  function setupElementTracker() {
+    console.log('📋 Element tracker active - recording Scout-highlighted controls');
+    
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          // Check if this is a Scout tooltip
+          if (node.nodeType === Node.ELEMENT_NODE && 
+              (node.classList?.contains('scout-adoption-tooltip') || 
+               node.querySelector?.('.scout-adoption-tooltip'))) {
+            
+            // Poll for Scout to focus the element
+            let attempts = 0;
+            const maxAttempts = 140; // 7 seconds max
+            
+            const pollForFocus = () => {
+              attempts++;
+              
+              // Check if Scout has focused an input element
+              if (document.activeElement && 
+                  ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                
+                const element = document.activeElement;
+                
+                // Add to tracking list if not already there (avoid duplicates)
+                if (!window.__scoutDataCaptureElements.includes(element)) {
+                  window.__scoutDataCaptureElements.push(element);
+                  console.log(`   📋 Tracked: ${element.tagName} (total: ${window.__scoutDataCaptureElements.length})`);
+                }
+              } else if (attempts < maxAttempts) {
+                setTimeout(pollForFocus, 50);
+              }
+            };
+            
+            pollForFocus();
+          }
+        }
+      }
+    });
+    
+    // Start observing
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    // Store observer for cleanup
+    window.__scoutElementTrackerObserver = observer;
+  }
+
+  /**
    * Set up monitor for Scout tooltips to auto-fill highlighted fields
    * Simple logic: tooltip appears → extract metadata → match → fill
    */
@@ -801,6 +855,11 @@
       });
     }
 
+    // Initialize element tracking list for data capture
+    console.log('📋 Initializing element tracking for data capture...');
+    window.__scoutDataCaptureElements = [];
+    setupElementTracker();
+
     // Auto-fill from previous data capture if enabled
     const workflowConfig = step.config || {};
     if (workflowConfig.autoFillFromDataCapture && step.guideData && context) {
@@ -957,128 +1016,127 @@
 
   /**
    * Capture fields from workflow steps (only fields that Scout Player highlighted)
+   * Uses the tracked elements list instead of selectors
    */
   function captureFieldsFromWorkflowSteps(steps) {
     const fields = [];
     
-    console.log(`🔍 Processing ${steps.length} workflow steps...`);
+    // Use tracked elements instead of selectors
+    const trackedElements = window.__scoutDataCaptureElements || [];
+    console.log(`🔍 Processing ${trackedElements.length} Scout-tracked elements...`);
     
-    for (const step of steps) {
-      // Get selector candidates from the step
-      let selectorCandidates = step.selectorCandidates;
-      let elementIdentity = step.elementIdentity;
-      
-      // If step has elementIdentity, use those selectors instead
-      if (elementIdentity && elementIdentity.selectorCandidates) {
-        selectorCandidates = elementIdentity.selectorCandidates;
-      }
-      
-      if (!selectorCandidates || selectorCandidates.length === 0) {
+    if (trackedElements.length === 0) {
+      console.warn('⚠️ No elements were tracked during workflow execution!');
+      return fields;
+    }
+    
+    // Capture data from each tracked element
+    for (const element of trackedElements) {
+      if (!element || !['INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName)) {
         continue;
       }
       
-      // Try each selector candidate to find the element
-      // Sort by confidence (highest first)
-      const sortedCandidates = [...selectorCandidates].sort((a, b) => b.confidence - a.confidence);
-      
-      for (const candidate of sortedCandidates) {
-        const selector = candidate.value;
+      try {
+        // Get label from DOM
+        let label = '';
         
-        try {
-          const element = queryElement(selector);
-          if (element && (element.tagName === 'INPUT' || element.tagName === 'SELECT' || element.tagName === 'TEXTAREA')) {
-            
-            // Get label from training data (same logic as training plugin)
-            // Priority: labelText > ariaLabel > accessibleName > nearbyHeading > text > placeholder
-            let label = '';
-            if (elementIdentity) {
-              label = elementIdentity.labelText || 
-                      elementIdentity.ariaLabel || 
-                      elementIdentity.accessibleName || 
-                      elementIdentity.nearbyHeading ||
-                      elementIdentity.text ||
-                      elementIdentity.placeholder ||
-                      step.stepDescription ||
-                      '';
-            } else {
-              // Fallback to step data
-              label = step.stepDescription || step.elementText || step.labelText || step.ariaLabel || '';
-            }
-            
-            // If still no label, try to find it from DOM
-            if (!label && element.id) {
-              const labelEl = document.querySelector(`label[for="${element.id}"]`);
-              if (labelEl) {
-                label = labelEl.textContent.trim();
-              }
-            }
-            
-            // If still no label, use aria-label or placeholder from element
-            if (!label) {
-              label = element.getAttribute('aria-label') || element.placeholder || '';
-            }
-            
-            // Get field name (use label for name, clean it up)
-            // This ensures the field name is user-friendly
-            let name = '';
-            if (label) {
-              // Convert label to a valid field name (lowercase, replace spaces with underscores)
-              name = label.toLowerCase()
-                .trim()
-                .replace(/[^a-z0-9\s]/g, '') // Remove special characters
-                .replace(/\s+/g, '_') // Replace spaces with underscores
-                .substring(0, 50); // Limit length
-            }
-            
-            // Fallback to element attributes if no label-based name
-            if (!name) {
-              name = element.name || element.id || '';
-            }
-            
-            // Last resort fallback
-            if (!name) {
-              name = `field_${fields.length}`;
-              label = label || name;
-            }
-            
-            // Get value
-            let value = '';
-            if (element.tagName === 'SELECT') {
-              value = element.value || '';
-            } else if (element.type === 'checkbox') {
-              value = element.checked;
-            } else if (element.type === 'radio' && element.checked) {
-              value = element.value;
-            } else {
-              value = element.value || '';
-            }
-            
-            console.log(`📝 Captured field: ${name} = "${value}" (label: "${label}")`);
-            
-            fields.push({
-              name: name,
-              label: label,
-              value: value,
-              element: element.tagName,
-              type: element.type || 'text',
-              // Store full metadata for smart field matching
-              metadata: {
-                elementIdentity: elementIdentity || {},
-                selector: selector,
-                confidence: candidate.confidence,
-                stepDescription: step.stepDescription || '',
-              },
-            });
-            
-            break; // Found the element, move to next step
+        // Try to find label element
+        if (element.id) {
+          const labelEl = document.querySelector(`label[for="${element.id}"]`);
+          if (labelEl) {
+            label = labelEl.textContent.trim();
           }
-        } catch (e) {
-          console.warn(`⚠️ Failed to query selector: ${selector}`, e);
         }
+        
+        // Try aria-label
+        if (!label) {
+          label = element.getAttribute('aria-label') || '';
+        }
+        
+        // Try placeholder
+        if (!label) {
+          label = element.placeholder || '';
+        }
+        
+        // Try nearby label
+        if (!label) {
+          const parent = element.parentElement;
+          if (parent?.tagName === 'LABEL') {
+            label = parent.textContent.replace(element.value || '', '').trim();
+          } else if (element.previousElementSibling?.tagName === 'LABEL') {
+            label = element.previousElementSibling.textContent.trim();
+          }
+        }
+        
+        // Get field name from label
+        let name = '';
+        if (label) {
+          name = label.toLowerCase()
+            .trim()
+            .replace(/[^a-z0-9\s]/g, '')
+            .replace(/\s+/g, '_')
+            .substring(0, 50);
+        }
+        
+        // Fallback to element attributes
+        if (!name) {
+          name = element.name || element.id || '';
+        }
+        
+        // Last resort
+        if (!name) {
+          name = `field_${fields.length}`;
+          label = label || name;
+        }
+        
+        // Get value
+        let value = '';
+        if (element.tagName === 'SELECT') {
+          value = element.value || '';
+        } else if (element.type === 'checkbox') {
+          value = element.checked;
+        } else if (element.type === 'radio' && element.checked) {
+          value = element.value;
+        } else {
+          value = element.value || '';
+        }
+        
+        console.log(`📝 Captured field: ${name} = "${value}" (label: "${label}")`);
+        
+        fields.push({
+          name: name,
+          label: label,
+          value: value,
+          element: element.tagName,
+          type: element.type || 'text',
+          metadata: {
+            elementIdentity: {
+              tagName: element.tagName.toLowerCase(),
+              type: element.type || 'text',
+              labelText: label,
+              id: element.id || '',
+              name: element.name || '',
+              placeholder: element.placeholder || '',
+              ariaLabel: element.getAttribute('aria-label') || ''
+            }
+          },
+        });
+      } catch (e) {
+        console.warn(`⚠️ Failed to capture from tracked element:`, e);
       }
     }
     
-    console.log(`✅ Captured ${fields.length} fields from workflow steps`);
+    // Clean up tracking list and observer
+    if (window.__scoutDataCaptureElements) {
+      console.log(`🧹 Clearing ${window.__scoutDataCaptureElements.length} tracked elements`);
+      window.__scoutDataCaptureElements = [];
+    }
+    if (window.__scoutElementTrackerObserver) {
+      window.__scoutElementTrackerObserver.disconnect();
+      delete window.__scoutElementTrackerObserver;
+    }
+    
+    console.log(`✅ Captured ${fields.length} fields from tracked elements`);
     return fields;
   }
 
