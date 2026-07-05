@@ -308,6 +308,13 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
           triggeredBy: user.email
         });
         
+        console.log('📋 Created execution with ID:', execution.id);
+        
+        if (!execution.id) {
+          console.error('❌ ERROR: execution.id is undefined!', execution);
+          throw new Error('Failed to create orchestration execution - no ID returned');
+        }
+        
         // Store match but DON'T return early - continue to show combined response
         orchestrationMatch = {
           triggerId: triggerMatch.triggerId,
@@ -317,6 +324,9 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
           requiresConfirmation: true,
           confidence: triggerMatch.confidence
         };
+        
+        console.log('✅ Orchestration match stored with executionId:', orchestrationMatch.executionId);
+        console.log('📦 Full orchestrationMatch:', orchestrationMatch);
         
         console.log('✅ Orchestration match stored, continuing to workflow/RAG...');
       } else {
@@ -367,6 +377,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       response.orchestration_trigger = orchestrationMatch;
       response.matchedPhrase = question;
       response.matchedIntent = orchestrationMatch.orchestrationName;
+      console.log('📤 [GREETING] Returning response with orchestration_trigger.executionId:', response.orchestration_trigger?.executionId);
     }
     
     return response;
@@ -409,6 +420,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       response.orchestration_trigger = orchestrationMatch;
       response.matchedPhrase = question;
       response.matchedIntent = orchestrationMatch.orchestrationName;
+      console.log('📤 [NO_CONTEXT] Returning response with orchestration_trigger.executionId:', response.orchestration_trigger?.executionId);
     }
     
     return response;
@@ -450,8 +462,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     if (orchestrationMatch) {
       response.orchestration_trigger = orchestrationMatch;
       response.matchedPhrase = question;
-      response.matchedIntent = orchestrationMatch.orchestrationName;
-    }
+      response.matchedIntent = orchestrationMatch.orchestrationName;      console.log('📤 [EXTRACTIVE] Returning response with orchestration_trigger.executionId:', response.orchestration_trigger?.executionId);    }
     
     return response;
   }
@@ -498,6 +509,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     response.orchestration_trigger = orchestrationMatch;
     response.matchedPhrase = question;
     response.matchedIntent = orchestrationMatch.orchestrationName;
+    console.log('📤 [LLM] Returning response with orchestration_trigger.executionId:', response.orchestration_trigger?.executionId);
   }
 
   return response;
