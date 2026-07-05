@@ -431,11 +431,18 @@
                   if (!window.__scoutDataCaptureElements.includes(element)) {
                     window.__scoutDataCaptureElements.push(element);
                     console.log(`   📋 Tracked: ${element.tagName} (total: ${window.__scoutDataCaptureElements.length})`);
+                  } else {
+                    console.log(`   ⏭️ Already tracked this element`);
                   }
                   
                   // Try auto-fill ONLY if we have captured data
                   if (hasAutoFillData) {
                     findAndFillHighlightedControl(element);
+                  }
+                  
+                  // IMPORTANT: Continue polling to catch multiple controls in the same step
+                  if (attempts < maxAttempts) {
+                    setTimeout(pollForFocus, 50);
                   }
                   
                 } else if (attempts < maxAttempts) {
@@ -877,6 +884,7 @@
     // Use tracked elements instead of selectors
     const trackedElements = window.__scoutDataCaptureElements || [];
     console.log(`🔍 Processing ${trackedElements.length} Scout-tracked elements...`);
+    console.log(`   Tracked elements:`, trackedElements.map(el => `${el.tagName}[${el.type || 'no-type'}]`).join(', '));
     
     if (trackedElements.length === 0) {
       console.warn('⚠️ No elements were tracked during workflow execution!');
@@ -884,8 +892,12 @@
     }
     
     // Capture data from each tracked element
-    for (const element of trackedElements) {
+    for (let i = 0; i < trackedElements.length; i++) {
+      const element = trackedElements[i];
+      console.log(`\n📝 Capturing element ${i + 1}/${trackedElements.length}:`, element.tagName, element.type, element.name || element.id || '(no name/id)');
+      
       if (!element || !['INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName)) {
+        console.log(`   ⏭️ Skipping - not an input element`);
         continue;
       }
       
