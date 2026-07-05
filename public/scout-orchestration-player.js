@@ -388,6 +388,162 @@
   }
 
   /**
+   * Set up monitor for Scout tooltips to auto-fill highlighted fields
+   */
+  function setupScoutTooltipMonitor(capturedData, workflowId) {
+    console.log('👀 Setting up Scout tooltip monitor for auto-fill...');
+    
+    const filledElements = new Set(); // Track which elements we've already filled
+    
+    // Observer for tooltip appearing
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          // Check if this is a Scout tooltip
+          if (node.nodeType === Node.ELEMENT_NODE && 
+              (node.classList?.contains('scout-adoption-tooltip') || 
+               node.querySelector?.('.scout-adoption-tooltip'))) {
+            
+            console.log('🎯 Scout tooltip detected, attempting auto-fill...');
+            
+            // Find the target element Scout is highlighting
+            // Scout usually adds data attributes or classes to the highlighted element
+            const highlightedElement = document.querySelector('[data-scout-step-active="true"]') ||
+                                      document.querySelector('.scout-adoption-highlight') ||
+                                      document.activeElement;
+            
+            if (highlightedElement && !filledElements.has(highlightedElement)) {
+              console.log('🔍 Highlighted element:', highlightedElement.tagName, highlightedElement.type);
+              
+              // Only auto-fill input elements
+              if (['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
+                // Extract metadata from the highlighted element
+                const elementMetadata = extractElementMetadata(highlightedElement);
+                console.log('📊 Element metadata:', elementMetadata);
+                
+                // Try to match with captured data
+                const matchedField = findMatchingCapturedField(elementMetadata, capturedData);
+                
+                if (matchedField) {
+                  console.log(`✅ Match found: "${matchedField.label}" → filling with "${matchedField.value}"`);
+                  
+                  // Auto-fill the element
+                  if (highlightedElement.tagName === 'SELECT') {
+                    const options = Array.from(highlightedElement.options);
+                    const matchingOption = options.find(opt => 
+                      opt.value === matchedField.value || opt.text === matchedField.value
+                    );
+                    if (matchingOption) {
+                      highlightedElement.value = matchingOption.value;
+                    } else {
+                      highlightedElement.value = matchedField.value;
+                    }
+                  } else if (highlightedElement.type === 'checkbox') {
+                    highlightedElement.checked = !!matchedField.value;
+                  } else if (highlightedElement.type === 'radio') {
+                    highlightedElement.checked = highlightedElement.value === matchedField.value;
+                  } else {
+                    highlightedElement.value = matchedField.value;
+                  }
+                  
+                  // Trigger events
+                  highlightedElement.dispatchEvent(new Event('input', { bubbles: true }));
+                  highlightedElement.dispatchEvent(new Event('change', { bubbles: true }));
+                  
+                  // Mark as filled
+                  filledElements.add(highlightedElement);
+                  
+                  console.log(`🎉 Auto-filled: ${highlightedElement.tagName} with "${matchedField.value}"`);
+                } else {
+                  console.log('⚠️ No matching captured field found for this element');
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // Start observing
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    // Store observer reference to clean up later
+    window.__scoutTooltipObserver = observer;
+    window.__scoutTooltipWorkflowId = workflowId;
+    
+    console.log('✅ Tooltip monitor active');
+  }
+
+  /**
+   * Extract metadata from a DOM element (similar to what Scout training captures)
+   */
+  function extractElementMetadata(element) {
+    const metadata = {
+      tagName: element.tagName.toLowerCase(),
+      type: element.type || '',
+      name: element.name || '',
+      id: element.id || '',
+      placeholder: element.placeholder || '',
+      ariaLabel: element.getAttribute('aria-label') || '',
+      value: element.value || '',
+    };
+    
+    // Try to find label
+    if (element.id) {
+      const label = document.querySelector(`label[for="${element.id}"]`);
+      if (label) {
+        metadata.labelText = label.textContent.trim();
+      }
+    }
+    
+    // Get accessible name
+    metadata.accessibleName = element.getAttribute('aria-label') || metadata.labelText || '';
+    
+    return metadata;
+  }
+
+  /**
+   * Find matching captured field based on element metadata
+   */
+  function findMatchingCapturedField(elementMetadata, capturedData) {
+    let bestMatch = null;
+    let bestScore = 0;
+    
+    for (const [fieldName, fieldData] of Object.entries(capturedData)) {
+      const capturedMetadata = fieldData.metadata?.elementIdentity || {};
+      let score = 0;
+      
+      // Exact matches
+      if (elementMetadata.labelText && elementMetadata.labelText.toLowerCase() === (capturedMetadata.labelText || '').toLowerCase()) score += 100;
+      if (elementMetadata.name && elementMetadata.name === capturedMetadata.name) score += 90;
+      if (elementMetadata.id && elementMetadata.id === capturedMetadata.id) score += 90;
+      if (elementMetadata.placeholder && elementMetadata.placeholder === capturedMetadata.placeholder) score += 80;
+      
+      // Label comparison
+      if (elementMetadata.labelText && fieldData.label && 
+          elementMetadata.labelText.toLowerCase() === fieldData.label.toLowerCase()) score += 100;
+      
+      // Normalized comparison
+      const normalize = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const elementNorm = normalize(elementMetadata.labelText || elementMetadata.placeholder || '');
+      const capturedNorm = normalize(capturedMetadata.labelText || fieldData.label || '');
+      
+      if (elementNorm && capturedNorm && elementNorm === capturedNorm) score += 70;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = fieldData;
+      }
+    }
+    
+    // Only return match if score is high enough
+    return bestScore >= 70 ? bestMatch : null;
+  }
+
+  /**
    * Execute workflow step using Scout Player (SMART API - same as chatbot)
    */
   async function executeWorkflowStep(step, context) {
@@ -437,9 +593,8 @@
     // Auto-fill from previous data capture if enabled
     const workflowConfig = step.config || {};
     if (workflowConfig.autoFillFromDataCapture && step.guideData && context) {
-      console.log('🤖 Auto-fill enabled, attempting smart field matching...');
-      console.log('📊 Context data (from immediately preceding data_capture only):', context);
-      console.log('📊 Workflow guide data:', step.guideData?.length, 'steps');
+      console.log('🤖 Auto-fill enabled - will monitor Scout tooltips and fill highlighted fields');
+      console.log('📊 Context data available:',  Object.keys(context).length, 'fields');
       
       // Filter context to only include captured data fields (objects with value/metadata)
       const capturedData = {};
@@ -450,79 +605,14 @@
       }
       
       if (Object.keys(capturedData).length > 0) {
-        console.log('📊 Found captured data fields:', Object.keys(capturedData).length);
-        
-        // Use smart matching to map captured data to workflow fields
-        const fieldMatches = smartMatchFields(step.guideData, capturedData);
-        
-        if (Object.keys(fieldMatches).length > 0) {
-          console.log(`🤖 Smart matching found ${Object.keys(fieldMatches).length} field mappings`);
-          
-          // Apply auto-fill and WAIT for it to complete before starting workflow
-          await new Promise(resolve => {
-            setTimeout(() => {
-              let filledCount = 0;
-              for (const [selector, matchData] of Object.entries(fieldMatches)) {
-                // Unescape selector (Scout may escape spaces: "New\ training" → "New training")
-                const unescapedSelector = selector.replace(/\\/g, '');
-                console.log(`🔍 Trying to fill selector: "${unescapedSelector}"${selector !== unescapedSelector ? ` (original: "${selector}")` : ''}`);
-                
-                try {
-                  const element = queryElement(unescapedSelector);
-                  if (element) {
-                    // Set value based on element type
-                    if (element.tagName === 'SELECT') {
-                      // For select elements, try to find matching option
-                      const options = Array.from(element.options);
-                      const matchingOption = options.find(opt => 
-                        opt.value === matchData.value || opt.text === matchData.value
-                      );
-                      if (matchingOption) {
-                        element.value = matchingOption.value;
-                      } else {
-                        element.value = matchData.value;
-                      }
-                    } else if (element.type === 'checkbox') {
-                      element.checked = !!matchData.value;
-                    } else if (element.type === 'radio') {
-                      element.checked = element.value === matchData.value;
-                    } else {
-                      element.value = matchData.value;
-                    }
-                    
-                    // Trigger change event so the page knows the field was updated
-                    element.dispatchEvent(new Event('input', { bubbles: true }));
-                    element.dispatchEvent(new Event('change', { bubbles: true }));
-                    
-                    filledCount++;
-                    console.log(`✅ Auto-filled: ${unescapedSelector} = "${matchData.value}" (confidence: ${matchData.confidence})`);
-                  } else {
-                    console.warn(`⚠️ Element not found for selector: ${unescapedSelector}`);
-                  }
-                } catch (error) {
-                  console.error(`❌ Failed to auto-fill field with selector ${unescapedSelector}:`, error);
-                }
-              }
-              console.log(`🤖 Auto-fill complete: ${filledCount}/${Object.keys(fieldMatches).length} fields filled`);
-              resolve(); // Resolve after auto-fill completes
-            }, 1000); // Increased to 1 second for better reliability after navigation
-          });
-        } else {
-          console.log('⚠️ Smart matching found no field mappings');
-          console.log('📊 Captured data keys:', Object.keys(capturedData));
-          console.log('📊 Workflow steps:', step.guideData?.map(s => s.elementIdentity?.labelText || s.stepDescription));
-        }
+        // Set up mutation observer to watch for Scout tooltips
+        setupScoutTooltipMonitor(capturedData, step.workflowId);
       } else {
         console.log('⚠️ No captured data found in context');
-        console.log('📊 Context keys:', Object.keys(context));
       }
     } else {
       if (!workflowConfig.autoFillFromDataCapture) {
         console.log('ℹ️ Auto-fill disabled for this workflow (enable in workflow config)');
-      } else if (!step.guideData) {
-        console.log('⚠️ No guide data available for auto-fill');
-      } else if (!context || Object.keys(context).length === 0) {
-        console.log('⚠️ No context data available for auto-fill');
       }
     }
 
@@ -553,8 +643,14 @@
           clearInterval(checkCompletion);
           console.log(`✅ Workflow completed after ${checkCount} checks: ${step.label}`);
           
-          // Clean up auto-fill data
+          // Clean up auto-fill data and observer
           delete window.__scoutWorkflowAutoFillData;
+          if (window.__scoutTooltipObserver) {
+            window.__scoutTooltipObserver.disconnect();
+            delete window.__scoutTooltipObserver;
+            delete window.__scoutTooltipWorkflowId;
+            console.log('🧹 Cleaned up tooltip monitor');
+          }
           
           resolve();
         }
@@ -565,6 +661,12 @@
       setTimeout(() => {
         clearInterval(checkCompletion);
         delete window.__scoutWorkflowAutoFillData;
+        // Clean up observer on timeout
+        if (window.__scoutTooltipObserver) {
+          window.__scoutTooltipObserver.disconnect();
+          delete window.__scoutTooltipObserver;
+          delete window.__scoutTooltipWorkflowId;
+        }
         console.error(`⏱️ Workflow execution timeout after ${timeout}ms`);
         reject(new Error('Workflow execution timeout'));
       }, timeout);
