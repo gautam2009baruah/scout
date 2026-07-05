@@ -419,16 +419,31 @@
             const currentStep = guideData[currentStepIndex];
             console.log(`📍 Processing workflow step ${currentStepIndex + 1}/${guideData.length}`);
             console.log('  Step description:', currentStep.stepDescription || 'N/A');
+            console.log('  Step purpose:', currentStep.stepPurpose || 'N/A');
+            
+            // Check if this is a main training step (input field) vs navigation step
+            if (currentStep.stepPurpose !== 'main') {
+              console.log(`  ⏭️ Skipping ${currentStep.stepPurpose || 'non-main'} step`);
+              currentStepIndex++;
+              continue;
+            }
+            
+            console.log(`  🎯 Main training step detected - attempting auto-fill`);
             
             // Try to find element using Scout's own selector data
             let highlightedElement = null;
             const elementIdentity = currentStep.elementIdentity || {};
             const selectorCandidates = elementIdentity.selectorCandidates || [];
             
+            console.log(`  🔍 Trying ${selectorCandidates.length} selector candidates...`);
+            
             // Try each selector candidate (Scout already prioritized them during training)
             for (const candidate of selectorCandidates) {
               // Skip label-text type selectors (not queryable)
-              if (candidate.type === 'label-text') continue;
+              if (candidate.type === 'label-text') {
+                console.log(`    ⏭️ Skipping label-text selector`);
+                continue;
+              }
               
               try {
                 const selector = candidate.selector.replace(/\\/g, ''); // Unescape
