@@ -409,136 +409,77 @@
             
             console.log('🎯 Scout tooltip detected, looking for highlighted control...');
             
-            // Scout highlights the actual control separately from the tooltip
-            // Look for the highlighted input element (NOT the tooltip!)
+            // Scout focuses the actual control - check document.activeElement FIRST!
             let highlightedElement = null;
             const strategies = [];
             
-            // Strategy 1: Check for Scout's highlight markers on INPUT elements
-            const markedInputs = document.querySelectorAll([
-              'input[data-scout-step-active="true"]',
-              'select[data-scout-step-active="true"]', 
-              'textarea[data-scout-step-active="true"]',
-              'input[data-scout-highlight]',
-              'select[data-scout-highlight]',
-              'textarea[data-scout-highlight]',
-              'input.scout-adoption-highlight',
-              'select.scout-adoption-highlight',
-              'textarea.scout-adoption-highlight',
-              'input[data-scout-active]',
-              'select[data-scout-active]',
-              'textarea[data-scout-active]'
-            ].join(', '));
-            
-            if (markedInputs.length > 0) {
-              highlightedElement = markedInputs[0];
-              strategies.push('scout-markers');
+            // Strategy 1: Check focused element (Scout focuses the control!)
+            console.log('   Checking document.activeElement...');
+            if (document.activeElement) {
+              console.log(`     activeElement: ${document.activeElement.tagName} (${document.activeElement.type || 'no type'})`);
+              
+              if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                highlightedElement = document.activeElement;
+                strategies.push('focused-element');
+                console.log('     ✅ Using focused element (Scout put cursor here)');
+              } else {
+                console.log(`     ⏭️ activeElement is ${document.activeElement.tagName}, not an input`);
+              }
+            } else {
+              console.log('     ⚠️ No activeElement');
             }
             
-            // Strategy 2: Check focused element
-            if (!highlightedElement && document.activeElement && 
-                ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-              highlightedElement = document.activeElement;
-              strategies.push('focused-element');
-            }
-            
-            // Strategy 3: Look for inputs with visual highlighting (Scout may add inline styles)
+            // Strategy 2: Check for Scout's highlight markers on INPUT elements (fallback)
             if (!highlightedElement) {
+              console.log('   Checking for Scout markers...');
+              const markedInputs = document.querySelectorAll([
+                'input[data-scout-step-active="true"]',
+                'select[data-scout-step-active="true"]', 
+                'textarea[data-scout-step-active="true"]',
+                'input[data-scout-highlight]',
+                'select[data-scout-highlight]',
+                'textarea[data-scout-highlight]',
+                'input.scout-adoption-highlight',
+                'select.scout-adoption-highlight',
+                'textarea.scout-adoption-highlight',
+                'input[data-scout-active]',
+                'select[data-scout-active]',
+                'textarea[data-scout-active]'
+              ].join(', '));
+              
+              if (markedInputs.length > 0) {
+                highlightedElement = markedInputs[0];
+                strategies.push('scout-markers');
+                console.log(`     ✅ Found ${markedInputs.length} marked inputs, using first`);
+              } else {
+                console.log('     ⏭️ No marked inputs found');
+              }
+            }
+            
+            // Strategy 3: Visual highlighting (last resort fallback)
+            if (!highlightedElement) {
+              console.log('   Checking visual highlighting as fallback...');
               const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
-              const highlightedInputs = [];
               
               for (const input of allInputs) {
-                if (input.offsetParent === null) continue; // Skip hidden
+                if (input.offsetParent === null) continue;
                 
-                // Check for highlight styles
                 const computedStyle = window.getComputedStyle(input);
                 const inlineStyle = input.getAttribute('style') || '';
                 
-                // Scout might add outline, box-shadow, or z-index to highlight
                 if (inlineStyle.includes('outline') || 
                     inlineStyle.includes('box-shadow') ||
                     inlineStyle.includes('z-index') ||
-                    computedStyle.outline !== 'none' && computedStyle.outline.includes('px')) {
-                  
-                  // Extract label for this input
-                  const tempMeta = extractElementMetadata(input);
-                  highlightedInputs.push({
-                    element: input,
-                    tagName: input.tagName,
-                    type: input.type,
-                    label: tempMeta.labelText,
-                    name: input.name || '(none)',
-                    id: input.id || '(none)',
-                    zIndex: computedStyle.zIndex,
-                    outline: computedStyle.outline,
-                    boxShadow: computedStyle.boxShadow
-                  });
-                }
-              }
-              
-              if (highlightedInputs.length > 0) {
-                console.log(`   Found ${highlightedInputs.length} visually highlighted inputs:`);
-                highlightedInputs.forEach((info, idx) => {
-                  console.log(`     ${idx + 1}. ${info.tagName} - label: "${info.label}" (z-index: ${info.zIndex})`);
-                });
-                
-                // Pick the one with highest z-index (most prominently highlighted)
-                const sortedByZIndex = highlightedInputs.sort((a, b) => {
-                  const zIndexA = parseInt(a.zIndex) || 0;
-                  const zIndexB = parseInt(b.zIndex) || 0;
-                  return zIndexB - zIndexA; // Descending
-                });
-                
-                highlightedElement = sortedByZIndex[0].element;
-                strategies.push(`visual-highlight-best-of-${highlightedInputs.length}`);
-              }
-            }
-            
-            // Strategy 4: Check for parent with highlight that contains input
-            if (!highlightedElement) {
-              const highlightedParents = document.querySelectorAll('.scout-adoption-highlight, [data-scout-highlight]');
-              for (const parent of highlightedParents) {
-                const input = parent.querySelector('input, select, textarea');
-                if (input && input.offsetParent !== null) {
+                    (computedStyle.outline !== 'none' && computedStyle.outline.includes('px'))) {
                   highlightedElement = input;
-                  strategies.push('highlighted-parent');
+                  strategies.push('visual-highlight-fallback');
+                  console.log('     ✅ Found visually highlighted input');
                   break;
                 }
               }
             }
             
-            // Strategy 5: Check which visible input is described by or related to the tooltip
-            if (!highlightedElement) {
-              const tooltipElement = node.classList?.contains('scout-adoption-tooltip') ? node : 
-                                    node.querySelector('.scout-adoption-tooltip');
-              if (tooltipElement) {
-                // Check if tooltip has aria-describedby or data attributes pointing to element
-                const tooltipId = tooltipElement.id;
-                if (tooltipId) {
-                  const describedElement = document.querySelector(`[aria-describedby="${tooltipId}"]`);
-                  if (describedElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(describedElement.tagName)) {
-                    highlightedElement = describedElement;
-                    strategies.push('aria-describedby');
-                  }
-                }
-                
-                // Check for data-target or data-element-id
-                if (!highlightedElement) {
-                  const targetId = tooltipElement.getAttribute('data-target-id') ||
-                                 tooltipElement.getAttribute('data-element-id') ||
-                                 tooltipElement.getAttribute('data-target');
-                  if (targetId) {
-                    const targetElement = document.getElementById(targetId) || document.querySelector(targetId);
-                    if (targetElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(targetElement.tagName)) {
-                      highlightedElement = targetElement;
-                      strategies.push('tooltip-target-attr');
-                    }
-                  }
-                }
-              }
-            }
-            
-            console.log('   Detection strategies tried:', strategies.length > 0 ? strategies.join(', ') : 'none worked');
+            console.log(`   Detection result: ${strategies.length > 0 ? strategies.join(', ') : 'NONE'}`);
             
             // If we found an input element, try to match and fill it
             if (highlightedElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
