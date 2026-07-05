@@ -463,8 +463,12 @@
             setTimeout(() => {
               let filledCount = 0;
               for (const [selector, matchData] of Object.entries(fieldMatches)) {
+                // Unescape selector (Scout may escape spaces: "New\ training" → "New training")
+                const unescapedSelector = selector.replace(/\\/g, '');
+                console.log(`🔍 Trying to fill selector: "${unescapedSelector}"${selector !== unescapedSelector ? ` (original: "${selector}")` : ''}`);
+                
                 try {
-                  const element = queryElement(selector);
+                  const element = queryElement(unescapedSelector);
                   if (element) {
                     // Set value based on element type
                     if (element.tagName === 'SELECT') {
@@ -491,12 +495,12 @@
                     element.dispatchEvent(new Event('change', { bubbles: true }));
                     
                     filledCount++;
-                    console.log(`✅ Auto-filled: ${selector} = "${matchData.value}" (confidence: ${matchData.confidence})`);
+                    console.log(`✅ Auto-filled: ${unescapedSelector} = "${matchData.value}" (confidence: ${matchData.confidence})`);
                   } else {
-                    console.warn(`⚠️ Element not found for selector: ${selector}`);
+                    console.warn(`⚠️ Element not found for selector: ${unescapedSelector}`);
                   }
                 } catch (error) {
-                  console.error(`❌ Failed to auto-fill field with selector ${selector}:`, error);
+                  console.error(`❌ Failed to auto-fill field with selector ${unescapedSelector}:`, error);
                 }
               }
               console.log(`🤖 Auto-fill complete: ${filledCount}/${Object.keys(fieldMatches).length} fields filled`);
