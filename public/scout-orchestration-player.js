@@ -389,28 +389,14 @@
 
   /**
    * Set up monitor for Scout tooltips to auto-fill highlighted fields
-   * Uses Scout's own training selectors to find fields
+   * Simple logic: tooltip appears → extract metadata → match → fill
    */
   function setupScoutTooltipMonitor(capturedData, workflowId, guideData) {
     console.log('👀 Setting up Scout tooltip monitor for auto-fill...');
-    console.log('📊 Using', guideData?.length || 0, 'workflow steps with Scout selectors');
+    console.log('📊 Captured data fields:', Object.keys(capturedData).length);
+    console.log('📊 Will attempt to match and fill any highlighted control');
     
-    // Count main vs navigation steps
-    if (guideData) {
-      const mainSteps = guideData.filter(s => s.stepPurpose === 'main').length;
-      const navSteps = guideData.filter(s => s.stepPurpose === 'navigation').length;
-      console.log(`   📋 Breakdown: ${mainSteps} main steps, ${navSteps} navigation steps`);
-      
-      // Log each step for debugging
-      guideData.forEach((step, idx) => {
-        const identity = step.elementIdentity || {};
-        console.log(`   Step ${idx + 1}: ${step.stepPurpose || 'unknown'} - ${identity.labelText || identity.placeholder || step.stepDescription || 'N/A'}`);
-      });
-    }
-    
-    const filledElements = new Set(); // Track which elements we've already filled
-    let currentStepIndex = 0; // Track which workflow step we're on
-    let filledCount = 0; // Track successful fills
+    let fillCount = 0; // Track total fills for logging
     
     // Observer for tooltip appearing
     const observer = new MutationObserver((mutations) => {
@@ -421,70 +407,57 @@
               (node.classList?.contains('scout-adoption-tooltip') || 
                node.querySelector?.('.scout-adoption-tooltip'))) {
             
-            console.log('🎯 Scout tooltip detected, attempting auto-fill...');
-            console.log(`   Current step index: ${currentStepIndex}, Total steps: ${guideData?.length || 0}`);
+            console.log('🎯 Scout tooltip detected, checking for auto-fill match...');
             
-            // Skip if no guide data available
-            if (!guideData || currentStepIndex >= guideData.length) {
-              console.log('⏭️ No more workflow steps to process');
-              continue;
-            }
-            
-            // Get current workflow step (Scout processes steps sequentially)
-            const currentStep = guideData[currentStepIndex];
-            console.log(`📍 Processing workflow step ${currentStepIndex + 1}/${guideData.length}`);
-            console.log('  Step description:', currentStep.stepDescription || 'N/A');
-            console.log('  Step purpose:', currentStep.stepPurpose || 'N/A');
-            
-            // Check if this is a main training step (input field) vs navigation step
-            if (currentStep.stepPurpose !== 'main') {
-              console.log(`  ⏭️ Skipping ${currentStep.stepPurpose || 'non-main'} step`);
-              currentStepIndex++;
-              continue;
-            }
-            
-            console.log(`  🎯 Main training step detected - attempting auto-fill`);
-            
-            // Try to find element using Scout's own selector data
+            // Find the highlighted element using multiple strategies
             let highlightedElement = null;
-            const elementIdentity = currentStep.elementIdentity || {};
-            const selectorCandidates = elementIdentity.selectorCandidates || [];
             
-            console.log(`  🔍 Trying ${selectorCandidates.length} selector candidates...`);
+            // Strategy 1: Check for Scout's highlight markers
+            highlightedElement = document.querySelector('[data-scout-step-active="true"]') ||
+                               document.querySelector('.scout-adoption-highlight') ||
+                               document.querySelector('[data-scout-highlight]');
             
-            // Try each selector candidate (Scout already prioritized them during training)
-            for (const candidate of selectorCandidates) {
-              // Skip label-text type selectors (not queryable)
-              if (candidate.type === 'label-text') {
-                console.log(`    ⏭️ Skipping label-text selector`);
-                continue;
-              }
-              
-              try {
-                const selector = candidate.selector.replace(/\\/g, ''); // Unescape
-                const element = queryElement(selector);
+            // Strategy 2: Check focused element
+            if (!highlightedElement && document.activeElement && 
+                ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+              highlightedElement = document.activeElement;
+            }
+            
+            // Strategy 3: Find closest visible input to tooltip
+            if (!highlightedElement) {
+              const tooltipElement = node.classList?.contains('scout-adoption-tooltip') ? node : 
+                                    node.querySelector('.scout-adoption-tooltip');
+              if (tooltipElement) {
+                const rect = tooltipElement.getBoundingClientRect();
+                const inputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
                 
-                if (element && ['INPUT', 'SELECT', 'TEXTAREA'].includes(element.tagName) &&
-                    !filledElements.has(element) && element.offsetParent !== null) {
-                  highlightedElement = element;
-                  console.log(`  ✅ Found using ${candidate.type} selector:`, selector.substring(0, 60));
-                  break;
+                let minDistance = Infinity;
+                for (const input of inputs) {
+                  if (input.offsetParent === null) continue; // Skip hidden
+                  
+                  const inputRect = input.getBoundingClientRect();
+                  const distance = Math.sqrt(
+                    Math.pow(rect.left - inputRect.left, 2) + 
+                    Math.pow(rect.top - inputRect.top, 2)
+                  );
+                  if (distance < minDistance && distance < 300) {
+                    minDistance = distance;
+                    highlightedElement = input;
+                  }
                 }
-              } catch (err) {
-                // Selector failed, try next one
               }
             }
             
-            if (highlightedElement && !filledElements.has(highlightedElement)) {
+            // If we found an input element, try to match and fill it
+            if (highlightedElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
               console.log('🔍 Highlighted element:', highlightedElement.tagName, highlightedElement.type, highlightedElement.name || highlightedElement.id || '(no name/id)');
               
-              // Only auto-fill input elements
-              if (['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
-                // Extract metadata from the highlighted element
+              // Extract metadata and try to match
+              // Extract metadata and try to match
                 const elementMetadata = extractElementMetadata(highlightedElement);
                 console.log('📊 Element metadata:', elementMetadata);
                 
-                // Try to match with captured data
+                // Try to match with ANY field in captured data
                 const matchedField = findMatchingCapturedField(elementMetadata, capturedData);
                 
                 if (matchedField) {
@@ -513,33 +486,13 @@
                   highlightedElement.dispatchEvent(new Event('input', { bubbles: true }));
                   highlightedElement.dispatchEvent(new Event('change', { bubbles: true }));
                   
-                  // Mark as filled
-                  filledElements.add(highlightedElement);
-                  filledCount++;
-                  if (window.__scoutTooltipIncrementFilled) {
-                    window.__scoutTooltipIncrementFilled();
-                  }
-                  
-                  console.log(`🎉 Auto-filled: ${highlightedElement.tagName} with "${matchedField.value}"`);
-                  console.log(`   ✅ Successfully filled field ${filledCount}`);
-                  
-                  // Move to next step for next tooltip
-                  currentStepIndex++;
+                  fillCount++;
+                  console.log(`🎉 Auto-filled: ${highlightedElement.tagName} with "${matchedField.value}" (total fills: ${fillCount})`);
                 } else {
-                  console.log('⚠️ No matching captured field found for this element');
-                  console.log('   Element:', elementIdentity.labelText || elementIdentity.placeholder || 'unknown');
-                  // Still move to next step
-                  currentStepIndex++;
+                  console.log('⚠️ No match found in captured data for this element');
                 }
-              } else {
-                console.log(`⚠️ Found element is ${highlightedElement.tagName}, not an input field - skipping`);
-                currentStepIndex++;
-              }
             } else {
-              console.log('⚠️ Could not find element using Scout selectors');
-              console.log('   Tried', selectorCandidates.length, 'selector candidates from training data');
-              // Move to next step anyway
-              currentStepIndex++;
+              console.log('⚠️ Could not find highlighted input element');
             }
           }
         }
@@ -555,15 +508,8 @@
     // Store observer reference to clean up later
     window.__scoutTooltipObserver = observer;
     window.__scoutTooltipWorkflowId = workflowId;
-    window.__scoutTooltipFilledCount = 0; // Track fills globally
-    window.__scoutTooltipMainStepsCount = guideData?.filter(s => s.stepPurpose === 'main').length || 0; // Total main steps
     
-    // Also store filledCount updater
-    window.__scoutTooltipIncrementFilled = () => {
-      window.__scoutTooltipFilledCount = (window.__scoutTooltipFilledCount || 0) + 1;
-    };
-    
-    console.log('✅ Tooltip monitor active');
+    console.log('✅ Tooltip monitor active - will fill any matching controls');
   }
 
   /**
@@ -731,12 +677,7 @@
         // Workflow is complete when progress key is removed AND tooltip is gone
         if (!progressValue && !hasTooltip) {
           clearInterval(checkCompletion);
-          
-          // Log completion summary
-          const mainStepsInGuide = window.__scoutTooltipMainStepsCount || 0;
-          const actuallyFilled = window.__scoutTooltipFilledCount || 0;
           console.log(`✅ Workflow completed after ${checkCount} checks: ${step.label}`);
-          console.log(`   📊 Auto-fill summary: ${actuallyFilled}/${mainStepsInGuide} main steps filled`);
           
           // Clean up auto-fill data and observer
           
@@ -746,9 +687,6 @@
             window.__scoutTooltipObserver.disconnect();
             delete window.__scoutTooltipObserver;
             delete window.__scoutTooltipWorkflowId;
-            delete window.__scoutTooltipFilledCount;
-            delete window.__scoutTooltipMainStepsCount;
-            delete window.__scoutTooltipIncrementFilled;
             console.log('🧹 Cleaned up tooltip monitor');
           }
           
@@ -766,9 +704,6 @@
           window.__scoutTooltipObserver.disconnect();
           delete window.__scoutTooltipObserver;
           delete window.__scoutTooltipWorkflowId;
-          delete window.__scoutTooltipFilledCount;
-          delete window.__scoutTooltipMainStepsCount;
-          delete window.__scoutTooltipIncrementFilled;
         }
         console.error(`⏱️ Workflow execution timeout after ${timeout}ms`);
         reject(new Error('Workflow execution timeout'));
