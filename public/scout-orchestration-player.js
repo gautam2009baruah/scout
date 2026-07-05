@@ -411,7 +411,7 @@
             
             // Poll for Scout to focus the element (don't rely on fixed delay)
             let attempts = 0;
-            const maxAttempts = 40; // 40 attempts × 50ms = 2 seconds max
+            const maxAttempts = 140; // 140 attempts × 50ms = 7 seconds max
             
             const pollForFocus = () => {
               attempts++;
