@@ -388,69 +388,17 @@
   }
 
   /**
-   * Set up element tracker to record which elements Scout highlights during workflow
-   * Adds each highlighted element to window.__scoutDataCaptureElements for data capture
+   * Unified Scout tooltip monitor
+   * - Always tracks elements Scout highlights (for data capture)
+   * - Conditionally auto-fills if captured data exists
    */
-  function setupElementTracker() {
-    console.log('📋 Element tracker active - recording Scout-highlighted controls');
+  function setupUnifiedScoutMonitor(capturedData, workflowId) {
+    const hasAutoFillData = Object.keys(capturedData).length > 0;
+    console.log('👀 Unified Scout monitor active');
+    console.log(`   📋 Element tracking: ENABLED`);
+    console.log(`   🤖 Auto-fill: ${hasAutoFillData ? 'ENABLED' : 'DISABLED'} (${Object.keys(capturedData).length} fields)`);
     
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes) {
-          // Check if this is a Scout tooltip
-          if (node.nodeType === Node.ELEMENT_NODE && 
-              (node.classList?.contains('scout-adoption-tooltip') || 
-               node.querySelector?.('.scout-adoption-tooltip'))) {
-            
-            // Poll for Scout to focus the element
-            let attempts = 0;
-            const maxAttempts = 140; // 7 seconds max
-            
-            const pollForFocus = () => {
-              attempts++;
-              
-              // Check if Scout has focused an input element
-              if (document.activeElement && 
-                  ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-                
-                const element = document.activeElement;
-                
-                // Add to tracking list if not already there (avoid duplicates)
-                if (!window.__scoutDataCaptureElements.includes(element)) {
-                  window.__scoutDataCaptureElements.push(element);
-                  console.log(`   📋 Tracked: ${element.tagName} (total: ${window.__scoutDataCaptureElements.length})`);
-                }
-              } else if (attempts < maxAttempts) {
-                setTimeout(pollForFocus, 50);
-              }
-            };
-            
-            pollForFocus();
-          }
-        }
-      }
-    });
-    
-    // Start observing
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
-    
-    // Store observer for cleanup
-    window.__scoutElementTrackerObserver = observer;
-  }
-
-  /**
-   * Set up monitor for Scout tooltips to auto-fill highlighted fields
-   * Simple logic: tooltip appears → extract metadata → match → fill
-   */
-  function setupScoutTooltipMonitor(capturedData, workflowId, guideData) {
-    console.log('👀 Setting up Scout tooltip monitor for auto-fill...');
-    console.log('📊 Captured data fields:', Object.keys(capturedData).length);
-    console.log('📊 Will attempt to match and fill any highlighted control');
-    
-    let fillCount = 0; // Track total fills for logging
+    let fillCount = 0;
     
     // Observer for tooltip appearing
     const observer = new MutationObserver((mutations) => {
@@ -461,9 +409,9 @@
               (node.classList?.contains('scout-adoption-tooltip') || 
                node.querySelector?.('.scout-adoption-tooltip'))) {
             
-            console.log('🎯 Scout tooltip detected, looking for highlighted control...');
+            console.log('🎯 Scout tooltip detected');
             
-            // Poll for Scout to focus the element (don't rely on fixed delay)
+            // Poll for Scout to focus the element
             let attempts = 0;
             const maxAttempts = 140; // 140 attempts × 50ms = 7 seconds max
             
@@ -473,174 +421,78 @@
               // Check if Scout has focused an input element
               if (document.activeElement && 
                   ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                
+                const element = document.activeElement;
                 console.log(`   ✅ Element focused after ${attempts * 50}ms`);
-                findAndFillHighlightedControl();
+                
+                // ALWAYS track the element (for data capture)
+                if (!window.__scoutDataCaptureElements.includes(element)) {
+                  window.__scoutDataCaptureElements.push(element);
+                  console.log(`   📋 Tracked: ${element.tagName} (total: ${window.__scoutDataCaptureElements.length})`);
+                }
+                
+                // Try auto-fill ONLY if we have captured data
+                if (hasAutoFillData) {
+                  findAndFillHighlightedControl(element);
+                }
+                
               } else if (attempts < maxAttempts) {
-                // Keep polling
-                setTimeout(pollForFocus, 50); // Check every 50ms
+                setTimeout(pollForFocus, 50);
               } else {
-                // Timeout - Scout didn't focus, use fallback
-                console.log(`   ⏱️ Timeout after ${attempts * 50}ms, using fallback detection`);
-                findAndFillHighlightedControl();
+                console.log(`   ⏱️ Timeout after ${attempts * 50}ms`);
               }
             };
             
-            // Start polling immediately
             pollForFocus();
           }
         }
       }
-    });
     
     // Function to find and fill the highlighted control
-    function findAndFillHighlightedControl() {
-      // Scout focuses the actual control - check document.activeElement FIRST!
-      let highlightedElement = null;
-      const strategies = [];
+    function findAndFillHighlightedControl(element) {
+      console.log('🔍 Auto-fill attempt for:', element.tagName, element.type, element.name || element.id || '(no name/id)');
       
-      // Strategy 1: Check focused element (Scout focuses the control!)
-      console.log('   Checking document.activeElement...');
-      if (document.activeElement) {
-        console.log(`     activeElement: ${document.activeElement.tagName} (${document.activeElement.type || 'no type'})`);
-        
-        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-          highlightedElement = document.activeElement;
-          strategies.push('focused-element');
-          console.log('     ✅ Using focused element (Scout put cursor here)');
-        } else {
-          console.log(`     ⏭️ activeElement is ${document.activeElement.tagName}, not an input`);
-        }
-      }
+      // Extract metadata and try to match
+      const elementMetadata = extractElementMetadata(element);
+      console.log('📊 Element metadata:', elementMetadata);
       
-      // Strategy 2: Check for Scout's highlight markers on INPUT elements (fallback)
-      if (!highlightedElement) {
-        console.log('   Checking for Scout markers...');
-        const markedInputs = document.querySelectorAll([
-          'input[data-scout-step-active="true"]',
-          'select[data-scout-step-active="true"]', 
-          'textarea[data-scout-step-active="true"]',
-          'input[data-scout-highlight]',
-          'select[data-scout-highlight]',
-          'textarea[data-scout-highlight]',
-          'input.scout-adoption-highlight',
-          'select.scout-adoption-highlight',
-          'textarea.scout-adoption-highlight',
-          'input[data-scout-active]',
-          'select[data-scout-active]',
-          'textarea[data-scout-active]'
-        ].join(', '));
-        
-        if (markedInputs.length > 0) {
-          highlightedElement = markedInputs[0];
-          strategies.push('scout-markers');
-          console.log(`     ✅ Found ${markedInputs.length} marked inputs, using first`);
-        } else {
-          console.log('     ⏭️ No marked inputs found');
-        }
-      }
+      // Try to match with ANY field in captured data
+      const matchedField = findMatchingCapturedField(elementMetadata, capturedData);
       
-      // Strategy 3: Visual highlighting (last resort fallback)
-      if (!highlightedElement) {
-        console.log('   Checking visual highlighting as fallback...');
-        const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
+      if (matchedField) {
+        console.log(`✅ Match found: "${matchedField.label}" → filling with "${matchedField.value}"`);
         
-        for (const input of allInputs) {
-          if (input.offsetParent === null) continue;
-          
-          const computedStyle = window.getComputedStyle(input);
-          const inlineStyle = input.getAttribute('style') || '';
-          
-          if (inlineStyle.includes('outline') || 
-              inlineStyle.includes('box-shadow') ||
-              inlineStyle.includes('z-index') ||
-              (computedStyle.outline !== 'none' && computedStyle.outline.includes('px'))) {
-            highlightedElement = input;
-            strategies.push('visual-highlight-fallback');
-            console.log('     ✅ Found visually highlighted input');
-            break;
-          }
-        }
-      }
-      
-      console.log(`   Detection result: ${strategies.length > 0 ? strategies.join(', ') : 'NONE'}`);
-      
-      // If we found an input element, try to match and fill it
-      if (highlightedElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(highlightedElement.tagName)) {
-        console.log('🔍 Highlighted control:', highlightedElement.tagName, highlightedElement.type, highlightedElement.name || highlightedElement.id || '(no name/id)');
-        
-        // Extract metadata and try to match
-        const elementMetadata = extractElementMetadata(highlightedElement);
-        console.log('📊 Element metadata:', elementMetadata);
-        
-        // Try to match with ANY field in captured data
-        const matchedField = findMatchingCapturedField(elementMetadata, capturedData);
-        
-        if (matchedField) {
-          console.log(`✅ Match found: "${matchedField.label}" → filling with "${matchedField.value}"`);
-          
-          // Auto-fill the element
-          if (highlightedElement.tagName === 'SELECT') {
-            const options = Array.from(highlightedElement.options);
-            const matchingOption = options.find(opt => 
-              opt.value === matchedField.value || opt.text === matchedField.value
-            );
-            if (matchingOption) {
-              highlightedElement.value = matchingOption.value;
-            } else {
-              highlightedElement.value = matchedField.value;
-            }
-          } else if (highlightedElement.type === 'checkbox') {
-            highlightedElement.checked = !!matchedField.value;
-          } else if (highlightedElement.type === 'radio') {
-            highlightedElement.checked = highlightedElement.value === matchedField.value;
+        // Auto-fill the element
+        if (element.tagName === 'SELECT') {
+          const options = Array.from(element.options);
+          const matchingOption = options.find(opt => 
+            opt.value === matchedField.value || opt.text === matchedField.value
+          );
+          if (matchingOption) {
+            element.value = matchingOption.value;
+            console.log(`   📋 Set SELECT to value "${matchingOption.value}"`);
           } else {
-            highlightedElement.value = matchedField.value;
+            element.value = matchedField.value;
+            console.log(`   📋 Set SELECT to value "${matchedField.value}" (direct)`);
           }
-          
-          // Trigger events
-          highlightedElement.dispatchEvent(new Event('input', { bubbles: true }));
-          highlightedElement.dispatchEvent(new Event('change', { bubbles: true }));
-          
-          fillCount++;
-          console.log(`🎉 Auto-filled: ${highlightedElement.tagName} with "${matchedField.value}" (total fills: ${fillCount})`);
+        } else if (element.type === 'checkbox') {
+          element.checked = !!matchedField.value;
+        } else if (element.type === 'radio') {
+          element.checked = element.value === matchedField.value;
         } else {
-          console.log('⚠️ No match found in captured data for this element');
+          element.value = matchedField.value;
         }
+        
+        // Trigger events
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        fillCount++;
+        console.log(`🎉 Auto-filled successfully (total fills: ${fillCount})`);
       } else {
-        console.log('⚠️ Could not find highlighted control (input/select/textarea)');
-        
-        // Debug: Show what's on the page
-        const allInputs = document.querySelectorAll('input:not([type="hidden"]), select, textarea');
-        const visibleInputs = Array.from(allInputs).filter(i => i.offsetParent !== null);
-        console.log('   Total inputs on page:', allInputs.length, '(', visibleInputs.length, 'visible)');
-        
-        // Check if any inputs have Scout markers
-        const markedInputs = document.querySelectorAll([
-          'input[data-scout-step-active]',
-          'select[data-scout-step-active]',
-          'textarea[data-scout-step-active]',
-          'input[data-scout-highlight]',
-          'select[data-scout-highlight]',
-          'textarea[data-scout-highlight]',
-          'input.scout-adoption-highlight',
-          'select.scout-adoption-highlight',
-          'textarea.scout-adoption-highlight'
-        ].join(', '));
-        
-        if (markedInputs.length > 0) {
-          console.log('   Found', markedInputs.length, 'inputs with Scout markers but they were filtered out');
-          console.log('   First marked input:', markedInputs[0].tagName, markedInputs[0].type);
-        } else {
-          console.log('   No inputs found with Scout highlight markers');
-        }
-        
-        // Check what element types DO have Scout markers
-        const anyMarked = document.querySelectorAll('[data-scout-step-active], [data-scout-highlight], .scout-adoption-highlight');
-        if (anyMarked.length > 0) {
-          console.log('   Elements with Scout markers (non-input):', Array.from(anyMarked).map(e => e.tagName).join(', '));
-        }
+        console.log('⚠️ No match found in captured data for this element');
       }
-    } // End of findAndFillHighlightedControl
+    }
     
     // Start observing
     observer.observe(document.body, {
@@ -648,11 +500,11 @@
       subtree: true
     });
     
-    // Store observer reference to clean up later
-    window.__scoutTooltipObserver = observer;
-    window.__scoutTooltipWorkflowId = workflowId;
+    // Store observer reference
+    window.__scoutUnifiedObserver = observer;
+    window.__scoutWorkflowId = workflowId;
     
-    console.log('✅ Tooltip monitor active - will fill any matching controls');
+    console.log('✅ Unified monitor active');
   }
 
   /**
@@ -856,36 +708,33 @@
     }
 
     // Initialize element tracking list for data capture
-    console.log('📋 Initializing element tracking for data capture...');
+    console.log('📋 Initializing unified Scout tooltip monitor...');
     window.__scoutDataCaptureElements = [];
-    setupElementTracker();
-
-    // Auto-fill from previous data capture if enabled
+    
+    // Prepare captured data for auto-fill (if enabled)
     const workflowConfig = step.config || {};
-    if (workflowConfig.autoFillFromDataCapture && step.guideData && context) {
-      console.log('🤖 Auto-fill enabled - will monitor Scout tooltips and fill highlighted fields');
-      console.log('📊 Context data available:',  Object.keys(context).length, 'fields');
+    let capturedData = {};
+    
+    if (workflowConfig.autoFillFromDataCapture && context) {
+      console.log('🤖 Auto-fill enabled - will attempt to fill matched fields');
+      console.log('📊 Context data available:', Object.keys(context).length, 'fields');
       
       // Filter context to only include captured data fields (objects with value/metadata)
-      const capturedData = {};
       for (const [key, value] of Object.entries(context)) {
         if (value && typeof value === 'object' && 'value' in value && 'metadata' in value) {
           capturedData[key] = value;
         }
       }
       
-      if (Object.keys(capturedData).length > 0) {
-        // Set up mutation observer to watch for Scout tooltips
-        // Pass guideData so we can use Scout's own selectors
-        setupScoutTooltipMonitor(capturedData, step.workflowId, step.guideData);
-      } else {
+      if (Object.keys(capturedData).length === 0) {
         console.log('⚠️ No captured data found in context');
       }
     } else {
-      if (!workflowConfig.autoFillFromDataCapture) {
-        console.log('ℹ️ Auto-fill disabled for this workflow (enable in workflow config)');
-      }
+      console.log('ℹ️ Auto-fill disabled for this workflow');
     }
+    
+    // Set up unified monitor (tracks elements + auto-fills if data exists)
+    setupUnifiedScoutMonitor(capturedData, step.workflowId);
 
     // Start the workflow using the handle (same as chatbot)
     console.log(`▶️ Starting workflow: ${step.workflowId}`);
@@ -918,11 +767,11 @@
           
           // Clean up auto-fill data and observer
           delete window.__scoutWorkflowAutoFillData;
-          if (window.__scoutTooltipObserver) {
-            window.__scoutTooltipObserver.disconnect();
-            delete window.__scoutTooltipObserver;
-            delete window.__scoutTooltipWorkflowId;
-            console.log('🧹 Cleaned up tooltip monitor');
+          if (window.__scoutUnifiedObserver) {
+            window.__scoutUnifiedObserver.disconnect();
+            delete window.__scoutUnifiedObserver;
+            delete window.__scoutWorkflowId;
+            console.log('🧹 Cleaned up unified monitor');
           }
           
           resolve();
@@ -935,10 +784,10 @@
         clearInterval(checkCompletion);
         delete window.__scoutWorkflowAutoFillData;
         // Clean up observer on timeout
-        if (window.__scoutTooltipObserver) {
-          window.__scoutTooltipObserver.disconnect();
-          delete window.__scoutTooltipObserver;
-          delete window.__scoutTooltipWorkflowId;
+        if (window.__scoutUnifiedObserver) {
+          window.__scoutUnifiedObserver.disconnect();
+          delete window.__scoutUnifiedObserver;
+          delete window.__scoutWorkflowId;
         }
         console.error(`⏱️ Workflow execution timeout after ${timeout}ms`);
         reject(new Error('Workflow execution timeout'));
@@ -1126,15 +975,12 @@
       }
     }
     
-    // Clean up tracking list and observer
+    // Clean up tracking list
     if (window.__scoutDataCaptureElements) {
       console.log(`🧹 Clearing ${window.__scoutDataCaptureElements.length} tracked elements`);
       window.__scoutDataCaptureElements = [];
     }
-    if (window.__scoutElementTrackerObserver) {
-      window.__scoutElementTrackerObserver.disconnect();
-      delete window.__scoutElementTrackerObserver;
-    }
+    // Note: Unified observer is cleaned up at workflow end, not here
     
     console.log(`✅ Captured ${fields.length} fields from tracked elements`);
     return fields;
