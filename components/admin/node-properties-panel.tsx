@@ -1624,6 +1624,24 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
       <div className="flex items-center gap-2">
         <input
           type="checkbox"
+          id="autoFillFromDataCapture"
+          className="rounded border-slate-300"
+          checked={config.autoFillFromDataCapture === true}
+          onChange={(e) => updateConfig({ autoFillFromDataCapture: e.target.checked })}
+        />
+        <label htmlFor="autoFillFromDataCapture" className="text-sm text-slate-700">
+          Auto-fill from previous data capture
+        </label>
+        <div className="ml-auto">
+          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+            🤖 Smart field matching
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
           id="workflow-closeBrowserAfter"
           className="rounded border-slate-300"
           checked={config.closeBrowserAfter !== false}

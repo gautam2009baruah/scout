@@ -387,6 +387,84 @@
       });
     }
 
+    // Auto-fill from previous data capture if enabled
+    const workflowConfig = step.config || {};
+    if (workflowConfig.autoFillFromDataCapture && step.guideData && context) {
+      console.log('🤖 Auto-fill enabled, attempting smart field matching...');
+      console.log('📊 Context data:', context);
+      console.log('📊 Workflow guide data:', step.guideData?.length, 'steps');
+      
+      // Filter context to only include captured data fields (objects with value/metadata)
+      const capturedData = {};
+      for (const [key, value] of Object.entries(context)) {
+        if (value && typeof value === 'object' && 'value' in value && 'metadata' in value) {
+          capturedData[key] = value;
+        }
+      }
+      
+      if (Object.keys(capturedData).length > 0) {
+        console.log('📊 Found captured data fields:', Object.keys(capturedData).length);
+        
+        // Use smart matching to map captured data to workflow fields
+        const fieldMatches = smartMatchFields(step.guideData, capturedData);
+        
+        if (Object.keys(fieldMatches).length > 0) {
+          console.log(`🤖 Smart matching found ${Object.keys(fieldMatches).length} field mappings`);
+          
+          // Apply auto-fill after a short delay to ensure page is ready
+          setTimeout(() => {
+            let filledCount = 0;
+            for (const [selector, matchData] of Object.entries(fieldMatches)) {
+              try {
+                const element = document.querySelector(selector);
+                if (element) {
+                  // Set value based on element type
+                  if (element.tagName === 'SELECT') {
+                    // For select elements, try to find matching option
+                    const options = Array.from(element.options);
+                    const matchingOption = options.find(opt => 
+                      opt.value === matchData.value || opt.text === matchData.value
+                    );
+                    if (matchingOption) {
+                      element.value = matchingOption.value;
+                    } else {
+                      element.value = matchData.value;
+                    }
+                  } else if (element.type === 'checkbox') {
+                    element.checked = !!matchData.value;
+                  } else if (element.type === 'radio') {
+                    element.checked = element.value === matchData.value;
+                  } else {
+                    element.value = matchData.value;
+                  }
+                  
+                  // Trigger change event so the page knows the field was updated
+                  element.dispatchEvent(new Event('input', { bubbles: true }));
+                  element.dispatchEvent(new Event('change', { bubbles: true }));
+                  
+                  filledCount++;
+                  console.log(`✅ Auto-filled: ${selector} = "${matchData.value}" (confidence: ${matchData.confidence})`);
+                } else {
+                  console.warn(`⚠️ Element not found for selector: ${selector}`);
+                }
+              } catch (error) {
+                console.error(`❌ Failed to auto-fill field with selector ${selector}:`, error);
+              }
+            }
+            console.log(`🤖 Auto-fill complete: ${filledCount}/${Object.keys(fieldMatches).length} fields filled`);
+          }, 500); // Wait 500ms for page to be ready
+        } else {
+          console.log('⚠️ Smart matching found no field mappings');
+        }
+      } else {
+        console.log('⚠️ No captured data found in context');
+      }
+    } else {
+      if (!workflowConfig.autoFillFromDataCapture) {
+        console.log('ℹ️ Auto-fill disabled for this workflow');
+      }
+    }
+
     // Start the workflow using the handle (same as chatbot)
     console.log(`▶️ Starting workflow: ${step.workflowId}`);
     handle.play(step.workflowId);
@@ -449,7 +527,14 @@
       console.log(`📊 Captured ${workflowFields.length} fields from workflow:`, workflowFields);
 
       for (const field of workflowFields) {
-        capturedData[field.name] = field.value;
+        // Store full field object with metadata (not just value)
+        capturedData[field.name] = {
+          value: field.value,
+          label: field.label,
+          type: field.type,
+          element: field.element,
+          metadata: field.metadata,
+        };
       }
     } else {
       console.log('⚠️ No guide data available, skipping data capture');
@@ -599,6 +684,13 @@
               value: value,
               element: element.tagName,
               type: element.type || 'text',
+              // Store full metadata for smart field matching
+              metadata: {
+                elementIdentity: elementIdentity || {},
+                selector: selector,
+                confidence: candidate.confidence,
+                stepDescription: step.stepDescription || '',
+              },
             });
             
             break; // Found the element, move to next step
@@ -703,6 +795,141 @@
 
     console.log(`✅ Discovered ${fields.length} capturable fields`);
     return fields;
+  }
+
+  /**
+   * Smart field matching: Match captured data fields to workflow step fields
+   * Uses semantic/fuzzy matching with metadata from training plugin
+   * 
+   * @param {Array} workflowSteps - Workflow steps with elementIdentity metadata
+   * @param {Object} capturedData - Captured data from previous data_capture node
+   * @returns {Object} - Mapping of workflow field selectors to captured values
+   */
+  function smartMatchFields(workflowSteps, capturedData) {
+    console.log('🤖 Starting smart field matching...');
+    console.log('📊 Workflow steps:', workflowSteps.length);
+    console.log('📊 Captured fields:', Object.keys(capturedData).length);
+    
+    const matches = {};
+    
+    // Iterate through workflow steps (target fields)
+    for (const step of workflowSteps) {
+      const stepIdentity = step.elementIdentity || {};
+      
+      // Skip non-input steps
+      if (!['input', 'change', 'select'].includes(step.type)) {
+        continue;
+      }
+      
+      // Get all possible identifiers for this workflow field
+      const workflowIdentifiers = {
+        labelText: (stepIdentity.labelText || '').toLowerCase().trim(),
+        ariaLabel: (stepIdentity.ariaLabel || '').toLowerCase().trim(),
+        placeholder: (stepIdentity.placeholder || '').toLowerCase().trim(),
+        accessibleName: (stepIdentity.accessibleName || '').toLowerCase().trim(),
+        nearbyHeading: (stepIdentity.nearbyHeading || '').toLowerCase().trim(),
+        name: (stepIdentity.name || '').toLowerCase().trim(),
+        id: (stepIdentity.id || '').toLowerCase().trim(),
+      };
+      
+      console.log(`🔍 Matching workflow field:`, workflowIdentifiers);
+      
+      let bestMatch = null;
+      let bestScore = 0;
+      
+      // Compare with each captured field
+      for (const [capturedFieldName, capturedFieldData] of Object.entries(capturedData)) {
+        const capturedMetadata = capturedFieldData.metadata?.elementIdentity || {};
+        
+        // Get all possible identifiers for this captured field
+        const capturedIdentifiers = {
+          labelText: (capturedMetadata.labelText || '').toLowerCase().trim(),
+          ariaLabel: (capturedMetadata.ariaLabel || '').toLowerCase().trim(),
+          placeholder: (capturedMetadata.placeholder || '').toLowerCase().trim(),
+          accessibleName: (capturedMetadata.accessibleName || '').toLowerCase().trim(),
+          nearbyHeading: (capturedMetadata.nearbyHeading || '').toLowerCase().trim(),
+          name: (capturedMetadata.name || '').toLowerCase().trim(),
+          id: (capturedMetadata.id || '').toLowerCase().trim(),
+          fieldName: capturedFieldName.toLowerCase().trim(),
+          label: (capturedFieldData.label || '').toLowerCase().trim(),
+        };
+        
+        // Calculate match score
+        let score = 0;
+        
+        // Exact matches (highest priority)
+        if (workflowIdentifiers.labelText && workflowIdentifiers.labelText === capturedIdentifiers.labelText) score += 100;
+        if (workflowIdentifiers.name && workflowIdentifiers.name === capturedIdentifiers.name) score += 90;
+        if (workflowIdentifiers.id && workflowIdentifiers.id === capturedIdentifiers.id) score += 90;
+        if (workflowIdentifiers.ariaLabel && workflowIdentifiers.ariaLabel === capturedIdentifiers.ariaLabel) score += 80;
+        
+        // Partial matches (medium priority)
+        if (workflowIdentifiers.labelText && capturedIdentifiers.labelText && 
+            (workflowIdentifiers.labelText.includes(capturedIdentifiers.labelText) || 
+             capturedIdentifiers.labelText.includes(workflowIdentifiers.labelText))) score += 60;
+        
+        if (workflowIdentifiers.placeholder && capturedIdentifiers.placeholder && 
+            (workflowIdentifiers.placeholder.includes(capturedIdentifiers.placeholder) || 
+             capturedIdentifiers.placeholder.includes(workflowIdentifiers.placeholder))) score += 40;
+        
+        // Normalize and compare (handle camelCase, snake_case, spaces)
+        const normalizeString = (str) => str.replace(/[^a-z0-9]/g, '');
+        const workflowNormalized = normalizeString(workflowIdentifiers.labelText || workflowIdentifiers.name);
+        const capturedNormalized = normalizeString(capturedIdentifiers.labelText || capturedIdentifiers.label || capturedIdentifiers.fieldName);
+        
+        if (workflowNormalized && capturedNormalized && workflowNormalized === capturedNormalized) score += 70;
+        
+        // Common semantic matches (lower priority)
+        const semanticPairs = [
+          ['email', 'emailaddress', 'email_address', 'e-mail'],
+          ['phone', 'phonenumber', 'phone_number', 'telephone', 'tel'],
+          ['firstname', 'first_name', 'fname', 'given_name', 'givenname'],
+          ['lastname', 'last_name', 'lname', 'surname', 'family_name', 'familyname'],
+          ['address', 'street', 'streetaddress', 'street_address'],
+          ['city', 'town'],
+          ['state', 'province', 'region'],
+          ['zip', 'zipcode', 'postalcode', 'postal_code', 'postcode'],
+          ['country', 'nation'],
+        ];
+        
+        for (const synonyms of semanticPairs) {
+          const workflowInGroup = synonyms.some(syn => workflowNormalized.includes(syn));
+          const capturedInGroup = synonyms.some(syn => capturedNormalized.includes(syn));
+          if (workflowInGroup && capturedInGroup) score += 50;
+        }
+        
+        // Update best match if this score is higher
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = {
+            capturedFieldName,
+            capturedValue: capturedFieldData.value,
+            score,
+          };
+        }
+      }
+      
+      // Only use matches with score >= 50 (to avoid false positives)
+      if (bestMatch && bestScore >= 50) {
+        // Get selector for this workflow step
+        const selector = step.selectorCandidates?.[0]?.value || 
+                        stepIdentity.selectorCandidates?.[0]?.value;
+        
+        if (selector) {
+          matches[selector] = {
+            value: bestMatch.capturedValue,
+            confidence: bestScore,
+            capturedField: bestMatch.capturedFieldName,
+          };
+          console.log(`✅ Matched: ${stepIdentity.labelText || 'unknown'} ← ${bestMatch.capturedFieldName} (score: ${bestScore})`);
+        }
+      } else if (bestMatch) {
+        console.log(`⚠️ Low confidence match skipped: ${stepIdentity.labelText || 'unknown'} ← ${bestMatch.capturedFieldName} (score: ${bestScore})`);
+      }
+    }
+    
+    console.log(`🤖 Smart matching complete: ${Object.keys(matches).length} matches found`);
+    return matches;
   }
 
   /**
