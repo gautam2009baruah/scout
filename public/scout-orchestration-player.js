@@ -89,7 +89,8 @@
    * Start orchestration execution
    */
   async function handleStartExecution(payload) {
-    const { executionId, orchestrationId, orchestrationName, triggerData, context } = payload;
+    const { executionId, orchestrationId, orchestrationName, triggerData } = payload;
+    let context = payload.context || {}; // Use let so we can reassign when capturing data
 
     console.log('🎬 Starting in-context execution:', { executionId, orchestrationName });
 
