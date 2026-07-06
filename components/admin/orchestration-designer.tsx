@@ -129,6 +129,13 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   const [isListOpen, setIsListOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // Show toast notification
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   // Load orchestration data when orchestration changes
   useEffect(() => {
@@ -227,7 +234,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   const addNode = useCallback(
     (nodeType: NodeType) => {
       if (!orchestration) {
-        alert("Please create an orchestration first");
+        showToast("Please create an orchestration first", 'error');
         return;
       }
 
@@ -329,10 +336,10 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         });
       }
 
-      alert("Orchestration saved successfully!");
+      showToast("Orchestration saved successfully!", 'success');
     } catch (error) {
       console.error("Error saving orchestration:", error);
-      alert(error instanceof Error ? error.message : "Failed to save orchestration");
+      showToast(error instanceof Error ? error.message : "Failed to save orchestration", 'error');
     } finally {
       setIsSaving(false);
     }
@@ -345,7 +352,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     // Validate that there's an end node
     const hasEndNode = nodes.some((node) => (node.data as any).nodeType === 'end');
     if (!hasEndNode) {
-      alert('Cannot publish: Orchestration must have an End node. Please add an End node to complete the workflow.');
+      showToast('Cannot publish: Orchestration must have an End node. Please add an End node to complete the workflow.', 'error');
       return;
     }
 
@@ -376,10 +383,10 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
 
       const result = await response.json();
       setOrchestration(result.orchestration);
-      alert("Orchestration published successfully!");
+      showToast("Orchestration published successfully!", 'success');
     } catch (error) {
       console.error("Error publishing orchestration:", error);
-      alert(error instanceof Error ? error.message : "Failed to publish orchestration");
+      showToast(error instanceof Error ? error.message : "Failed to publish orchestration", 'error');
     } finally {
       setIsPublishing(false);
     }
@@ -390,7 +397,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     if (!orchestration) return;
 
     if (orchestration.status !== "published") {
-      alert("Please publish the orchestration before executing it.");
+      showToast("Please publish the orchestration before executing it.", 'error');
       return;
     }
 
@@ -399,7 +406,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       const triggerNode = nodes.find(n => n.data.nodeType === "trigger");
       
       if (!triggerNode) {
-        alert("This orchestration has no trigger node. Please add a trigger node first.");
+        showToast("This orchestration has no trigger node. Please add a trigger node first.", 'error');
         return;
       }
 
@@ -453,7 +460,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       setIsManualTriggerOpen(true);
     } catch (error) {
       console.error("Error preparing manual trigger:", error);
-      alert(error instanceof Error ? error.message : "Failed to prepare manual trigger");
+      showToast(error instanceof Error ? error.message : "Failed to prepare manual trigger", 'error');
     }
   };
 
@@ -461,7 +468,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   const executeFromList = async (orch: Orchestration) => {
     try {
       if (orch.status !== "published") {
-        alert("Please publish the orchestration before executing it.");
+        showToast("Please publish the orchestration before executing it.", 'error');
         return;
       }
 
@@ -478,7 +485,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       const triggerNode = loadedNodes.find((n: any) => n.nodeType === "trigger");
       
       if (!triggerNode) {
-        alert("This orchestration has no trigger node.");
+        showToast("This orchestration has no trigger node.", 'error');
         return;
       }
 
@@ -523,7 +530,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       setIsManualTriggerOpen(true);
     } catch (error) {
       console.error("Error preparing orchestration for execution:", error);
-      alert(error instanceof Error ? error.message : "Failed to prepare orchestration");
+      showToast(error instanceof Error ? error.message : "Failed to prepare orchestration", 'error');
     }
   };
 
@@ -772,6 +779,27 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           currentOrchestrationId={orchestration?.id}
         />
       )}
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-lg border ${
+            toast.type === 'success' 
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+              : 'bg-red-50 border-red-200 text-red-900'
+          }`}>
+            <span className="text-lg">{toast.type === 'success' ? '✓' : '✕'}</span>
+            <span className="text-sm font-medium">{toast.message}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="ml-2 rounded p-0.5 hover:bg-black/5 transition-colors"
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -792,6 +820,7 @@ function CreateOrchestrationDialog({
   const [companyId, setCompanyId] = useState(companies[0]?.id || "");
   const [targetAppId, setTargetAppId] = useState("");
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Filter target apps by selected company
   const companyTargetApps = targetApps.filter(app => app.companyId === companyId);
@@ -826,7 +855,7 @@ function CreateOrchestrationDialog({
       onCreate(result.orchestration);
     } catch (error) {
       console.error("Error creating orchestration:", error);
-      alert(error instanceof Error ? error.message : "Failed to create orchestration");
+      setError(error instanceof Error ? error.message : "Failed to create orchestration");
     } finally {
       setCreating(false);
     }
@@ -887,6 +916,11 @@ function CreateOrchestrationDialog({
             </select>
           </div>
         </div>
+        {error && (
+          <div className="mt-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-900">
+            {error}
+          </div>
+        )}
         <div className="mt-6 flex justify-end gap-2">
           <button
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
