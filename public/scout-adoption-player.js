@@ -116,6 +116,17 @@
 
       if (!step) {
         localStorage.removeItem(this.storageKey());
+        
+        // Fire completion event for orchestration integration
+        window.dispatchEvent(new CustomEvent('scout-workflow-complete', {
+          detail: {
+            workflowId: this.guide.id,
+            workflowTitle: this.guide.title,
+            success: true
+          }
+        }));
+        console.log(`✅ Scout workflow completed: ${this.guide.title} (ID: ${this.guide.id})`);
+        
         return;
       }
 

@@ -1235,47 +1235,25 @@
     handle.play(step.workflowId);
 
     return new Promise((resolve, reject) => {
-      console.log(`⏳ Waiting for workflow completion...`);
+      console.log(`⏳ Waiting for workflow completion via event...`);
       
-      // Monitor for completion
-      let checkCount = 0;
-      let tooltipGoneCount = 0; // Track how long tooltip has been gone
-      const checkCompletion = setInterval(async () => {
-        checkCount++;
-        const progressKey = `scout-adoption-progress:${step.workflowId}:main`;
-        const progressValue = localStorage.getItem(progressKey);
-        const hasTooltip = document.querySelector('.scout-adoption-tooltip') !== null;
-
-        // Track tooltip absence
-        if (!hasTooltip) {
-          tooltipGoneCount++;
-        } else {
-          tooltipGoneCount = 0;
-        }
-
-        // Log every 10 checks (every 5 seconds)
-        if (checkCount % 10 === 0) {
-          console.log(`⏳ Still waiting... (check ${checkCount})`);
-          console.log(`   Progress key exists: ${!!progressValue}`);
-          console.log(`   Tooltip exists: ${hasTooltip}`);
-          console.log(`   Tooltip gone for: ${tooltipGoneCount * 0.5}s`);
-        }
-
-        // Workflow is complete when:
-        // 1. Progress key removed AND tooltip gone (normal case)
-        // 2. Tooltip gone for 3+ seconds (fallback for stuck progress key)
-        const isComplete = (!progressValue && !hasTooltip) || (tooltipGoneCount >= 6);
-        
-        if (isComplete) {
-          clearInterval(checkCompletion);
+      // Fallback timeout (safety net for very old workflows without event support)
+      const fallbackTimeout = setTimeout(() => {
+        console.warn(`⚠️ Workflow completion event timeout after 5 minutes - forcing completion`);
+        window.removeEventListener('scout-workflow-complete', completionHandler);
+        resolve({});
+      }, 300000); // 5 minutes
+      
+      // Listen for workflow completion event
+      const completionHandler = async (event) => {
+        if (event.detail.workflowId === step.workflowId) {
+          console.log(`✅ Workflow completed: ${step.label}`);
           
-          // Clean up stale progress key if it exists
-          if (progressValue) {
-            console.log(`🧹 Cleaning up stale progress key: ${progressKey}`);
-            localStorage.removeItem(progressKey);
-          }
+          // Clear fallback timeout
+          clearTimeout(fallbackTimeout);
           
-          console.log(`✅ Workflow completed after ${checkCount} checks: ${step.label}`);
+          // Clean up event listener
+          window.removeEventListener('scout-workflow-complete', completionHandler);
           
           // Clean up auto-fill data and observer
           delete window.__scoutWorkflowAutoFillData;
@@ -1291,7 +1269,9 @@
           
           resolve(outputs);
         }
-      }, 500);
+      };
+      
+      window.addEventListener('scout-workflow-complete', completionHandler);
     });
   }
 
