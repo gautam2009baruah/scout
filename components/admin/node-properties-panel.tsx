@@ -942,7 +942,12 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
   const [outputMappings, setOutputMappings] = useState<Array<{ key: string; value: string }>>(
     Object.entries(config.outputMapping || {}).map(([key, value]) => ({ key, value: value as string }))
   );
-  const [availableWorkflows, setAvailableWorkflows] = useState<Array<{ id: string; title: string; status: string }>>([]);
+  const [availableWorkflows, setAvailableWorkflows] = useState<Array<{ 
+    id: string; 
+    title: string; 
+    status: string;
+    sessionTitle: string;
+  }>>([]);
   const [loadingWorkflows, setLoadingWorkflows] = useState(true);
   const [useManualInput, setUseManualInput] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<Array<{ 
@@ -1001,20 +1006,62 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
     return fields;
   })();
 
-  // Fetch available workflows
+  // Fetch available workflows with their training sessions
   useEffect(() => {
     async function fetchWorkflows() {
       try {
-        const response = await fetch("/api/admin/guided-workflows");
-        if (response.ok) {
-          const data = await response.json();
-          const workflows = (data.guides || [])
-            .filter((guide: any) => guide.status === "published")
-            .map((guide: any) => ({
+        // Fetch both guides and training sessions in parallel
+        const [guidesResponse, sessionsResponse] = await Promise.all([
+          fetch("/api/admin/guided-workflows"),
+          fetch("/api/admin/guided-workflow-recording-sessions")
+        ]);
+        
+        if (guidesResponse.ok && sessionsResponse.ok) {
+          const guidesData = await guidesResponse.json();
+          const sessionsData = await sessionsResponse.json();
+          
+          const guides = (guidesData.guides || []).filter((guide: any) => guide.status === "published");
+          const sessions = sessionsData.sessions || [];
+          
+          // Create a map of session ID to session title
+          const sessionMap = new Map(
+            sessions.map((session: any) => [session.id, session.title || "Untitled Session"])
+          );
+          
+          // Create a map of guide ID to topic info (from sessions)
+          const guideToTopicMap = new Map();
+          sessions.forEach((session: any) => {
+            (session.topics || []).forEach((topic: any) => {
+              if (topic.guideId) {
+                guideToTopicMap.set(topic.guideId, {
+                  sessionId: session.id,
+                  sessionTitle: session.title || "Untitled Session"
+                });
+              }
+            });
+          });
+          
+          // Map guides to include session title
+          const workflows = guides.map((guide: any) => {
+            const topicInfo = guideToTopicMap.get(guide.id);
+            return {
               id: guide.id,
               title: guide.title,
               status: guide.status,
-            }));
+              sessionTitle: topicInfo?.sessionTitle || ""
+            };
+          });
+          
+          // Sort by session title, then by topic title
+          workflows.sort((a, b) => {
+            if (a.sessionTitle && !b.sessionTitle) return -1;
+            if (!a.sessionTitle && b.sessionTitle) return 1;
+            if (a.sessionTitle !== b.sessionTitle) {
+              return a.sessionTitle.localeCompare(b.sessionTitle);
+            }
+            return a.title.localeCompare(b.title);
+          });
+          
           setAvailableWorkflows(workflows);
         }
       } catch (error) {
@@ -1184,11 +1231,63 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
               <option value="">
                 {loadingWorkflows ? "Loading workflows..." : "Select a workflow..."}
               </option>
-              {availableWorkflows.map((workflow) => (
-                <option key={workflow.id} value={workflow.id}>
-                  {workflow.title} ({workflow.id})
-                </option>
-              ))}
+              {(() => {
+                // Group workflows by session
+                const grouped: { [sessionTitle: string]: typeof availableWorkflows } = {};
+                const ungrouped: typeof availableWorkflows = [];
+                
+                availableWorkflows.forEach((workflow) => {
+                  if (workflow.sessionTitle) {
+                    if (!grouped[workflow.sessionTitle]) {
+                      grouped[workflow.sessionTitle] = [];
+                    }
+                    grouped[workflow.sessionTitle].push(workflow);
+                  } else {
+                    ungrouped.push(workflow);
+                  }
+                });
+                
+                const options = [];
+                
+                // Render grouped workflows
+                Object.keys(grouped).sort().forEach((sessionTitle) => {
+                  // Session header (disabled option)
+                  options.push(
+                    <option key={`session-${sessionTitle}`} disabled style={{ fontWeight: 'bold', color: '#475569' }}>
+                      {sessionTitle}
+                    </option>
+                  );
+                  
+                  // Topics under this session
+                  grouped[sessionTitle].forEach((workflow) => {
+                    options.push(
+                      <option key={workflow.id} value={workflow.id} style={{ paddingLeft: '1.5rem' }}>
+                        {'    → ' + workflow.title}
+                      </option>
+                    );
+                  });
+                });
+                
+                // Render ungrouped workflows
+                if (ungrouped.length > 0) {
+                  if (options.length > 0) {
+                    options.push(
+                      <option key="separator" disabled>
+                        ────────────────
+                      </option>
+                    );
+                  }
+                  ungrouped.forEach((workflow) => {
+                    options.push(
+                      <option key={workflow.id} value={workflow.id}>
+                        {workflow.title}
+                      </option>
+                    );
+                  });
+                }
+                
+                return options;
+              })()}
             </select>
             <div className="mt-1 flex items-center justify-between">
               <p className="text-xs text-slate-500">
