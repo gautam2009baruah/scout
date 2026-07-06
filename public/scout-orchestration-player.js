@@ -30,11 +30,91 @@
   console.log('⚙️ API Base URL:', config.apiBaseUrl);
 
   /**
+   * Check if sessionStorage is available
+   */
+  function isSessionStorageAvailable() {
+    try {
+      const test = '__scout_storage_test__';
+      sessionStorage.setItem(test, test);
+      sessionStorage.removeItem(test);
+      return true;
+    } catch (e) {
+      console.warn('⚠️ sessionStorage not available:', e.name);
+      return false;
+    }
+  }
+
+  /**
+   * Save orchestration state to sessionStorage
+   */
+  function saveOrchestrationState(state) {
+    if (!isSessionStorageAvailable()) {
+      return false;
+    }
+    try {
+      sessionStorage.setItem('scout_orchestration_state', JSON.stringify(state));
+      console.log('💾 Saved orchestration state to sessionStorage');
+      return true;
+    } catch (e) {
+      console.error('❌ Failed to save orchestration state:', e);
+      return false;
+    }
+  }
+
+  /**
+   * Load orchestration state from sessionStorage
+   */
+  function loadOrchestrationState() {
+    if (!isSessionStorageAvailable()) {
+      return null;
+    }
+    try {
+      const stateJson = sessionStorage.getItem('scout_orchestration_state');
+      if (stateJson) {
+        const state = JSON.parse(stateJson);
+        console.log('📂 Loaded orchestration state from sessionStorage');
+        return state;
+      }
+    } catch (e) {
+      console.error('❌ Failed to load orchestration state:', e);
+    }
+    return null;
+  }
+
+  /**
+   * Clear orchestration state from sessionStorage
+   */
+  function clearOrchestrationState() {
+    if (!isSessionStorageAvailable()) {
+      return;
+    }
+    try {
+      sessionStorage.removeItem('scout_orchestration_state');
+      console.log('🧹 Cleared orchestration state from sessionStorage');
+    } catch (e) {
+      console.error('❌ Failed to clear orchestration state:', e);
+    }
+  }
+
+  /**
    * Initialize orchestration player
    */
   function init() {
     console.log('🎬 Initializing Scout Orchestration Player...');
     console.log('✅ Event listeners registered for postMessage AND custom events');
+    
+    // Check for resumed orchestration (after page navigation)
+    const savedState = loadOrchestrationState();
+    if (savedState) {
+      console.log('🔄 Resuming orchestration after navigation...');
+      console.log('   Execution ID:', savedState.executionId);
+      console.log('   Current step:', savedState.currentStep + 1, '/', savedState.totalSteps);
+      
+      // Resume orchestration execution
+      setTimeout(() => {
+        resumeOrchestration(savedState);
+      }, 500);
+    }
     
     // Listen for postMessage (iframe mode)
     window.addEventListener('message', handleMessage);
@@ -117,13 +197,55 @@
   }
 
   /**
+   * Resume orchestration execution after navigation
+   */
+  async function resumeOrchestration(savedState) {
+    console.log('🔄 Resuming orchestration from saved state...');
+    
+    // Reconstruct payload from saved state
+    const payload = {
+      executionId: savedState.executionId,
+      orchestrationId: savedState.orchestrationId,
+      orchestrationName: savedState.orchestrationName,
+      triggerData: savedState.triggerData,
+      targetAppId: savedState.targetAppId,
+      scoutBaseUrl: savedState.scoutBaseUrl,
+      context: savedState.context,
+      _resumeFrom: savedState.currentStep,
+      _executionPlan: savedState.executionPlan,
+      _pendingClearData: savedState.pendingClearData,
+      _dataCapturedAtStep: savedState.dataCapturedAtStep,
+    };
+    
+    // Resume execution
+    await handleStartExecution(payload);
+  }
+
+  /**
    * Start orchestration execution
    */
   async function handleStartExecution(payload) {
     const { executionId, orchestrationId, orchestrationName, triggerData, targetAppId, scoutBaseUrl } = payload;
     let context = payload.context || {}; // Use let so we can reassign when capturing data
-    let pendingClearData = null; // Track captured data keys to clear after next step (one-step retention)
-    let dataCapturedAtStep = -1; // Track which step captured the data
+    let pendingClearData = payload._pendingClearData || null; // Track captured data keys to clear after next step (one-step retention)
+    let dataCapturedAtStep = payload._dataCapturedAtStep || -1; // Track which step captured the data
+    const resumeFromStep = payload._resumeFrom || 0; // Resume from this step if navigated
+    
+    // Check storage availability for cross-page orchestrations
+    if (!isSessionStorageAvailable() && !payload._resumeFrom) {
+      console.error('❌ sessionStorage is not available');
+      alert(
+        '⚠️ Browser Storage Required\n\n' +
+        'Your browser has disabled storage (sessionStorage/localStorage).\n\n' +
+        'Cross-page orchestrations require browser storage to maintain state during navigation.\n\n' +
+        'To fix this:\n' +
+        '• Enable cookies/storage in your browser settings\n' +
+        '• Use regular browsing mode (not private/incognito)\n' +
+        '• Disable privacy extensions that block storage\n\n' +
+        'Alternatively, design workflows that work on a single page without navigation.'
+      );
+      return;
+    }
     
     // Update config with targetAppId from payload
     if (targetAppId) {
@@ -134,27 +256,37 @@
     }
 
     console.log('🎬 Starting in-context execution:', { executionId, orchestrationName, targetAppId });
+    if (resumeFromStep > 0) {
+      console.log(`🔄 Resuming from step ${resumeFromStep + 1}`);
+    }
 
     try {
-      // Fetch execution plan
-      const response = await fetch(`${config.apiBaseUrl}/api/orchestrations/execute/${executionId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orchestrationId,
-          context,
-          triggerData,
-        }),
-      });
+      let executionPlan;
+      
+      // If resuming, use saved execution plan
+      if (payload._executionPlan) {
+        executionPlan = payload._executionPlan;
+        console.log(`📋 Using saved execution plan (${executionPlan.length} steps)`);
+      } else {
+        // Fetch execution plan
+        const response = await fetch(`${config.apiBaseUrl}/api/orchestrations/execute/${executionId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orchestrationId,
+            context,
+            triggerData,
+          }),
+        });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch execution plan: ${response.statusText}`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch execution plan: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        executionPlan = result.executionPlan;
+        console.log(`📋 Execution plan loaded: ${executionPlan.length} steps`);
       }
-
-      const result = await response.json();
-      const executionPlan = result.executionPlan;
-
-      console.log(`📋 Execution plan loaded: ${executionPlan.length} steps`);
 
       // Overlay disabled per user request - no progress screen shown
       // showOverlay({
@@ -210,11 +342,11 @@
       resetSlidingTimeout();
 
       // Execute steps
-      let completedCount = 0;
+      let completedCount = resumeFromStep; // Start from resumed step
       const matchedPhrase = triggerData.matchedPhrase;
       const matchedIntent = triggerData.matchedIntent;
 
-      for (let i = 0; i < executionPlan.length; i++) {
+      for (let i = resumeFromStep; i < executionPlan.length; i++) {
         // Check if orchestration was cancelled due to inactivity
         if (orchestrationCancelled) {
           console.log(`⏹️ Orchestration cancelled - stopping execution at step ${i + 1}`);
@@ -274,6 +406,23 @@
             }
 
             console.log(`🎮 Starting workflow execution: ${step.label}`);
+            
+            // Save state before workflow execution (in case of navigation)
+            saveOrchestrationState({
+              executionId,
+              orchestrationId,
+              orchestrationName,
+              triggerData,
+              targetAppId,
+              scoutBaseUrl,
+              context,
+              currentStep: i,
+              totalSteps: executionPlan.length,
+              executionPlan,
+              pendingClearData,
+              dataCapturedAtStep,
+            });
+            
             // Execute workflow with any auto-fill data from context
             stepResult = await executeWorkflowStep(step, context);
             console.log(`✅ Workflow completed:`, stepResult);
@@ -288,6 +437,10 @@
             // Check if user cancelled
             if (stepResult && stepResult.cancelled) {
               console.log('ℹ️ Orchestration stopped: User cancelled data capture');
+              
+              // Clear saved state (user cancelled)
+              clearOrchestrationState();
+              
               alert('You cancelled the data capture. The orchestration has been stopped.');
               
               // Mark as skipped
@@ -354,6 +507,9 @@
           if (stepError.message === 'Workflow cancelled by user') {
             console.log('🛑 Orchestration stopped: User cancelled workflow');
             
+            // Clear saved state (user cancelled)
+            clearOrchestrationState();
+            
             updateOverlay({
               status: 'cancelled',
               message: '❌ Orchestration cancelled by user',
@@ -392,6 +548,9 @@
         console.log(`⏱️ Sliding timeout cleared (orchestration completed)`);
       }
 
+      // Clear saved state (orchestration completed)
+      clearOrchestrationState();
+
       updateOverlay({
         status: 'completed',
         message: '✅ Orchestration completed successfully',
@@ -415,6 +574,9 @@
 
     } catch (error) {
       console.error('❌ Execution error:', error);
+
+      // Clear saved state (orchestration failed)
+      clearOrchestrationState();
 
       // Clear sliding timeout on error
       if (timeoutId) {
