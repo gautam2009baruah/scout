@@ -1349,7 +1349,7 @@
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
         // Check if auto-fill is active for this workflow
-        const hasAutoFillData = window.__scoutAutoFillData && 
+        const hasAutoFillData = window.__scoutWorkflowAutoFillData && 
                                  window.__scoutWorkflowId === this.guide.id;
         
         if (hasAutoFillData) {
@@ -1746,7 +1746,7 @@
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
         // Check if auto-fill is active for this workflow
-        const hasAutoFillData = window.__scoutAutoFillData && 
+        const hasAutoFillData = window.__scoutWorkflowAutoFillData && 
                                  window.__scoutWorkflowId === this.guide.id;
         
         if (hasAutoFillData) {

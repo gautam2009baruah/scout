@@ -713,6 +713,12 @@
     console.log(`   📋 Element tracking: ENABLED`);
     console.log(`   🤖 Auto-fill: ${hasAutoFillData ? 'ENABLED' : 'DISABLED'} (${Object.keys(capturedData).length} fields)`);
     
+    // Set global flag so Scout Player knows auto-fill is active
+    if (hasAutoFillData) {
+      window.__scoutWorkflowAutoFillData = true;
+      console.log('   🔒 Auto-advance disabled (user must click "Done" to review filled values)');
+    }
+    
     let fillCount = 0;
     const filledElements = new Set(); // Track elements we've already filled
     let lastFillTime = 0; // Track when we last filled (for delay)
