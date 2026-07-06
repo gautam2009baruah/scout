@@ -2,9 +2,8 @@
 // Captures data from browser page after workflow completion
 // Shows visual review screen for user confirmation
 
-import type { DataCaptureNodeConfig, DataCaptureFieldConfig } from "@/shared/orchestrationTypes";
+import type { DataCaptureNodeConfig } from "@/shared/orchestrationTypes";
 import { Page } from "puppeteer";
-import { getLLMProvider } from "@/lib/llm/providers";
 
 export async function executeDataCaptureNode(
   config: DataCaptureNodeConfig,
@@ -60,144 +59,6 @@ export async function executeDataCaptureNode(
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("❌ Data capture node failed:", errorMessage);
     return { success: false, error: errorMessage };
-  }
-}
-
-/**
- * Capture field value from DOM using selectors
- */
-async function captureFromDOM(
-  page: Page, 
-  field: DataCaptureFieldConfig
-): Promise<unknown> {
-  if (!field.selectors || field.selectors.length === 0) {
-    return undefined;
-  }
-
-  for (const selector of field.selectors) {
-    try {
-      const value = await page.evaluate((sel) => {
-        const element = document.querySelector(sel);
-        if (!element) return undefined;
-        
-        // Handle different element types
-        if (element instanceof HTMLInputElement) {
-          if (element.type === 'checkbox' || element.type === 'radio') {
-            return element.checked;
-          }
-          return element.value;
-        }
-        
-        if (element instanceof HTMLSelectElement) {
-          return element.value;
-        }
-        
-        if (element instanceof HTMLTextAreaElement) {
-          return element.value;
-        }
-        
-        // For other elements, try textContent
-        if (element.textContent) {
-          return element.textContent.trim();
-        }
-        
-        return undefined;
-      }, selector);
-
-      if (value !== undefined && value !== '' && value !== null) {
-        return value;
-      }
-    } catch (e) {
-      // Try next selector
-      continue;
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Capture value from page text using regex pattern
- */
-async function captureFromTextPattern(
-  page: Page,
-  field: DataCaptureFieldConfig
-): Promise<unknown> {
-  if (!field.textPattern) {
-    return undefined;
-  }
-
-  try {
-    const value = await page.evaluate((pattern) => {
-      const text = document.body.innerText;
-      const regex = new RegExp(pattern, 'i');
-      const match = text.match(regex);
-      return match ? match[1] || match[0] : undefined;
-    }, field.textPattern);
-
-    return value;
-  } catch (error) {
-    console.warn(`Pattern extraction failed for ${field.name}:`, error);
-    return undefined;
-  }
-}
-
-/**
- * Use AI to extract field value from page content
- */
-async function captureWithAI(
-  page: Page,
-  field: DataCaptureFieldConfig
-): Promise<unknown> {
-  if (!field.aiPrompt) {
-    return undefined;
-  }
-
-  try {
-    // Get visible text from page
-    const visibleText = await page.evaluate(() => {
-      return document.body.innerText;
-    });
-
-    // Also get form field labels and values for context
-    const formContext = await page.evaluate(() => {
-      const fields: string[] = [];
-      document.querySelectorAll('input, select, textarea').forEach(el => {
-        const label = el.getAttribute('aria-label') || 
-                     el.getAttribute('placeholder') || 
-                     el.getAttribute('name') || '';
-        const value = 'value' in el ? (el as HTMLInputElement).value : '';
-        if (label && value) {
-          fields.push(`${label}: ${value}`);
-        }
-      });
-      return fields.join('\n');
-    });
-
-    const provider = await getLLMProvider();
-    
-    const systemPrompt = `You are a data extraction specialist. Extract the requested field value from the page content. Return ONLY the extracted value with no explanation, formatting, or additional text.`;
-    
-    const userPrompt = `${field.aiPrompt}
-
-Field: ${field.name}${field.label ? ` (${field.label})` : ''}
-
-Form fields visible on page:
-${formContext}
-
-Page text (first 1500 chars):
-${visibleText.substring(0, 1500)}
-
-Extract the value for this field. Return ONLY the value.`;
-
-    const response = await provider.generate_answer(systemPrompt, userPrompt, "");
-    
-    const cleanedResponse = response.trim().replace(/^["']|["']$/g, '');
-    return cleanedResponse;
-
-  } catch (error) {
-    console.error(`AI extraction failed for ${field.name}:`, error);
-    return undefined;
   }
 }
 
