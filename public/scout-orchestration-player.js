@@ -134,13 +134,14 @@
     // Check for resumed orchestration (after page navigation)
     const savedState = loadOrchestrationState();
     if (savedState) {
-      // Validate: make sure we're resuming mid-orchestration, not at the end
-      const hasMoreSteps = savedState.currentStep < savedState.totalSteps - 1;
+      // Validate: make sure we're resuming mid-orchestration, not past the end
+      // Steps are 0-indexed, so if currentStep < totalSteps, there are more steps
+      const hasMoreSteps = savedState.currentStep < savedState.totalSteps;
       
       if (hasMoreSteps) {
         console.log('🔄 Resuming orchestration after navigation...');
         console.log('   Execution ID:', savedState.executionId);
-        console.log('   Current step:', savedState.currentStep + 1, '/', savedState.totalSteps);
+        console.log('   Resuming at step:', savedState.currentStep + 1, '/', savedState.totalSteps);
         console.log('   💡 To cancel auto-resume, type: scoutClearOrchestrationState()');
         
         // Resume orchestration execution
@@ -148,7 +149,8 @@
           resumeOrchestration(savedState);
         }, 500);
       } else {
-        console.log('ℹ️ Orchestration state found but already at last step, clearing');
+        console.log('ℹ️ Orchestration state found but all steps completed, clearing');
+        console.log(`   Current step: ${savedState.currentStep + 1}, Total steps: ${savedState.totalSteps}`);
         clearOrchestrationState();
       }
     }
