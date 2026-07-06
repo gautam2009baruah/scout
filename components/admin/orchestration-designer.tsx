@@ -164,6 +164,9 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           targetHandle: conn.targetHandle,
           markerEnd: { type: MarkerType.ArrowClosed },
           type: "smoothstep",
+          deletable: true,
+          focusable: true,
+          updatable: true,
         }));
         setEdges(flowEdges);
       });
@@ -191,6 +194,9 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         id: `edge-${Date.now()}`,
         markerEnd: { type: MarkerType.ArrowClosed },
         type: "smoothstep",
+        deletable: true,
+        focusable: true,
+        updatable: true,
       };
       setEdges((eds) => addEdge(newEdge as Edge, eds));
     },
@@ -661,9 +667,14 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
               snapGrid={[15, 15]}
               edgesUpdatable={true}
               edgesFocusable={true}
+              elementsSelectable={true}
+              deleteKeyCode={["Backspace", "Delete"]}
               defaultEdgeOptions={{
                 type: "smoothstep",
                 markerEnd: { type: MarkerType.ArrowClosed },
+                deletable: true,
+                focusable: true,
+                updatable: true,
               }}
               proOptions={{ hideAttribution: true }}
             >
