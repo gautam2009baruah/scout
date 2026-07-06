@@ -18,8 +18,7 @@ export async function POST(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { workflowId, userId, executionMode, parameters, targetUrl, waitForCompletion } =
-      body;
+    const { workflowId, userId, parameters, targetUrl, waitForCompletion } = body;
 
     if (!workflowId) {
       return NextResponse.json(
@@ -32,10 +31,8 @@ export async function POST(request: NextRequest) {
     const result = await executeGuidedWorkflow({
       workflowId,
       userId: userId || session.user.email,
-      executionMode: executionMode || "auto",
       parameters: parameters || {},
       targetUrl,
-      notifyUser: false, // For testing, don't notify
     });
 
     return NextResponse.json({
@@ -70,7 +67,6 @@ export async function GET(request: NextRequest) {
         body: {
           workflowId: "required - GUID of the workflow to execute",
           userId: "optional - user ID for execution tracking",
-          executionMode: "optional - manual|auto|scheduled (default: auto)",
           parameters: "optional - key-value pairs to pass to workflow",
           targetUrl: "optional - target URL for workflow execution",
         },

@@ -6,7 +6,6 @@ import { evaluateExpression } from "../expression-evaluator";
 import {
   executeGuidedWorkflow,
   waitForWorkflowCompletion,
-  type WorkflowExecutionMode,
 } from "@/lib/guided-workflows/executor";
 import { executeBrowserWorkflow } from "../browser-executor";
 import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
@@ -219,15 +218,13 @@ export async function executeWorkflowNode(
     }
 
     // **STANDARD MODE** - No target URL, use existing execution method
-    // Execute the guided workflow
+    // Execute the guided workflow (always auto mode)
     const executionResult = await executeGuidedWorkflow({
       workflowId,
       userId,
-      executionMode: (config.executionMode as WorkflowExecutionMode) || "auto",
       parameters: workflowInputs,
       targetUrl,
       timeout: config.timeout,
-      notifyUser: config.notifyUser !== false,
     });
 
     // If configured to wait for completion, poll for status

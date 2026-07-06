@@ -1708,19 +1708,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
       </div>
 
       <div className="border-t pt-4">
-        <label className="block text-sm font-semibold text-slate-700 mb-1">Execution Mode</label>
-        <select
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.executionMode || "auto"}
-          onChange={(e) => updateConfig({ executionMode: e.target.value })}
-        >
-          <option value="auto">Auto</option>
-          <option value="manual">Manual</option>
-          <option value="scheduled">Scheduled</option>
-        </select>
-      </div>
-
-      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
         <input
           type="checkbox"
           id="waitForCompletion"

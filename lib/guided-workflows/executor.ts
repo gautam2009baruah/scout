@@ -28,16 +28,12 @@ const fallbackSession: AdminSession = {
   expiresAt: new Date(Date.now() + 60_000),
 };
 
-export type WorkflowExecutionMode = "manual" | "auto" | "scheduled";
-
 export type WorkflowExecutionOptions = {
   workflowId: string;
   userId?: string;
-  executionMode?: WorkflowExecutionMode;
   parameters?: Record<string, unknown>;
   targetUrl?: string;
   timeout?: number;
-  notifyUser?: boolean;
 };
 
 export type WorkflowExecutionResult = {
@@ -92,7 +88,6 @@ export async function executeGuidedWorkflow(
         "workflow_start",
         "initiated",
         JSON.stringify({
-          mode: options.executionMode || "auto",
           parameters: options.parameters,
           targetUrl: options.targetUrl,
           orchestrationTriggered: true,
@@ -100,27 +95,7 @@ export async function executeGuidedWorkflow(
       ]
     );
 
-    // Determine execution mode
-    if (options.executionMode === "manual" && options.notifyUser && options.userId) {
-      // Manual mode: Notify user to execute the workflow
-      // This would integrate with notification system
-      return {
-        success: true,
-        executionId,
-        workflowId: workflow.id,
-        workflowTitle: workflow.title,
-        status: "initiated",
-        startedAt,
-        steps: workflow.steps.length,
-        output: {
-          message: "Workflow execution initiated. User will be notified.",
-          workflowUrl: options.targetUrl || workflow.targetAppName || "",
-          requiresUserAction: true,
-        },
-      };
-    }
-
-    // Auto mode: Workflow is ready for immediate execution
+    // Workflow is ready for immediate execution
     // For client-side workflows, we return the guide configuration
     // The orchestration can then trigger the workflow via embed or API
     return {
@@ -154,7 +129,7 @@ export async function executeGuidedWorkflow(
         "workflow_failed",
         "failed",
         error instanceof Error ? error.message : "Unknown error",
-        JSON.stringify({ mode: options.executionMode || "auto" }),
+        JSON.stringify({ parameters: options.parameters }),
       ]
     );
 
