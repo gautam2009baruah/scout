@@ -766,8 +766,7 @@
                     if (filled) {
                       filledElements.add(element); // Mark as filled
                       lastFillTime = Date.now(); // Record fill time
-                      console.log(`   🔒 Locked element from re-filling`);
-                      console.log(`   ⏸️ Will wait ${fillDelayMs / 1000}s before filling next field (if any)`);
+                      // Logging now happens inside findAndFillHighlightedControl after verification
                     }
                   }
                 }
@@ -824,16 +823,38 @@
         } else if (element.type === 'radio') {
           element.checked = element.value === matchedField.value;
         } else {
-          element.value = matchedField.value;
+          // Try setting value with modern framework support
+          const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          nativeInputValueSetter.call(element, matchedField.value);
         }
         
-        // Trigger events
+        // Trigger events in proper order for framework compatibility
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
+        element.dispatchEvent(new Event('blur', { bubbles: true }));
         
-        fillCount++;
-        console.log(`🎉 Auto-filled successfully (total fills: ${fillCount})`);
-        return true; // Filled successfully
+        // Verify the value stuck (wait a frame for React/Angular to process)
+        setTimeout(() => {
+          const actualValue = element.type === 'checkbox' || element.type === 'radio' 
+            ? element.checked 
+            : element.value;
+          const expectedValue = element.type === 'checkbox' || element.type === 'radio'
+            ? !!matchedField.value
+            : matchedField.value;
+            
+          if (actualValue === expectedValue || String(actualValue) === String(expectedValue)) {
+            fillCount++;
+            console.log(`🎉 Auto-filled successfully (total fills: ${fillCount})`);
+            console.log(`   🔒 Locked element from re-filling`);
+            console.log(`   ⏸️ Will wait 2s before filling next field (if any)`);
+          } else {
+            console.warn(`⚠️ Value didn't stick! Expected "${expectedValue}" but got "${actualValue}"`);
+            console.warn(`   This element may need manual interaction or different fill strategy`);
+            filledElements.delete(element); // Allow retry
+          }
+        }, 100); // Wait one frame
+        
+        return true; // Attempted fill
       } else {
         console.log('⚠️ No match found in captured data for this element');
         console.log('   Available fields:', Object.keys(capturedData).map(k => `"${capturedData[k].label}"`).join(', '));
