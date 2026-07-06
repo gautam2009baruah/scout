@@ -222,7 +222,7 @@ export function ScoutOrchestrationPlayer() {
 
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = '/scout-adoption-player.js';
+      script.src = '/scout-smart-adoption-player.js';
       script.async = true;
       script.onload = () => {
         console.log('✅ Scout Player loaded successfully');

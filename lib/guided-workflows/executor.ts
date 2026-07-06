@@ -235,7 +235,7 @@ export async function waitForWorkflowCompletion(
  * Generate embed code for workflow execution
  */
 function generateEmbedCode(workflowId: string, executionId: string): string {
-  return `<script src="/scout-adoption-player.js" data-guide-id="${workflowId}" data-execution-id="${executionId}" data-auto-start="true"></script>`;
+  return `<script src="/scout-smart-adoption-player.js" data-guide-id="${workflowId}" data-execution-id="${executionId}" data-auto-start="true"></script>`;
 }
 
 /**

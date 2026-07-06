@@ -392,7 +392,7 @@ async function injectAndExecuteScoutPlayer(
     const stepValueMap = matchParametersToSteps(steps, parameters);
 
     // Read the Scout player script from public folder
-    const playerScriptPath = join(process.cwd(), "public", "scout-adoption-player.js");
+    const playerScriptPath = join(process.cwd(), "public", "scout-smart-adoption-player.js");
     
     if (!existsSync(playerScriptPath)) {
       throw new Error(`Scout player script not found at: ${playerScriptPath}`);
