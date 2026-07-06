@@ -72,14 +72,14 @@ export function UserList({ companies, currentUserId, employees, modules, page, p
 
     params.set("page", "1");
     params.set("pageSize", String(pageSize));
-    router.push(`/control-panel/user-management?${params.toString()}`);
+    router.push(`/control-panel/administration/user-management?${params.toString()}`);
   }
 
   function pageHref(nextPage: number) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("page", String(nextPage));
     params.set("pageSize", String(pageSize));
-    return `/control-panel/user-management?${params.toString()}`;
+    return `/control-panel/administration/user-management?${params.toString()}`;
   }
 
   async function updateUser(event: FormEvent<HTMLFormElement>, userId: string) {

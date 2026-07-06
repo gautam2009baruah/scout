@@ -26,7 +26,7 @@ export default async function OrchestrationDesignerPage() {
     redirect("/control-panel/change-password");
   }
 
-  requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
+  requireModuleAccess(session, MODULE_KEYS.orchestrationDesigner);
 
   const [{ companies }, targetApps] = await Promise.all([
     getMasterData(),
@@ -35,8 +35,7 @@ export default async function OrchestrationDesignerPage() {
 
   return (
     <AdminShell
-      active={MODULE_KEYS.guidedWorkflows}
-      activeHref="/control-panel/administration/orchestration-designer"
+      active={MODULE_KEYS.orchestrationDesigner}
       session={session}
       title="Orchestration Designer"
     >
