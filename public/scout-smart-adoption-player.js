@@ -1942,7 +1942,7 @@
     
     // Create notification element
     const notification = document.createElement('div');
-    notification.className = 'scout-adoption-recovery scout-adoption-recovery-toast';
+    notification.className = 'scout-adoption-recovery scout-adoption-recovery-panel scout-adoption-recovery-toast';
     notification.innerHTML = `
       <div class="scout-adoption-recovery-body" style="text-align:center;">
         <div style="font-size: 18px; margin-bottom: 6px;">${icon}</div>
