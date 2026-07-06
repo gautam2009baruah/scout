@@ -1229,6 +1229,7 @@
     }
 
     clear() {
+      console.log('🧹 clear() called');
       if (this.tooltip) {
         this.tooltip.__scoutCleanup?.();
         this.tooltip.remove();
@@ -1237,8 +1238,11 @@
       
       // Clean up any event listeners to prevent them from firing after going back
       if (this._eventCleanups) {
+        console.log(`🧹 Cleaning up ${this._eventCleanups.length} event listeners`);
         this._eventCleanups.forEach(cleanup => cleanup());
         this._eventCleanups = [];
+      } else {
+        console.log('🧹 No event listeners to clean up');
       }
       
       document.querySelector(".scout-adoption-missing")?.remove();
@@ -1276,10 +1280,12 @@
     }
 
     async render(onComplete) {
+      console.log(`🎬 render() called - index: ${this.index}, total steps: ${this.steps.length}`);
       this.clear();
       const step = this.steps[this.index];
       if (this.stopped) return;
       if (!step) {
+        console.log('⚠️ No step found - workflow completing');
         localStorage.removeItem(this.storageKey(this.phase));
         if (!onComplete && this.phase === "main" && !this.workflowFinished) {
           this.workflowFinished = true;
@@ -1299,6 +1305,8 @@
         if (onComplete) await onComplete();
         return;
       }
+      console.log(`📍 Rendering step ${this.index}: ${step.title || step.message || 'No title'}`);
+
 
       const stepExecutionId = this.stepExecutionId(step);
       this.stepStartedAt[step.id] = performance.now();
@@ -1363,14 +1371,17 @@
             return;  // Don't advance, don't remove listener
           }
           // Real user event - remove listener and advance
+          console.log(`✅ Real user ${eventName} event detected - advancing workflow`);
           target.removeEventListener(eventName, onEvent);
           this.next(onComplete);
         };
         target.addEventListener(eventName, onEvent);
+        console.log(`🎧 Added ${eventName} listener to element`);
         
         // Store cleanup function for when user goes back
         if (!this._eventCleanups) this._eventCleanups = [];
         this._eventCleanups.push(() => target.removeEventListener(eventName, onEvent));
+        console.log(`📋 Stored cleanup function (total: ${this._eventCleanups.length})`);
       }
     }
 
@@ -1763,14 +1774,17 @@
             return;  // Don't advance, don't remove listener
           }
           // Real user event - remove listener and advance
+          console.log(`✅ Real user ${eventName} event detected - advancing workflow`);
           control.removeEventListener(eventName, onEvent);
           this.next(onComplete);
         };
         control.addEventListener(eventName, onEvent);
+        console.log(`🎧 Added ${eventName} listener to recovered control`);
         
         // Store cleanup function for when user goes back
         if (!this._eventCleanups) this._eventCleanups = [];
         this._eventCleanups.push(() => control.removeEventListener(eventName, onEvent));
+        console.log(`📋 Stored cleanup function (total: ${this._eventCleanups.length})`);
       }
     }
 
@@ -1789,6 +1803,8 @@
     }
 
     previous(onComplete) {
+      console.log('⬅️ Back button clicked - going to previous step');
+      console.log(`   Current index: ${this.index}, will go to: ${Math.max(0, this.index - 1)}`);
       this.index = Math.max(0, this.index - 1);
       localStorage.setItem(this.storageKey(this.phase), String(this.index));
       this.render(onComplete);
