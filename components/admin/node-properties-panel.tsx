@@ -1787,29 +1787,6 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
 }
 
 function DataCaptureConfig({ config, updateConfig }: any) {
-  const [fields, setFields] = useState<Array<{ name: string; label: string; selectors: string; aiPrompt: string; required: boolean }>>(
-    (config.fieldsToCapture || []).map((f: any) => ({
-      name: f.name || "",
-      label: f.label || "",
-      selectors: (f.selectors || []).join(", "),
-      aiPrompt: f.aiPrompt || "",
-      required: f.required || false
-    }))
-  );
-
-  useEffect(() => {
-    const fieldsToCapture = fields
-      .filter(f => f.name)
-      .map(f => ({
-        name: f.name,
-        label: f.label || f.name,
-        selectors: f.selectors.split(",").map(s => s.trim()).filter(Boolean),
-        aiPrompt: f.aiPrompt || undefined,
-        required: f.required
-      }));
-    updateConfig({ fieldsToCapture });
-  }, [fields]);
-
   return (
     <div className="space-y-4">
       <div>
@@ -1829,109 +1806,6 @@ function DataCaptureConfig({ config, updateConfig }: any) {
         <p className="mt-1 text-xs text-slate-500">
           Hybrid tries DOM first, then AI fallback. Comprehensive tries all methods.
         </p>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="autoCapture"
-          checked={config.autoCapture !== false}
-          onChange={(e) => updateConfig({ autoCapture: e.target.checked })}
-          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-        />
-        <label htmlFor="autoCapture" className="text-sm font-medium text-slate-700">
-          Auto-discover all form fields
-        </label>
-      </div>
-      <p className="text-xs text-slate-500 -mt-2 ml-6">
-        Automatically captures all input, select, and textarea elements (enabled by default)
-      </p>
-
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-2">
-          Specific Fields to Capture
-        </label>
-        <div className="space-y-3">
-          {fields.map((field, index) => (
-            <div key={index} className="p-3 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600">Field {index + 1}</span>
-                <button
-                  type="button"
-                  className="p-1 text-red-600 hover:bg-red-50 rounded"
-                  onClick={() => setFields(fields.filter((_, i) => i !== index))}
-                >
-                  <Minus className="h-3 w-3" />
-                </button>
-              </div>
-              <input
-                type="text"
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
-                placeholder="Field name (e.g., leaveType)"
-                value={field.name}
-                onChange={(e) => {
-                  const updated = [...fields];
-                  updated[index].name = e.target.value;
-                  setFields(updated);
-                }}
-              />
-              <input
-                type="text"
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
-                placeholder="Label (e.g., Leave Type)"
-                value={field.label}
-                onChange={(e) => {
-                  const updated = [...fields];
-                  updated[index].label = e.target.value;
-                  setFields(updated);
-                }}
-              />
-              <input
-                type="text"
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
-                placeholder="Selectors: #id, [name='field'], .class"
-                value={field.selectors}
-                onChange={(e) => {
-                  const updated = [...fields];
-                  updated[index].selectors = e.target.value;
-                  setFields(updated);
-                }}
-              />
-              <input
-                type="text"
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
-                placeholder="AI prompt (optional)"
-                value={field.aiPrompt}
-                onChange={(e) => {
-                  const updated = [...fields];
-                  updated[index].aiPrompt = e.target.value;
-                  setFields(updated);
-                }}
-              />
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={field.required}
-                  onChange={(e) => {
-                    const updated = [...fields];
-                    updated[index].required = e.target.checked;
-                    setFields(updated);
-                  }}
-                  className="h-3 w-3"
-                />
-                <label className="text-xs text-slate-600">Required field</label>
-              </div>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400"
-            onClick={() => setFields([...fields, { name: "", label: "", selectors: "", aiPrompt: "", required: false }])}
-          >
-            <Plus className="h-4 w-4" />
-            Add Field
-          </button>
-        </div>
       </div>
 
       <div className="flex items-center gap-2">

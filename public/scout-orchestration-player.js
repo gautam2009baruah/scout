@@ -1309,20 +1309,6 @@
       console.log('⚠️ step.guideData:', step.guideData);
     }
 
-    // Capture specific fields if configured (overrides auto-discovered values)
-    if (config.fieldsToCapture && config.fieldsToCapture.length > 0) {
-      console.log(`📋 Capturing ${config.fieldsToCapture.length} specific fields...`);
-
-      for (const fieldConfig of config.fieldsToCapture) {
-        const value = captureField(fieldConfig);
-        if (value !== null && value !== undefined) {
-          capturedData[fieldConfig.name] = value;
-        } else {
-          console.warn(`⚠️ Could not capture field: ${fieldConfig.name}`);
-        }
-      }
-    }
-
     console.log(`✅ Captured ${Object.keys(capturedData).length} fields:`, capturedData);
 
     // Show review screen if configured AND there's data to show
@@ -1477,98 +1463,6 @@
     // Note: Unified observer is cleaned up at workflow end, not here
     
     console.log(`✅ Captured ${fields.length} fields from tracked elements`);
-    return fields;
-  }
-
-  /**
-   * Discover all form fields on the page (DEPRECATED - use captureFieldsFromWorkflowSteps)
-   */
-  function discoverFormFields() {
-    const fields = [];
-    const inputs = document.querySelectorAll('input, select, textarea');
-
-    console.log(`🔍 Found ${inputs.length} total input elements on page`);
-
-    inputs.forEach((element, index) => {
-      // Skip hidden, submit, button inputs
-      if (element.type === 'hidden' || element.type === 'submit' || element.type === 'button') {
-        console.log(`⏭️ Skipping ${element.type} input`);
-        return;
-      }
-
-      // Generate a unique identifier for the field
-      // Priority: name > id > generate from label/placeholder > fallback to index
-      let name = element.name || element.id || '';
-      
-      if (!name) {
-        // Try to generate name from label or placeholder
-        if (element.id) {
-          const labelEl = document.querySelector(`label[for="${element.id}"]`);
-          if (labelEl) {
-            name = labelEl.textContent.trim().toLowerCase().replace(/\s+/g, '_');
-          }
-        }
-        
-        if (!name && element.placeholder) {
-          name = element.placeholder.toLowerCase().replace(/\s+/g, '_');
-        }
-        
-        if (!name && element.getAttribute('aria-label')) {
-          name = element.getAttribute('aria-label').toLowerCase().replace(/\s+/g, '_');
-        }
-        
-        // Last resort: use element type and index
-        if (!name) {
-          name = `${element.tagName.toLowerCase()}_${index}`;
-          console.log(`⚠️ Generated fallback name for field: ${name}`);
-        }
-      }
-
-      let value = '';
-      if (element.tagName === 'SELECT') {
-        value = element.value || '';
-      } else if (element.type === 'checkbox') {
-        value = element.checked;
-      } else if (element.type === 'radio') {
-        if (element.checked) {
-          value = element.value;
-        } else {
-          return; // Skip unchecked radio buttons
-        }
-      } else {
-        value = element.value || '';
-      }
-
-      // Try to find label
-      let label = '';
-      if (element.id) {
-        const labelEl = document.querySelector(`label[for="${element.id}"]`);
-        if (labelEl) {
-          label = labelEl.textContent.trim();
-        }
-      }
-      if (!label && element.placeholder) {
-        label = element.placeholder;
-      }
-      if (!label && element.getAttribute('aria-label')) {
-        label = element.getAttribute('aria-label');
-      }
-      if (!label) {
-        label = name;
-      }
-
-      console.log(`📝 Discovered field: ${name} = "${value}" (label: "${label}")`);
-
-      fields.push({
-        name: name,
-        label: label,
-        value: value,
-        element: element.tagName,
-        type: element.type || 'text',
-      });
-    });
-
-    console.log(`✅ Discovered ${fields.length} capturable fields`);
     return fields;
   }
 
@@ -1824,35 +1718,6 @@
     
     console.log(`🤖 Smart matching complete: ${Object.keys(matches).length} matches found`);
     return matches;
-  }
-
-  /**
-   * Capture a specific field based on configuration
-   */
-  function captureField(fieldConfig) {
-    // Try selectors first
-    if (fieldConfig.selectors && fieldConfig.selectors.length > 0) {
-      for (const selector of fieldConfig.selectors) {
-        try {
-          const element = queryElement(selector);
-          if (element) {
-            if (element.tagName === 'SELECT') {
-              return element.value;
-            } else if (element.type === 'checkbox') {
-              return element.checked;
-            } else if (element.type === 'radio' && element.checked) {
-              return element.value;
-            } else {
-              return element.value;
-            }
-          }
-        } catch (e) {
-          // Invalid selector, continue
-        }
-      }
-    }
-
-    return null;
   }
 
   /**

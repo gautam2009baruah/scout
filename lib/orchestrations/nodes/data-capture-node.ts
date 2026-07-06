@@ -41,165 +41,17 @@ export async function executeDataCaptureNode(
     }
 
     const capturedData: Record<string, unknown> = {};
-    const errors: string[] = [];
-    const captureStats: Record<string, string> = {};
 
-    // Build complete list of fields to capture
-    const fieldsToCapture = config.fieldsToCapture || [];
-
-    // If autoCapture is enabled, also capture all form fields
-    if (config.autoCapture) {
-      console.log("🔍 Auto-capture enabled - scanning all form fields...");
-      const autoFields = await discoverFormFields(page);
-      console.log(`📊 Discovered ${autoFields.length} form fields automatically`);
-      
-      // Add auto-discovered fields that aren't already specified
-      for (const autoField of autoFields) {
-        if (!fieldsToCapture.find(f => f.name === autoField.name)) {
-          fieldsToCapture.push(autoField);
-        }
-      }
-    }
-
-    console.log(`\n📋 Capturing ${fieldsToCapture.length} fields total...\n`);
-
-    // Capture each field
-    for (let i = 0; i < fieldsToCapture.length; i++) {
-      const field = fieldsToCapture[i];
-      
-      // Update progress overlay
-      if (config.showReviewScreen !== false) {
-        await updateCaptureProgress(page, i + 1, fieldsToCapture.length, field.label || field.name);
-      }
-
-      let value: unknown = undefined;
-      let captureMethod = "";
-
-      try {
-        // Try different capture methods based on mode
-        if (config.mode === "dom" || config.mode === "hybrid" || config.mode === "comprehensive") {
-          value = await captureFromDOM(page, field);
-          if (value !== undefined) {
-            captureMethod = "DOM";
-          }
-        }
-
-        // Try text pattern extraction
-        if (value === undefined && field.textPattern && (config.mode === "comprehensive" || config.mode === "hybrid")) {
-          value = await captureFromTextPattern(page, field);
-          if (value !== undefined) {
-            captureMethod = "Text Pattern";
-          }
-        }
-
-        // Fallback to AI if needed
-        if (value === undefined && field.aiPrompt && (config.mode === "ai" || config.mode === "hybrid" || config.mode === "comprehensive")) {
-          if (config.showReviewScreen !== false) {
-            await updateCaptureStatus(page, field.label || field.name, "Using AI...");
-          }
-          value = await captureWithAI(page, field);
-          if (value !== undefined) {
-            captureMethod = "AI";
-          }
-        }
-
-        // Use default value if nothing worked
-        if (value === undefined && field.defaultValue !== undefined) {
-          value = field.defaultValue;
-          captureMethod = "Default";
-        }
-
-        // Store result
-        if (value !== undefined && value !== "" && value !== null) {
-          capturedData[field.name] = value;
-          captureStats[field.name] = captureMethod;
-          
-          // Show success on overlay
-          if (config.showReviewScreen !== false) {
-            await showCapturedField(page, field.label || field.name, value);
-          }
-          
-          console.log(`✅ Captured "${field.name}" = "${value}" (via ${captureMethod})`);
-        } else if (field.required) {
-          errors.push(`Required field "${field.name}" could not be captured`);
-          
-          // Show error on overlay
-          if (config.showReviewScreen !== false) {
-            await showCaptureError(page, field.label || field.name);
-          }
-          
-          console.log(`❌ Required field "${field.name}" not found`);
-        } else {
-          console.log(`⚠️ Optional field "${field.name}" not found, skipping`);
-        }
-
-        // Small delay for visual feedback
-        if (config.showReviewScreen !== false) {
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : "Unknown error";
-        if (field.required) {
-          errors.push(`Failed to capture "${field.name}": ${errorMsg}`);
-          if (config.showReviewScreen !== false) {
-            await showCaptureError(page, field.label || field.name);
-          }
-        }
-        console.warn(`⚠️ Error capturing "${field.name}":`, errorMsg);
-      }
-    }
-
-    // Check if we have errors
-    if (errors.length > 0 && !config.continueOnFailure) {
-      if (config.showReviewScreen !== false) {
-        await showFinalError(page, errors);
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-      return { 
-        success: false, 
-        error: `Data capture failed:\n${errors.join("\n")}` 
-      };
-    }
-
-    // Show review screen and wait for user confirmation
-    if (config.showReviewScreen !== false) {
-      console.log("\n📊 Showing review screen to user...");
-      await showReviewScreen(page, capturedData, config);
-      
-      // Wait for user to click Continue or auto-timeout
-      const userConfirmed = await waitForUserConfirmation(page, config.autoReviewTimeout || 0);
-      
-      if (!userConfirmed) {
-        console.log("❌ User cancelled data capture");
-        return { success: false, error: "User cancelled data capture" };
-      }
-      
-      // Get any edits user made
-      const editedData = await getEditedData(page);
-      if (editedData) {
-        Object.assign(capturedData, editedData);
-        console.log("✏️ User edited captured data:", editedData);
-      }
-    }
-
-    // Remove overlay
-    if (config.showReviewScreen !== false) {
-      await removeCaptureOverlay(page);
-    }
-
-    console.log("\n✅ DATA CAPTURE COMPLETED");
-    console.log(`📊 Captured ${Object.keys(capturedData).length} fields`);
+    console.log(`\n📋 Data capture node - actual capture handled by frontend player\n`);
     console.log("🌐 Browser stays open for next node");
     console.log("█".repeat(80) + "\n");
 
-    // Return captured data
+    // Return empty captured data (actual capture happens in frontend player)
     const outputVar = config.outputVariable || "capturedData";
     return {
       success: true,
       output: {
         [outputVar]: capturedData,
-        _captureStats: captureStats,
         _browserPage: page, // Always pass page to next node
       }
     };
@@ -209,69 +61,6 @@ export async function executeDataCaptureNode(
     console.error("❌ Data capture node failed:", errorMessage);
     return { success: false, error: errorMessage };
   }
-}
-
-/**
- * Discover all form fields on the page automatically
- */
-async function discoverFormFields(page: Page): Promise<DataCaptureFieldConfig[]> {
-  return await page.evaluate(() => {
-    const fields: Array<{ name: string; label?: string; selectors: string[] }> = [];
-    
-    // Find all input, select, textarea elements
-    const elements = document.querySelectorAll('input, select, textarea');
-    
-    elements.forEach((element) => {
-      const tag = element.tagName.toLowerCase();
-      const type = element.getAttribute('type') || 'text';
-      
-      // Skip buttons and submits
-      if (type === 'submit' || type === 'button' || type === 'reset') {
-        return;
-      }
-      
-      // Build selector
-      const selectors: string[] = [];
-      const name = element.getAttribute('name');
-      const id = element.getAttribute('id');
-      
-      if (id) selectors.push(`#${id}`);
-      if (name) selectors.push(`[name="${name}"]`);
-      
-      if (selectors.length === 0) {
-        return; // Can't reliably identify this field
-      }
-      
-      // Try to find label
-      let label = '';
-      if (id) {
-        const labelEl = document.querySelector(`label[for="${id}"]`);
-        if (labelEl?.textContent) {
-          label = labelEl.textContent.trim();
-        }
-      }
-      
-      // Use aria-label or placeholder as fallback
-      if (!label) {
-        label = element.getAttribute('aria-label') || 
-                element.getAttribute('placeholder') || 
-                name || 
-                id || 
-                `Field ${fields.length + 1}`;
-      }
-      
-      // Use name or id as field name
-      const fieldName = name || id || `field_${fields.length + 1}`;
-      
-      fields.push({
-        name: fieldName,
-        label: label,
-        selectors: selectors
-      });
-    });
-    
-    return fields;
-  });
 }
 
 /**
