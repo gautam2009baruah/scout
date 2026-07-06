@@ -716,7 +716,7 @@
     let fillCount = 0;
     const filledElements = new Set(); // Track elements we've already filled
     let lastFillTime = 0; // Track when we last filled (for delay)
-    const fillDelayMs = 4000; // 4 second delay after filling to let page settle
+    const fillDelayMs = 2000; // 2 second delay after filling to let page settle
     
     // Observer for tooltip appearing
     const observer = new MutationObserver((mutations) => {
