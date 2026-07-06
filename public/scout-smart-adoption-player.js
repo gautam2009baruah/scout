@@ -709,7 +709,18 @@
         </span>
       </div>
     `;
-    tooltip.addEventListener("pointerdown", (event) => event.stopPropagation());
+    // Track tooltip interactions to prevent blur/change events from advancing workflow
+    // when user clicks Back/Next/Close buttons
+    tooltip.__scoutTooltipInteracting = false;
+    tooltip.addEventListener("pointerdown", (event) => {
+      tooltip.__scoutTooltipInteracting = true;
+      console.log('🖱️ Tooltip interaction started (blur/change events will be ignored)');
+      setTimeout(() => {
+        tooltip.__scoutTooltipInteracting = false;
+        console.log('🖱️ Tooltip interaction ended');
+      }, 100);
+      event.stopPropagation();
+    });
     tooltip.addEventListener("click", (event) => event.stopPropagation());
     tooltip.querySelector(".scout-adoption-tooltip__message").innerHTML = sanitizeGuideHtml(input.message || "");
     tooltip.querySelectorAll(".scout-adoption-tooltip__message a[href]").forEach((link) => {
@@ -1385,6 +1396,11 @@
             console.log('⏭️ Ignoring auto-fill event (waiting for real user interaction)');
             return;  // Don't advance, don't remove listener
           }
+          // Ignore events when user is clicking tooltip buttons (Back/Next/Close)
+          if (this.tooltip && this.tooltip.__scoutTooltipInteracting) {
+            console.log('⏭️ Ignoring event (user is clicking tooltip button)');
+            return;  // Don't advance, don't remove listener
+          }
           // Real user event - remove listener and advance
           console.log(`✅ Real user ${eventName} event detected - advancing workflow`);
           target.removeEventListener(eventName, onEvent);
@@ -1786,6 +1802,11 @@
           // Ignore events from auto-fill (only real user interactions should advance)
           if (window.__scoutAutoFillInProgress) {
             console.log('⏭️ Ignoring auto-fill event (waiting for real user interaction)');
+            return;  // Don't advance, don't remove listener
+          }
+          // Ignore events when user is clicking tooltip buttons (Back/Next/Close)
+          if (this.tooltip && this.tooltip.__scoutTooltipInteracting) {
+            console.log('⏭️ Ignoring event (user is clicking tooltip button)');
             return;  // Don't advance, don't remove listener
           }
           // Real user event - remove listener and advance
