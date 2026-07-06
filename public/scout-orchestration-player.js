@@ -52,7 +52,12 @@
       return false;
     }
     try {
-      sessionStorage.setItem('scout_orchestration_state', JSON.stringify(state));
+      // Add timestamp for staleness detection
+      const stateWithTimestamp = {
+        ...state,
+        _savedAt: Date.now(),
+      };
+      sessionStorage.setItem('scout_orchestration_state', JSON.stringify(stateWithTimestamp));
       console.log('💾 Saved orchestration state to sessionStorage');
       return true;
     } catch (e) {
@@ -63,6 +68,7 @@
 
   /**
    * Load orchestration state from sessionStorage
+   * Returns null if state is stale (older than 5 minutes)
    */
   function loadOrchestrationState() {
     if (!isSessionStorageAvailable()) {
@@ -72,7 +78,23 @@
       const stateJson = sessionStorage.getItem('scout_orchestration_state');
       if (stateJson) {
         const state = JSON.parse(stateJson);
+        
+        // Check if state is stale (older than 5 minutes)
+        const savedAt = state._savedAt || 0;
+        const now = Date.now();
+        const ageMs = now - savedAt;
+        const maxAgeMs = 5 * 60 * 1000; // 5 minutes
+        
+        if (ageMs > maxAgeMs) {
+          console.warn('⚠️ Saved orchestration state is stale (older than 5 minutes), ignoring');
+          console.warn(`   Saved at: ${new Date(savedAt).toLocaleTimeString()}`);
+          console.warn(`   Age: ${Math.round(ageMs / 1000)}s`);
+          clearOrchestrationState(); // Clean up stale state
+          return null;
+        }
+        
         console.log('📂 Loaded orchestration state from sessionStorage');
+        console.log(`   State age: ${Math.round(ageMs / 1000)}s`);
         return state;
       }
     } catch (e) {
@@ -106,14 +128,22 @@
     // Check for resumed orchestration (after page navigation)
     const savedState = loadOrchestrationState();
     if (savedState) {
-      console.log('🔄 Resuming orchestration after navigation...');
-      console.log('   Execution ID:', savedState.executionId);
-      console.log('   Current step:', savedState.currentStep + 1, '/', savedState.totalSteps);
+      // Validate: make sure we're resuming mid-orchestration, not at the end
+      const hasMoreSteps = savedState.currentStep < savedState.totalSteps - 1;
       
-      // Resume orchestration execution
-      setTimeout(() => {
-        resumeOrchestration(savedState);
-      }, 500);
+      if (hasMoreSteps) {
+        console.log('🔄 Resuming orchestration after navigation...');
+        console.log('   Execution ID:', savedState.executionId);
+        console.log('   Current step:', savedState.currentStep + 1, '/', savedState.totalSteps);
+        
+        // Resume orchestration execution
+        setTimeout(() => {
+          resumeOrchestration(savedState);
+        }, 500);
+      } else {
+        console.log('ℹ️ Orchestration state found but already at last step, clearing');
+        clearOrchestrationState();
+      }
     }
     
     // Listen for postMessage (iframe mode)
