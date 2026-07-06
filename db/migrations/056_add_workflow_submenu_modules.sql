@@ -1,12 +1,13 @@
 -- Add workflow-related submenu items as proper modules
 -- These were previously hardcoded in the admin shell component
+-- Orchestration Designer is a top-level module, others are under Administration
 
 INSERT INTO modules (key, name, href, sort_order)
 VALUES
-  (10, 'Orchestration Designer', '/control-panel/administration/orchestration-designer', 46),
-  (7, 'Workflow Training Setup', '/control-panel/administration/training-setup', 47),
-  (8, 'Workflow Self-healing Review', '/control-panel/administration/self-healing-review', 48),
-  (9, 'Workflow Analytics', '/control-panel/administration/workflow-analytics', 49)
+  (10, 'Orchestration Designer', '/control-panel/administration/orchestration-designer', 50),
+  (7, 'Workflow Training Setup', '/control-panel/administration/training-setup', 46),
+  (8, 'Workflow Self-healing Review', '/control-panel/administration/self-healing-review', 47),
+  (9, 'Workflow Analytics', '/control-panel/administration/workflow-analytics', 48)
 ON CONFLICT (key)
 DO UPDATE SET
   name = EXCLUDED.name,

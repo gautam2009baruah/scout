@@ -35,11 +35,11 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const overviewModule = visibleModules.get(MODULE_KEYS.overview);
   const contentStructureModule = visibleModules.get(MODULE_KEYS.contentStructure);
   const guidedWorkflowsModule = visibleModules.get(MODULE_KEYS.guidedWorkflows);
+  const orchestrationDesignerModule = visibleModules.get(MODULE_KEYS.orchestrationDesigner);
   const workflowSubmenuModules = [
     visibleModules.get(MODULE_KEYS.workflowTrainingSetup),
     visibleModules.get(MODULE_KEYS.workflowSelfHealingReview),
-    visibleModules.get(MODULE_KEYS.workflowAnalytics),
-    visibleModules.get(MODULE_KEYS.orchestrationDesigner)
+    visibleModules.get(MODULE_KEYS.workflowAnalytics)
   ].filter(Boolean) as AdminSession["modules"];
   const administrationModules = [
     visibleModules.get(MODULE_KEYS.administration),
@@ -86,6 +86,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
             {contentStructureModule ? <NavLink active={active} activeHref={activeHref} module={contentStructureModule} /> : null}
             {guidedWorkflowsModule ? <NavLink active={active} activeHref={activeHref} module={guidedWorkflowsModule} /> : null}
+            {orchestrationDesignerModule ? <NavLink active={active} activeHref={activeHref} module={orchestrationDesignerModule} /> : null}
           </nav>
         </aside>
 
