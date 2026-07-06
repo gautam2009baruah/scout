@@ -87,6 +87,13 @@ export type TriggerNodeConfig = {
   };
 };
 
+export type OutputMappingField = {
+  fieldName: string; // Variable name to store the captured value
+  selector: string; // CSS selector to find the element
+  dataType: "text" | "number" | "date"; // Type of data to extract
+  required: boolean; // Whether to prompt user if not found
+};
+
 export type WorkflowNodeConfig = {
   type: "workflow";
   workflowId?: string;
@@ -96,7 +103,7 @@ export type WorkflowNodeConfig = {
   waitForCompletion?: boolean; // Whether to wait for workflow to complete
   notifyUser?: boolean; // Whether to notify user for manual execution
   inputMapping: Record<string, string>; // variable expressions to workflow inputs
-  outputMapping: Record<string, string>; // workflow outputs to variables
+  outputMapping?: OutputMappingField[]; // Capture system-generated values from final page
   continueOnFailure: boolean;
   timeout?: number;
   triggerPhrases?: string[]; // Which trigger phrases execute this workflow (multi-select)

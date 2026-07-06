@@ -939,8 +939,13 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
   const [inputMappings, setInputMappings] = useState<Array<{ key: string; value: string }>>(
     Object.entries(config.inputMapping || {}).map(([key, value]) => ({ key, value: value as string }))
   );
-  const [outputMappings, setOutputMappings] = useState<Array<{ key: string; value: string }>>(
-    Object.entries(config.outputMapping || {}).map(([key, value]) => ({ key, value: value as string }))
+  const [outputMappings, setOutputMappings] = useState<Array<{ 
+    fieldName: string; 
+    selector: string; 
+    dataType: 'text' | 'number' | 'date';
+    required: boolean;
+  }>>(
+    config.outputMapping || []
   );
   const [availableWorkflows, setAvailableWorkflows] = useState<Array<{ 
     id: string; 
@@ -959,6 +964,12 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
   }>>([]);
   const [fetchingWorkflowId, setFetchingWorkflowId] = useState<string | null>(null);
   const workflowCacheRef = useRef<Map<string, any>>(new Map());
+
+  // Get trigger type from trigger node
+  const triggerType = (() => {
+    const triggerNode = nodes.find((n: any) => n.data?.nodeType === "trigger");
+    return triggerNode?.data?.config?.triggerType || null;
+  })();
 
   // Extract available trigger phrases from trigger node
   const availableTriggerPhrases = (() => {
@@ -1082,11 +1093,8 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
   }, [inputMappings]);
 
   useEffect(() => {
-    const outputMapping = outputMappings.reduce((acc, mapping) => {
-      if (mapping.key && mapping.value) acc[mapping.key] = mapping.value;
-      return acc;
-    }, {} as Record<string, string>);
-    updateConfig({ outputMapping });
+    // Save outputMapping array directly (new structure)
+    updateConfig({ outputMapping: outputMappings });
   }, [outputMappings]);
 
   // Fetch workflow details when workflow is selected (with caching)
@@ -1306,10 +1314,10 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
       </div>
 
       {/* Trigger Phrases Multi-Select (only show for chatbot triggers) */}
-      {availableTriggerPhrases.length > 0 && (
+      {triggerType === "chatbot" && availableTriggerPhrases.length > 0 && (
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-1">
-            Execute When User Says <span className="text-slate-500 text-xs font-normal">(optional)</span>
+            Execute When User Says
           </label>
           <MultiSelectDropdown
             label="Trigger Phrases"
@@ -1329,32 +1337,36 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
         </div>
       )}
 
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">Target URL</label>
-        <input
-          type="text"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.targetUrl || ""}
-          onChange={(e) => updateConfig({ targetUrl: e.target.value })}
-          placeholder="https://example.com or {{variableName}}"
-        />
-        <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
-          <p className="font-semibold text-blue-900 mb-1">🤖 Automated Browser Execution</p>
-          <p className="text-blue-800">
-            When Target URL is provided, the workflow will run in an <strong>automated browser</strong>:
-          </p>
-          <ul className="list-disc list-inside mt-1 text-blue-700 space-y-1">
-            <li>Browser opens and navigates to this URL</li>
-            <li>If login page detected, <strong>waits for you to login</strong></li>
-            <li>After login, resumes navigation to target URL</li>
-            <li>Executes all workflow steps automatically</li>
-            <li>Returns results back to orchestration</li>
-          </ul>
+      {/* Target URL (only show for manual triggers) */}
+      {triggerType === "manual" && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Target URL</label>
+          <input
+            type="text"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+            value={config.targetUrl || ""}
+            onChange={(e) => updateConfig({ targetUrl: e.target.value })}
+            placeholder="https://example.com or {{variableName}}"
+          />
+          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
+            <p className="font-semibold text-blue-900 mb-1">🤖 Automated Browser Execution</p>
+            <p className="text-blue-800">
+              When Target URL is provided, the workflow will run in an <strong>automated browser</strong>:
+            </p>
+            <ul className="list-disc list-inside mt-1 text-blue-700 space-y-1">
+              <li>Browser opens and navigates to this URL</li>
+              <li>If login page detected, <strong>waits for you to login</strong></li>
+              <li>After login, resumes navigation to target URL</li>
+              <li>Executes all workflow steps automatically</li>
+              <li>Returns results back to orchestration</li>
+            </ul>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Input Mapping Section */}
-      <div className="border-t pt-4">
+      {/* Input Mapping Section (only show for manual triggers) */}
+      {triggerType === "manual" && (
+        <div className="border-t pt-4">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
           📥 Input Mapping
         </label>
@@ -1562,89 +1574,136 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
           </div>
         ) : null}
       </div>
+      )}
 
       {/* Output Mapping Section */}
       <div className="border-t pt-4">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
-          📤 Output Mapping
+          📤 Workflow Results
         </label>
-        <div className="mb-3 p-3 bg-slate-50 rounded-lg text-xs text-slate-700">
-          <p className="font-semibold mb-1">How it works:</p>
-          <p className="mb-2">After the workflow runs, it returns <strong>result data</strong>. Save that data to use in later nodes.</p>
-          <div className="flex items-center gap-2 text-xs">
-            <span className="bg-white px-2 py-1 rounded border">invoiceId</span>
-            <span>←</span>
-            <span className="bg-white px-2 py-1 rounded border font-mono">output.invoiceId</span>
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-slate-700">
+          <p className="font-semibold mb-2 text-blue-900">💡 Capture system-generated values from the final page</p>
+          <p className="mb-2">After workflow completes, capture values like invoice IDs, confirmation codes, or calculated totals.</p>
+          <div className="space-y-1">
+            <p><strong>Example:</strong> After creating an invoice, capture the invoice number from the confirmation page.</p>
+            <p className="text-blue-800 mt-2 pt-2 border-t border-blue-200">
+              <strong>Field Name:</strong> invoiceNumber<br/>
+              <strong>CSS Selector:</strong> #invoice-id or .confirmation-code<br/>
+              <strong>Required:</strong> ☑ (prompts user if not found)
+            </p>
           </div>
-          <p className="mt-1 text-slate-600">↑ Save workflow's "invoiceId" result as "invoiceId" variable</p>
         </div>
         
-        {/* Column Headers */}
-        <div className="grid grid-cols-[1fr_auto_2fr_auto] gap-2 mb-2 px-1">
-          <div className="text-xs font-semibold text-slate-600">
-            Variable Name
-            <div className="text-[10px] font-normal text-slate-500">Save as this name</div>
-          </div>
-          <div></div>
-          <div className="text-xs font-semibold text-slate-600">
-            Workflow Output Field
-            <div className="text-[10px] font-normal text-slate-500">Get this from workflow result</div>
-          </div>
-          <div></div>
-        </div>
-
-        <div className="space-y-2">
+        <div className="space-y-3">
           {outputMappings.map((mapping, index) => (
-            <div key={index} className="grid grid-cols-[1fr_auto_2fr_auto] gap-2 items-center">
-              <input
-                type="text"
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                placeholder="invoiceId"
-                value={mapping.key}
-                onChange={(e) => {
-                  const updated = [...outputMappings];
-                  updated[index].key = e.target.value;
-                  setOutputMappings(updated);
-                }}
-              />
-              <span className="flex items-center text-slate-400 text-lg">←</span>
-              <input
-                type="text"
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-                placeholder="output.invoiceId"
-                value={mapping.value}
-                onChange={(e) => {
-                  const updated = [...outputMappings];
-                  updated[index].value = e.target.value;
-                  setOutputMappings(updated);
-                }}
-              />
-              <button
-                type="button"
-                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                onClick={() => setOutputMappings(outputMappings.filter((_, i) => i !== index))}
-              >
-                <Minus className="h-4 w-4" />
-              </button>
+            <div key={index} className="p-3 bg-white border border-slate-200 rounded-lg">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Field Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="invoiceNumber"
+                    value={mapping.fieldName}
+                    onChange={(e) => {
+                      const updated = [...outputMappings];
+                      updated[index].fieldName = e.target.value;
+                      setOutputMappings(updated);
+                    }}
+                  />
+                  <p className="mt-1 text-[10px] text-slate-500">Variable name for next nodes</p>
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Data Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                    value={mapping.dataType}
+                    onChange={(e) => {
+                      const updated = [...outputMappings];
+                      updated[index].dataType = e.target.value as 'text' | 'number' | 'date';
+                      setOutputMappings(updated);
+                    }}
+                  >
+                    <option value="text">Text</option>
+                    <option value="number">Number</option>
+                    <option value="date">Date</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="mt-3">
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  CSS Selector <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+                  placeholder="#invoice-id or .confirmation-code"
+                  value={mapping.selector}
+                  onChange={(e) => {
+                    const updated = [...outputMappings];
+                    updated[index].selector = e.target.value;
+                    setOutputMappings(updated);
+                  }}
+                />
+                <p className="mt-1 text-[10px] text-slate-500">How to find the element on the page</p>
+              </div>
+              
+              <div className="mt-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id={`required-${index}`}
+                    className="rounded border-slate-300"
+                    checked={mapping.required}
+                    onChange={(e) => {
+                      const updated = [...outputMappings];
+                      updated[index].required = e.target.checked;
+                      setOutputMappings(updated);
+                    }}
+                  />
+                  <label htmlFor={`required-${index}`} className="text-sm text-slate-700">
+                    Required (prompt if not found)
+                  </label>
+                </div>
+                
+                <button
+                  type="button"
+                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  onClick={() => setOutputMappings(outputMappings.filter((_, i) => i !== index))}
+                  title="Remove field"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           ))}
+          
           <button
             type="button"
             className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700"
-            onClick={() => setOutputMappings([...outputMappings, { key: "", value: "" }])}
+            onClick={() => setOutputMappings([...outputMappings, { 
+              fieldName: "", 
+              selector: "", 
+              dataType: "text",
+              required: false
+            }])}
           >
             <Plus className="h-4 w-4" />
-            Add Output Mapping
+            Add Result Field
           </button>
         </div>
-        <div className="mt-3 p-2 bg-purple-50 border border-purple-200 rounded text-xs text-purple-800">
-          <strong>💡 Common Examples:</strong>
-          <div className="mt-1 space-y-1 font-mono">
-            <div>invoiceId ← output.invoiceId</div>
-            <div>pdfUrl ← output.pdfPath</div>
-            <div>status ← output.status</div>
+        
+        {outputMappings.length === 0 && (
+          <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600">
+            <strong>ℹ️ Optional:</strong> Only add result fields if you need to capture values from the final page after workflow completes.
           </div>
-        </div>
+        )}
       </div>
 
       <div className="border-t pt-4">

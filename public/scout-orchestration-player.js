@@ -832,6 +832,254 @@
   }
 
   /**
+   * Poll for element to appear on page
+   * @param {string} selector - CSS selector
+   * @param {number} timeoutMs - Max time to wait
+   * @returns {Promise<HTMLElement|null>}
+   */
+  async function pollForElement(selector, timeoutMs = 7000) {
+    const startTime = Date.now();
+    const pollInterval = 50;
+    
+    console.log(`🔍 Polling for element: ${selector} (timeout: ${timeoutMs}ms)`);
+    
+    while (Date.now() - startTime < timeoutMs) {
+      const element = document.querySelector(selector);
+      // Check if element exists and is visible
+      if (element && element.offsetParent !== null) {
+        console.log(`✅ Element found: ${selector}`);
+        return element;
+      }
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+    
+    console.warn(`⚠️ Element not found after ${timeoutMs}ms: ${selector}`);
+    return null;
+  }
+
+  /**
+   * Extract value from element based on data type
+   * @param {HTMLElement} element 
+   * @param {string} dataType - 'text' | 'number' | 'date'
+   * @returns {string|number|null}
+   */
+  function extractValue(element, dataType) {
+    let value = null;
+    
+    // Try different ways to get the value
+    if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT') {
+      value = element.value;
+    } else {
+      value = element.textContent || element.innerText;
+    }
+    
+    // Clean up whitespace
+    value = value ? value.trim() : '';
+    
+    // Convert based on data type
+    switch (dataType) {
+      case 'number':
+        // Extract numeric value (remove currency symbols, commas, etc.)
+        const numMatch = value.match(/[\d,]+\.?\d*/);
+        if (numMatch) {
+          const cleaned = numMatch[0].replace(/,/g, '');
+          return parseFloat(cleaned);
+        }
+        return null;
+      
+      case 'date':
+        // Return as-is, let consumer parse
+        return value || null;
+      
+      case 'text':
+      default:
+        return value || null;
+    }
+  }
+
+  /**
+   * Show modal prompt for missing required field
+   * @param {string} fieldName 
+   * @param {string} selector 
+   * @returns {Promise<string|null>} - User input or null if cancelled
+   */
+  async function showManualPrompt(fieldName, selector) {
+    return new Promise((resolve) => {
+      // Create modal overlay
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 99999;
+        font-family: system-ui, -apple-system, sans-serif;
+      `;
+      
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        background: white;
+        padding: 24px;
+        border-radius: 8px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+        max-width: 500px;
+        width: 90%;
+      `;
+      
+      modal.innerHTML = `
+        <h3 style="margin: 0 0 16px; font-size: 18px; font-weight: 600; color: #1e293b;">
+          Field Not Found
+        </h3>
+        <p style="margin: 0 0 16px; color: #475569; font-size: 14px;">
+          Could not find field <strong>${fieldName}</strong> using selector:
+        </p>
+        <code style="
+          display: block;
+          background: #f1f5f9;
+          padding: 8px 12px;
+          border-radius: 4px;
+          font-size: 13px;
+          color: #334155;
+          margin-bottom: 16px;
+          word-break: break-all;
+        ">${selector}</code>
+        <p style="margin: 0 0 16px; color: #475569; font-size: 14px;">
+          Would you like to enter the value manually, or skip this field?
+        </p>
+        <input
+          type="text"
+          id="manual-input-field"
+          placeholder="Enter ${fieldName}..."
+          style="
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+            margin-bottom: 16px;
+            box-sizing: border-box;
+          "
+        />
+        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+          <button
+            id="cancel-btn"
+            style="
+              padding: 8px 16px;
+              border: 1px solid #cbd5e1;
+              background: white;
+              color: #475569;
+              border-radius: 6px;
+              font-size: 14px;
+              cursor: pointer;
+              font-weight: 500;
+            "
+          >
+            Skip
+          </button>
+          <button
+            id="submit-btn"
+            style="
+              padding: 8px 16px;
+              border: none;
+              background: #3b82f6;
+              color: white;
+              border-radius: 6px;
+              font-size: 14px;
+              cursor: pointer;
+              font-weight: 500;
+            "
+          >
+            Submit
+          </button>
+        </div>
+      `;
+      
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+      
+      const input = document.getElementById('manual-input-field');
+      const submitBtn = document.getElementById('submit-btn');
+      const cancelBtn = document.getElementById('cancel-btn');
+      
+      // Focus input
+      input.focus();
+      
+      // Handle submit
+      const handleSubmit = () => {
+        const value = input.value.trim();
+        document.body.removeChild(overlay);
+        resolve(value || null);
+      };
+      
+      // Handle cancel
+      const handleCancel = () => {
+        document.body.removeChild(overlay);
+        resolve(null);
+      };
+      
+      submitBtn.addEventListener('click', handleSubmit);
+      cancelBtn.addEventListener('click', handleCancel);
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleSubmit();
+        if (e.key === 'Escape') handleCancel();
+      });
+    });
+  }
+
+  /**
+   * Capture workflow outputs after workflow completes
+   * @param {Array} outputMapping - Array of {fieldName, selector, dataType, required}
+   * @returns {Promise<Object>} - Captured outputs
+   */
+  async function captureWorkflowOutputs(outputMapping) {
+    if (!outputMapping || outputMapping.length === 0) {
+      console.log('ℹ️ No output mapping configured');
+      return {};
+    }
+    
+    console.log(`📤 Capturing ${outputMapping.length} workflow output(s)...`);
+    const results = {};
+    
+    for (const field of outputMapping) {
+      const { fieldName, selector, dataType, required } = field;
+      console.log(`🔍 Capturing field: ${fieldName} (${selector})`);
+      
+      // Poll for element
+      const element = await pollForElement(selector, 7000);
+      
+      if (element) {
+        // Extract value
+        const value = extractValue(element, dataType);
+        results[fieldName] = value;
+        console.log(`✅ Captured ${fieldName} = ${value}`);
+      } else {
+        // Element not found
+        console.warn(`⚠️ Field not found: ${fieldName}`);
+        
+        if (required) {
+          // Show manual prompt
+          console.log(`⚠️ Field is required - prompting user...`);
+          const manualValue = await showManualPrompt(fieldName, selector);
+          results[fieldName] = manualValue;
+          console.log(`${manualValue ? '✅' : '⏭️'} User ${manualValue ? 'entered' : 'skipped'}: ${fieldName}`);
+        } else {
+          // Optional field - set to null
+          results[fieldName] = null;
+          console.log(`⏭️ Optional field skipped: ${fieldName}`);
+        }
+      }
+    }
+    
+    console.log(`📤 Output capture complete:`, results);
+    return results;
+  }
+
+  /**
    * Execute workflow step using Scout Player (SMART API - same as chatbot)
    */
   async function executeWorkflowStep(step, context) {
@@ -945,8 +1193,6 @@
           console.log(`✅ Workflow completed after ${checkCount} checks: ${step.label}`);
           
           // Clean up auto-fill data and observer
-          
-          // Clean up auto-fill data and observer
           delete window.__scoutWorkflowAutoFillData;
           if (window.__scoutUnifiedObserver) {
             window.__scoutUnifiedObserver.disconnect();
@@ -955,7 +1201,10 @@
             console.log('🧹 Cleaned up unified monitor');
           }
           
-          resolve();
+          // Capture workflow outputs if configured
+          const outputs = await captureWorkflowOutputs(workflowConfig.outputMapping);
+          
+          resolve(outputs);
         }
       }, 500);
 
