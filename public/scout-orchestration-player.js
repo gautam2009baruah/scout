@@ -832,9 +832,18 @@
         }
         
         // Trigger events in proper order for framework compatibility
-        element.dispatchEvent(new Event('input', { bubbles: true }));
-        element.dispatchEvent(new Event('change', { bubbles: true }));
-        element.dispatchEvent(new Event('blur', { bubbles: true }));
+        // Mark events as from auto-fill so Scout Player doesn't auto-advance on them
+        const inputEvent = new Event('input', { bubbles: true });
+        inputEvent.__scoutAutoFill = true;
+        element.dispatchEvent(inputEvent);
+        
+        const changeEvent = new Event('change', { bubbles: true });
+        changeEvent.__scoutAutoFill = true;
+        element.dispatchEvent(changeEvent);
+        
+        const blurEvent = new Event('blur', { bubbles: true });
+        blurEvent.__scoutAutoFill = true;
+        element.dispatchEvent(blurEvent);
         
         // Verify the value stuck (wait a frame for React/Angular to process)
         setTimeout(() => {

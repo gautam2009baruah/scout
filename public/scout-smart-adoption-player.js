@@ -1349,7 +1349,16 @@
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
         const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
-        target.addEventListener(eventName, () => this.next(onComplete), { once: true });
+        const onEvent = (event) => {
+          // Ignore events from auto-fill (only real user interactions should advance)
+          if (event.__scoutAutoFill) {
+            console.log('⏭️ Ignoring auto-fill event (waiting for real user interaction)');
+            return;
+          }
+          target.removeEventListener(eventName, onEvent);
+          this.next(onComplete);
+        };
+        target.addEventListener(eventName, onEvent);
       }
     }
 
@@ -1735,7 +1744,16 @@
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
         const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
-        control.addEventListener(eventName, () => this.next(onComplete), { once: true });
+        const onEvent = (event) => {
+          // Ignore events from auto-fill (only real user interactions should advance)
+          if (event.__scoutAutoFill) {
+            console.log('⏭️ Ignoring auto-fill event (waiting for real user interaction)');
+            return;
+          }
+          control.removeEventListener(eventName, onEvent);
+          this.next(onComplete);
+        };
+        control.addEventListener(eventName, onEvent);
       }
     }
 
