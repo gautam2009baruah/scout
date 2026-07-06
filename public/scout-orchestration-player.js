@@ -642,6 +642,7 @@
     console.log(`   🤖 Auto-fill: ${hasAutoFillData ? 'ENABLED' : 'DISABLED'} (${Object.keys(capturedData).length} fields)`);
     
     let fillCount = 0;
+    const filledElements = new Set(); // Track elements we've already filled
     
     // Observer for tooltip appearing
     const observer = new MutationObserver((mutations) => {
@@ -667,6 +668,8 @@
                   ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
                 
                 const element = document.activeElement;
+                const elementKey = element.id || element.name || `${element.tagName}_${element.type}_${attempts}`;
+                
                 console.log(`   ✅ Element focused after ${attempts * 50}ms`);
                 
                 // ALWAYS track the element (for data capture)
@@ -677,9 +680,13 @@
                   console.log(`   ⏭️ Already tracked this element`);
                 }
                 
-                // Try auto-fill ONLY if we have captured data
-                if (hasAutoFillData) {
-                  findAndFillHighlightedControl(element);
+                // Try auto-fill ONLY if we have captured data AND haven't filled this element yet
+                if (hasAutoFillData && !filledElements.has(element)) {
+                  const filled = findAndFillHighlightedControl(element);
+                  if (filled) {
+                    filledElements.add(element); // Mark as filled
+                    console.log(`   🔒 Locked element from re-filling`);
+                  }
                 }
                 
                 // IMPORTANT: Continue polling to catch multiple controls in the same step
@@ -701,6 +708,7 @@
     });
     
     // Function to find and fill the highlighted control
+    // Returns true if filled, false if not
     function findAndFillHighlightedControl(element) {
       console.log('🔍 Auto-fill attempt for:', element.tagName, element.type, element.name || element.id || '(no name/id)');
       console.log('📊 Available captured fields:', Object.keys(capturedData));
@@ -742,9 +750,11 @@
         
         fillCount++;
         console.log(`🎉 Auto-filled successfully (total fills: ${fillCount})`);
+        return true; // Filled successfully
       } else {
         console.log('⚠️ No match found in captured data for this element');
         console.log('   Available fields:', Object.keys(capturedData).map(k => `"${capturedData[k].label}"`).join(', '));
+        return false; // No match, not filled
       }
     }
     
