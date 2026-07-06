@@ -169,12 +169,58 @@
       // Load Scout Player
       await loadScoutPlayer();
 
+      // Sliding timeout mechanism (resets on each step completion)
+      const timeoutDuration = executionPlan[0]?.timeout || 300000; // Default 5 minutes
+      let timeoutId = null;
+      let orchestrationCancelled = false;
+
+      const resetSlidingTimeout = () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        timeoutId = setTimeout(() => {
+          if (!orchestrationCancelled) {
+            orchestrationCancelled = true;
+            console.log(`⏱️ Orchestration timeout due to inactivity (${timeoutDuration}ms)`);
+            
+            // Show graceful notification
+            const timeoutMinutes = Math.round(timeoutDuration / 60000);
+            alert(`⏱️ Orchestration Cancelled\n\nThe orchestration has been cancelled due to ${timeoutMinutes} minute(s) of inactivity.\n\nPlease restart if you'd like to continue.`);
+            
+            // Notify chatbot
+            sendMessageToChatbot({
+              type: 'SCOUT_EXECUTION_ERROR',
+              payload: {
+                executionId,
+                status: 'timeout',
+                message: `Orchestration cancelled due to ${timeoutMinutes} minute(s) of inactivity`,
+              },
+            });
+            
+            updateOverlay({
+              status: 'timeout',
+              message: '⏱️ Orchestration cancelled due to inactivity',
+            });
+          }
+        }, timeoutDuration);
+        console.log(`⏱️ Sliding timeout reset (${timeoutDuration}ms)`);
+      };
+
+      // Initialize sliding timeout
+      resetSlidingTimeout();
+
       // Execute steps
       let completedCount = 0;
       const matchedPhrase = triggerData.matchedPhrase;
       const matchedIntent = triggerData.matchedIntent;
 
       for (let i = 0; i < executionPlan.length; i++) {
+        // Check if orchestration was cancelled due to inactivity
+        if (orchestrationCancelled) {
+          console.log(`⏹️ Orchestration cancelled - stopping execution at step ${i + 1}`);
+          return;
+        }
+
         const step = executionPlan[i];
 
         console.log(`▶️ Executing step ${i + 1}/${executionPlan.length}: ${step.label}`);
@@ -287,6 +333,9 @@
 
           console.log(`✅ Step completed: ${step.label}`);
 
+          // Reset sliding timeout after successful step completion
+          resetSlidingTimeout();
+
           // Clear captured data AFTER the consuming step completes (one-step retention)
           // Only clear if: 1) there's pending data, 2) current step is AFTER the capture step
           if (pendingClearData && i > dataCapturedAtStep) {
@@ -316,7 +365,12 @@
         }
       }
 
-      // Completion
+      // Completion - clear sliding timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        console.log(`⏱️ Sliding timeout cleared (orchestration completed)`);
+      }
+
       updateOverlay({
         status: 'completed',
         message: '✅ Orchestration completed successfully',
@@ -340,6 +394,12 @@
 
     } catch (error) {
       console.error('❌ Execution error:', error);
+
+      // Clear sliding timeout on error
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        console.log(`⏱️ Sliding timeout cleared (orchestration error)`);
+      }
 
       updateOverlay({
         status: 'error',
@@ -1212,21 +1272,6 @@
           resolve(outputs);
         }
       }, 500);
-
-      // Timeout after configured time (default 5 minutes)
-      const timeout = step.timeout || 300000;
-      setTimeout(() => {
-        clearInterval(checkCompletion);
-        delete window.__scoutWorkflowAutoFillData;
-        // Clean up observer on timeout
-        if (window.__scoutUnifiedObserver) {
-          window.__scoutUnifiedObserver.disconnect();
-          delete window.__scoutUnifiedObserver;
-          delete window.__scoutWorkflowId;
-        }
-        console.error(`⏱️ Workflow execution timeout after ${timeout}ms`);
-        reject(new Error('Workflow execution timeout'));
-      }, timeout);
     });
   }
 
