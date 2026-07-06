@@ -1823,34 +1823,38 @@ function DataCaptureConfig({ config, updateConfig }: any) {
         </label>
       </div>
 
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="allowEdit"
-          checked={config.allowEdit !== false}
-          onChange={(e) => updateConfig({ allowEdit: e.target.checked })}
-          className="h-4 w-4"
-        />
-        <label htmlFor="allowEdit" className="text-sm font-medium text-slate-700">
-          Allow user to edit captured values
-        </label>
-      </div>
+      {config.showReviewScreen !== false && (
+        <>
+          <div className="flex items-center gap-2 ml-6">
+            <input
+              type="checkbox"
+              id="allowEdit"
+              checked={config.allowEdit !== false}
+              onChange={(e) => updateConfig({ allowEdit: e.target.checked })}
+              className="h-4 w-4"
+            />
+            <label htmlFor="allowEdit" className="text-sm font-medium text-slate-700">
+              Allow user to edit captured values
+            </label>
+          </div>
 
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Auto-continue timeout (seconds)
-        </label>
-        <input
-          type="number"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          value={config.autoReviewTimeout || 0}
-          onChange={(e) => updateConfig({ autoReviewTimeout: parseInt(e.target.value) || 0 })}
-          placeholder="0 = requires user click"
-        />
-        <p className="mt-1 text-xs text-slate-500">
-          0 = requires user to click Continue. 5 = auto-continues after 5 seconds.
-        </p>
-      </div>
+          <div className="ml-6">
+            <label className="block text-sm font-semibold text-slate-700 mb-1">
+              Auto-continue timeout (seconds)
+            </label>
+            <input
+              type="number"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              value={config.autoReviewTimeout || 0}
+              onChange={(e) => updateConfig({ autoReviewTimeout: parseInt(e.target.value) || 0 })}
+              placeholder="0 = requires user click"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              0 = requires user to click Continue. 5 = auto-continues after 5 seconds.
+            </p>
+          </div>
+        </>
+      )}
 
       <div className="border-t border-slate-200 pt-4">
         <button
