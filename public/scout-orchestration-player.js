@@ -125,6 +125,12 @@
     console.log('🎬 Initializing Scout Orchestration Player...');
     console.log('✅ Event listeners registered for postMessage AND custom events');
     
+    // Expose manual clear function for debugging
+    window.scoutClearOrchestrationState = () => {
+      clearOrchestrationState();
+      console.log('✅ Orchestration state manually cleared');
+    };
+    
     // Check for resumed orchestration (after page navigation)
     const savedState = loadOrchestrationState();
     if (savedState) {
@@ -135,6 +141,7 @@
         console.log('🔄 Resuming orchestration after navigation...');
         console.log('   Execution ID:', savedState.executionId);
         console.log('   Current step:', savedState.currentStep + 1, '/', savedState.totalSteps);
+        console.log('   💡 To cancel auto-resume, type: scoutClearOrchestrationState()');
         
         // Resume orchestration execution
         setTimeout(() => {
