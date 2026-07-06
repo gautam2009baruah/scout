@@ -1348,8 +1348,19 @@
       }
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
-        const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
-        target.addEventListener(eventName, () => this.next(onComplete), { once: true });
+        // Check if auto-fill is active for this workflow
+        const hasAutoFillData = window.__scoutAutoFillData && 
+                                 window.__scoutWorkflowId === this.guide.id;
+        
+        if (hasAutoFillData) {
+          // Auto-fill is active: DON'T auto-advance on interaction
+          // Force user to click "Done" button to review/edit filled values
+          console.log('🔒 Auto-fill active: disabled auto-advance (click "Done" to continue)');
+        } else {
+          // Normal behavior: auto-advance on interaction
+          const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
+          target.addEventListener(eventName, () => this.next(onComplete), { once: true });
+        }
       }
     }
 
@@ -1734,8 +1745,18 @@
       }
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
-        const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
-        control.addEventListener(eventName, () => this.next(onComplete), { once: true });
+        // Check if auto-fill is active for this workflow
+        const hasAutoFillData = window.__scoutAutoFillData && 
+                                 window.__scoutWorkflowId === this.guide.id;
+        
+        if (hasAutoFillData) {
+          // Auto-fill is active: DON'T auto-advance on interaction
+          console.log('🔒 Auto-fill active: disabled auto-advance (click "Done" to continue)');
+        } else {
+          // Normal behavior: auto-advance on interaction
+          const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
+          control.addEventListener(eventName, () => this.next(onComplete), { once: true });
+        }
       }
     }
 
