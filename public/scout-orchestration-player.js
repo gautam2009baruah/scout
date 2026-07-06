@@ -805,6 +805,9 @@
       if (matchedField) {
         console.log(`✅ Match found: "${matchedField.label}" → filling with "${matchedField.value}"`);
         
+        // Increment counter IMMEDIATELY (before verification) so next field sees it
+        fillCount++;
+        
         // Auto-fill the element
         if (element.tagName === 'SELECT') {
           const options = Array.from(element.options);
@@ -843,8 +846,7 @@
             : matchedField.value;
             
           if (actualValue === expectedValue || String(actualValue) === String(expectedValue)) {
-            fillCount++;
-            console.log(`🎉 Auto-filled successfully (total fills: ${fillCount})`);
+            console.log(`🎉 Auto-fill verified (total fills: ${fillCount})`);
             console.log(`   🔒 Locked element from re-filling`);
             console.log(`   ⏸️ Will wait 2s before filling next field (if any)`);
           } else {
