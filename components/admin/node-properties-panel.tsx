@@ -1065,7 +1065,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
           });
           
           // Sort by session title, then by topic title
-          workflows.sort((a, b) => {
+          workflows.sort((a: typeof workflows[0], b: typeof workflows[0]) => {
             if (a.sessionTitle && !b.sessionTitle) return -1;
             if (!a.sessionTitle && b.sessionTitle) return 1;
             if (a.sessionTitle !== b.sessionTitle) {
@@ -1707,8 +1707,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
         )}
       </div>
 
-      <div className="border-t pt-4">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
         <input
           type="checkbox"
           id="waitForCompletion"

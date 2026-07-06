@@ -198,16 +198,13 @@ export async function executeWorkflowNode(
       }
 
       // Map browser execution output
-      const output = mapWorkflowOutput(
-        {
-          executionId: browserResult.executionId,
-          workflowId,
-          workflowTitle: workflow.title,
-          status: browserResult.status,
-          output: browserResult.output,
-        },
-        config.outputMapping
-      );
+      const output = mapWorkflowOutput({
+        executionId: browserResult.executionId,
+        workflowId,
+        workflowTitle: workflow.title,
+        status: browserResult.status,
+        output: browserResult.output,
+      });
 
       // Include browser page reference if kept open
       if (browserResult.page) {
@@ -236,7 +233,7 @@ export async function executeWorkflowNode(
       );
 
       // Map completion result outputs
-      const output = mapWorkflowOutput(completionResult, config.outputMapping);
+      const output = mapWorkflowOutput(completionResult);
 
       if (completionResult.status === "completed") {
         return { success: true, output };
@@ -271,7 +268,7 @@ export async function executeWorkflowNode(
     }
 
     // Not waiting for completion - return immediately with execution info
-    const output = mapWorkflowOutput(executionResult, config.outputMapping);
+    const output = mapWorkflowOutput(executionResult);
     return { success: true, output };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
