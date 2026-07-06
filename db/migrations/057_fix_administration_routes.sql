@@ -2,9 +2,11 @@
 -- Administration submenu items should have routes under /control-panel/administration/
 -- Top-level items should NOT have routes under /control-panel/administration/
 
--- Administration module already has correct route: /control-panel/administration (page.tsx in that folder)
+-- Update all Administration submenu items to have descriptive routes
+UPDATE modules
+SET href = '/control-panel/administration/company-role-setup'
+WHERE key = 2;
 
--- Update User Management and AI Configuration to have routes under /control-panel/administration/
 UPDATE modules
 SET href = '/control-panel/administration/user-management'
 WHERE key = 3;
