@@ -1699,34 +1699,23 @@
       }
       
       try {
-        // Get label from DOM
-        let label = '';
+        // Extract full metadata FIRST (Scout's comprehensive element identification)
+        const fullMetadata = extractElementMetadata(element);
         
-        // Try to find label element
-        if (element.id) {
-          const labelEl = document.querySelector(`label[for="${element.id}"]`);
-          if (labelEl) {
-            label = labelEl.textContent.trim();
+        // Use Scout's metadata for label (most reliable)
+        let label = fullMetadata.accessibleName || fullMetadata.labelText || fullMetadata.placeholder || '';
+        
+        // Clean up label (remove extra whitespace, control text from compound labels)
+        if (label) {
+          label = label.trim();
+          // Remove common noise patterns like "Create new target app" when we just want "Target app"
+          if (label.includes('Create new') && label.length > 20) {
+            label = label.replace(/Create new (target app)?/gi, '').trim();
           }
-        }
-        
-        // Try aria-label
-        if (!label) {
-          label = element.getAttribute('aria-label') || '';
-        }
-        
-        // Try placeholder
-        if (!label) {
-          label = element.placeholder || '';
-        }
-        
-        // Try nearby label
-        if (!label) {
-          const parent = element.parentElement;
-          if (parent?.tagName === 'LABEL') {
-            label = parent.textContent.replace(element.value || '', '').trim();
-          } else if (element.previousElementSibling?.tagName === 'LABEL') {
-            label = element.previousElementSibling.textContent.trim();
+          // Remove duplicate text (e.g., "Target appCreate new target appCRS" → "Target app")
+          const words = label.split(/\s+/);
+          if (words.length > 3 && words[0] === words[words.length - 1]) {
+            label = words.slice(0, Math.ceil(words.length / 2)).join(' ');
           }
         }
         
@@ -1745,10 +1734,14 @@
           name = element.name || element.id || '';
         }
         
-        // Last resort
+        // Last resort: generate unique field name
         if (!name) {
           name = `field_${fields.length}`;
-          label = label || name;
+        }
+        
+        // If we still don't have a good label, try to find something better
+        if (!label || label === name) {
+          label = element.name || element.id || fullMetadata.text || name;
         }
         
         // Ensure unique name (prevent duplicate keys from overwriting)
@@ -1775,9 +1768,6 @@
         }
         
         console.log(`📝 Captured field: ${name} = "${value}" (label: "${label}")`);
-        
-        // Extract full metadata using the comprehensive function
-        const fullMetadata = extractElementMetadata(element);
         
         fields.push({
           name: name,
