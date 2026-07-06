@@ -1244,6 +1244,16 @@
     stop() {
       if (!this.workflowFinished && this.executionStartedAt) {
         this.emitAnalytics({ eventType: "workflow_abandoned", status: "abandoned", durationMs: Math.round(performance.now() - this.executionStartedAt) });
+        
+        // Fire cancellation event for orchestration
+        window.dispatchEvent(new CustomEvent('scout-workflow-cancelled', {
+          detail: {
+            workflowId: this.workflow.id,
+            workflowTitle: this.workflow.title,
+            reason: 'user_cancelled'
+          }
+        }));
+        console.log(`❌ Scout workflow cancelled by user: ${this.workflow.title} (ID: ${this.workflow.id})`);
       }
       this.stopped = true;
       this.preWorkflowConfirmationShown = false;
@@ -1268,6 +1278,16 @@
           this.workflowFinished = true;
           this.emitAnalytics({ eventType: "workflow_completed", status: "completed", durationMs: Math.round(performance.now() - this.executionStartedAt) });
           this.analytics?.flush?.();
+          
+          // Fire completion event for orchestration
+          window.dispatchEvent(new CustomEvent('scout-workflow-complete', {
+            detail: {
+              workflowId: this.workflow.id,
+              workflowTitle: this.workflow.title,
+              success: true
+            }
+          }));
+          console.log(`✅ Scout workflow completed: ${this.workflow.title} (ID: ${this.workflow.id})`);
         }
         if (onComplete) await onComplete();
         return;

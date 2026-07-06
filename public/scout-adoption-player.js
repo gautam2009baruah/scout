@@ -72,6 +72,8 @@
       .scout-adoption-menu button:hover { background: #f8fafc; }
       .scout-adoption-highlight { outline: 3px solid #0ea5e9 !important; outline-offset: 4px !important; border-radius: 6px !important; }
       .scout-adoption-tooltip { position: fixed; z-index: 2147483647; width: min(340px, calc(100vw - 32px)); border: 1px solid #bfdbfe; border-radius: 8px; background: #fff; box-shadow: 0 20px 60px rgb(15 23 42 / .24); padding: 14px; color: #0f172a; font: 14px/1.45 system-ui, sans-serif; }
+      .scout-adoption-close { position: absolute; top: 8px; right: 8px; border: 0; background: transparent; color: #64748b; font-size: 24px; line-height: 1; padding: 4px; cursor: pointer; width: 28px; height: 28px; border-radius: 4px; }
+      .scout-adoption-close:hover { background: #f1f5f9; color: #0f172a; }
       .scout-adoption-tooltip h3 { margin: 0 0 6px; font-size: 15px; line-height: 1.35; }
       .scout-adoption-tooltip p { margin: 0; color: #475569; }
       .scout-adoption-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: #64748b; font-size: 12px; }
@@ -157,6 +159,7 @@
       const tooltip = document.createElement("div");
       tooltip.className = "scout-adoption-tooltip";
       tooltip.innerHTML = `
+        <button type="button" data-close class="scout-adoption-close">&times;</button>
         <h3></h3>
         <p></p>
         <div class="scout-adoption-footer">
@@ -175,6 +178,7 @@
       tooltip.querySelector("[data-back]").addEventListener("click", () => this.previous());
       tooltip.querySelector("[data-skip]").addEventListener("click", () => this.next());
       tooltip.querySelector("[data-next]").addEventListener("click", () => this.next());
+      tooltip.querySelector("[data-close]").addEventListener("click", () => this.cancel());
       document.body.appendChild(tooltip);
       const rect = target.getBoundingClientRect();
       tooltip.style.top = `${Math.min(window.innerHeight - tooltip.offsetHeight - 16, Math.max(16, rect.bottom + 12))}px`;
@@ -201,6 +205,22 @@
       this.index += 1;
       localStorage.setItem(this.storageKey(), String(this.index));
       this.render();
+    }
+
+    cancel() {
+      // Clear workflow progress
+      localStorage.removeItem(this.storageKey());
+      this.clear();
+      
+      // Fire cancellation event for orchestration
+      window.dispatchEvent(new CustomEvent('scout-workflow-cancelled', {
+        detail: {
+          workflowId: this.guide.id,
+          workflowTitle: this.guide.title,
+          reason: 'user_cancelled'
+        }
+      }));
+      console.log(`❌ Scout workflow cancelled by user: ${this.guide.title} (ID: ${this.guide.id})`);
     }
   }
 

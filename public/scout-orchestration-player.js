@@ -350,6 +350,27 @@
         } catch (stepError) {
           console.error(`❌ Step failed: ${step.label}`, stepError);
 
+          // Check if it's a user cancellation
+          if (stepError.message === 'Workflow cancelled by user') {
+            console.log('🛑 Orchestration stopped: User cancelled workflow');
+            
+            updateOverlay({
+              status: 'cancelled',
+              message: '❌ Orchestration cancelled by user',
+              steps: executionPlan.map((s, idx) =>
+                idx === i
+                  ? { ...s, status: 'cancelled', completedAt: new Date().toISOString() }
+                  : idx < i
+                  ? s
+                  : { ...s, status: 'skipped' }
+              ),
+            });
+
+            // Stop execution
+            return;
+          }
+
+          // Regular error - mark step as failed but continue
           updateOverlay({
             steps: executionPlan.map((s, idx) =>
               idx === i
@@ -1241,6 +1262,7 @@
       const fallbackTimeout = setTimeout(() => {
         console.warn(`⚠️ Workflow completion event timeout after 5 minutes - forcing completion`);
         window.removeEventListener('scout-workflow-complete', completionHandler);
+        window.removeEventListener('scout-workflow-cancelled', cancellationHandler);
         resolve({});
       }, 300000); // 5 minutes
       
@@ -1252,8 +1274,9 @@
           // Clear fallback timeout
           clearTimeout(fallbackTimeout);
           
-          // Clean up event listener
+          // Clean up event listeners
           window.removeEventListener('scout-workflow-complete', completionHandler);
+          window.removeEventListener('scout-workflow-cancelled', cancellationHandler);
           
           // Clean up auto-fill data and observer
           delete window.__scoutWorkflowAutoFillData;
@@ -1271,7 +1294,34 @@
         }
       };
       
+      // Listen for workflow cancellation event
+      const cancellationHandler = (event) => {
+        if (event.detail.workflowId === step.workflowId) {
+          console.log(`❌ Workflow cancelled by user: ${step.label}`);
+          
+          // Clear fallback timeout
+          clearTimeout(fallbackTimeout);
+          
+          // Clean up event listeners
+          window.removeEventListener('scout-workflow-complete', completionHandler);
+          window.removeEventListener('scout-workflow-cancelled', cancellationHandler);
+          
+          // Clean up auto-fill data and observer
+          delete window.__scoutWorkflowAutoFillData;
+          if (window.__scoutUnifiedObserver) {
+            window.__scoutUnifiedObserver.disconnect();
+            delete window.__scoutUnifiedObserver;
+            delete window.__scoutWorkflowId;
+            console.log('🧹 Cleaned up unified monitor');
+          }
+          
+          // Reject with cancellation error
+          reject(new Error('Workflow cancelled by user'));
+        }
+      };
+      
       window.addEventListener('scout-workflow-complete', completionHandler);
+      window.addEventListener('scout-workflow-cancelled', cancellationHandler);
     });
   }
 
