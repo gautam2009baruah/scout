@@ -727,7 +727,18 @@
         window.open(href, "_blank", "noopener,noreferrer");
       });
     });
-    tooltip.querySelector("[data-back]")?.addEventListener("click", input.onBack);
+    const backButton = tooltip.querySelector("[data-back]");
+    if (backButton) {
+      console.log('🔘 Back button found in tooltip, attaching click listener');
+      backButton.addEventListener("click", (event) => {
+        console.log('🔘 Back button CLICKED!');
+        event.preventDefault();
+        event.stopPropagation();
+        input.onBack();
+      });
+    } else {
+      console.log('⚠️ No back button in tooltip (index must be 0)');
+    }
     tooltip.querySelector("[data-next]").addEventListener("click", input.onNext);
     tooltip.querySelector("[data-close]").addEventListener("click", input.onClose);
     document.body.appendChild(tooltip);
