@@ -1248,12 +1248,12 @@
         // Fire cancellation event for orchestration
         window.dispatchEvent(new CustomEvent('scout-workflow-cancelled', {
           detail: {
-            workflowId: this.workflow.id,
-            workflowTitle: this.workflow.title,
+            workflowId: this.guide.id,
+            workflowTitle: this.guide.title,
             reason: 'user_cancelled'
           }
         }));
-        console.log(`❌ Scout workflow cancelled by user: ${this.workflow.title} (ID: ${this.workflow.id})`);
+        console.log(`❌ Scout workflow cancelled by user: ${this.guide.title} (ID: ${this.guide.id})`);
       }
       this.stopped = true;
       this.preWorkflowConfirmationShown = false;
@@ -1282,12 +1282,12 @@
           // Fire completion event for orchestration
           window.dispatchEvent(new CustomEvent('scout-workflow-complete', {
             detail: {
-              workflowId: this.workflow.id,
-              workflowTitle: this.workflow.title,
+              workflowId: this.guide.id,
+              workflowTitle: this.guide.title,
               success: true
             }
           }));
-          console.log(`✅ Scout workflow completed: ${this.workflow.title} (ID: ${this.workflow.id})`);
+          console.log(`✅ Scout workflow completed: ${this.guide.title} (ID: ${this.guide.id})`);
         }
         if (onComplete) await onComplete();
         return;
