@@ -639,6 +639,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
                 <li>Click a node to add it</li>
                 <li>Drag nodes to reposition</li>
                 <li>Drag from node edge to connect</li>
+                <li>Click edge and press Delete/Backspace to remove</li>
+                <li>Drag edge handle to reconnect</li>
                 <li>Click node to edit properties</li>
               </ul>
             </div>
@@ -657,6 +659,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
               fitView
               snapToGrid
               snapGrid={[15, 15]}
+              edgesUpdatable={true}
+              edgesFocusable={true}
               defaultEdgeOptions={{
                 type: "smoothstep",
                 markerEnd: { type: MarkerType.ArrowClosed },
