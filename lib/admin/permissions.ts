@@ -8,7 +8,11 @@ export const MODULE_KEYS = {
   userManagement: 3,
   contentStructure: 4,
   aiConfiguration: 5,
-  guidedWorkflows: 6
+  guidedWorkflows: 6,
+  workflowTrainingSetup: 7,
+  workflowSelfHealingReview: 8,
+  workflowAnalytics: 9,
+  orchestrationDesigner: 10
 } as const;
 
 export type AdminModuleKey = number;

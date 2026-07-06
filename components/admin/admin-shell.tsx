@@ -20,13 +20,13 @@ const moduleIcons = {
   [MODULE_KEYS.contentStructure]: FolderTree,
   [MODULE_KEYS.userManagement]: UsersRound,
   [MODULE_KEYS.aiConfiguration]: Bot,
-  [MODULE_KEYS.guidedWorkflows]: MapPinned
+  [MODULE_KEYS.guidedWorkflows]: MapPinned,
+  [MODULE_KEYS.workflowTrainingSetup]: MapPinned,
+  [MODULE_KEYS.workflowSelfHealingReview]: Sparkles,
+  [MODULE_KEYS.workflowAnalytics]: BarChart3,
+  [MODULE_KEYS.orchestrationDesigner]: GitBranch
 } as const;
 
-const TRAINING_SETUP_HREF = "/control-panel/administration/training-setup";
-const ORCHESTRATION_DESIGNER_HREF = "/control-panel/administration/orchestration-designer";
-const SELF_HEALING_REVIEW_HREF = "/control-panel/administration/self-healing-review";
-const WORKFLOW_ANALYTICS_HREF = "/control-panel/administration/workflow-analytics";
 const CRS_SCOUT_BASE_URL = "http://localhost:3000";
 const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 
@@ -35,16 +35,18 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const overviewModule = visibleModules.get(MODULE_KEYS.overview);
   const contentStructureModule = visibleModules.get(MODULE_KEYS.contentStructure);
   const guidedWorkflowsModule = visibleModules.get(MODULE_KEYS.guidedWorkflows);
+  const workflowSubmenuModules = [
+    visibleModules.get(MODULE_KEYS.workflowTrainingSetup),
+    visibleModules.get(MODULE_KEYS.workflowSelfHealingReview),
+    visibleModules.get(MODULE_KEYS.workflowAnalytics),
+    visibleModules.get(MODULE_KEYS.orchestrationDesigner)
+  ].filter(Boolean) as AdminSession["modules"];
   const administrationModules = [
     visibleModules.get(MODULE_KEYS.administration),
     visibleModules.get(MODULE_KEYS.userManagement),
     visibleModules.get(MODULE_KEYS.aiConfiguration)
   ].filter(Boolean) as AdminSession["modules"];
-  const isTrainingSetupActive = activeHref === TRAINING_SETUP_HREF;
-  const isOrchestrationDesignerActive = activeHref === ORCHESTRATION_DESIGNER_HREF;
-  const isSelfHealingReviewActive = activeHref === SELF_HEALING_REVIEW_HREF;
-  const isWorkflowAnalyticsActive = activeHref === WORKFLOW_ANALYTICS_HREF;
-  const isAdministrationActive = administrationModules.some((module) => module.key === active) || isTrainingSetupActive || isOrchestrationDesignerActive || isSelfHealingReviewActive || isWorkflowAnalyticsActive;
+  const isAdministrationActive = administrationModules.some((module) => module.key === active) || workflowSubmenuModules.some((module) => module.key === active);
 
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
@@ -75,62 +77,15 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                   {administrationModules.map((module) => (
                     <NavLink active={active} activeHref={activeHref} inset key={module.key} module={module} />
                   ))}
-                  {guidedWorkflowsModule ? (
-                    <>
-                      <Link
-                        className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
-                          isTrainingSetupActive
-                            ? "bg-slate-950 text-white shadow-sm"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                        }`}
-                        href={TRAINING_SETUP_HREF}
-                      >
-                        <MapPinned className="h-4 w-4" />
-                        Training Setup
-                      </Link>
-                      <Link
-                        className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
-                          isSelfHealingReviewActive
-                            ? "bg-slate-950 text-white shadow-sm"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                        }`}
-                        href={SELF_HEALING_REVIEW_HREF}
-                      >
-                        <Sparkles className="h-4 w-4" />
-                        Self-Healing Review
-                      </Link>
-                      <Link
-                        className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
-                          isWorkflowAnalyticsActive
-                            ? "bg-slate-950 text-white shadow-sm"
-                            : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                        }`}
-                        href={WORKFLOW_ANALYTICS_HREF}
-                      >
-                        <BarChart3 className="h-4 w-4" />
-                        Workflow Analytics
-                      </Link>
-                    </>
-                  ) : null}
+                  {workflowSubmenuModules.map((module) => (
+                    <NavLink active={active} activeHref={activeHref} inset key={module.key} module={module} />
+                  ))}
                 </div>
               </details>
             ) : null}
 
             {contentStructureModule ? <NavLink active={active} activeHref={activeHref} module={contentStructureModule} /> : null}
             {guidedWorkflowsModule ? <NavLink active={active} activeHref={activeHref} module={guidedWorkflowsModule} /> : null}
-            {guidedWorkflowsModule ? (
-              <Link
-                className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
-                  isOrchestrationDesignerActive
-                    ? "bg-slate-950 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                }`}
-                href={ORCHESTRATION_DESIGNER_HREF}
-              >
-                <GitBranch className="h-4 w-4" />
-                Orchestration Designer
-              </Link>
-            ) : null}
           </nav>
         </aside>
 
