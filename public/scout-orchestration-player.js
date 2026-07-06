@@ -715,6 +715,8 @@
     
     let fillCount = 0;
     const filledElements = new Set(); // Track elements we've already filled
+    let lastFillTime = 0; // Track when we last filled (for delay)
+    const fillDelayMs = 4000; // 4 second delay after filling to let page settle
     
     // Observer for tooltip appearing
     const observer = new MutationObserver((mutations) => {
@@ -754,10 +756,19 @@
                 
                 // Try auto-fill ONLY if we have captured data AND haven't filled this element yet
                 if (hasAutoFillData && !filledElements.has(element)) {
-                  const filled = findAndFillHighlightedControl(element);
-                  if (filled) {
-                    filledElements.add(element); // Mark as filled
-                    console.log(`   🔒 Locked element from re-filling`);
+                  // Check if we're within the delay period after last fill
+                  const timeSinceLastFill = Date.now() - lastFillTime;
+                  if (fillCount > 0 && timeSinceLastFill < fillDelayMs) {
+                    const remainingDelay = fillDelayMs - timeSinceLastFill;
+                    console.log(`   ⏳ Waiting ${Math.round(remainingDelay / 1000)}s before next auto-fill (letting page settle)`);
+                  } else {
+                    const filled = findAndFillHighlightedControl(element);
+                    if (filled) {
+                      filledElements.add(element); // Mark as filled
+                      lastFillTime = Date.now(); // Record fill time
+                      console.log(`   🔒 Locked element from re-filling`);
+                      console.log(`   ⏸️ Will wait ${fillDelayMs / 1000}s before filling next field (if any)`);
+                    }
                   }
                 }
                 
