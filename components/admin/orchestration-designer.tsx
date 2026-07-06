@@ -130,6 +130,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   // Show toast notification
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -182,13 +183,18 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   // Delete node by ID
   const deleteNode = useCallback(
     (nodeId: string) => {
-      if (!confirm("Delete this node?")) return;
-      setNodes((nds) => nds.filter((node) => node.id !== nodeId));
-      setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
-      if (selectedNode?.id === nodeId) {
-        setSelectedNode(null);
-        setIsPropertiesOpen(false);
-      }
+      setConfirmDialog({
+        message: "Delete this node?",
+        onConfirm: () => {
+          setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+          setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+          if (selectedNode?.id === nodeId) {
+            setSelectedNode(null);
+            setIsPropertiesOpen(false);
+          }
+          setConfirmDialog(null);
+        },
+      });
     },
     [selectedNode, setNodes, setEdges]
   );
@@ -356,18 +362,18 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       return;
     }
 
-    if (!confirm("Publish this orchestration? This will make it available for execution.")) {
-      return;
-    }
-
-    setIsPublishing(true);
-    try {
-      // First, save the orchestration to ensure database has latest nodes
-      console.log("📝 Saving orchestration before publishing...");
-      await saveOrchestration();
-      
-      console.log("📤 Publishing orchestration...");
-      const response = await fetch("/api/admin/orchestrations", {
+    setConfirmDialog({
+      message: "Publish this orchestration? This will make it available for execution.",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setIsPublishing(true);
+        try {
+          // First, save the orchestration to ensure database has latest nodes
+          console.log("📝 Saving orchestration before publishing...");
+          await saveOrchestration();
+          
+          console.log("📤 Publishing orchestration...");
+          const response = await fetch("/api/admin/orchestrations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -384,12 +390,14 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       const result = await response.json();
       setOrchestration(result.orchestration);
       showToast("Orchestration published successfully!", 'success');
-    } catch (error) {
-      console.error("Error publishing orchestration:", error);
-      showToast(error instanceof Error ? error.message : "Failed to publish orchestration", 'error');
-    } finally {
-      setIsPublishing(false);
-    }
+        } catch (error) {
+          console.error("Error publishing orchestration:", error);
+          showToast(error instanceof Error ? error.message : "Failed to publish orchestration", 'error');
+        } finally {
+          setIsPublishing(false);
+        }
+      },
+    });
   };
 
   // Execute orchestration via manual trigger
@@ -797,6 +805,31 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             >
               <X className="h-4 w-4" />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
+                type="button"
+              >
+                Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}
