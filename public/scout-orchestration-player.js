@@ -134,14 +134,40 @@
     // Check for resumed orchestration (after page navigation)
     const savedState = loadOrchestrationState();
     if (savedState) {
+      // Defensive validation
+      const currentStep = savedState.currentStep ?? -1;
+      const totalSteps = savedState.totalSteps ?? 0;
+      const executionPlan = savedState.executionPlan ?? [];
+      
+      // Validate data integrity
+      if (currentStep < 0) {
+        console.warn('⚠️ Invalid saved state: currentStep is negative, clearing');
+        clearOrchestrationState();
+        return;
+      }
+      
+      if (totalSteps <= 0) {
+        console.warn('⚠️ Invalid saved state: totalSteps is zero or negative, clearing');
+        clearOrchestrationState();
+        return;
+      }
+      
+      if (executionPlan.length !== totalSteps) {
+        console.warn('⚠️ Invalid saved state: executionPlan length mismatch, clearing');
+        console.warn(`   executionPlan.length=${executionPlan.length}, totalSteps=${totalSteps}`);
+        clearOrchestrationState();
+        return;
+      }
+      
       // Validate: make sure we're resuming mid-orchestration, not past the end
       // Steps are 0-indexed, so if currentStep < totalSteps, there are more steps
-      const hasMoreSteps = savedState.currentStep < savedState.totalSteps;
+      const hasMoreSteps = currentStep < totalSteps;
       
       if (hasMoreSteps) {
+        const stepsRemaining = totalSteps - currentStep;
         console.log('🔄 Resuming orchestration after navigation...');
         console.log('   Execution ID:', savedState.executionId);
-        console.log('   Resuming at step:', savedState.currentStep + 1, '/', savedState.totalSteps);
+        console.log('   Resuming at step:', currentStep + 1, '/', totalSteps, `(${stepsRemaining} step${stepsRemaining > 1 ? 's' : ''} remaining)`);
         console.log('   💡 To cancel auto-resume, type: scoutClearOrchestrationState()');
         
         // Resume orchestration execution
@@ -150,7 +176,7 @@
         }, 500);
       } else {
         console.log('ℹ️ Orchestration state found but all steps completed, clearing');
-        console.log(`   Current step: ${savedState.currentStep + 1}, Total steps: ${savedState.totalSteps}`);
+        console.log(`   Current step: ${currentStep + 1}, Total steps: ${totalSteps}`);
         clearOrchestrationState();
       }
     }
@@ -240,6 +266,10 @@
    */
   async function resumeOrchestration(savedState) {
     console.log('🔄 Resuming orchestration from saved state...');
+    
+    // Log restored context for debugging
+    const contextKeys = Object.keys(savedState.context || {});
+    console.log(`   Restored context with ${contextKeys.length} fields:`, contextKeys);
     
     // Reconstruct payload from saved state
     const payload = {
@@ -447,6 +477,8 @@
             console.log(`🎮 Starting workflow execution: ${step.label}`);
             
             // Save state before workflow execution (in case of navigation)
+            const stepsRemaining = executionPlan.length - i;
+            console.log(`💾 Saving orchestration state before workflow (step ${i + 1}/${executionPlan.length}, ${stepsRemaining} remaining)`);
             saveOrchestrationState({
               executionId,
               orchestrationId,
@@ -461,6 +493,7 @@
               pendingClearData,
               dataCapturedAtStep,
             });
+            console.log(`   Context has ${Object.keys(context).length} fields`);
             
             // Execute workflow with any auto-fill data from context
             stepResult = await executeWorkflowStep(step, context);
