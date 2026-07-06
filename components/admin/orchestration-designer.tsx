@@ -138,6 +138,15 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Determine if Run button should be shown (only for manual triggers)
+  const shouldShowRunButton = useMemo(() => {
+    if (!orchestration) return false;
+    const triggerNode = nodes.find(n => n.data.nodeType === "trigger");
+    if (!triggerNode) return false;
+    const triggerType = triggerNode.data.config?.triggerType;
+    return triggerType === "manual";
+  }, [orchestration, nodes]);
+
   // Load orchestration data when orchestration changes
   useEffect(() => {
     if (!orchestration?.id) return;
@@ -584,14 +593,16 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
                 <Upload className="h-4 w-4" />
                 {isPublishing ? "Publishing..." : "Publish"}
               </button>
-              <button
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-                onClick={executeOrchestration}
-                type="button"
-              >
-                <Play className="h-4 w-4" />
-                Run
-              </button>
+              {shouldShowRunButton && (
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                  onClick={executeOrchestration}
+                  type="button"
+                >
+                  <Play className="h-4 w-4" />
+                  Run
+                </button>
+              )}
             </>
           )}
         </div>
