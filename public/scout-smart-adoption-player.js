@@ -1234,6 +1234,13 @@
         this.tooltip.remove();
       }
       if (this.highlighted) this.highlighted.classList.remove("scout-adoption-highlight");
+      
+      // Clean up event listeners to prevent them from firing after going back
+      if (this.currentEventCleanup) {
+        this.currentEventCleanup();
+        this.currentEventCleanup = null;
+      }
+      
       document.querySelector(".scout-adoption-missing")?.remove();
       document.querySelector(".scout-adoption-recovery")?.remove();
       this.removeTargetArrow();
@@ -1345,6 +1352,11 @@
           this.next(onComplete);
         };
         target.addEventListener("click", advanceOnClick);
+        
+        // Store cleanup function
+        this.currentEventCleanup = () => {
+          target.removeEventListener("click", advanceOnClick);
+        };
       }
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
@@ -1359,6 +1371,11 @@
           this.next(onComplete);
         };
         target.addEventListener(eventName, onEvent);
+        
+        // Store cleanup function
+        this.currentEventCleanup = () => {
+          target.removeEventListener(eventName, onEvent);
+        };
       }
     }
 
@@ -1740,6 +1757,11 @@
           this.next(onComplete);
         };
         control.addEventListener("click", advanceOnClick);
+        
+        // Store cleanup function
+        this.currentEventCleanup = () => {
+          control.removeEventListener("click", advanceOnClick);
+        };
       }
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
@@ -1754,6 +1776,11 @@
           this.next(onComplete);
         };
         control.addEventListener(eventName, onEvent);
+        
+        // Store cleanup function
+        this.currentEventCleanup = () => {
+          control.removeEventListener(eventName, onEvent);
+        };
       }
     }
 
