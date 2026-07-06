@@ -1707,30 +1707,40 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="waitForCompletion"
-          className="rounded border-slate-300"
-          checked={config.waitForCompletion !== false}
-          onChange={(e) => updateConfig({ waitForCompletion: e.target.checked })}
-        />
-        <label htmlFor="waitForCompletion" className="text-sm text-slate-700">
-          Wait for workflow completion
-        </label>
+      <div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="waitForCompletion"
+            className="rounded border-slate-300"
+            checked={config.waitForCompletion !== false}
+            onChange={(e) => updateConfig({ waitForCompletion: e.target.checked })}
+          />
+          <label htmlFor="waitForCompletion" className="text-sm text-slate-700">
+            Wait for workflow completion
+          </label>
+        </div>
+        <p className="mt-1 ml-6 text-xs text-slate-500">
+          Pause orchestration until workflow finishes. Uncheck to continue immediately (fire-and-forget).
+        </p>
       </div>
 
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="continueOnFailure"
-          className="rounded border-slate-300"
-          checked={config.continueOnFailure === true}
-          onChange={(e) => updateConfig({ continueOnFailure: e.target.checked })}
-        />
-        <label htmlFor="continueOnFailure" className="text-sm text-slate-700">
-          Continue on failure
-        </label>
+      <div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="continueOnFailure"
+            className="rounded border-slate-300"
+            checked={config.continueOnFailure === true}
+            onChange={(e) => updateConfig({ continueOnFailure: e.target.checked })}
+          />
+          <label htmlFor="continueOnFailure" className="text-sm text-slate-700">
+            Continue on failure
+          </label>
+        </div>
+        <p className="mt-1 ml-6 text-xs text-slate-500">
+          Keep orchestration running even if workflow fails. Uncheck to stop orchestration on error.
+        </p>
       </div>
 
       <div className="flex items-center gap-2">
