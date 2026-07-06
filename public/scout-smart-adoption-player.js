@@ -1940,9 +1940,37 @@
     };
     const icon = icons[type] || icons.info;
     
+    // Color schemes by type
+    const colors = {
+      info: {
+        bg: 'rgb(219 234 254 / 0.95)',
+        border: 'rgb(59 130 246 / 0.5)',
+        text: '#1e3a8a'
+      },
+      warning: {
+        bg: 'rgb(254 252 232 / 0.95)',
+        border: 'rgb(234 179 8 / 0.6)',
+        text: '#713f12'
+      },
+      error: {
+        bg: 'rgb(254 226 226 / 0.95)',
+        border: 'rgb(239 68 68 / 0.6)',
+        text: '#7f1d1d'
+      },
+      success: {
+        bg: 'rgb(220 252 231 / 0.95)',
+        border: 'rgb(34 197 94 / 0.5)',
+        text: '#14532d'
+      }
+    };
+    const colorScheme = colors[type] || colors.info;
+    
     // Create notification element
     const notification = document.createElement('div');
     notification.className = 'scout-adoption-recovery scout-adoption-recovery-panel scout-adoption-recovery-toast';
+    notification.style.background = colorScheme.bg;
+    notification.style.borderColor = colorScheme.border;
+    notification.style.color = colorScheme.text;
     notification.innerHTML = `
       <div class="scout-adoption-recovery-body" style="text-align:center;">
         <div style="font-size: 18px; margin-bottom: 6px;">${icon}</div>
