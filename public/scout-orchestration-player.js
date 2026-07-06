@@ -1239,22 +1239,42 @@
       
       // Monitor for completion
       let checkCount = 0;
+      let tooltipGoneCount = 0; // Track how long tooltip has been gone
       const checkCompletion = setInterval(async () => {
         checkCount++;
         const progressKey = `scout-adoption-progress:${step.workflowId}:main`;
         const progressValue = localStorage.getItem(progressKey);
         const hasTooltip = document.querySelector('.scout-adoption-tooltip') !== null;
 
+        // Track tooltip absence
+        if (!hasTooltip) {
+          tooltipGoneCount++;
+        } else {
+          tooltipGoneCount = 0;
+        }
+
         // Log every 10 checks (every 5 seconds)
         if (checkCount % 10 === 0) {
           console.log(`⏳ Still waiting... (check ${checkCount})`);
           console.log(`   Progress key exists: ${!!progressValue}`);
           console.log(`   Tooltip exists: ${hasTooltip}`);
+          console.log(`   Tooltip gone for: ${tooltipGoneCount * 0.5}s`);
         }
 
-        // Workflow is complete when progress key is removed AND tooltip is gone
-        if (!progressValue && !hasTooltip) {
+        // Workflow is complete when:
+        // 1. Progress key removed AND tooltip gone (normal case)
+        // 2. Tooltip gone for 3+ seconds (fallback for stuck progress key)
+        const isComplete = (!progressValue && !hasTooltip) || (tooltipGoneCount >= 6);
+        
+        if (isComplete) {
           clearInterval(checkCompletion);
+          
+          // Clean up stale progress key if it exists
+          if (progressValue) {
+            console.log(`🧹 Cleaning up stale progress key: ${progressKey}`);
+            localStorage.removeItem(progressKey);
+          }
+          
           console.log(`✅ Workflow completed after ${checkCount} checks: ${step.label}`);
           
           // Clean up auto-fill data and observer
