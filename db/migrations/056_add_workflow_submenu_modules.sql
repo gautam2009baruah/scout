@@ -3,10 +3,10 @@
 
 INSERT INTO modules (key, name, href, sort_order)
 VALUES
-  (7, 'Workflow Training Setup', '/control-panel/administration/training-setup', 46),
-  (8, 'Workflow Self-healing Review', '/control-panel/administration/self-healing-review', 47),
-  (9, 'Workflow Analytics', '/control-panel/administration/workflow-analytics', 48),
-  (10, 'Orchestration Designer', '/control-panel/administration/orchestration-designer', 49)
+  (10, 'Orchestration Designer', '/control-panel/administration/orchestration-designer', 46),
+  (7, 'Workflow Training Setup', '/control-panel/administration/training-setup', 47),
+  (8, 'Workflow Self-healing Review', '/control-panel/administration/self-healing-review', 48),
+  (9, 'Workflow Analytics', '/control-panel/administration/workflow-analytics', 49)
 ON CONFLICT (key)
 DO UPDATE SET
   name = EXCLUDED.name,
