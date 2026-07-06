@@ -1179,7 +1179,7 @@
       
       // Monitor for completion
       let checkCount = 0;
-      const checkCompletion = setInterval(() => {
+      const checkCompletion = setInterval(async () => {
         checkCount++;
         const progressKey = `scout-adoption-progress:${step.workflowId}:main`;
         const progressValue = localStorage.getItem(progressKey);
