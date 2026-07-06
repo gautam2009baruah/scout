@@ -1286,6 +1286,7 @@
       if (this.stopped) return;
       if (!step) {
         console.log('⚠️ No step found - workflow completing');
+        console.log(`   workflowFinished: ${this.workflowFinished}, phase: ${this.phase}, onComplete: ${!!onComplete}`);
         localStorage.removeItem(this.storageKey(this.phase));
         if (!onComplete && this.phase === "main" && !this.workflowFinished) {
           this.workflowFinished = true;
@@ -1293,6 +1294,7 @@
           this.analytics?.flush?.();
           
           // Fire completion event for orchestration
+          console.log(`🔥 FIRING scout-workflow-complete event - workflowId: ${this.guide.id}, title: ${this.guide.title}`);
           window.dispatchEvent(new CustomEvent('scout-workflow-complete', {
             detail: {
               workflowId: this.guide.id,
@@ -1301,6 +1303,8 @@
             }
           }));
           console.log(`✅ Scout workflow completed: ${this.guide.title} (ID: ${this.guide.id})`);
+        } else {
+          console.log(`⏭️ Skipping completion event (onComplete: ${!!onComplete}, phase: ${this.phase}, finished: ${this.workflowFinished})`);
         }
         if (onComplete) await onComplete();
         return;
@@ -1811,8 +1815,10 @@
     }
 
     next(onComplete) {
+      console.log(`➡️ next() called - current index: ${this.index}, total steps: ${this.steps.length}`);
       const step = this.steps[this.index];
       if (step) {
+        console.log(`   Completing step ${this.index}: ${step.title || step.message || 'No title'}`);
         this.emitAnalytics({
           eventType: "step_completed",
           stepExecutionId: this.stepExecutionId(step),
@@ -1824,6 +1830,7 @@
         });
       }
       this.index += 1;
+      console.log(`   New index after increment: ${this.index}`);
       localStorage.setItem(this.storageKey(this.phase), String(this.index));
       this.render(onComplete);
     }

@@ -1554,6 +1554,7 @@
       
       // Listen for workflow completion event
       const completionHandler = async (event) => {
+        console.log(`📨 Received workflow-complete event - workflowId: ${event.detail.workflowId}, expected: ${step.workflowId}`);
         if (event.detail.workflowId === step.workflowId) {
           console.log(`✅ Workflow completed: ${step.label}`);
           
@@ -1577,6 +1578,8 @@
           const outputs = await captureWorkflowOutputs(workflowConfig.outputMapping);
           
           resolve(outputs);
+        } else {
+          console.log(`⏭️ Ignoring completion event for different workflow (not for us)`);
         }
       };
       
