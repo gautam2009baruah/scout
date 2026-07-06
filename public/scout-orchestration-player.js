@@ -1037,8 +1037,13 @@
    * @returns {Promise<Object>} - Captured outputs
    */
   async function captureWorkflowOutputs(outputMapping) {
-    if (!outputMapping || outputMapping.length === 0) {
-      console.log('ℹ️ No output mapping configured');
+    // Handle missing or old format (object instead of array)
+    if (!outputMapping || !Array.isArray(outputMapping) || outputMapping.length === 0) {
+      if (outputMapping && !Array.isArray(outputMapping)) {
+        console.warn('⚠️ Output mapping is in old format (object). Please reconfigure in designer.');
+      } else {
+        console.log('ℹ️ No output mapping configured');
+      }
       return {};
     }
     

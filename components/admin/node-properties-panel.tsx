@@ -945,7 +945,8 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
     dataType: 'text' | 'number' | 'date';
     required: boolean;
   }>>(
-    config.outputMapping || []
+    // Migrate old format (object) to new format (array), or use empty array
+    Array.isArray(config.outputMapping) ? config.outputMapping : []
   );
   const [availableWorkflows, setAvailableWorkflows] = useState<Array<{ 
     id: string; 
