@@ -1,18 +1,17 @@
 /**
  * Orchestration List Component
- * Shows all orchestrations with load, delete, and execute actions
+ * Shows all orchestrations with load and delete actions
  */
 
 "use client";
 
 import { useState, useEffect } from "react";
-import { Play, Edit, Trash2, RefreshCw, Clock, CheckCircle, X } from "lucide-react";
+import { Edit, Trash2, RefreshCw, Clock, X } from "lucide-react";
 import type { Orchestration } from "@/shared/orchestrationTypes";
 
 interface OrchestrationListProps {
   onLoad: (orchestration: Orchestration) => void;
   onClose: () => void;
-  onExecute: (orchestration: Orchestration) => void;
   currentOrchestrationId?: string;
 }
 
@@ -22,7 +21,7 @@ const STATUS_COLORS = {
   archived: "bg-red-100 text-red-700",
 };
 
-export function OrchestrationList({ onLoad, onClose, onExecute, currentOrchestrationId }: OrchestrationListProps) {
+export function OrchestrationList({ onLoad, onClose, currentOrchestrationId }: OrchestrationListProps) {
   const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "draft" | "published">("all");
@@ -96,12 +95,22 @@ export function OrchestrationList({ onLoad, onClose, onExecute, currentOrchestra
                 Load, edit, or manage your orchestrations
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 transition-colors"
-            >
-              <X className="h-6 w-6" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={fetchOrchestrations}
+                className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                title="Refresh"
+              >
+                <RefreshCw className="h-5 w-5" />
+              </button>
+              <button
+                onClick={onClose}
+                className="p-2 text-slate-400 hover:text-slate-600 transition-colors"
+                title="Close"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
           </div>
 
           {/* Filters */}
@@ -135,13 +144,6 @@ export function OrchestrationList({ onLoad, onClose, onExecute, currentOrchestra
               }`}
             >
               Published
-            </button>
-            <button
-              onClick={fetchOrchestrations}
-              className="ml-auto p-2 text-slate-600 hover:text-slate-900 transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw className="h-5 w-5" />
             </button>
           </div>
         </div>
@@ -200,18 +202,6 @@ export function OrchestrationList({ onLoad, onClose, onExecute, currentOrchestra
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 ml-4">
-                      {orch.status === "published" && (
-                        <button
-                          onClick={() => {
-                            onExecute(orch);
-                            onClose();
-                          }}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                          title="Execute"
-                        >
-                          <Play className="h-5 w-5" />
-                        </button>
-                      )}
                       <button
                         onClick={() => {
                           onLoad(orch);

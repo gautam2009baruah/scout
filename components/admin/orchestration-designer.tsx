@@ -540,79 +540,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     }
   };
 
-  // Execute orchestration from list (loads nodes first)
-  const executeFromList = async (orch: Orchestration) => {
-    try {
-      if (orch.status !== "published") {
-        showToast("Please publish the orchestration before executing it.", 'error');
-        return;
-      }
-
-      // Load nodes for this orchestration
-      const response = await fetch(`/api/admin/orchestrations/${orch.id}/nodes`);
-      if (!response.ok) {
-        throw new Error("Failed to load orchestration nodes");
-      }
-
-      const data = await response.json();
-      const loadedNodes = data.nodes || [];
-      
-      // Find trigger node
-      const triggerNode = loadedNodes.find((n: any) => n.nodeType === "trigger");
-      
-      if (!triggerNode) {
-        showToast("This orchestration has no trigger node.", 'error');
-        return;
-      }
-
-      const triggerConfig: ManualTriggerConfig = {
-        type: triggerNode.config?.triggerType || "manual",
-        inputFields: triggerNode.config?.inputFields || [],
-      };
-
-      // Ensure trigger record exists
-      const triggerResponse = await fetch(
-        `/api/admin/orchestrations/triggers?orchestrationId=${orch.id}&triggerType=manual&status=active`
-      );
-
-      if (!triggerResponse.ok) {
-        throw new Error("Failed to get trigger configuration");
-      }
-
-      const triggerData = await triggerResponse.json();
-      
-      if (!triggerData.triggers || triggerData.triggers.length === 0) {
-        // Create trigger record
-        const createResponse = await fetch("/api/admin/orchestrations/triggers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            orchestrationId: orch.id,
-            triggerType: "manual",
-            name: "Manual Trigger",
-            description: "Manually start this orchestration",
-            config: triggerConfig,
-          }),
-        });
-
-        if (!createResponse.ok) {
-          throw new Error("Failed to create manual trigger");
-        }
-      }
-
-      // Load this orchestration and show manual trigger dialog
-      setOrchestration(orch);
-      setManualTriggerConfig(triggerConfig);
-      setIsManualTriggerOpen(true);
-    } catch (error) {
-      console.error("Error preparing orchestration for execution:", error);
-      showToast(error instanceof Error ? error.message : "Failed to prepare orchestration", 'error');
-    }
-  };
-
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden">
-      {/* Toolbar */}
+    <div className="flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden">\n      {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
           <button
@@ -852,7 +781,6 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             setOrchestration(loadedOrchestration);
             // Nodes and edges will be loaded by the useEffect
           }}
-          onExecute={executeFromList}
           onClose={() => setIsListOpen(false)}
           currentOrchestrationId={orchestration?.id}
         />
