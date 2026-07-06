@@ -1764,7 +1764,7 @@
       const table = document.createElement('table');
       table.style.cssText = 'width: 100%; border-collapse: collapse; margin-bottom: 24px;';
 
-      const allowEdit = config.allowUserEdit !== false; // enabled by default
+      const allowEdit = config.allowEdit !== false; // enabled by default
       const editedData = { ...capturedData }; // Store edited values
 
       let tableHTML = '<thead><tr><th style="text-align: left; padding: 8px; border-bottom: 2px solid #e5e7eb;">Field</th><th style="text-align: left; padding: 8px; border-bottom: 2px solid #e5e7eb;">Value</th></tr></thead><tbody>';
