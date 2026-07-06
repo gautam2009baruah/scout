@@ -105,7 +105,6 @@ export type WorkflowNodeConfig = {
   continueOnFailure: boolean;
   timeout?: number;
   triggerPhrases?: string[]; // Which trigger phrases execute this workflow (multi-select)
-  closeBrowserAfter?: boolean; // Whether to close browser after completion (default true)
   autoFillFromDataCapture?: boolean; // Auto-fill from previous data capture
 };
 

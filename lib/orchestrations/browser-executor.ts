@@ -16,7 +16,6 @@ export type BrowserExecutionOptions = {
   parameters: Record<string, unknown>;
   timeout?: number;
   headless?: boolean;
-  closeBrowserAfter?: boolean; // Whether to close browser page after completion
 };
 
 export type BrowserExecutionResult = {
@@ -910,18 +909,7 @@ export async function executeBrowserWorkflow(
 
     console.log(`✅ Workflow player injected and started in ${duration}ms`);
     console.log(`📊 Total steps: ${options.steps.length}`);
-
-    // Close browser page if requested
-    if (options.closeBrowserAfter !== false) {
-      try {
-        await page.close();
-        console.log(`🌐 Browser page closed`);
-      } catch (e) {
-        console.warn("⚠️ Could not close browser page:", e);
-      }
-    } else {
-      console.log(`🌐 Browser page kept open for next node (data capture)`);
-    }
+    console.log(`🌐 Browser page kept open for data capture and chained workflows`);
 
     return {
       success: true,
@@ -932,7 +920,7 @@ export async function executeBrowserWorkflow(
         totalSteps: options.steps.length,
       },
       duration,
-      page: options.closeBrowserAfter !== false ? undefined : page, // Pass page if keeping open
+      page, // Always pass page for data capture
     };
   } catch (error) {
     console.error("❌ Browser workflow execution failed:", error);
@@ -945,8 +933,7 @@ export async function executeBrowserWorkflow(
       duration: Date.now() - startTime,
     };
   } finally {
-    // Browser page lifecycle is handled in the return block above based on closeBrowserAfter option
-    // If kept open, it will be passed to the next node (e.g., data_capture)
+    // Browser page is always kept open and passed to next node (e.g., data_capture)
   }
 }
 

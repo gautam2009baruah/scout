@@ -180,7 +180,7 @@ export async function executeWorkflowNode(
         parameters: workflowInputs,
         timeout: config.timeout || 300000,
         headless: false, // Always visible so user can login if needed
-        closeBrowserAfter: config.closeBrowserAfter !== false, // Default true, can be set to false for data capture
+        closeBrowserAfter: false, // Always keep browser open for data capture
       });
 
       if (!browserResult.success) {
