@@ -463,7 +463,6 @@ export type WebhookTriggerConfig = {
 
 export type ChatbotTriggerConfig = {
   type: "chatbot";
-  intentName: string; // Name of the intent that triggers this
   triggerPhrases: string[]; // User phrases that trigger this orchestration
   examplePhrases: string[]; // Example user phrases for intent matching
   requiredVariables?: Array<{
@@ -473,8 +472,6 @@ export type ChatbotTriggerConfig = {
     description?: string;
     options?: Array<{ label: string; value: string }>; // For select type
   }>;
-  confirmationRequired: boolean; // If true, ask user before running
-  confirmationMessage?: string; // Custom confirmation message
   allowedRoles?: string[]; // Roles that can trigger this (empty = all)
   allowedUsers?: string[]; // Specific user emails (empty = all)
   minConfidence: number; // Minimum confidence threshold (0-1)

@@ -48,11 +48,8 @@ export type TriggerMatch = {
   orchestrationId: string;
   orchestrationName: string;
   confidence: number;
-  intent: string;
   matchedPhrase: string; // The actual user message that matched
   extractedVariables: Record<string, unknown>;
-  requiresConfirmation: boolean;
-  confirmationMessage: string;
   missingVariables: string[];
 };
 
@@ -273,12 +270,8 @@ function buildTriggerMatch(
     orchestrationId: trigger.orchestration_id,
     orchestrationName: trigger.orchestration_name,
     confidence,
-    intent: config.intentName,
     matchedPhrase: userMessage,
     extractedVariables,
-    requiresConfirmation: config.confirmationRequired,
-    confirmationMessage: config.confirmationMessage || 
-      `I found an orchestration that can handle this: ${trigger.orchestration_name}. Do you want me to run it?`,
     missingVariables,
   };
 }
@@ -304,15 +297,15 @@ async function findBestIntentMatch(
   const intentDescriptions = triggers
     .map((t, idx) => {
       const config = t.config;
-      return `${idx + 1}. Intent: "${config.intentName}"
-   Description: ${t.name}
+      return `${idx + 1}. Orchestration: "${t.orchestration_name}"
+   Trigger name: ${t.name}
    Example phrases: ${config.examplePhrases.join(", ")}`;
     })
     .join("\n\n");
   
-  const prompt = `You are an intent classification system. Given a user message, determine which intent (if any) it matches.
+  const prompt = `You are an intent classification system. Given a user message, determine which orchestration (if any) it matches.
 
-Available intents:
+Available orchestrations:
 ${intentDescriptions}
 
 User message: "${userMessage}"

@@ -257,10 +257,10 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
       console.log('🔍 Trigger match result:', triggerMatch);
 
-      if (triggerMatch && !triggerMatch.requiresConfirmation) {
+      if (triggerMatch) {
         console.log(`✅ Matched orchestration: ${triggerMatch.orchestrationName} (confidence: ${triggerMatch.confidence})`);
         
-        // Create execution for auto-execute orchestration
+        // Create execution for matched orchestration
         const execution = await createExecution({
           orchestrationId: triggerMatch.orchestrationId,
           orchestrationVersion: 1,
@@ -270,8 +270,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
             triggerId: triggerMatch.triggerId,
             userMessage: question,
             matchedPhrase: triggerMatch.matchedPhrase,
-            intent: triggerMatch.intent,
-            matchedIntent: triggerMatch.intent,
             confidence: triggerMatch.confidence
           },
           triggeredBy: user.email
@@ -288,47 +286,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         };
         
         console.log('✅ Orchestration match stored, continuing to workflow check...');
-      } else if (triggerMatch && triggerMatch.requiresConfirmation) {
-        console.log('✅ Orchestration requires confirmation, storing match and continuing to show combined response');
-        
-        // Create execution even for confirmation flows (so we have executionId for the link)
-        const execution = await createExecution({
-          orchestrationId: triggerMatch.orchestrationId,
-          orchestrationVersion: 1,
-          context: triggerMatch.extractedVariables,
-          triggerData: {
-            triggerType: 'chatbot',
-            triggerId: triggerMatch.triggerId,
-            userMessage: question,
-            matchedPhrase: triggerMatch.matchedPhrase,
-            intent: triggerMatch.intent,
-            matchedIntent: triggerMatch.intent,
-            confidence: triggerMatch.confidence
-          },
-          triggeredBy: user.email
-        });
-        
-        console.log('📋 Created execution with ID:', execution.id);
-        
-        if (!execution.id) {
-          console.error('❌ ERROR: execution.id is undefined!', execution);
-          throw new Error('Failed to create orchestration execution - no ID returned');
-        }
-        
-        // Store match but DON'T return early - continue to show combined response
-        orchestrationMatch = {
-          triggerId: triggerMatch.triggerId,
-          orchestrationId: triggerMatch.orchestrationId,
-          orchestrationName: triggerMatch.orchestrationName,
-          executionId: execution.id,
-          requiresConfirmation: true,
-          confidence: triggerMatch.confidence
-        };
-        
-        console.log('✅ Orchestration match stored with executionId:', orchestrationMatch.executionId);
-        console.log('📦 Full orchestrationMatch:', orchestrationMatch);
-        
-        console.log('✅ Orchestration match stored, continuing to workflow/RAG...');
       } else {
         console.log('ℹ️ No orchestration trigger matched');
       }

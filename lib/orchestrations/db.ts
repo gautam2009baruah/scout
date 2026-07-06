@@ -232,12 +232,9 @@ export async function publishOrchestration(
       
       const chatbotTriggerConfig = {
         type: 'chatbot' as const,
-        intentName: orchestration.name.toLowerCase().replace(/\s+/g, '_'),
         triggerPhrases: triggerNodeConfig.triggerPhrases || triggerNodeConfig.examplePhrases || [],
         examplePhrases: triggerNodeConfig.examplePhrases || [],
         requiredVariables: triggerNodeConfig.requiredVariables || [],
-        confirmationRequired: triggerNodeConfig.confirmationRequired !== false,
-        confirmationMessage: triggerNodeConfig.confirmationMessage || undefined,
         allowedRoles: triggerNodeConfig.allowedRoles || [],
         allowedUsers: triggerNodeConfig.allowedUsers || [],
         minConfidence: triggerNodeConfig.minConfidence || 0.7,

@@ -657,17 +657,6 @@ function TriggerConfig({ config, updateConfig }: any) {
       {triggerType === "chatbot" && (
         <div className="border-l-4 border-orange-500 bg-orange-50 p-4 rounded space-y-3">
           <h4 className="text-sm font-semibold text-slate-700">Chatbot Settings</h4>
-          
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Intent Name</label>
-            <input
-              type="text"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="process_report, handle_request"
-              value={config.intentName || ""}
-              onChange={(e) => updateConfig({ intentName: e.target.value })}
-            />
-          </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-2">Example Phrases</label>
@@ -718,29 +707,6 @@ function TriggerConfig({ config, updateConfig }: any) {
             />
             <p className="text-xs text-slate-500 mt-1">Threshold for intent match (0-1)</p>
           </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="confirmationRequired"
-              checked={config.confirmationRequired !== false}
-              onChange={(e) => updateConfig({ confirmationRequired: e.target.checked })}
-            />
-            <label htmlFor="confirmationRequired" className="text-sm text-slate-700">Require user confirmation</label>
-          </div>
-
-          {config.confirmationRequired !== false && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Confirmation Message (optional)</label>
-              <textarea
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                rows={2}
-                placeholder="Custom confirmation message to show user"
-                value={config.confirmationMessage || ""}
-                onChange={(e) => updateConfig({ confirmationMessage: e.target.value })}
-              />
-            </div>
-          )}
 
           <div className="flex items-center gap-2">
             <input
