@@ -1917,6 +1917,68 @@
     document.body.appendChild(launcher);
   }
 
+  /**
+   * Global notification helper - shows styled toast messages
+   * @param {Object} options - Notification options
+   * @param {string} options.message - Message text to display
+   * @param {string} options.type - Message type: 'info', 'warning', 'error', 'success'
+   * @param {number} [options.duration] - Auto-hide duration in ms (0 = no auto-hide)
+   * @returns {HTMLElement} The notification element
+   */
+  function showScoutNotification(options) {
+    const { message, type = 'info', duration = 5000 } = options;
+    
+    // Remove existing notifications
+    document.querySelectorAll('.scout-adoption-recovery-toast').forEach(el => el.remove());
+    
+    // Icon and color based on type
+    const icons = {
+      info: '💡',
+      warning: '⚠️',
+      error: '❌',
+      success: '✅'
+    };
+    const icon = icons[type] || icons.info;
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = 'scout-adoption-recovery scout-adoption-recovery-toast';
+    notification.innerHTML = `
+      <div class="scout-adoption-recovery-body" style="text-align:center;">
+        <div style="font-size: 18px; margin-bottom: 6px;">${icon}</div>
+        <div style="white-space: pre-line;">${escapeHtml(message)}</div>
+      </div>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Auto-hide for non-error messages (errors require manual dismissal)
+    if (duration > 0 && type !== 'error') {
+      setTimeout(() => {
+        if (notification.isConnected) {
+          notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+          notification.style.opacity = '0';
+          notification.style.transform = 'translateX(-50%) translateY(-10px)';
+          setTimeout(() => notification.remove(), 300);
+        }
+      }, duration);
+    }
+    
+    // Allow manual dismissal by clicking
+    notification.style.cursor = 'pointer';
+    notification.addEventListener('click', () => {
+      notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      notification.style.opacity = '0';
+      notification.style.transform = 'translateX(-50%) translateY(-10px)';
+      setTimeout(() => notification.remove(), 300);
+    });
+    
+    return notification;
+  }
+
+  // Expose notification helper globally
+  window.showScoutNotification = showScoutNotification;
+
   window.ScoutAdoptionPlayer = {
     smartRuntime: true,
     version: PLAYER_VERSION,

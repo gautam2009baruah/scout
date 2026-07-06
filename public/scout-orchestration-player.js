@@ -303,16 +303,11 @@
     // Check storage availability for cross-page orchestrations
     if (!isSessionStorageAvailable() && !payload._resumeFrom) {
       console.error('❌ sessionStorage is not available');
-      alert(
-        '⚠️ Browser Storage Required\n\n' +
-        'Your browser has disabled storage (sessionStorage/localStorage).\n\n' +
-        'Cross-page orchestrations require browser storage to maintain state during navigation.\n\n' +
-        'To fix this:\n' +
-        '• Enable cookies/storage in your browser settings\n' +
-        '• Use regular browsing mode (not private/incognito)\n' +
-        '• Disable privacy extensions that block storage\n\n' +
-        'Alternatively, design workflows that work on a single page without navigation.'
-      );
+      window.showScoutNotification?.({
+        message: 'Browser Storage Required\n\nYour browser has disabled storage (sessionStorage/localStorage).\n\nCross-page orchestrations require browser storage to maintain state during navigation.\n\nTo fix this:\n• Enable cookies/storage in your browser settings\n• Use regular browsing mode (not private/incognito)\n• Disable privacy extensions that block storage\n\nAlternatively, design workflows that work on a single page without navigation.',
+        type: 'error',
+        duration: 0
+      });
       return;
     }
     
@@ -384,9 +379,13 @@
             orchestrationCancelled = true;
             console.log(`⏱️ Orchestration timeout due to inactivity (${timeoutDuration}ms)`);
             
-            // Show graceful notification
+            // Show error notification (does not auto-disappear)
             const timeoutMinutes = Math.round(timeoutDuration / 60000);
-            alert(`⏱️ Orchestration Cancelled\n\nThe orchestration has been cancelled due to ${timeoutMinutes} minute(s) of inactivity.\n\nPlease restart if you'd like to continue.`);
+            window.showScoutNotification?.({
+              message: `Orchestration Timed Out\n\nThe orchestration has been cancelled due to ${timeoutMinutes} minute(s) of inactivity.\n\nPlease restart if you'd like to continue.`,
+              type: 'error',
+              duration: 0
+            });
             
             // Notify chatbot
             sendMessageToChatbot({
@@ -513,7 +512,12 @@
               // Clear saved state (user cancelled)
               clearOrchestrationState();
               
-              alert('You cancelled the data capture. The orchestration has been stopped.');
+              // Show warning notification (auto-disappears after 5 seconds)
+              window.showScoutNotification?.({
+                message: 'Data Capture Cancelled\n\nYou cancelled the data capture. The orchestration has been stopped.',
+                type: 'warning',
+                duration: 5000
+              });
               
               // Mark as skipped
               updateOverlay({
