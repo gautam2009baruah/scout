@@ -1235,10 +1235,10 @@
       }
       if (this.highlighted) this.highlighted.classList.remove("scout-adoption-highlight");
       
-      // Clean up event listeners to prevent them from firing after going back
-      if (this.currentEventCleanup) {
-        this.currentEventCleanup();
-        this.currentEventCleanup = null;
+      // Clean up any event listeners to prevent them from firing after going back
+      if (this._eventCleanups) {
+        this._eventCleanups.forEach(cleanup => cleanup());
+        this._eventCleanups = [];
       }
       
       document.querySelector(".scout-adoption-missing")?.remove();
@@ -1352,30 +1352,25 @@
           this.next(onComplete);
         };
         target.addEventListener("click", advanceOnClick);
-        
-        // Store cleanup function
-        this.currentEventCleanup = () => {
-          target.removeEventListener("click", advanceOnClick);
-        };
       }
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
         const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
-        const onEvent = (event) => {
+        const onEvent = () => {
           // Ignore events from auto-fill (only real user interactions should advance)
-          if (event.__scoutAutoFill) {
+          if (window.__scoutAutoFillInProgress) {
             console.log('⏭️ Ignoring auto-fill event (waiting for real user interaction)');
-            return;
+            return;  // Don't advance, don't remove listener
           }
+          // Real user event - remove listener and advance
           target.removeEventListener(eventName, onEvent);
           this.next(onComplete);
         };
         target.addEventListener(eventName, onEvent);
         
-        // Store cleanup function
-        this.currentEventCleanup = () => {
-          target.removeEventListener(eventName, onEvent);
-        };
+        // Store cleanup function for when user goes back
+        if (!this._eventCleanups) this._eventCleanups = [];
+        this._eventCleanups.push(() => target.removeEventListener(eventName, onEvent));
       }
     }
 
@@ -1757,30 +1752,25 @@
           this.next(onComplete);
         };
         control.addEventListener("click", advanceOnClick);
-        
-        // Store cleanup function
-        this.currentEventCleanup = () => {
-          control.removeEventListener("click", advanceOnClick);
-        };
       }
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
         const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
-        const onEvent = (event) => {
+        const onEvent = () => {
           // Ignore events from auto-fill (only real user interactions should advance)
-          if (event.__scoutAutoFill) {
+          if (window.__scoutAutoFillInProgress) {
             console.log('⏭️ Ignoring auto-fill event (waiting for real user interaction)');
-            return;
+            return;  // Don't advance, don't remove listener
           }
+          // Real user event - remove listener and advance
           control.removeEventListener(eventName, onEvent);
           this.next(onComplete);
         };
         control.addEventListener(eventName, onEvent);
         
-        // Store cleanup function
-        this.currentEventCleanup = () => {
-          control.removeEventListener(eventName, onEvent);
-        };
+        // Store cleanup function for when user goes back
+        if (!this._eventCleanups) this._eventCleanups = [];
+        this._eventCleanups.push(() => control.removeEventListener(eventName, onEvent));
       }
     }
 

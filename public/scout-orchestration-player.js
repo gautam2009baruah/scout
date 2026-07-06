@@ -832,18 +832,17 @@
         }
         
         // Trigger events in proper order for framework compatibility
-        // Mark events as from auto-fill so Scout Player doesn't auto-advance on them
-        const inputEvent = new Event('input', { bubbles: true });
-        inputEvent.__scoutAutoFill = true;
-        element.dispatchEvent(inputEvent);
+        // Set flag to indicate auto-fill is dispatching events (prevent Scout Player advancement)
+        window.__scoutAutoFillInProgress = true;
         
-        const changeEvent = new Event('change', { bubbles: true });
-        changeEvent.__scoutAutoFill = true;
-        element.dispatchEvent(changeEvent);
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        element.dispatchEvent(new Event('blur', { bubbles: true }));
         
-        const blurEvent = new Event('blur', { bubbles: true });
-        blurEvent.__scoutAutoFill = true;
-        element.dispatchEvent(blurEvent);
+        // Clear flag after a short delay (events are synchronous but listeners might be async)
+        setTimeout(() => {
+          delete window.__scoutAutoFillInProgress;
+        }, 50);
         
         // Verify the value stuck (wait a frame for React/Angular to process)
         setTimeout(() => {
