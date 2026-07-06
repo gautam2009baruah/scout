@@ -283,8 +283,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   }, [selectedNode, setNodes, setEdges]);
 
   // Save orchestration
-  const saveOrchestration = async () => {
-    if (!orchestration || isSaving) return;
+  const saveOrchestration = async (): Promise<boolean> => {
+    if (!orchestration || isSaving) return false;
 
     setIsSaving(true);
     try {
@@ -352,9 +352,11 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       }
 
       showToast("Orchestration saved successfully!", 'success');
+      return true;
     } catch (error) {
       console.error("Error saving orchestration:", error);
       showToast(error instanceof Error ? error.message : "Failed to save orchestration", 'error');
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -371,6 +373,50 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       return;
     }
 
+    // Validate that all nodes are connected (no orphaned nodes)
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const connectedNodeIds = new Set<string>();
+    
+    edges.forEach(edge => {
+      connectedNodeIds.add(edge.source);
+      connectedNodeIds.add(edge.target);
+    });
+
+    const orphanedNodes = nodes.filter(node => !connectedNodeIds.has(node.id));
+    
+    // Allow trigger node to be unconnected only if it's the only node
+    // Otherwise, all nodes must be connected
+    if (orphanedNodes.length > 0) {
+      const orphanedLabels = orphanedNodes.map(n => `"${n.data.label}"`).join(', ');
+      showToast(`Cannot publish: ${orphanedNodes.length === 1 ? 'Node' : 'Nodes'} ${orphanedLabels} ${orphanedNodes.length === 1 ? 'is' : 'are'} not connected to the workflow.`, 'error');
+      return;
+    }
+
+    // Validate that trigger node exists and is connected
+    const triggerNode = nodes.find(n => (n.data as any).nodeType === 'trigger');
+    if (!triggerNode) {
+      showToast('Cannot publish: Orchestration must have a Trigger node.', 'error');
+      return;
+    }
+
+    // Validate that end node is reachable from trigger (basic connectivity check)
+    const endNode = nodes.find(n => (n.data as any).nodeType === 'end');
+    if (nodes.length > 1) {
+      // Check if end node has incoming connections
+      const endNodeHasIncoming = edges.some(edge => edge.target === endNode?.id);
+      if (!endNodeHasIncoming) {
+        showToast('Cannot publish: End node must be connected to the workflow. It has no incoming connections.', 'error');
+        return;
+      }
+
+      // Check if trigger node has outgoing connections
+      const triggerHasOutgoing = edges.some(edge => edge.source === triggerNode.id);
+      if (!triggerHasOutgoing) {
+        showToast('Cannot publish: Trigger node must be connected to the workflow. It has no outgoing connections.', 'error');
+        return;
+      }
+    }
+
     setConfirmDialog({
       message: "Publish this orchestration? This will make it available for execution.",
       onConfirm: async () => {
@@ -379,7 +425,13 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         try {
           // First, save the orchestration to ensure database has latest nodes
           console.log("📝 Saving orchestration before publishing...");
-          await saveOrchestration();
+          const saveSuccess = await saveOrchestration();
+          
+          if (!saveSuccess) {
+            showToast("Cannot publish: Failed to save orchestration. Please fix errors and try again.", 'error');
+            setIsPublishing(false);
+            return;
+          }
           
           console.log("📤 Publishing orchestration...");
           const response = await fetch("/api/admin/orchestrations", {
@@ -392,8 +444,15 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to publish orchestration");
+        let errorMessage = "Failed to publish orchestration";
+        try {
+          const error = await response.json();
+          errorMessage = error.message || errorMessage;
+        } catch (parseError) {
+          // If JSON parsing fails, use status text
+          errorMessage = response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
