@@ -972,6 +972,9 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
     return triggerNode?.data?.config?.triggerType || null;
   })();
 
+  // Check if there are any data capture nodes in the orchestration
+  const hasDataCaptureNode = nodes.some((n: any) => n.data?.nodeType === "data_capture");
+
   // Extract available trigger phrases from trigger node
   const availableTriggerPhrases = (() => {
     const triggerNode = nodes.find((n: any) => n.data?.nodeType === "trigger");
@@ -1743,23 +1746,31 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="autoFillFromDataCapture"
-          className="rounded border-slate-300"
-          checked={config.autoFillFromDataCapture === true}
-          onChange={(e) => updateConfig({ autoFillFromDataCapture: e.target.checked })}
-        />
-        <label htmlFor="autoFillFromDataCapture" className="text-sm text-slate-700">
-          Auto-fill from previous data capture
-        </label>
-        <div className="ml-auto">
-          <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-            🤖 Smart field matching
-          </span>
+      {/* Auto-fill from Data Capture - only show if data capture node exists */}
+      {hasDataCaptureNode && (
+        <div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="autoFillFromDataCapture"
+              className="rounded border-slate-300"
+              checked={config.autoFillFromDataCapture === true}
+              onChange={(e) => updateConfig({ autoFillFromDataCapture: e.target.checked })}
+            />
+            <label htmlFor="autoFillFromDataCapture" className="text-sm text-slate-700">
+              Auto-fill from Data Capture node
+            </label>
+            <div className="ml-auto">
+              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                🤖 Smart field matching
+              </span>
+            </div>
+          </div>
+          <p className="mt-1 ml-6 text-xs text-slate-500">
+            Automatically fill workflow fields with values captured from previous Data Capture node using intelligent matching.
+          </p>
         </div>
-      </div>
+      )}
 
       <div className="flex items-center gap-2">
         <input
