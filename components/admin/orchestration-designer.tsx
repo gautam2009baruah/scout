@@ -887,6 +887,12 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
               onClose={() => setIsPropertiesOpen(false)}
               onUpdate={(updates) => updateSelectedNode(updates)}
               onDelete={deleteSelectedNode}
+              onDatabaseSave={() => {
+                // Mark as having saved changes since publish (for badge display)
+                if (orchestration?.status === 'published') {
+                  setSavedSincePublish(true);
+                }
+              }}
             />
           )}
         </div>

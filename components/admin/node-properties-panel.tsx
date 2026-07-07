@@ -40,9 +40,10 @@ interface NodePropertiesPanelProps {
   onClose: () => void;
   onUpdate: (updates: Partial<Node>) => void;
   onDelete: () => void;
+  onDatabaseSave?: () => void; // Called after successful database save
 }
 
-export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestrationId, onClose, onUpdate, onDelete }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestrationId, onClose, onUpdate, onDelete, onDatabaseSave }: NodePropertiesPanelProps) {
   const nodeType = node.data.nodeType as NodeType;
   
   // Local state for editing (not saved until Save button clicked)
@@ -154,6 +155,9 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
             duration: 3000,
           });
         }
+
+        // Notify parent that database was updated (for unpublished changes badge)
+        onDatabaseSave?.();
       } catch (error) {
         console.error('Error saving node to database:', error);
         if (typeof window !== 'undefined' && window.showScoutNotification) {
