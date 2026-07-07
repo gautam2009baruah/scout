@@ -572,8 +572,8 @@
               if (typeof window.showScoutNotification === 'function') {
                 window.showScoutNotification({
                   message: endConfig.message,
-                  type: 'success',
-                  duration: 0 // Don't auto-hide, let user dismiss
+                  type: 'info',
+                  duration: 8000 // Auto-hide after 8 seconds
                 });
               } else {
                 // Fallback to alert if notification system not available
