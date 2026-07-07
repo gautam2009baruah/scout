@@ -2010,7 +2010,8 @@
         notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
         notification.style.opacity = '0';
         notification.style.transform = 'translateX(-50%) translateY(-10px)';
-      setTimeout(() => notification.remove(), 300);
+        setTimeout(() => notification.remove(), 300);
+      }
     });
     
     return notification;
