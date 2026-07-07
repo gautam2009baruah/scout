@@ -63,6 +63,14 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
     }
   }, []);
 
+  // Reset local state when node changes (different node selected)
+  useEffect(() => {
+    setLocalLabel(node.data.label);
+    setLocalDisplayDescription(node.data.displayDescription || "");
+    setLocalConfig(node.data.config || {});
+    setValidationError(null);
+  }, [node]);
+
   // Check if there are unsaved changes
   const hasUnsavedChanges = () => {
     return (
