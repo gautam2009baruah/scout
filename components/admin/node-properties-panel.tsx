@@ -100,6 +100,31 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       return { valid: false, error: "Message is required when 'Display message' is checked" };
     }
 
+    // Condition node validations
+    if (nodeType === "condition") {
+      const conditions = localConfig.conditions || [];
+      
+      if (conditions.length === 0) {
+        return { valid: false, error: "At least one condition is required" };
+      }
+
+      for (let i = 0; i < conditions.length; i++) {
+        const condition = conditions[i];
+        
+        if (!condition.variable || !condition.variable.trim()) {
+          return { valid: false, error: `Condition ${i + 1}: Variable is required` };
+        }
+
+        // Check if value is required for this operator
+        const noValueOperators = ["exists", "not_exists", "empty", "not_empty"];
+        if (!noValueOperators.includes(condition.operator)) {
+          if (!condition.value || !condition.value.trim()) {
+            return { valid: false, error: `Condition ${i + 1}: Value is required for ${condition.operator} operator` };
+          }
+        }
+      }
+    }
+
     // Add more validation rules here as needed for other node types
     
     return { valid: true, error: null };
@@ -2326,63 +2351,162 @@ function AIDecisionConfig({ config, updateConfig }: any) {
 }
 
 function ConditionConfig({ config, updateConfig }: any) {
+  const [conditions, setConditions] = useState<Array<{ variable: string; operator: string; value?: string }>>(
+    config.conditions || [{ variable: "", operator: "equals", value: "" }]
+  );
+  const [logic, setLogic] = useState<"and" | "or">(config.logic || "and");
+
+  useEffect(() => {
+    updateConfig({ conditions, logic });
+  }, [conditions, logic]);
+
+  const addCondition = () => {
+    setConditions([...conditions, { variable: "", operator: "equals", value: "" }]);
+  };
+
+  const removeCondition = (index: number) => {
+    if (conditions.length > 1) {
+      setConditions(conditions.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateCondition = (index: number, field: string, value: string) => {
+    const updated = [...conditions];
+    updated[index] = { ...updated[index], [field]: value };
+    setConditions(updated);
+  };
+
   return (
     <div className="space-y-4">
+      {/* Logic Selector (AND/OR) */}
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Operator <span className="text-red-500">*</span>
+          Logic <span className="text-red-500">*</span>
         </label>
-        <select
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.operator || "equals"}
-          onChange={(e) => updateConfig({ operator: e.target.value })}
-        >
-          <option value="equals">Equals (=)</option>
-          <option value="not_equals">Not Equals (≠)</option>
-          <option value="greater_than">Greater Than (&gt;)</option>
-          <option value="less_than">Less Than (&lt;)</option>
-          <option value="greater_or_equal">Greater or Equal (≥)</option>
-          <option value="less_or_equal">Less or Equal (≤)</option>
-          <option value="contains">Contains</option>
-          <option value="not_contains">Not Contains</option>
-          <option value="starts_with">Starts With</option>
-          <option value="ends_with">Ends With</option>
-          <option value="exists">Exists (not null)</option>
-          <option value="not_exists">Not Exists (null)</option>
-          <option value="empty">Empty</option>
-          <option value="not_empty">Not Empty</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Left Value <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.leftValue || ""}
-          onChange={(e) => updateConfig({ leftValue: e.target.value })}
-          placeholder="{{variableName}} or literal value"
-        />
-        <p className="mt-1 text-xs text-slate-500">First value to compare</p>
-      </div>
-
-      {!["exists", "not_exists", "empty", "not_empty"].includes(config.operator) && (
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1">
-            Right Value <span className="text-red-500">*</span>
+        <div className="flex gap-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="logic"
+              value="and"
+              checked={logic === "and"}
+              onChange={(e) => setLogic(e.target.value as "and" | "or")}
+              className="text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-slate-700">
+              <span className="font-semibold">AND</span> - All conditions must be true
+            </span>
           </label>
-          <input
-            type="text"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-            value={config.rightValue || ""}
-            onChange={(e) => updateConfig({ rightValue: e.target.value })}
-            placeholder="{{variableName}} or literal value"
-          />
-          <p className="mt-1 text-xs text-slate-500">Second value to compare</p>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="logic"
+              value="or"
+              checked={logic === "or"}
+              onChange={(e) => setLogic(e.target.value as "and" | "or")}
+              className="text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm text-slate-700">
+              <span className="font-semibold">OR</span> - Any condition can be true
+            </span>
+          </label>
         </div>
-      )}
+      </div>
+
+      {/* Conditions List */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-semibold text-slate-700">
+            Conditions <span className="text-red-500">*</span>
+          </label>
+          <button
+            type="button"
+            onClick={addCondition}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold"
+          >
+            <Plus className="h-3 w-3" />
+            Add Condition
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {conditions.map((condition, index) => (
+            <div key={index} className="border border-slate-200 rounded-lg p-3 space-y-3 bg-slate-50">
+              {/* Condition Header */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Condition {index + 1}</span>
+                {conditions.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeCondition(index)}
+                    className="text-red-600 hover:text-red-700"
+                    title="Remove condition"
+                  >
+                    <Minus className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Variable (Left Value) */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Variable <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                  value={condition.variable || ""}
+                  onChange={(e) => updateCondition(index, "variable", e.target.value)}
+                  placeholder="{{variableName}} or literal value"
+                />
+              </div>
+
+              {/* Operator */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Operator <span className="text-red-500">*</span>
+                </label>
+                <select
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                  value={condition.operator || "equals"}
+                  onChange={(e) => updateCondition(index, "operator", e.target.value)}
+                >
+                  <option value="equals">Equals (=)</option>
+                  <option value="not_equals">Not Equals (≠)</option>
+                  <option value="greater_than">Greater Than (&gt;)</option>
+                  <option value="less_than">Less Than (&lt;)</option>
+                  <option value="greater_or_equal">Greater or Equal (≥)</option>
+                  <option value="less_or_equal">Less or Equal (≤)</option>
+                  <option value="contains">Contains</option>
+                  <option value="not_contains">Not Contains</option>
+                  <option value="starts_with">Starts With</option>
+                  <option value="ends_with">Ends With</option>
+                  <option value="exists">Exists (not null)</option>
+                  <option value="not_exists">Not Exists (null)</option>
+                  <option value="empty">Empty</option>
+                  <option value="not_empty">Not Empty</option>
+                </select>
+              </div>
+
+              {/* Value (Right Value) - Hidden for certain operators */}
+              {!["exists", "not_exists", "empty", "not_empty"].includes(condition.operator) && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Value <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
+                    value={condition.value || ""}
+                    onChange={(e) => updateCondition(index, "value", e.target.value)}
+                    placeholder="{{variableName}} or literal value"
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
