@@ -713,6 +713,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             <NodePropertiesPanel
               node={selectedNode}
               nodes={nodes}
+              edges={edges}
               onClose={() => setIsPropertiesOpen(false)}
               onUpdate={(updates) => updateSelectedNode(updates)}
               onDelete={deleteSelectedNode}

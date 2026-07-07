@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { X, Trash2, Plus, Minus, Move, Maximize2 } from "lucide-react";
-import type { Node } from "reactflow";
+import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
 import Draggable from "react-draggable";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
@@ -28,12 +28,13 @@ const NODE_CONFIGS = [
 interface NodePropertiesPanelProps {
   node: Node;
   nodes?: Node[]; // All nodes in the flow for context-aware suggestions
+  edges?: Edge[]; // All edges for checking node connections
   onClose: () => void;
   onUpdate: (updates: Partial<Node>) => void;
   onDelete: () => void;
 }
 
-export function NodePropertiesPanel({ node, nodes = [], onClose, onUpdate, onDelete }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onUpdate, onDelete }: NodePropertiesPanelProps) {
   const nodeType = node.data.nodeType as NodeType;
   const config = node.data.config || {};
   const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
@@ -972,8 +973,28 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
     return triggerNode?.data?.config?.triggerType || null;
   })();
 
-  // Check if there are any data capture nodes in the orchestration
-  const hasDataCaptureNode = nodes.some((n: any) => n.data?.nodeType === "data_capture");
+  // Check if there are any data capture nodes connected BEFORE the current node
+  const hasDataCaptureNode = (() => {
+    // Find all data capture nodes
+    const dataCaptureNodes = nodes.filter((n: any) => n.data?.nodeType === "data_capture");
+    if (dataCaptureNodes.length === 0) return false;
+
+    // Helper: Check if there's a path from sourceNode to targetNode
+    const hasPathBetween = (sourceId: string, targetId: string, visited = new Set<string>()): boolean => {
+      if (sourceId === targetId) return true;
+      if (visited.has(sourceId)) return false;
+      visited.add(sourceId);
+
+      // Find all edges that start from sourceId
+      const outgoingEdges = edges.filter((e: any) => e.source === sourceId);
+      
+      // Check if any outgoing edge leads to target (directly or through other nodes)
+      return outgoingEdges.some((edge: any) => hasPathBetween(edge.target, targetId, visited));
+    };
+
+    // Check if ANY data capture node has a path to the current node
+    return dataCaptureNodes.some((dcNode: any) => hasPathBetween(dcNode.id, node.id));
+  })();
 
   // Extract available trigger phrases from trigger node
   const availableTriggerPhrases = (() => {
