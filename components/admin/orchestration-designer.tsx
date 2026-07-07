@@ -689,14 +689,15 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             <span className="text-sm font-semibold text-slate-700">
               {orchestration.name} <span className="text-xs text-slate-500">v{orchestration.version}</span>
             </span>
-            <span className={`ml-2 rounded-full px-2 py-1 text-xs font-semibold ${
-              orchestration.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"
-            }`}>
-              {orchestration.status}
-            </span>
-            {hasUnsavedChanges && (
-              <span className="ml-1 rounded-full px-2 py-1 text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
+            {hasUnsavedChanges ? (
+              <span className="ml-2 rounded-full px-2 py-1 text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
                 Unpublished changes
+              </span>
+            ) : (
+              <span className={`ml-2 rounded-full px-2 py-1 text-xs font-semibold ${
+                orchestration.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"
+              }`}>
+                {orchestration.status}
               </span>
             )}
           </div>
