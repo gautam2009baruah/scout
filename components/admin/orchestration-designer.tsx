@@ -162,6 +162,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     // Reset state when loading new orchestration
     savedStateRef.current = null;
     setHasUnsavedChanges(false);
+    setNodes([]);
+    setEdges([]);
     
     // Check if orchestration has saved changes since last publish
     const hasSavedChangesSincePublish = Boolean(
@@ -499,6 +501,9 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           nodes: flowNodes,
           edges: flowEdges,
         };
+        
+        // Reset unsaved changes flag after successful reload
+        setHasUnsavedChanges(false);
       } catch (reloadError) {
         console.error('Error reloading nodes after save:', reloadError);
         // Don't fail the save if reload fails
