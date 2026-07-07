@@ -1974,8 +1974,9 @@
     notification.style.background = colorScheme.bg;
     notification.style.borderColor = colorScheme.border;
     notification.style.color = colorScheme.text;
-    notification.style.position = 'relative';
     notification.style.pointerEvents = 'auto'; // Override CSS pointer-events: none to make close button clickable
+    notification.style.top = '16px'; // Force top positioning
+    notification.style.bottom = 'auto'; // Override bottom positioning from panel class
     notification.innerHTML = `
       <button type="button" style="position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border: none; background: rgba(0,0,0,0.1); border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; color: inherit; display: grid; place-items: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.2)'" onmouseout="this.style.background='rgba(0,0,0,0.1)'" aria-label="Close">&times;</button>
       <div class="scout-adoption-recovery-body" style="text-align:center; padding-right: 24px;">
