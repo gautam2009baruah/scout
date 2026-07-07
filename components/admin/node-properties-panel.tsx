@@ -2509,6 +2509,193 @@ function ConditionConfig({ config, updateConfig }: any) {
           </p>
         </div>
       )}
+
+      {/* Variable Usage Help */}
+      <details className="border border-slate-300 rounded-lg bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
+          📘 How to Use Variables in Conditions
+        </summary>
+        <div className="px-4 py-3 space-y-4 text-sm border-t border-slate-200 bg-slate-50">
+          
+          {/* Variable Format */}
+          <div>
+            <h4 className="font-semibold text-slate-900 mb-2">Variable Format</h4>
+            <p className="text-slate-700 mb-2">
+              Variables use <code className="bg-slate-200 px-1 py-0.5 rounded text-xs">{"{{scope.variableName}}"}</code> format with double curly braces.
+            </p>
+            <div className="bg-white border border-slate-200 rounded p-2 text-xs font-mono">
+              <div className="text-blue-600">{"{{variables.orderAmount}}"}</div>
+              <div className="text-blue-600">{"{{datacapture.email}}"}</div>
+              <div className="text-blue-600">{"{{workflow.CreateInvoice.total}}"}</div>
+            </div>
+          </div>
+
+          {/* Variable Sources */}
+          <div>
+            <h4 className="font-semibold text-slate-900 mb-2">Variable Sources</h4>
+            
+            <div className="space-y-3">
+              {/* Variable Node */}
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">📊</span>
+                  <span className="font-semibold text-slate-800">Variable Node</span>
+                  <code className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-xs">{"{{variables.xxx}}"}</code>
+                </div>
+                <p className="text-xs text-slate-600 mb-1">Stores values explicitly set in Variable nodes.</p>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div className="text-slate-500">Variable Node: "orderAmount" = 5000</div>
+                  <div className="text-blue-600 mt-1">Use: {"{{variables.orderAmount}}"}</div>
+                </div>
+              </div>
+
+              {/* Data Capture Node */}
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">📋</span>
+                  <span className="font-semibold text-slate-800">Data Capture Node</span>
+                  <code className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs">{"{{datacapture.xxx}}"}</code>
+                </div>
+                <p className="text-xs text-slate-600 mb-1">Captures user input from forms during workflow execution.</p>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div className="text-slate-500">Captured fields: email, phone, address</div>
+                  <div className="text-blue-600 mt-1">Use: {"{{datacapture.email}}"}</div>
+                  <div className="text-blue-600">Use: {"{{datacapture.phone}}"}</div>
+                </div>
+              </div>
+
+              {/* Workflow Node */}
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">🔄</span>
+                  <span className="font-semibold text-slate-800">Workflow Node</span>
+                  <code className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{"{{workflow.Name.field}}"}</code>
+                </div>
+                <p className="text-xs text-slate-600 mb-1">Outputs from completed guided workflows.</p>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div className="text-slate-500">Workflow: "CreateInvoice" outputs: id, total, status</div>
+                  <div className="text-blue-600 mt-1">Use: {"{{workflow.CreateInvoice.id}}"}</div>
+                  <div className="text-blue-600">Use: {"{{workflow.CreateInvoice.total}}"}</div>
+                </div>
+              </div>
+
+              {/* Trigger Node */}
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">⚡</span>
+                  <span className="font-semibold text-slate-800">Trigger Node</span>
+                  <code className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-xs">{"{{trigger.xxx}}"}</code>
+                </div>
+                <p className="text-xs text-slate-600 mb-1">Data passed when orchestration starts (API, manual trigger).</p>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div className="text-slate-500">Trigger data: orderId, customerId, priority</div>
+                  <div className="text-blue-600 mt-1">Use: {"{{trigger.orderId}}"}</div>
+                  <div className="text-blue-600">Use: {"{{trigger.priority}}"}</div>
+                </div>
+              </div>
+
+              {/* AI Extraction Node */}
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">🤖</span>
+                  <span className="font-semibold text-slate-800">AI Extraction Node</span>
+                  <code className="bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded text-xs">{"{{ai.xxx}}"}</code>
+                </div>
+                <p className="text-xs text-slate-600 mb-1">Data extracted by AI from documents or text.</p>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div className="text-slate-500">Extracted: amount, invoiceNumber, date</div>
+                  <div className="text-blue-600 mt-1">Use: {"{{ai.amount}}"}</div>
+                  <div className="text-blue-600">Use: {"{{ai.invoiceNumber}}"}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Example Conditions */}
+          <div>
+            <h4 className="font-semibold text-slate-900 mb-2">Example Conditions</h4>
+            
+            <div className="space-y-2">
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="text-xs font-semibold text-slate-700 mb-1">Check if amount exceeds threshold:</div>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div>Variable: <span className="text-blue-600">{"{{variables.orderAmount}}"}</span></div>
+                  <div>Operator: <span className="text-slate-600">greater_than</span></div>
+                  <div>Value: <span className="text-blue-600">1000</span></div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="text-xs font-semibold text-slate-700 mb-1">Check customer type:</div>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div>Variable: <span className="text-blue-600">{"{{datacapture.customerType}}"}</span></div>
+                  <div>Operator: <span className="text-slate-600">equals</span></div>
+                  <div>Value: <span className="text-blue-600">Premium</span></div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="text-xs font-semibold text-slate-700 mb-1">Check workflow status:</div>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div>Variable: <span className="text-blue-600">{"{{workflow.CreateInvoice.status}}"}</span></div>
+                  <div>Operator: <span className="text-slate-600">equals</span></div>
+                  <div>Value: <span className="text-blue-600">completed</span></div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-slate-200 rounded p-2">
+                <div className="text-xs font-semibold text-slate-700 mb-1">Check if email exists:</div>
+                <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
+                  <div>Variable: <span className="text-blue-600">{"{{datacapture.email}}"}</span></div>
+                  <div>Operator: <span className="text-slate-600">not_empty</span></div>
+                  <div className="text-slate-500 italic">(No value needed for this operator)</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Best Practices */}
+          <div>
+            <h4 className="font-semibold text-slate-900 mb-2">⭐ Best Practices</h4>
+            <ul className="space-y-1 text-xs text-slate-700">
+              <li className="flex items-start gap-2">
+                <span className="text-green-600 mt-0.5">✓</span>
+                <span>Use descriptive names: <code className="bg-slate-200 px-1 rounded">{"{{variables.customerOrderAmount}}"}</code> not <code className="bg-slate-200 px-1 rounded">{"{{variables.amt}}"}</code></span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600 mt-0.5">✓</span>
+                <span>Variables must exist BEFORE the condition node in the orchestration flow</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600 mt-0.5">✓</span>
+                <span>Match exact field names from node outputs (case-sensitive)</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600 mt-0.5">✓</span>
+                <span>Test with literal values first: use <code className="bg-slate-200 px-1 rounded">Premium</code> instead of variables initially</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-green-600 mt-0.5">✓</span>
+                <span>For numbers, don't use quotes: <code className="bg-slate-200 px-1 rounded">1000</code> not <code className="bg-slate-200 px-1 rounded">"1000"</code></span>
+              </li>
+            </ul>
+          </div>
+
+          {/* Important Notes */}
+          <div className="bg-amber-50 border border-amber-200 rounded p-2">
+            <h4 className="font-semibold text-amber-900 mb-2 flex items-center gap-1">
+              <span>⚠️</span> Important Notes
+            </h4>
+            <ul className="space-y-1 text-xs text-amber-800">
+              <li>• The system automatically resolves variable paths during execution</li>
+              <li>• If a variable doesn't exist, the condition evaluates to false</li>
+              <li>• Condition evaluation is left-to-right (no parentheses grouping)</li>
+              <li>• Node labels in the designer don't affect variable names</li>
+            </ul>
+          </div>
+
+        </div>
+      </details>
     </div>
   );
 }
