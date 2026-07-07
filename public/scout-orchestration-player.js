@@ -732,11 +732,14 @@
    * - Always tracks elements Scout highlights (for data capture)
    * - Conditionally auto-fills if captured data exists
    */
-  function setupUnifiedScoutMonitor(capturedData, workflowId) {
+  function setupUnifiedScoutMonitor(capturedData, workflowId, workflowConfig = {}) {
     const hasAutoFillData = Object.keys(capturedData).length > 0;
+    const autoAdvancementEnabled = workflowConfig.autoFillFromDataCapture && workflowConfig.autoAdvancement;
+    
     console.log('👀 Unified Scout monitor active');
     console.log(`   📋 Element tracking: ENABLED`);
     console.log(`   🤖 Auto-fill: ${hasAutoFillData ? 'ENABLED' : 'DISABLED'} (${Object.keys(capturedData).length} fields)`);
+    console.log(`   ⚡ Auto-advancement: ${autoAdvancementEnabled ? 'ENABLED' : 'DISABLED'}`);
     
     let fillCount = 0;
     const filledElements = new Set(); // Track elements we've already filled
@@ -882,6 +885,21 @@
             console.log(`🎉 Auto-fill verified (total fills: ${fillCount})`);
             console.log(`   🔒 Locked element from re-filling`);
             console.log(`   ⏸️ Will wait 2s before filling next field (if any)`);
+            
+            // Auto-advancement: After 2 seconds, click Next button if enabled
+            if (autoAdvancementEnabled) {
+              console.log(`   ⚡ Auto-advancement enabled - will click Next after 2s delay`);
+              setTimeout(() => {
+                // Find and click the Next button in Scout tooltip
+                const nextButton = document.querySelector('.scout-adoption-tooltip button[data-next]');
+                if (nextButton) {
+                  console.log(`👆 Auto-clicking Next button...`);
+                  nextButton.click();
+                } else {
+                  console.warn(`⚠️ Next button not found for auto-advancement`);
+                }
+              }, fillDelayMs); // Use existing 2-second delay
+            }
           } else {
             console.warn(`⚠️ Value didn't stick! Expected "${expectedValue}" but got "${actualValue}"`);
             console.warn(`   This element may need manual interaction or different fill strategy`);
@@ -1560,7 +1578,7 @@
     }
     
     // Set up unified monitor (tracks elements + auto-fills if data exists)
-    setupUnifiedScoutMonitor(capturedData, step.workflowId);
+    setupUnifiedScoutMonitor(capturedData, step.workflowId, workflowConfig);
 
     // Start the workflow using the handle (same as chatbot)
     console.log(`▶️ Starting workflow: ${step.workflowId}`);

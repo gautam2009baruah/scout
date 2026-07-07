@@ -106,6 +106,7 @@ export type WorkflowNodeConfig = {
   timeout?: number;
   triggerPhrases?: string[]; // Which trigger phrases execute this workflow (multi-select)
   autoFillFromDataCapture?: boolean; // Auto-fill from previous data capture
+  autoAdvancement?: boolean; // Auto-advance after filling each field (requires autoFillFromDataCapture)
 };
 
 export type DataCaptureMode = "dom" | "ai" | "hybrid" | "comprehensive";

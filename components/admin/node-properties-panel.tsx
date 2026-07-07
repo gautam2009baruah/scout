@@ -1771,27 +1771,55 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
 
       {/* Auto-fill from Data Capture - only show if data capture node exists */}
       {hasDataCaptureNode && (
-        <div>
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="autoFillFromDataCapture"
-              className="rounded border-slate-300"
-              checked={config.autoFillFromDataCapture === true}
-              onChange={(e) => updateConfig({ autoFillFromDataCapture: e.target.checked })}
-            />
-            <label htmlFor="autoFillFromDataCapture" className="text-sm text-slate-700">
-              Auto-fill from Data Capture node
-            </label>
-            <div className="ml-auto">
-              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                🤖 Smart field matching
-              </span>
+        <div className="space-y-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="autoFillFromDataCapture"
+                className="rounded border-slate-300"
+                checked={config.autoFillFromDataCapture === true}
+                onChange={(e) => updateConfig({ autoFillFromDataCapture: e.target.checked })}
+              />
+              <label htmlFor="autoFillFromDataCapture" className="text-sm text-slate-700">
+                Auto-fill from Data Capture node
+              </label>
+              <div className="ml-auto">
+                <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                  🤖 Smart field matching
+                </span>
+              </div>
             </div>
+            <p className="mt-1 ml-6 text-xs text-slate-500">
+              Automatically fill workflow fields with values captured from previous Data Capture node using intelligent matching.
+            </p>
           </div>
-          <p className="mt-1 ml-6 text-xs text-slate-500">
-            Automatically fill workflow fields with values captured from previous Data Capture node using intelligent matching.
-          </p>
+
+          {/* Auto-advancement - only show when auto-fill is enabled */}
+          {config.autoFillFromDataCapture && (
+            <div className="ml-6 pl-4 border-l-2 border-slate-200">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="autoAdvancement"
+                  className="rounded border-slate-300"
+                  checked={config.autoAdvancement === true}
+                  onChange={(e) => updateConfig({ autoAdvancement: e.target.checked })}
+                />
+                <label htmlFor="autoAdvancement" className="text-sm text-slate-700">
+                  Auto advancement
+                </label>
+                <div className="ml-auto">
+                  <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
+                    ⚡ Auto-progress
+                  </span>
+                </div>
+              </div>
+              <p className="mt-1 ml-6 text-xs text-slate-500">
+                Automatically advance to next step after filling each field (2 second pause). User gets time to see what was filled.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
