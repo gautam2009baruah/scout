@@ -151,7 +151,15 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
 
   // Load orchestration data when orchestration changes
   useEffect(() => {
-    if (!orchestration?.id) return;
+    if (!orchestration?.id) {
+      savedStateRef.current = null;
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    // Reset state when loading new orchestration
+    savedStateRef.current = null;
+    setHasUnsavedChanges(false);
 
     // Load nodes
     fetch(`/api/admin/orchestrations/nodes?orchestrationId=${orchestration.id}`)
@@ -165,6 +173,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             label: node.label,
             nodeType: node.nodeType,
             config: node.config,
+            displayDescription: node.displayDescription,
             onDelete: deleteNode,
           },
         }));
