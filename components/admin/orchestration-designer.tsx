@@ -207,21 +207,22 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
 
     const saved = savedStateRef.current;
     
-    // Compare nodes (check count, positions, labels, configs)
+    // Compare nodes (check count and positions only, NOT labels/configs)
+    // Node property edits (label, config) don't count as "unsaved changes"
+    // because they're saved when user clicks Save in the node properties panel
     if (nodes.length !== saved.nodes.length) {
       setHasUnsavedChanges(true);
       return;
     }
 
+    // Check if any node positions changed (moving nodes on canvas)
     for (let i = 0; i < nodes.length; i++) {
       const current = nodes[i];
       const savedNode = saved.nodes.find(n => n.id === current.id);
       
       if (!savedNode ||
           current.position.x !== savedNode.position.x ||
-          current.position.y !== savedNode.position.y ||
-          current.data.label !== savedNode.data.label ||
-          JSON.stringify(current.data.config) !== JSON.stringify(savedNode.data.config)) {
+          current.position.y !== savedNode.position.y) {
         setHasUnsavedChanges(true);
         return;
       }
