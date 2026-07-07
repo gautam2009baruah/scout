@@ -122,8 +122,11 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       },
     });
 
-    // Save to database if orchestrationId is available
-    if (orchestrationId && node.id) {
+    // Save to database if orchestrationId is available and node exists in DB
+    // Check if node has a database ID (UUID format) vs temporary client ID (node-timestamp)
+    const hasDbId = orchestrationId && node.id && !node.id.startsWith('node-');
+    
+    if (hasDbId) {
       try {
         const response = await fetch('/api/admin/orchestrations/nodes', {
           method: 'PUT',
@@ -139,7 +142,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         });
 
         if (!response.ok) {
-          throw new Error('Failed to save node to database');
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to save node to database');
         }
 
         // Show success notification
@@ -154,7 +158,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         console.error('Error saving node to database:', error);
         if (typeof window !== 'undefined' && window.showScoutNotification) {
           window.showScoutNotification({
-            message: 'Failed to save to database. Changes saved locally only.',
+            message: error instanceof Error ? error.message : 'Failed to save to database. Changes saved locally only.',
             type: 'error',
             duration: 5000,
           });
@@ -163,7 +167,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         return;
       }
     } else {
-      // No orchestrationId (new node not yet saved) - just show success for in-memory save
+      // No database ID (new node not yet saved) - just show info for in-memory save
       if (typeof window !== 'undefined' && window.showScoutNotification) {
         window.showScoutNotification({
           message: 'Node configuration saved. Click "Save Draft" to persist to database.',
