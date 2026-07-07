@@ -97,8 +97,9 @@ async function buildExecutionPlan(
     const node = nodes.find(n => n.id === nodeId);
     if (!node) continue;
 
-    // Skip trigger and end nodes in execution plan
-    if (node.nodeType === 'trigger' || node.nodeType === 'end') {
+    // Skip only trigger node (start point) in execution plan
+    // End node is included so its message can be displayed
+    if (node.nodeType === 'trigger') {
       // Add connected nodes to queue
       const outgoing = connections.filter(c => c.sourceNodeId === nodeId);
       outgoing.forEach(c => queue.push(c.targetNodeId));
