@@ -689,7 +689,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             <span className="text-sm font-semibold text-slate-700">
               {orchestration.name} <span className="text-xs text-slate-500">v{orchestration.version}</span>
             </span>
-            {hasUnsavedChanges ? (
+            {hasUnsavedChanges || (orchestration.publishedAt && new Date(orchestration.updatedAt) > new Date(orchestration.publishedAt)) ? (
               <span className="ml-2 rounded-full px-2 py-1 text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
                 Unpublished changes
               </span>
