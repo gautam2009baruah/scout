@@ -13,16 +13,39 @@ export async function executeConditionNode(
   error?: string;
 }> {
   try {
-    // Evaluate all conditions
-    const results = config.conditions.map((condition) =>
-      evaluateCondition(condition.variable, condition.operator, condition.value, context)
+    if (!config.conditions || config.conditions.length === 0) {
+      return { success: false, error: "No conditions defined" };
+    }
+
+    // Evaluate conditions with individual logic operators
+    // Start with first condition result
+    let finalResult = evaluateCondition(
+      config.conditions[0].variable,
+      config.conditions[0].operator,
+      config.conditions[0].value,
+      context
     );
 
-    // Apply logic (AND or OR)
-    const finalResult =
-      config.logic === "and"
-        ? results.every((r) => r === true)
-        : results.some((r) => r === true);
+    // Apply logic operators between conditions (left-to-right evaluation)
+    for (let i = 0; i < config.conditions.length - 1; i++) {
+      const currentCondition = config.conditions[i];
+      const nextCondition = config.conditions[i + 1];
+      const logicOperator = currentCondition.logicAfter || "and"; // Default to AND
+
+      const nextResult = evaluateCondition(
+        nextCondition.variable,
+        nextCondition.operator,
+        nextCondition.value,
+        context
+      );
+
+      // Apply the logic operator
+      if (logicOperator === "and") {
+        finalResult = finalResult && nextResult;
+      } else {
+        finalResult = finalResult || nextResult;
+      }
+    }
 
     return {
       success: true,

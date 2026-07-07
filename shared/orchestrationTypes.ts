@@ -161,8 +161,8 @@ export type ConditionNodeConfig = {
     variable: string; // variable expression
     operator: ConditionOperator;
     value?: unknown;
+    logicAfter?: "and" | "or"; // Logic operator to apply AFTER this condition (not used for last condition)
   }>;
-  logic: "and" | "or";
 };
 
 export type HumanApprovalNodeConfig = {
