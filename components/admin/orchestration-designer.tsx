@@ -68,6 +68,7 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: 
 // Custom Node Component
 const CustomNode = ({ data, id }: { data: any; id: string }) => {
   const config = NODE_CONFIGS.find((n) => n.type === data.nodeType);
+  const isConditionNode = data.nodeType === 'condition';
   
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -86,11 +87,33 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
         position={Position.Left}
         className="!h-3 !w-3 !border-2 !border-white !bg-slate-700"
       />
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!h-3 !w-3 !border-2 !border-white !bg-slate-700"
-      />
+      
+      {/* Condition node has two output handles: TRUE and FALSE */}
+      {isConditionNode ? (
+        <>
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="true"
+            style={{ top: '35%' }}
+            className="!h-3 !w-3 !border-2 !border-white !bg-green-600"
+          />
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="false"
+            style={{ top: '65%' }}
+            className="!h-3 !w-3 !border-2 !border-white !bg-red-600"
+          />
+        </>
+      ) : (
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!h-3 !w-3 !border-2 !border-white !bg-slate-700"
+        />
+      )}
+      
       <button
         className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded bg-red-500 text-white hover:bg-red-600 transition-colors"
         onClick={handleDelete}
@@ -106,6 +129,14 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
           <div className="text-sm font-semibold text-slate-900">{data.label}</div>
         </div>
       </div>
+      
+      {/* Labels for condition handles */}
+      {isConditionNode && (
+        <div className="absolute -right-12 top-0 flex h-full flex-col justify-around text-xs font-semibold">
+          <span className="text-green-600">TRUE</span>
+          <span className="text-red-600">FALSE</span>
+        </div>
+      )}
     </div>
   );
 };
