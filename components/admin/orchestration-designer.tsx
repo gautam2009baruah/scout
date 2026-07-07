@@ -132,6 +132,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [savedSincePublish, setSavedSincePublish] = useState(false);
   const savedStateRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
 
   // Show toast notification
@@ -154,12 +155,14 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     if (!orchestration?.id) {
       savedStateRef.current = null;
       setHasUnsavedChanges(false);
+      setSavedSincePublish(false);
       return;
     }
 
     // Reset state when loading new orchestration
     savedStateRef.current = null;
     setHasUnsavedChanges(false);
+    setSavedSincePublish(false);
 
     // Load nodes
     fetch(`/api/admin/orchestrations/nodes?orchestrationId=${orchestration.id}`)
@@ -444,6 +447,11 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       };
       setHasUnsavedChanges(false);
       
+      // Track that we saved but haven't published yet
+      if (orchestration.status === "published") {
+        setSavedSincePublish(true);
+      }
+      
       showToast("Orchestration saved successfully!", 'success');
       return true;
     } catch (error) {
@@ -550,6 +558,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
 
       const result = await response.json();
       setOrchestration(result.orchestration);
+      setSavedSincePublish(false);
       showToast("Orchestration published successfully!", 'success');
         } catch (error) {
           console.error("Error publishing orchestration:", error);
@@ -698,7 +707,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             <span className="text-sm font-semibold text-slate-700">
               {orchestration.name} <span className="text-xs text-slate-500">v{orchestration.version}</span>
             </span>
-            {hasUnsavedChanges || (orchestration.publishedAt && new Date(orchestration.updatedAt) > new Date(orchestration.publishedAt)) ? (
+            {hasUnsavedChanges || savedSincePublish ? (
               <span className="ml-2 rounded-full px-2 py-1 text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
                 Unpublished changes
               </span>
