@@ -429,7 +429,15 @@ export async function updateNode(
     throw new Error(`Node ${id} not found`);
   }
 
-  return mapNodeRow(result.rows[0]);
+  const node = result.rows[0];
+
+  // Also update parent orchestration's updated_at to mark it as having unsaved changes
+  await pool.query(
+    `UPDATE orchestrations SET updated_at = now() WHERE id = $1`,
+    [node.orchestration_id]
+  );
+
+  return mapNodeRow(node);
 }
 
 export async function deleteNode(id: string): Promise<void> {
