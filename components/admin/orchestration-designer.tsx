@@ -246,14 +246,17 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       return;
     }
 
+    // Helper to compare positions with tolerance for floating point precision
+    const positionsEqual = (pos1: { x: number; y: number }, pos2: { x: number; y: number }) => {
+      return Math.abs(pos1.x - pos2.x) < 0.01 && Math.abs(pos1.y - pos2.y) < 0.01;
+    };
+
     // Check if any node positions changed (moving nodes on canvas)
     for (let i = 0; i < nodes.length; i++) {
       const current = nodes[i];
       const savedNode = saved.nodes.find(n => n.id === current.id);
       
-      if (!savedNode ||
-          current.position.x !== savedNode.position.x ||
-          current.position.y !== savedNode.position.y) {
+      if (!savedNode || !positionsEqual(current.position, savedNode.position)) {
         setHasUnsavedChanges(true);
         return;
       }
