@@ -303,11 +303,18 @@
     // Check storage availability for cross-page orchestrations
     if (!isSessionStorageAvailable() && !payload._resumeFrom) {
       console.error('❌ sessionStorage is not available');
-      window.showScoutNotification?.({
-        message: 'Browser Storage Required\n\nYour browser has disabled storage (sessionStorage/localStorage).\n\nCross-page orchestrations require browser storage to maintain state during navigation.\n\nTo fix this:\n• Enable cookies/storage in your browser settings\n• Use regular browsing mode (not private/incognito)\n• Disable privacy extensions that block storage\n\nAlternatively, design workflows that work on a single page without navigation.',
-        type: 'error',
-        duration: 0
-      });
+      console.log('📢 Showing storage error notification...');
+      if (typeof window.showScoutNotification === 'function') {
+        window.showScoutNotification({
+          message: 'Browser Storage Required\n\nYour browser has disabled storage (sessionStorage/localStorage).\n\nCross-page orchestrations require browser storage to maintain state during navigation.\n\nTo fix this:\n• Enable cookies/storage in your browser settings\n• Use regular browsing mode (not private/incognito)\n• Disable privacy extensions that block storage\n\nAlternatively, design workflows that work on a single page without navigation.',
+          type: 'error',
+          duration: 0
+        });
+        console.log('✅ Notification displayed');
+      } else {
+        console.warn('⚠️ window.showScoutNotification not available, using alert fallback');
+        alert('⚠️ Browser Storage Required\n\nYour browser has disabled storage (sessionStorage/localStorage).\n\nCross-page orchestrations require browser storage to maintain state during navigation.\n\nTo fix this:\n• Enable cookies/storage in your browser settings\n• Use regular browsing mode (not private/incognito)\n• Disable privacy extensions that block storage\n\nAlternatively, design workflows that work on a single page without navigation.');
+      }
       return;
     }
     
@@ -381,11 +388,18 @@
             
             // Show error notification (does not auto-disappear)
             const timeoutMinutes = Math.round(timeoutDuration / 60000);
-            window.showScoutNotification?.({
-              message: `Orchestration Timed Out\n\nThe orchestration has been cancelled due to ${timeoutMinutes} minute(s) of inactivity.\n\nPlease restart if you'd like to continue.`,
-              type: 'error',
-              duration: 0
-            });
+            console.log('📢 Showing timeout notification...');
+            if (typeof window.showScoutNotification === 'function') {
+              window.showScoutNotification({
+                message: `Orchestration Timed Out\n\nThe orchestration has been cancelled due to ${timeoutMinutes} minute(s) of inactivity.\n\nPlease restart if you'd like to continue.`,
+                type: 'error',
+                duration: 0
+              });
+              console.log('✅ Notification displayed');
+            } else {
+              console.warn('⚠️ window.showScoutNotification not available, using alert fallback');
+              alert(`⏱️ Orchestration Timed Out\n\nThe orchestration has been cancelled due to ${timeoutMinutes} minute(s) of inactivity.\n\nPlease restart if you'd like to continue.`);
+            }
             
             // Notify chatbot
             sendMessageToChatbot({
@@ -513,11 +527,18 @@
               clearOrchestrationState();
               
               // Show warning notification (auto-disappears after 5 seconds)
-              window.showScoutNotification?.({
-                message: 'Data Capture Cancelled\n\nYou cancelled the data capture. The orchestration has been stopped.',
-                type: 'warning',
-                duration: 5000
-              });
+              console.log('📢 Showing cancellation notification...');
+              if (typeof window.showScoutNotification === 'function') {
+                window.showScoutNotification({
+                  message: 'Data Capture Cancelled\n\nYou cancelled the data capture. The orchestration has been stopped.',
+                  type: 'warning',
+                  duration: 5000
+                });
+                console.log('✅ Notification displayed');
+              } else {
+                console.warn('⚠️ window.showScoutNotification not available, using alert fallback');
+                alert('⚠️ Data Capture Cancelled\n\nYou cancelled the data capture. The orchestration has been stopped.');
+              }
               
               // Mark as skipped
               updateOverlay({
