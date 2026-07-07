@@ -36,12 +36,13 @@ interface NodePropertiesPanelProps {
   node: Node;
   nodes?: Node[]; // All nodes in the flow for context-aware suggestions
   edges?: Edge[]; // All edges for checking node connections
+  orchestrationId?: string; // Orchestration ID for saving to database
   onClose: () => void;
   onUpdate: (updates: Partial<Node>) => void;
   onDelete: () => void;
 }
 
-export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onUpdate, onDelete }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestrationId, onClose, onUpdate, onDelete }: NodePropertiesPanelProps) {
   const nodeType = node.data.nodeType as NodeType;
   
   // Local state for editing (not saved until Save button clicked)
@@ -104,14 +105,14 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
   };
 
   // Save changes
-  const handleSave = () => {
+  const handleSave = async () => {
     const validation = validateFields();
     if (!validation.valid) {
       setValidationError(validation.error);
       return;
     }
 
-    // Apply changes to node
+    // Apply changes to in-memory state first
     onUpdate({
       data: {
         ...node.data,
@@ -121,13 +122,55 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
       },
     });
 
-    // Show success notification
-    if (typeof window !== 'undefined' && window.showScoutNotification) {
-      window.showScoutNotification({
-        message: 'Node configuration saved successfully',
-        type: 'success',
-        duration: 3000,
-      });
+    // Save to database if orchestrationId is available
+    if (orchestrationId && node.id) {
+      try {
+        const response = await fetch('/api/admin/orchestrations/nodes', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: node.id,
+            label: localLabel,
+            positionX: node.position.x,
+            positionY: node.position.y,
+            config: localConfig,
+            displayDescription: localDisplayDescription,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to save node to database');
+        }
+
+        // Show success notification
+        if (typeof window !== 'undefined' && window.showScoutNotification) {
+          window.showScoutNotification({
+            message: 'Node configuration saved to database',
+            type: 'success',
+            duration: 3000,
+          });
+        }
+      } catch (error) {
+        console.error('Error saving node to database:', error);
+        if (typeof window !== 'undefined' && window.showScoutNotification) {
+          window.showScoutNotification({
+            message: 'Failed to save to database. Changes saved locally only.',
+            type: 'error',
+            duration: 5000,
+          });
+        }
+        // Don't close panel on error so user can try again
+        return;
+      }
+    } else {
+      // No orchestrationId (new node not yet saved) - just show success for in-memory save
+      if (typeof window !== 'undefined' && window.showScoutNotification) {
+        window.showScoutNotification({
+          message: 'Node configuration saved. Click "Save Draft" to persist to database.',
+          type: 'info',
+          duration: 4000,
+        });
+      }
     }
 
     // Close panel after successful save

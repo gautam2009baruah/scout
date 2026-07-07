@@ -832,6 +832,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
               node={selectedNode}
               nodes={nodes}
               edges={edges}
+              orchestrationId={orchestration?.id}
               onClose={() => setIsPropertiesOpen(false)}
               onUpdate={(updates) => updateSelectedNode(updates)}
               onDelete={deleteSelectedNode}
