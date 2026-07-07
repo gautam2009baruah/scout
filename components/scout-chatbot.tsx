@@ -244,8 +244,12 @@ export function ScoutChatbot({
   const [panelSize, setPanelSize] = useState<ChatSize>(initialChatSize);
   const [panelPosition, setPanelPosition] = useState<ChatPosition>(initialChatPosition);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const nextMessageId = useRef(messages.length + 1);
   const activeConversationId = useRef(conversationId ?? "");
+
+  // Generate unique message ID using timestamp + random component
+  const generateMessageId = () => {
+    return `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  };
 
   const cssVars: WidgetStyle = {
     "--scout-brand": theme?.brandColor ?? "#020617",
@@ -282,7 +286,6 @@ export function ScoutChatbot({
   }, [variant]);
 
   useEffect(() => {
-    nextMessageId.current = messages.length + 1;
     writeStoredMessages(messageStorageKey, messages);
   }, [messageStorageKey, messages]);
 
@@ -462,7 +465,7 @@ export function ScoutChatbot({
     }
 
     const userMessage = createRenderedMessage({
-      id: `local-${nextMessageId.current++}`,
+      id: generateMessageId(),
       role: "user",
       text: trimmed,
       time: formatTime()
@@ -486,7 +489,7 @@ export function ScoutChatbot({
             ...current,
             createRenderedMessage({
               ...assistantReply,
-              id: assistantReply.id ?? `local-${nextMessageId.current++}`,
+              id: assistantReply.id ?? generateMessageId(),
               role: "assistant",
               time: assistantReply.time ?? formatTime()
             })
@@ -500,7 +503,7 @@ export function ScoutChatbot({
       setMessages((current) => [
         ...current,
         createRenderedMessage({
-          id: `local-${nextMessageId.current++}`,
+          id: generateMessageId(),
           role: "assistant",
           text: error instanceof Error ? error.message : "I could not reach the assistant service. Please try again in a moment.",
           time: formatTime()
