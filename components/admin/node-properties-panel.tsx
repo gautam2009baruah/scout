@@ -6,7 +6,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { X, Trash2, Plus, Minus, Move, Maximize2 } from "lucide-react";
+import { X, Trash2, Plus, Minus, Move, Maximize2, Save } from "lucide-react";
 import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
 import Draggable from "react-draggable";
@@ -36,8 +36,14 @@ interface NodePropertiesPanelProps {
 
 export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onUpdate, onDelete }: NodePropertiesPanelProps) {
   const nodeType = node.data.nodeType as NodeType;
-  const config = node.data.config || {};
-  const [panelWidth, setPanelWidth] = useState(384); // 96 * 4 = 384px (w-96)
+  
+  // Local state for editing (not saved until Save button clicked)
+  const [localLabel, setLocalLabel] = useState(node.data.label);
+  const [localDisplayDescription, setLocalDisplayDescription] = useState(node.data.displayDescription || "");
+  const [localConfig, setLocalConfig] = useState(node.data.config || {});
+  const [validationError, setValidationError] = useState<string | null>(null);
+  
+  const [panelWidth, setPanelWidth] = useState(384);
   const [panelHeight, setPanelHeight] = useState(600);
   const [position, setPosition] = useState({ x: 0, y: 80 });
   const nodeRef = useRef<HTMLDivElement>(null);
@@ -49,25 +55,71 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
     }
   }, []);
 
-  const updateConfig = (updates: Record<string, any>) => {
+  // Check if there are unsaved changes
+  const hasUnsavedChanges = () => {
+    return (
+      localLabel !== node.data.label ||
+      localDisplayDescription !== (node.data.displayDescription || "") ||
+      JSON.stringify(localConfig) !== JSON.stringify(node.data.config || {})
+    );
+  };
+
+  // Update local config (not saved until Save clicked)
+  const updateLocalConfig = (updates: Record<string, any>) => {
+    setLocalConfig({ ...localConfig, ...updates });
+    setValidationError(null); // Clear validation error when user makes changes
+  };
+
+  // Validate fields before saving
+  const validateFields = (): { valid: boolean; error: string | null } => {
+    // Check node label is not empty
+    if (!localLabel.trim()) {
+      return { valid: false, error: "Node label is required" };
+    }
+
+    // Node-specific validations
+    if (nodeType === "end" && localConfig.displayMessage && !localConfig.message?.trim()) {
+      return { valid: false, error: "Message is required when 'Display message' is checked" };
+    }
+
+    // Add more validation rules here as needed for other node types
+    
+    return { valid: true, error: null };
+  };
+
+  // Save changes
+  const handleSave = () => {
+    const validation = validateFields();
+    if (!validation.valid) {
+      setValidationError(validation.error);
+      return;
+    }
+
+    // Apply changes to node
     onUpdate({
       data: {
         ...node.data,
-        config: { ...config, ...updates },
+        label: localLabel,
+        displayDescription: localDisplayDescription,
+        config: localConfig,
       },
     });
+
+    // Close panel after successful save
+    onClose();
   };
 
-  const updateLabel = (label: string) => {
-    onUpdate({
-      data: { ...node.data, label },
-    });
-  };
-
-  const updateDisplayDescription = (displayDescription: string) => {
-    onUpdate({
-      data: { ...node.data, displayDescription },
-    });
+  // Handle close with unsaved changes confirmation
+  const handleClose = () => {
+    if (hasUnsavedChanges()) {
+      const confirmed = window.confirm(
+        "You have unsaved changes. Do you want to discard them?"
+      );
+      if (!confirmed) {
+        return; // User cancelled, stay on panel
+      }
+    }
+    onClose();
   };
 
   // Handle resize
@@ -202,7 +254,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
                 </button>
                 <button
                   className="text-slate-300 hover:text-white transition-colors p-1 rounded hover:bg-slate-600"
-                  onClick={onClose}
+                  onClick={handleClose}
                   type="button"
                   title="Close"
                 >
@@ -232,8 +284,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
           <input
             type="text"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            value={node.data.label}
-            onChange={(e) => updateLabel(e.target.value)}
+            value={localLabel}
+            onChange={(e) => setLocalLabel(e.target.value)}
             placeholder="Enter a descriptive label"
           />
           <p className="mt-1 text-xs text-slate-500">Display name for this node</p>
@@ -247,8 +299,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
           <input
             type="text"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            value={node.data.displayDescription || ""}
-            onChange={(e) => updateDisplayDescription(e.target.value)}
+            value={localDisplayDescription}
+            onChange={(e) => setLocalDisplayDescription(e.target.value)}
             placeholder="e.g., Extract rate code from email, Fill rate form, Send confirmation"
           />
           <p className="mt-1 text-xs text-slate-500">
@@ -257,26 +309,33 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
         </div>
 
         {/* Node-specific configuration */}
-        {nodeType === "trigger" && <TriggerConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "workflow" && <WorkflowConfig config={config} updateConfig={updateConfig} nodes={nodes} edges={edges} currentNode={node} />}
-        {nodeType === "data_capture" && <DataCaptureConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "ai_extraction" && <AIExtractionConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "ai_decision" && <AIDecisionConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "condition" && <ConditionConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "human_approval" && <HumanApprovalConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "notification" && <NotificationConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "variable" && <VariableConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "end" && <EndConfig config={config} updateConfig={updateConfig} />}
+        {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} />}
+        {nodeType === "data_capture" && <DataCaptureConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "ai_extraction" && <AIExtractionConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "ai_decision" && <AIDecisionConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "condition" && <ConditionConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "human_approval" && <HumanApprovalConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "notification" && <NotificationConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} />}
 
-        {/* Delete Button */}
+        {/* Validation Error */}
+        {validationError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+            <p className="text-sm text-red-700 font-medium">{validationError}</p>
+          </div>
+        )}
+
+        {/* Save Button */}
         <div className="pt-4 border-t border-slate-200">
           <button
-            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
-            onClick={onDelete}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+            onClick={handleSave}
             type="button"
           >
-            <Trash2 className="h-4 w-4" />
-            Delete Node
+            <Save className="h-4 w-4" />
+            Save Changes
           </button>
         </div>
             </div>
