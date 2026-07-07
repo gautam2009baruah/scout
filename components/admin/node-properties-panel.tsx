@@ -12,6 +12,13 @@ import type { NodeType } from "@/shared/orchestrationTypes";
 import Draggable from "react-draggable";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 
+// Declare global showScoutNotification function
+declare global {
+  interface Window {
+    showScoutNotification?: (options: { message: string; type: 'info' | 'warning' | 'error' | 'success'; duration?: number }) => void;
+  }
+}
+
 const NODE_CONFIGS = [
   { type: "trigger", label: "Trigger", icon: "⚡" },
   { type: "workflow", label: "Workflow", icon: "🔄" },
@@ -42,6 +49,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
   const [localDisplayDescription, setLocalDisplayDescription] = useState(node.data.displayDescription || "");
   const [localConfig, setLocalConfig] = useState(node.data.config || {});
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   
   const [panelWidth, setPanelWidth] = useState(384);
   const [panelHeight, setPanelHeight] = useState(600);
@@ -105,6 +113,15 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
       },
     });
 
+    // Show success notification
+    if (typeof window !== 'undefined' && window.showScoutNotification) {
+      window.showScoutNotification({
+        message: 'Node configuration saved successfully',
+        type: 'success',
+        duration: 3000,
+      });
+    }
+
     // Close panel after successful save
     onClose();
   };
@@ -112,12 +129,14 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
   // Handle close with unsaved changes confirmation
   const handleClose = () => {
     if (hasUnsavedChanges()) {
-      const confirmed = window.confirm(
-        "You have unsaved changes. Do you want to discard them?"
-      );
-      if (!confirmed) {
-        return; // User cancelled, stay on panel
-      }
+      setConfirmDialog({
+        message: "You have unsaved changes. Do you want to discard them?",
+        onConfirm: () => {
+          setConfirmDialog(null);
+          onClose();
+        },
+      });
+      return;
     }
     onClose();
   };
@@ -377,6 +396,31 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
           style={{ width: '12px', height: '12px', right: '-3px', bottom: '-3px', zIndex: 10001 }}
         />
       </div>
+
+      {/* Confirmation Dialog */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
+                type="button"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Draggable>
   );
 }
