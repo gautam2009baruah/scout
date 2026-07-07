@@ -459,6 +459,51 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         setSavedSincePublish(true);
       }
       
+      // Reload nodes and edges from database to get correct database IDs
+      // This ensures that subsequent edits use the correct IDs
+      try {
+        const nodesResponse = await fetch(`/api/admin/orchestrations/nodes?orchestrationId=${orchestration.id}`);
+        const nodesData = await nodesResponse.json();
+        const flowNodes: Node[] = nodesData.nodes.map((node: any) => ({
+          id: node.id,
+          type: "custom",
+          position: { x: node.positionX, y: node.positionY },
+          data: {
+            label: node.label,
+            nodeType: node.nodeType,
+            config: node.config,
+            displayDescription: node.displayDescription,
+            onDelete: deleteNode,
+          },
+        }));
+        setNodes(flowNodes);
+        
+        const edgesResponse = await fetch(`/api/admin/orchestrations/connections?orchestrationId=${orchestration.id}`);
+        const edgesData = await edgesResponse.json();
+        const flowEdges: Edge[] = edgesData.connections.map((conn: any) => ({
+          id: conn.id,
+          source: conn.sourceNodeId,
+          target: conn.targetNodeId,
+          sourceHandle: conn.sourceHandle,
+          targetHandle: conn.targetHandle,
+          markerEnd: { type: MarkerType.ArrowClosed },
+          type: "smoothstep",
+          deletable: true,
+          focusable: true,
+          updatable: true,
+        }));
+        setEdges(flowEdges);
+        
+        // Update saved state with reloaded data
+        savedStateRef.current = {
+          nodes: flowNodes,
+          edges: flowEdges,
+        };
+      } catch (reloadError) {
+        console.error('Error reloading nodes after save:', reloadError);
+        // Don't fail the save if reload fails
+      }
+      
       showToast("Orchestration saved successfully!", 'success');
       return true;
     } catch (error) {
