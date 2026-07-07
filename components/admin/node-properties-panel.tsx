@@ -258,7 +258,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
 
         {/* Node-specific configuration */}
         {nodeType === "trigger" && <TriggerConfig config={config} updateConfig={updateConfig} />}
-        {nodeType === "workflow" && <WorkflowConfig config={config} updateConfig={updateConfig} nodes={nodes} />}
+        {nodeType === "workflow" && <WorkflowConfig config={config} updateConfig={updateConfig} nodes={nodes} edges={edges} currentNode={node} />}
         {nodeType === "data_capture" && <DataCaptureConfig config={config} updateConfig={updateConfig} />}
         {nodeType === "ai_extraction" && <AIExtractionConfig config={config} updateConfig={updateConfig} />}
         {nodeType === "ai_decision" && <AIDecisionConfig config={config} updateConfig={updateConfig} />}
@@ -936,7 +936,7 @@ function TriggerConfig({ config, updateConfig }: any) {
   );
 }
 
-function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
+function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentNode }: any) {
   const [inputMappings, setInputMappings] = useState<Array<{ key: string; value: string }>>(
     Object.entries(config.inputMapping || {}).map(([key, value]) => ({ key, value: value as string }))
   );
@@ -975,6 +975,8 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
 
   // Check if there are any data capture nodes connected BEFORE the current node
   const hasDataCaptureNode = (() => {
+    if (!currentNode) return false;
+    
     // Find all data capture nodes
     const dataCaptureNodes = nodes.filter((n: any) => n.data?.nodeType === "data_capture");
     if (dataCaptureNodes.length === 0) return false;
@@ -993,7 +995,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [] }: any) {
     };
 
     // Check if ANY data capture node has a path to the current node
-    return dataCaptureNodes.some((dcNode: any) => hasPathBetween(dcNode.id, node.id));
+    return dataCaptureNodes.some((dcNode: any) => hasPathBetween(dcNode.id, currentNode.id));
   })();
 
   // Extract available trigger phrases from trigger node
