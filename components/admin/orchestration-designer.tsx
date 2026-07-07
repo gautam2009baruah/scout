@@ -356,7 +356,16 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       const newEdge = {
         ...connection,
         id: `edge-${Date.now()}`,
-        markerEnd: { type: MarkerType.ArrowClosed },
+        markerEnd: { 
+          type: MarkerType.ArrowClosed,
+          width: 20,
+          height: 20,
+          color: '#334155'
+        },
+        style: {
+          stroke: '#334155',
+          strokeWidth: 2
+        },
         type: "smoothstep",
         deletable: true,
         focusable: true,
@@ -532,7 +541,16 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           target: conn.targetNodeId,
           sourceHandle: conn.sourceHandle,
           targetHandle: conn.targetHandle,
-          markerEnd: { type: MarkerType.ArrowClosed },
+          markerEnd: { 
+            type: MarkerType.ArrowClosed,
+            width: 20,
+            height: 20,
+            color: '#334155'
+          },
+          style: {
+            stroke: '#334155',
+            strokeWidth: 2
+          },
           type: "smoothstep",
           deletable: true,
           focusable: true,
@@ -899,7 +917,16 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
               deleteKeyCode={["Backspace", "Delete"]}
               defaultEdgeOptions={{
                 type: "smoothstep",
-                markerEnd: { type: MarkerType.ArrowClosed },
+                markerEnd: { 
+                  type: MarkerType.ArrowClosed,
+                  width: 20,
+                  height: 20,
+                  color: '#334155'
+                },
+                style: {
+                  stroke: '#334155',
+                  strokeWidth: 2
+                },
                 deletable: true,
                 focusable: true,
                 updatable: true,
