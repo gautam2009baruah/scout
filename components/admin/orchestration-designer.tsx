@@ -358,8 +358,6 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         id: `edge-${Date.now()}`,
         markerEnd: { 
           type: MarkerType.ArrowClosed,
-          width: 20,
-          height: 20,
           color: '#334155'
         },
         style: {
@@ -543,8 +541,6 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           targetHandle: conn.targetHandle,
           markerEnd: { 
             type: MarkerType.ArrowClosed,
-            width: 20,
-            height: 20,
             color: '#334155'
           },
           style: {
@@ -919,8 +915,6 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
                 type: "smoothstep",
                 markerEnd: { 
                   type: MarkerType.ArrowClosed,
-                  width: 20,
-                  height: 20,
                   color: '#334155'
                 },
                 style: {
