@@ -1191,13 +1191,16 @@ function IconButton({
 }
 
 function normalizeMessages(messages: ScoutChatMessage[]): RenderedMessage[] {
-  return messages.map((message, index) =>
-    createRenderedMessage({
+  return messages.map((message, index) => {
+    // Regenerate ID if it's in old counter format (local-{number}) to avoid collisions
+    const needsNewId = !message.id || /^local-\d+$/.test(message.id) || /^initial-\d+$/.test(message.id);
+    
+    return createRenderedMessage({
       ...message,
-      id: message.id ?? `initial-${index + 1}`,
+      id: needsNewId ? `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${index}` : message.id,
       time: message.time ?? "09:41"
-    })
-  );
+    });
+  });
 }
 
 function createRenderedMessage(message: ScoutChatMessage & { id: string; time: string }): RenderedMessage {
