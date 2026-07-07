@@ -12,7 +12,7 @@
 
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import ReactFlow, {
   Node,
   Edge,
@@ -131,6 +131,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   const [isPublishing, setIsPublishing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const savedStateRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
 
   // Show toast notification
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -167,6 +169,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           },
         }));
         setNodes(flowNodes);
+        // Store as saved state
+        savedStateRef.current = { nodes: flowNodes, edges: [] };
       });
 
     // Load connections
@@ -186,8 +190,80 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           updatable: true,
         }));
         setEdges(flowEdges);
+        // Update saved state with edges
+        if (savedStateRef.current) {
+          savedStateRef.current.edges = flowEdges;
+        }
+        setHasUnsavedChanges(false);
       });
   }, [orchestration?.id, setNodes, setEdges]);
+
+  // Detect unsaved changes
+  useEffect(() => {
+    if (!orchestration?.id || !savedStateRef.current) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+
+    const saved = savedStateRef.current;
+    
+    // Compare nodes (check count, positions, labels, configs)
+    if (nodes.length !== saved.nodes.length) {
+      setHasUnsavedChanges(true);
+      return;
+    }
+
+    for (let i = 0; i < nodes.length; i++) {
+      const current = nodes[i];
+      const savedNode = saved.nodes.find(n => n.id === current.id);
+      
+      if (!savedNode ||
+          current.position.x !== savedNode.position.x ||
+          current.position.y !== savedNode.position.y ||
+          current.data.label !== savedNode.data.label ||
+          JSON.stringify(current.data.config) !== JSON.stringify(savedNode.data.config)) {
+        setHasUnsavedChanges(true);
+        return;
+      }
+    }
+
+    // Compare edges (check count and connections)
+    if (edges.length !== saved.edges.length) {
+      setHasUnsavedChanges(true);
+      return;
+    }
+
+    for (let i = 0; i < edges.length; i++) {
+      const current = edges[i];
+      const savedEdge = saved.edges.find(e => 
+        e.source === current.source && 
+        e.target === current.target &&
+        e.sourceHandle === current.sourceHandle &&
+        e.targetHandle === current.targetHandle
+      );
+      
+      if (!savedEdge) {
+        setHasUnsavedChanges(true);
+        return;
+      }
+    }
+
+    // No changes detected
+    setHasUnsavedChanges(false);
+  }, [nodes, edges, orchestration?.id]);
+
+  // Warn user before leaving page with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // Delete node by ID
   const deleteNode = useCallback(
@@ -351,6 +427,13 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         });
       }
 
+      // Update saved state reference
+      savedStateRef.current = {
+        nodes: JSON.parse(JSON.stringify(nodes)),
+        edges: JSON.parse(JSON.stringify(edges)),
+      };
+      setHasUnsavedChanges(false);
+      
       showToast("Orchestration saved successfully!", 'success');
       return true;
     } catch (error) {
@@ -565,13 +648,17 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           ) : (
             <>
               <button
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
+                  hasUnsavedChanges
+                    ? 'border-blue-500 bg-blue-600 text-white hover:bg-blue-700 shadow-md'
+                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
                 onClick={saveOrchestration}
                 disabled={isSaving || isPublishing}
                 type="button"
               >
                 <Save className="h-4 w-4" />
-                {isSaving ? "Saving..." : "Save Draft"}
+                {isSaving ? "Saving..." : hasUnsavedChanges ? "Save Changes *" : "Save Draft"}
               </button>
               <button
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
