@@ -1971,14 +1971,26 @@
     notification.style.background = colorScheme.bg;
     notification.style.borderColor = colorScheme.border;
     notification.style.color = colorScheme.text;
+    notification.style.position = 'relative';
     notification.innerHTML = `
-      <div class="scout-adoption-recovery-body" style="text-align:center;">
+      <button type="button" style="position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border: none; background: rgba(0,0,0,0.1); border-radius: 50%; cursor: pointer; font-size: 16px; line-height: 1; color: inherit; display: grid; place-items: center; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.2)'" onmouseout="this.style.background='rgba(0,0,0,0.1)'" aria-label="Close">&times;</button>
+      <div class="scout-adoption-recovery-body" style="text-align:center; padding-right: 24px;">
         <div style="font-size: 18px; margin-bottom: 6px;">${icon}</div>
         <div style="white-space: pre-line;">${escapeHtml(message)}</div>
       </div>
     `;
     
     document.body.appendChild(notification);
+    
+    // Close button handler
+    const closeButton = notification.querySelector('button');
+    closeButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      notification.style.opacity = '0';
+      notification.style.transform = 'translateX(-50%) translateY(-10px)';
+      setTimeout(() => notification.remove(), 300);
+    });
     
     // Auto-hide for non-error messages (errors require manual dismissal)
     if (duration > 0 && type !== 'error') {
@@ -1992,12 +2004,12 @@
       }, duration);
     }
     
-    // Allow manual dismissal by clicking
-    notification.style.cursor = 'pointer';
-    notification.addEventListener('click', () => {
-      notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
-      notification.style.opacity = '0';
-      notification.style.transform = 'translateX(-50%) translateY(-10px)';
+    // Allow manual dismissal by clicking anywhere (for convenience)
+    notification.addEventListener('click', (e) => {
+      if (e.target !== closeButton && !closeButton.contains(e.target)) {
+        notification.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateX(-50%) translateY(-10px)';
       setTimeout(() => notification.remove(), 300);
     });
     
