@@ -2471,29 +2471,38 @@ function EndConfig({ config, updateConfig }: any) {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Status <span className="text-red-500">*</span>
-        </label>
-        <select
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.status || "success"}
-          onChange={(e) => updateConfig({ status: e.target.value })}
-        >
-          <option value="success">Success</option>
-          <option value="failure">Failure</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="displayMessage"
+            className="rounded border-slate-300"
+            checked={config.displayMessage === true}
+            onChange={(e) => updateConfig({ displayMessage: e.target.checked })}
+          />
+          <label htmlFor="displayMessage" className="text-sm text-slate-700">
+            Display message
+          </label>
+        </div>
+        <p className="mt-1 ml-6 text-xs text-slate-500">
+          Show a completion message to the user when orchestration ends.
+        </p>
       </div>
 
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">Message</label>
-        <input
-          type="text"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.message || ""}
-          onChange={(e) => updateConfig({ message: e.target.value })}
-          placeholder="Completion message"
-        />
-      </div>
+      {config.displayMessage && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">
+            Message <span className="text-red-500">*</span>
+          </label>
+          <textarea
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+            value={config.message || ""}
+            onChange={(e) => updateConfig({ message: e.target.value })}
+            placeholder="e.g., Orchestration completed successfully!"
+            rows={3}
+          />
+          <p className="mt-1 text-xs text-slate-500">Message shown to user at completion</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -203,8 +203,8 @@ export type VariableNodeConfig = {
 
 export type EndNodeConfig = {
   type: "end";
-  status: "success" | "failure";
-  message?: string;
+  displayMessage?: boolean; // Whether to display a message to the user
+  message?: string; // Message to display (only used if displayMessage is true)
   outputVariables?: string[]; // which variables to include in final output
 };
 

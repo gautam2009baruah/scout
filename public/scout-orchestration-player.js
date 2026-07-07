@@ -563,8 +563,23 @@
             }
           }
           else if (step.nodeType === 'end') {
-            // End node - just mark as completed
+            // End node - mark as completed and optionally show message
             console.log('🏁 Reached end node');
+            
+            const endConfig = step.config || {};
+            if (endConfig.displayMessage && endConfig.message) {
+              console.log('📢 Displaying end node message to user');
+              if (typeof window.showScoutNotification === 'function') {
+                window.showScoutNotification({
+                  message: endConfig.message,
+                  type: 'success',
+                  duration: 0 // Don't auto-hide, let user dismiss
+                });
+              } else {
+                // Fallback to alert if notification system not available
+                alert(endConfig.message);
+              }
+            }
           }
           else {
             // Server-side node (api_call, notification, etc.)
