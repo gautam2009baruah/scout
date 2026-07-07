@@ -226,21 +226,22 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
   }, [panelWidth, panelHeight]);
 
   return (
-    <Draggable
-      handle=".drag-handle"
-      nodeRef={nodeRef}
-      position={position}
-      onDrag={(e, data) => {
-        setPosition({ x: data.x, y: data.y });
-      }}
-      onStart={(e) => {
-        // Prevent dragging when clicking on resize handles
-        const target = e.target as HTMLElement;
-        if (target.classList.contains('resize-handle') || target.closest('.resize-handle')) {
-          return false;
-        }
-      }}
-    >
+    <>
+      <Draggable
+        handle=".drag-handle"
+        nodeRef={nodeRef}
+        position={position}
+        onDrag={(e, data) => {
+          setPosition({ x: data.x, y: data.y });
+        }}
+        onStart={(e) => {
+          // Prevent dragging when clicking on resize handles
+          const target = e.target as HTMLElement;
+          if (target.classList.contains('resize-handle') || target.closest('.resize-handle')) {
+            return false;
+          }
+        }}
+      >
       <div 
         ref={nodeRef}
         className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl"
@@ -396,32 +397,33 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], onClose, onU
           style={{ width: '12px', height: '12px', right: '-3px', bottom: '-3px', zIndex: 10001 }}
         />
       </div>
+    </Draggable>
 
-      {/* Confirmation Dialog */}
-      {confirmDialog && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
-            <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setConfirmDialog(null)}
-                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                type="button"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDialog.onConfirm}
-                className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
-                type="button"
-              >
-                Confirm
-              </button>
-            </div>
+    {/* Confirmation Dialog */}
+    {confirmDialog && (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+        <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+          <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setConfirmDialog(null)}
+              className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDialog.onConfirm}
+              className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
+              type="button"
+            >
+              Confirm
+            </button>
           </div>
         </div>
-      )}
-    </Draggable>
+      </div>
+    )}
+  </>
   );
 }
 
