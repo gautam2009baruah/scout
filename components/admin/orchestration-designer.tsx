@@ -162,7 +162,13 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     // Reset state when loading new orchestration
     savedStateRef.current = null;
     setHasUnsavedChanges(false);
-    setSavedSincePublish(false);
+    
+    // Check if orchestration has saved changes since last publish
+    const hasSavedChangesSincePublish = 
+      orchestration.status === "published" &&
+      orchestration.publishedAt && 
+      new Date(orchestration.updatedAt) > new Date(orchestration.publishedAt);
+    setSavedSincePublish(hasSavedChangesSincePublish);
 
     // Load nodes
     fetch(`/api/admin/orchestrations/nodes?orchestrationId=${orchestration.id}`)
