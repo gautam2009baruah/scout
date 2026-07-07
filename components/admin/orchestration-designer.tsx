@@ -173,11 +173,13 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     );
     setSavedSincePublish(hasSavedChangesSincePublish);
 
-    // Load nodes
-    fetch(`/api/admin/orchestrations/nodes?orchestrationId=${orchestration.id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        const flowNodes: Node[] = data.nodes.map((node: any) => ({
+    // Load nodes and edges sequentially to avoid race conditions in change detection
+    const loadOrchestrationData = async () => {
+      try {
+        // Load nodes first
+        const nodesResponse = await fetch(`/api/admin/orchestrations/nodes?orchestrationId=${orchestration.id}`);
+        const nodesData = await nodesResponse.json();
+        const flowNodes: Node[] = nodesData.nodes.map((node: any) => ({
           id: node.id,
           type: "custom",
           position: { x: node.positionX, y: node.positionY },
@@ -189,16 +191,11 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             onDelete: deleteNode,
           },
         }));
-        setNodes(flowNodes);
-        // Store as saved state
-        savedStateRef.current = { nodes: flowNodes, edges: [] };
-      });
-
-    // Load connections
-    fetch(`/api/admin/orchestrations/connections?orchestrationId=${orchestration.id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        const flowEdges: Edge[] = data.connections.map((conn: any) => ({
+        
+        // Load edges second
+        const edgesResponse = await fetch(`/api/admin/orchestrations/connections?orchestrationId=${orchestration.id}`);
+        const edgesData = await edgesResponse.json();
+        const flowEdges: Edge[] = edgesData.connections.map((conn: any) => ({
           id: conn.id,
           source: conn.sourceNodeId,
           target: conn.targetNodeId,
@@ -210,13 +207,26 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           focusable: true,
           updatable: true,
         }));
+        
+        // Update state atomically after both loads complete
+        setNodes(flowNodes);
         setEdges(flowEdges);
-        // Update saved state with edges
-        if (savedStateRef.current) {
-          savedStateRef.current.edges = flowEdges;
-        }
+        
+        // Store as saved state AFTER state updates
+        savedStateRef.current = {
+          nodes: flowNodes,
+          edges: flowEdges,
+        };
+        
+        // Explicitly set no unsaved changes after load completes
         setHasUnsavedChanges(false);
-      });
+      } catch (error) {
+        console.error('Error loading orchestration data:', error);
+        showToast('Failed to load orchestration data', 'error');
+      }
+    };
+    
+    loadOrchestrationData();
   }, [orchestration?.id, setNodes, setEdges]);
 
   // Detect unsaved changes
