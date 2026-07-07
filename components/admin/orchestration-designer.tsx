@@ -164,10 +164,11 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     setHasUnsavedChanges(false);
     
     // Check if orchestration has saved changes since last publish
-    const hasSavedChangesSincePublish = 
+    const hasSavedChangesSincePublish = Boolean(
       orchestration.status === "published" &&
       orchestration.publishedAt && 
-      new Date(orchestration.updatedAt) > new Date(orchestration.publishedAt);
+      new Date(orchestration.updatedAt) > new Date(orchestration.publishedAt)
+    );
     setSavedSincePublish(hasSavedChangesSincePublish);
 
     // Load nodes
