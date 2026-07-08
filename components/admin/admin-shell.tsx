@@ -24,7 +24,9 @@ const moduleIcons = {
   [MODULE_KEYS.workflowTrainingSetup]: MapPinned,
   [MODULE_KEYS.workflowSelfHealingReview]: Sparkles,
   [MODULE_KEYS.workflowAnalytics]: BarChart3,
-  [MODULE_KEYS.orchestrationDesigner]: GitBranch
+  [MODULE_KEYS.orchestrationDesigner]: GitBranch,
+  [MODULE_KEYS.emailCredentials]: Bot,
+  [MODULE_KEYS.companyRoleSetup]: TableProperties
 } as const;
 
 const CRS_SCOUT_BASE_URL = "http://localhost:3000";

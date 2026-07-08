@@ -26,7 +26,7 @@ export default async function MasterDataPage() {
   const [{ companies, roles }, modules] = await Promise.all([getMasterData(), getAllAdminModules()]);
 
   return (
-    <AdminShell active={MODULE_KEYS.administration} session={session} title="Company & Role Setup">
+    <AdminShell active={MODULE_KEYS.companyRoleSetup} session={session} title="Company & Role Setup">
       <MasterDataForms companies={companies} modules={modules} />
       <MasterDataSummary companies={companies} roles={roles} />
     </AdminShell>
