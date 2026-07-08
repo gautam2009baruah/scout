@@ -126,6 +126,7 @@ async function processEmailTrigger(trigger) {
     // Process each email
     let processed = 0;
     let matched = 0;
+    const processedMessageIds = []; // Track emails to mark as read
 
     for (const email of emails) {
       // Check if email matches trigger filters
@@ -147,6 +148,7 @@ async function processEmailTrigger(trigger) {
 
       if (result.success) {
         processed++;
+        processedMessageIds.push(email.messageId);
         console.log(`[EmailWorker] ✅ Orchestration triggered: ${result.executionId}`);
       } else {
         console.error(`[EmailWorker] ❌ Failed to trigger orchestration: ${result.error}`);
@@ -154,6 +156,24 @@ async function processEmailTrigger(trigger) {
     }
 
     console.log(`[EmailWorker] Summary: ${matched} matched, ${processed} processed`);
+
+    // Mark emails as read if configured
+    if (processed > 0 && trigger.config.markAsProcessed && processedMessageIds.length > 0) {
+      console.log(`[EmailWorker] Marking ${processedMessageIds.length} email(s) as read...`);
+      
+      const { markEmailsAsRead } = await import("../../lib/integrations/email/imap.js");
+      const markResult = await markEmailsAsRead(
+        trigger.credential.imap,
+        processedMessageIds,
+        folder
+      );
+
+      if (markResult.success) {
+        console.log(`[EmailWorker] ✅ Marked ${markResult.markedCount} email(s) as read`);
+      } else {
+        console.error(`[EmailWorker] ❌ Failed to mark emails as read: ${markResult.error}`);
+      }
+    }
 
     // Update last triggered time if any emails processed
     if (processed > 0) {

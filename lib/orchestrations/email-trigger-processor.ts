@@ -237,7 +237,7 @@ export async function processEmailTrigger(
     
     console.log(`Created execution ${execution.id} for email ${email.messageId}`);
     
-    return { success: true, executionId: execution.id };
+    return { success: true, executionId: execution.id, messageId: email.messageId };
     
   } catch (error: any) {
     console.error(`Error processing email trigger: ${error.message}`);

@@ -251,6 +251,93 @@ function extractAttachments(parsed: ParsedMail): EmailMessage["attachments"] {
 }
 
 /**
+ * Mark emails as read (add SEEN flag)
+ */
+export async function markEmailsAsRead(
+  config: IMAPConfig,
+  messageIds: string[],
+  folder: string = "INBOX"
+): Promise<{ success: boolean; markedCount: number; error?: string }> {
+  if (messageIds.length === 0) {
+    return { success: true, markedCount: 0 };
+  }
+
+  console.log(`[IMAP] Marking ${messageIds.length} email(s) as read`);
+
+  return new Promise((resolve) => {
+    const imap = new Imap({
+      user: config.username,
+      password: config.password,
+      host: config.host,
+      port: config.port,
+      tls: config.tls,
+      tlsOptions: { rejectUnauthorized: false },
+    });
+
+    imap.once("ready", () => {
+      imap.openBox(folder, false, (err, box) => {
+        if (err) {
+          console.error("[IMAP] Error opening mailbox:", err);
+          imap.end();
+          return resolve({ success: false, markedCount: 0, error: err.message });
+        }
+
+        // Search for messages by messageId
+        // Note: IMAP HEADER search can be slow, but it's the most reliable way
+        const searchPromises = messageIds.map((messageId) => {
+          return new Promise<number[]>((resolveSearch) => {
+            imap.search([["HEADER", "MESSAGE-ID", messageId]], (err, results) => {
+              if (err) {
+                console.error(`[IMAP] Error searching for messageId ${messageId}:`, err);
+                return resolveSearch([]);
+              }
+              resolveSearch(results || []);
+            });
+          });
+        });
+
+        Promise.all(searchPromises).then((allResults) => {
+          // Flatten array and get unique UIDs
+          const uids = [...new Set(allResults.flat())];
+
+          if (uids.length === 0) {
+            console.log("[IMAP] No messages found to mark as read");
+            imap.end();
+            return resolve({ success: true, markedCount: 0 });
+          }
+
+          console.log(`[IMAP] Found ${uids.length} message(s) to mark as read`);
+
+          // Add SEEN flag
+          imap.addFlags(uids, ["\\Seen"], (err) => {
+            if (err) {
+              console.error("[IMAP] Error marking messages as read:", err);
+              imap.end();
+              return resolve({ success: false, markedCount: 0, error: err.message });
+            }
+
+            console.log(`[IMAP] ✅ Marked ${uids.length} message(s) as read`);
+            imap.end();
+            resolve({ success: true, markedCount: uids.length });
+          });
+        });
+      });
+    });
+
+    imap.once("error", (err) => {
+      console.error("[IMAP] Connection error:", err);
+      resolve({ success: false, markedCount: 0, error: err.message });
+    });
+
+    imap.once("end", () => {
+      console.log("[IMAP] Connection closed");
+    });
+
+    imap.connect();
+  });
+}
+
+/**
  * Mark email as read on IMAP server
  */
 export async function markIMAPEmailAsRead(

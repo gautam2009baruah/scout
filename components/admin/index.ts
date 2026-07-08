@@ -3,6 +3,7 @@ export { AIConfigurationForm } from "./ai-configuration-form";
 export { AdminShell } from "./admin-shell";
 export { AdminLoginForm } from "./admin-login-form";
 export { ChangePasswordForm } from "./change-password-form";
+export { EmailCredentialsManager } from "./email-credentials-manager";
 export { ExecutionMonitor } from "./execution-monitor";
 export { GuidedWorkflowManager } from "./guided-workflow-console";
 export { GuidedWorkflowTrainingSetup } from "./guided-workflow-training-setup";
