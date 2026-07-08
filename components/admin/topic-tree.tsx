@@ -305,12 +305,13 @@ export function TopicTree({ canCreateRoot, companies, onOpenMenu, onCompanyChang
   }, [canCreateRoot, collapsedIds, companies, onOpenMenu, selectedCompanyId, tree, zoom]);
 
   return (
-    <div className="relative min-h-[500px] overflow-auto rounded-lg border border-slate-200 bg-white" ref={containerRef}>
-      <div className="absolute left-4 top-4 z-10 flex items-center gap-2">
+    <div className="space-y-3">
+      {/* Controls Row */}
+      <div className="flex items-center gap-2">
         {companies.length > 1 ? (
           <select
             aria-label="Select company"
-            className="h-8 rounded-full border border-slate-300/30 bg-white/70 px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none backdrop-blur transition hover:border-slate-400/60 hover:bg-white/90 focus:border-slate-700/60"
+            className="h-8 rounded-full border border-slate-300/30 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-400/60 hover:bg-white focus:border-slate-700/60"
             onChange={(event) => onCompanyChange(event.target.value)}
             value={selectedCompanyId}
           >
@@ -320,7 +321,7 @@ export function TopicTree({ canCreateRoot, companies, onOpenMenu, onCompanyChang
             ))}
           </select>
         ) : null}
-        <div className="inline-flex h-8 items-center overflow-hidden rounded-full border border-slate-300/40 bg-white/80 shadow-sm backdrop-blur">
+        <div className="inline-flex h-8 items-center overflow-hidden rounded-full border border-slate-300/40 bg-white shadow-sm">
         <button
           aria-label="Zoom out"
           className="inline-flex h-8 w-8 items-center justify-center text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
@@ -356,12 +357,16 @@ export function TopicTree({ canCreateRoot, companies, onOpenMenu, onCompanyChang
         </button>
         </div>
       </div>
+      
+      {/* Tree Visualization */}
+      <div className="relative min-h-[500px] overflow-auto rounded-lg border border-slate-200 bg-white" ref={containerRef}>
       {selectedCompanyId && tree.length === 0 ? (
         <div className="absolute inset-x-0 top-32 z-10 text-center text-sm font-medium text-slate-500">
           No topics created for this company.
         </div>
       ) : null}
       <svg className="min-h-[500px] w-full" ref={svgRef} role="img" />
+    </div>
     </div>
   );
 }
