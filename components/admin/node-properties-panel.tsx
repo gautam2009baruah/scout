@@ -2648,6 +2648,9 @@ function ConditionConfig({ config, updateConfig }: any) {
                     <option value="less_or_equal">Less or Equal (≤)</option>
                     <option value="contains">Contains</option>
                     <option value="not_contains">Not Contains</option>
+                    <option value="contains_any">Contains Any (OR)</option>
+                    <option value="contains_all">Contains All (AND)</option>
+                    <option value="not_contains_any">Not Contains Any</option>
                     <option value="starts_with">Starts With</option>
                     <option value="ends_with">Ends With</option>
                     <option value="exists">Exists (not null)</option>
@@ -2668,13 +2671,22 @@ function ConditionConfig({ config, updateConfig }: any) {
                       className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500"
                       value={condition.value || ""}
                       onChange={(e) => updateCondition(index, "value", e.target.value)}
-                      placeholder="{{variableName}} or literal value"
+                      placeholder={["contains_any", "contains_all", "not_contains_any"].includes(condition.operator) ? "gautam,baruah,john" : "{{variableName}} or literal value"}
                     />
+                    {/* Help text for multi-value operators */}
+                    {["contains_any", "contains_all", "not_contains_any"].includes(condition.operator) && (
+                      <p className="mt-1 text-xs text-slate-600 bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
+                        <span className="font-semibold text-blue-900">💡 Tip:</span> Separate multiple values with commas. 
+                        {condition.operator === "contains_any" && "Returns TRUE if ANY value is found."}
+                        {condition.operator === "contains_all" && "Returns TRUE only if ALL values are found."}
+                        {condition.operator === "not_contains_any" && "Returns TRUE if NONE of the values are found."}
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {/* Case Sensitive Checkbox - Show for string comparison operators */}
-                {["equals", "not_equals", "contains", "not_contains", "starts_with", "ends_with"].includes(condition.operator) && (
+                {["equals", "not_equals", "contains", "not_contains", "contains_any", "contains_all", "not_contains_any", "starts_with", "ends_with"].includes(condition.operator) && (
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"

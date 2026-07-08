@@ -174,6 +174,48 @@ export function evaluateCondition(
       );
       break;
 
+    case "contains_any": {
+      // Check if actualValue contains ANY of the comma-separated values
+      if (typeof actualValue !== "string" || typeof value !== "string") {
+        console.warn(`    ⚠️  contains_any requires both values to be strings`);
+        result = false;
+        break;
+      }
+      const keywords = value.split(',').map(k => caseSensitive ? k.trim() : k.trim().toLowerCase());
+      const searchIn = normalizedActual as string;
+      result = keywords.some(keyword => searchIn.includes(keyword));
+      console.log(`    🔍 Checking if "${actualValue}" contains ANY of [${keywords.join(', ')}]: ${result}`);
+      break;
+    }
+
+    case "contains_all": {
+      // Check if actualValue contains ALL of the comma-separated values
+      if (typeof actualValue !== "string" || typeof value !== "string") {
+        console.warn(`    ⚠️  contains_all requires both values to be strings`);
+        result = false;
+        break;
+      }
+      const keywords = value.split(',').map(k => caseSensitive ? k.trim() : k.trim().toLowerCase());
+      const searchIn = normalizedActual as string;
+      result = keywords.every(keyword => searchIn.includes(keyword));
+      console.log(`    🔍 Checking if "${actualValue}" contains ALL of [${keywords.join(', ')}]: ${result}`);
+      break;
+    }
+
+    case "not_contains_any": {
+      // Check if actualValue contains NONE of the comma-separated values
+      if (typeof actualValue !== "string" || typeof value !== "string") {
+        console.warn(`    ⚠️  not_contains_any requires both values to be strings`);
+        result = false;
+        break;
+      }
+      const keywords = value.split(',').map(k => caseSensitive ? k.trim() : k.trim().toLowerCase());
+      const searchIn = normalizedActual as string;
+      result = !keywords.some(keyword => searchIn.includes(keyword));
+      console.log(`    🔍 Checking if "${actualValue}" contains NONE of [${keywords.join(', ')}]: ${result}`);
+      break;
+    }
+
     case "greater_than":
       result = (
         typeof actualValue === "number" &&
