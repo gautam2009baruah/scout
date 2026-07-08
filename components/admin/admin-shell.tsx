@@ -31,35 +31,25 @@ const CRS_SCOUT_BASE_URL = "http://localhost:3000";
 const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
-  const visibleModules = new Map(session.modules.map((module) => [module.key, module]));
-  const overviewModule = visibleModules.get(MODULE_KEYS.overview);
-  const contentStructureModule = visibleModules.get(MODULE_KEYS.contentStructure);
-  const guidedWorkflowsModule = visibleModules.get(MODULE_KEYS.guidedWorkflows);
-  const orchestrationDesignerModule = visibleModules.get(MODULE_KEYS.orchestrationDesigner);
-  const workflowSubmenuModules = [
-    visibleModules.get(MODULE_KEYS.workflowTrainingSetup),
-    visibleModules.get(MODULE_KEYS.workflowSelfHealingReview),
-    visibleModules.get(MODULE_KEYS.workflowAnalytics)
-  ].filter(Boolean) as AdminSession["modules"];
+  // Group modules by parent-child relationship
+  const topLevelModules = session.modules.filter(m => m.parentKey === null);
+  const modulesByParent = new Map<number, typeof session.modules>();
   
-  // Workflow submenu module keys to exclude from administration list
-  const workflowKeys = [
-    MODULE_KEYS.workflowTrainingSetup,
-    MODULE_KEYS.workflowSelfHealingReview,
-    MODULE_KEYS.workflowAnalytics
-  ];
+  // Build a map of parent_key -> children modules
+  session.modules.forEach(module => {
+    if (module.parentKey !== null) {
+      const siblings = modulesByParent.get(module.parentKey) || [];
+      siblings.push(module);
+      modulesByParent.set(module.parentKey, siblings);
+    }
+  });
   
-  // Dynamically group all modules under /control-panel/administration/ path
-  // Exclude workflow submenu modules as they're rendered separately
-  const administrationModules = session.modules
-    .filter((module) => 
-      (module.href.startsWith('/control-panel/administration/') ||
-       module.key === MODULE_KEYS.administration) &&
-      !workflowKeys.includes(module.key)
-    )
-    .sort((a, b) => a.sortOrder - b.sortOrder);
-  
-  const isAdministrationActive = administrationModules.some((module) => module.key === active) || workflowSubmenuModules.some((module) => module.key === active);
+  // Helper to check if a module or its children are active
+  const isModuleOrChildActive = (moduleKey: number): boolean => {
+    if (moduleKey === active) return true;
+    const children = modulesByParent.get(moduleKey) || [];
+    return children.some(child => child.key === active);
+  };
 
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
@@ -73,33 +63,39 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           </div>
 
           <nav className="mt-8 space-y-1">
-            {overviewModule ? <NavLink active={active} activeHref={activeHref} module={overviewModule} /> : null}
+            {topLevelModules.map((module) => {
+              const children = modulesByParent.get(module.key) || [];
+              const hasChildren = children.length > 0;
+              const isActiveTree = isModuleOrChildActive(module.key);
 
-            {administrationModules.length > 0 ? (
-              <details className="group" open>
-                <summary className={`flex h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-3 text-sm font-medium transition marker:hidden ${
-                  isAdministrationActive
-                    ? "bg-slate-100 text-slate-950"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                }`}>
-                  <TableProperties className="h-4 w-4" />
-                  <span className="flex-1">Administration</span>
-                  <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
-                </summary>
-                <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
-                  {administrationModules.map((module) => (
-                    <NavLink active={active} activeHref={activeHref} inset key={module.key} module={module} />
-                  ))}
-                  {workflowSubmenuModules.map((module) => (
-                    <NavLink active={active} activeHref={activeHref} inset key={module.key} module={module} />
-                  ))}
-                </div>
-              </details>
-            ) : null}
-
-            {contentStructureModule ? <NavLink active={active} activeHref={activeHref} module={contentStructureModule} /> : null}
-            {guidedWorkflowsModule ? <NavLink active={active} activeHref={activeHref} module={guidedWorkflowsModule} /> : null}
-            {orchestrationDesignerModule ? <NavLink active={active} activeHref={activeHref} module={orchestrationDesignerModule} /> : null}
+              if (hasChildren) {
+                // Render as dropdown menu with children
+                return (
+                  <details key={module.key} className="group" open>
+                    <summary className={`flex h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-3 text-sm font-medium transition marker:hidden ${
+                      isActiveTree
+                        ? "bg-slate-100 text-slate-950"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                    }`}>
+                      {(() => {
+                        const Icon = moduleIcons[module.key as keyof typeof moduleIcons] ?? LayoutDashboard;
+                        return <Icon className="h-4 w-4" />;
+                      })()}
+                      <span className="flex-1">{module.name}</span>
+                      <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+                    </summary>
+                    <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
+                      {children.sort((a, b) => a.sortOrder - b.sortOrder).map((child) => (
+                        <NavLink active={active} activeHref={activeHref} inset key={child.key} module={child} />
+                      ))}
+                    </div>
+                  </details>
+                );
+              } else {
+                // Render as regular link
+                return <NavLink key={module.key} active={active} activeHref={activeHref} module={module} />;
+              }
+            })}
           </nav>
         </aside>
 

@@ -1,6 +1,7 @@
 -- Migration 059: Add Email Credentials to Administration Menu
 
 -- Insert Email Credentials module in the flat modules menu.
+-- Note: parent_key will be set in migration 060 to establish hierarchy
 INSERT INTO modules (key, name, href, sort_order)
 VALUES (
   11,

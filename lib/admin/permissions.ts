@@ -23,6 +23,7 @@ export type AdminModule = {
   name: string;
   href: string;
   sortOrder: number;
+  parentKey: number | null;
 };
 
 function normalizeModuleKeys(moduleKeys: Array<number | string>) {
@@ -35,12 +36,13 @@ function normalizeModuleKeys(moduleKeys: Array<number | string>) {
   );
 }
 
-function mapModules(rows: Array<{ key: number; name: string; href: string; sort_order: number }>) {
+function mapModules(rows: Array<{ key: number; name: string; href: string; sort_order: number; parent_key: number | null }>) {
   return rows.map((row) => ({
     key: row.key,
     name: row.name,
     href: row.href,
-    sortOrder: row.sort_order
+    sortOrder: row.sort_order,
+    parentKey: row.parent_key
   }));
 }
 
@@ -50,9 +52,10 @@ export async function getAllAdminModules(): Promise<AdminModule[]> {
     name: string;
     href: string;
     sort_order: number;
+    parent_key: number | null;
   }>(
     `
-      SELECT key, name, href, sort_order
+      SELECT key, name, href, sort_order, parent_key
       FROM modules
       ORDER BY sort_order ASC, name ASC
     `
@@ -67,9 +70,10 @@ export async function getRoleModules(roleId: string): Promise<AdminModule[]> {
     name: string;
     href: string;
     sort_order: number;
+    parent_key: number | null;
   }>(
     `
-      SELECT modules.key, modules.name, modules.href, modules.sort_order
+      SELECT modules.key, modules.name, modules.href, modules.sort_order, modules.parent_key
       FROM role_module_permissions
       INNER JOIN modules ON modules.key = role_module_permissions.module_key
       WHERE role_module_permissions.role_id = $1
@@ -92,6 +96,7 @@ export async function getEffectiveUserModules(userId: string, roleId: string, is
     name: string;
     href: string;
     sort_order: number;
+    parent_key: number | null;
   }>(
     `
       WITH role_modules AS (
@@ -109,7 +114,7 @@ export async function getEffectiveUserModules(userId: string, roleId: string, is
         FROM merged_permissions
         ORDER BY module_key, CASE WHEN effect = 'deny' THEN 2 ELSE 1 END DESC
       )
-      SELECT modules.key, modules.name, modules.href, modules.sort_order
+      SELECT modules.key, modules.name, modules.href, modules.sort_order, modules.parent_key
       FROM effective_permissions
       INNER JOIN modules ON modules.key = effective_permissions.module_key
       WHERE effective_permissions.effect = 'allow'
