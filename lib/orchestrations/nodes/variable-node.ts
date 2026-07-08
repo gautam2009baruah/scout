@@ -1,8 +1,8 @@
 // Variable node executor
-// Create, update, transform, or delete variables
+// Set one or more variables with literal values or expressions
 
 import type { VariableNodeConfig } from "@/shared/orchestrationTypes";
-import { evaluateExpression, setVariablePath, deleteVariablePath } from "../expression-evaluator";
+import { evaluateExpression, setVariablePath } from "../expression-evaluator";
 
 export async function executeVariableNode(
   config: VariableNodeConfig,
@@ -15,35 +15,31 @@ export async function executeVariableNode(
   try {
     const output: Record<string, unknown> = {};
 
-    switch (config.operation) {
-      case "create":
-      case "update":
-        if (config.value !== undefined) {
-          // Literal value
-          setVariablePath(config.variableName, config.value, output);
-        } else if (config.expression) {
-          // Expression to evaluate
-          const value = evaluateExpression(config.expression, context);
-          setVariablePath(config.variableName, value, output);
-        } else {
-          throw new Error("Either value or expression is required");
-        }
-        break;
+    if (!config.variables || config.variables.length === 0) {
+      throw new Error("At least one variable is required");
+    }
 
-      case "transform":
-        if (!config.expression) {
-          throw new Error("Expression is required for transform operation");
-        }
-        const transformedValue = evaluateExpression(config.expression, context);
-        setVariablePath(config.variableName, transformedValue, output);
-        break;
+    // Process each variable
+    for (const variable of config.variables) {
+      if (!variable.name) {
+        throw new Error("Variable name is required");
+      }
+      if (variable.value === undefined || variable.value === "") {
+        throw new Error(`Value is required for variable: ${variable.name}`);
+      }
 
-      case "delete":
-        deleteVariablePath(config.variableName, context);
-        break;
+      // Check if value contains variable expressions or math operators
+      const valueStr = String(variable.value);
+      const hasExpression = valueStr.includes('{{') || /[+\-*/()]/.test(valueStr);
 
-      default:
-        throw new Error(`Unknown operation: ${config.operation}`);
+      if (hasExpression) {
+        // Evaluate as expression
+        const evaluatedValue = evaluateExpression(valueStr, context);
+        setVariablePath(variable.name, evaluatedValue, output);
+      } else {
+        // Store as literal value
+        setVariablePath(variable.name, variable.value, output);
+      }
     }
 
     return { success: true, output };

@@ -2919,71 +2919,123 @@ function NotificationConfig({ config, updateConfig }: any) {
 }
 
 function VariableConfig({ config, updateConfig }: any) {
+  const [variables, setVariables] = useState<Array<{ name: string; value: string }>>(
+    config.variables || [{ name: "", value: "" }]
+  );
+
+  useEffect(() => {
+    updateConfig({ variables });
+  }, [variables]);
+
+  const addVariable = () => {
+    setVariables([...variables, { name: "", value: "" }]);
+  };
+
+  const removeVariable = (index: number) => {
+    if (variables.length > 1) {
+      setVariables(variables.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateVariable = (index: number, field: 'name' | 'value', value: string) => {
+    const updated = [...variables];
+    updated[index][field] = value;
+    setVariables(updated);
+  };
+
   return (
     <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Operation <span className="text-red-500">*</span>
-        </label>
-        <select
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.operation || "create"}
-          onChange={(e) => updateConfig({ operation: e.target.value })}
-        >
-          <option value="create">Create</option>
-          <option value="update">Update</option>
-          <option value="transform">Transform</option>
-          <option value="delete">Delete</option>
-        </select>
+      {/* Help Section */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
+        <p className="font-semibold text-blue-900 mb-2">💡 What are Variables?</p>
+        <p className="text-blue-800 mb-2">
+          Variables let you store and reuse values throughout your orchestration.
+        </p>
+        <div className="space-y-1 text-xs text-blue-700">
+          <p><strong>Literal value:</strong> <code className="bg-blue-100 px-1 rounded">Premium</code>, <code className="bg-blue-100 px-1 rounded">100</code>, <code className="bg-blue-100 px-1 rounded">true</code></p>
+          <p><strong>From another source:</strong> <code className="bg-blue-100 px-1 rounded">{'{{capturedData.name.value}}'}</code></p>
+          <p><strong>Calculate:</strong> <code className="bg-blue-100 px-1 rounded">{'{{capturedData.price.value}} * 1.13'}</code></p>
+          <p className="mt-2 text-blue-900"><strong>Use later:</strong> <code className="bg-blue-100 px-1 rounded">{'{{variables.yourVariableName}}'}</code></p>
+        </div>
       </div>
 
+      {/* Variables List */}
       <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Variable Name <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.variableName || ""}
-          onChange={(e) => updateConfig({ variableName: e.target.value })}
-          placeholder="variableName or nested.path"
-        />
-        <p className="mt-1 text-xs text-slate-500">Use dot notation for nested: customer.email</p>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-semibold text-slate-700">
+            Variables <span className="text-red-500">*</span>
+          </label>
+          <button
+            type="button"
+            onClick={addVariable}
+            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold"
+          >
+            <Plus className="h-3 w-3" />
+            Add Variable
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {variables.map((variable, index) => (
+            <div key={index} className="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
+              {/* Header with delete button */}
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Variable {index + 1}</span>
+                {variables.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeVariable(index)}
+                    className="text-red-600 hover:text-red-700 p-1"
+                    title="Remove variable"
+                  >
+                    <Minus className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Variable Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 bg-white"
+                  value={variable.name}
+                  onChange={(e) => updateVariable(index, 'name', e.target.value)}
+                  placeholder="e.g., total, customerTier, isApproved"
+                />
+              </div>
+
+              {/* Variable Value */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Value <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 bg-white font-mono"
+                  rows={2}
+                  value={variable.value}
+                  onChange={(e) => updateVariable(index, 'value', e.target.value)}
+                  placeholder="Premium  OR  {{capturedData.name.value}}  OR  {{variables.price}} * 1.1"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Can be literal, variable reference, or expression with math operators
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
-      {config.operation !== "delete" && (
-        <>
-          {config.operation === "transform" ? (
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">
-                Expression <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                value={config.expression || ""}
-                onChange={(e) => updateConfig({ expression: e.target.value })}
-                placeholder="{{price}} * 1.1"
-              />
-              <p className="mt-1 text-xs text-slate-500">Math or string expression</p>
-            </div>
-          ) : (
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">
-                Value <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-                rows={3}
-                value={config.value || ""}
-                onChange={(e) => updateConfig({ value: e.target.value })}
-                placeholder="{{variableName}} or literal value"
-              />
-              <p className="mt-1 text-xs text-slate-500">Use {'{{variable}}'} or enter literal value</p>
-            </div>
-          )}
-        </>
-      )}
+      {/* Usage Example */}
+      <div className="bg-slate-100 border border-slate-300 rounded-lg p-3 text-xs">
+        <p className="font-semibold text-slate-800 mb-2">📋 Example Usage:</p>
+        <div className="space-y-1 font-mono text-slate-700">
+          <p><strong>Set:</strong> Name: <code className="bg-white px-1 rounded">total</code>, Value: <code className="bg-white px-1 rounded">{'{{capturedData.price.value}} * {{capturedData.qty.value}}'}</code></p>
+          <p><strong>Use:</strong> In Condition or Notification: <code className="bg-white px-1 rounded">{'{{variables.total}}'}</code></p>
+        </div>
+      </div>
     </div>
   );
 }

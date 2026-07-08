@@ -195,14 +195,12 @@ export type NotificationNodeConfig = {
   template?: string;
 };
 
-export type VariableOperation = "create" | "update" | "transform" | "delete";
-
 export type VariableNodeConfig = {
   type: "variable";
-  operation: VariableOperation;
-  variableName: string;
-  value?: unknown; // can be expression or literal
-  expression?: string; // for transforms
+  variables: Array<{
+    name: string;
+    value: string; // Can be literal value or expression like {{capturedData.xxx}}
+  }>;
 };
 
 export type EndNodeConfig = {
