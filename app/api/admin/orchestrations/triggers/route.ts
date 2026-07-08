@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
     const response: any = { ...trigger };
     if (triggerType === "webhook") {
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${request.nextUrl.protocol}//${request.nextUrl.host}`;
-      response.webhookUrl = `${baseUrl}/api/webhooks/${trigger.id}`;
+      response.webhookUrl = `${baseUrl}/api/webhooks/trigger/${trigger.id}`;
       
       // Return the plain secret ONLY on creation (never shown again)
       const webhookConfig = finalConfig as WebhookTriggerConfig;

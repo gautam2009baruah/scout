@@ -148,7 +148,7 @@ function WebhookTriggerCard({
 }) {
   const config = trigger.config as WebhookTriggerConfig;
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const webhookUrl = `${baseUrl}/api/webhooks/${trigger.id}`;
+  const webhookUrl = `${baseUrl}/api/webhooks/trigger/${trigger.id}`;
 
   const [copied, setCopied] = useState(false);
 
@@ -664,7 +664,7 @@ function TriggerDetailsPanel({
 function WebhookDetailsSection({ trigger, onRefresh }: { trigger: OrchestrationTrigger; onRefresh: () => void }) {
   const config = trigger.config as WebhookTriggerConfig;
   const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const webhookUrl = `${baseUrl}/api/webhooks/${trigger.id}`;
+  const webhookUrl = `${baseUrl}/api/webhooks/trigger/${trigger.id}`;
 
   const handleRotateSecret = async () => {
     if (!confirm("Are you sure you want to rotate the webhook secret? The old secret will stop working immediately.")) {

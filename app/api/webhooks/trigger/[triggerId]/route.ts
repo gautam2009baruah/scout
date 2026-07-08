@@ -1,5 +1,5 @@
 // Webhook Trigger Execution Endpoint
-// POST/GET/PUT /api/webhooks/[triggerId]
+// POST/GET/PUT /api/webhooks/trigger/[triggerId]
 // Accepts webhook requests and executes orchestrations
 
 import { NextRequest, NextResponse } from "next/server";
