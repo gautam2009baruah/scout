@@ -68,21 +68,37 @@ export function resolveVariablePath(
   path: string,
   context: Record<string, unknown>
 ): unknown {
+  // Check if it's a variable reference (starts with {{)
+  if (path.startsWith('{{') && path.endsWith('}}')) {
+    path = path.slice(2, -2).trim();
+  }
+  
   const parts = path.split(".");
   let current: any = context;
 
-  for (const part of parts) {
+  console.log(`    🔍 Resolving path: "${path}"`);
+  console.log(`    📂 Path parts:`, parts);
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    
     if (current === null || current === undefined) {
+      console.warn(`    ⚠️  Path resolution failed at step ${i + 1}/${parts.length}: "${part}"`);
+      console.warn(`    💡 Current value is ${current === null ? 'null' : 'undefined'}`);
       return undefined;
     }
 
     if (typeof current === "object" && part in current) {
       current = current[part];
+      console.log(`    ✓ Step ${i + 1}/${parts.length}: "${part}" →`, current, `(type: ${typeof current})`);
     } else {
+      console.warn(`    ❌ Path resolution failed at step ${i + 1}/${parts.length}: "${part}" not found`);
+      console.warn(`    💡 Available keys at this level:`, Object.keys(current as object));
       return undefined;
     }
   }
 
+  console.log(`    ✅ Resolved to:`, current);
   return current;
 }
 
@@ -97,69 +113,151 @@ export function evaluateCondition(
   context: Record<string, unknown>
 ): boolean {
   const actualValue = resolveVariablePath(variable, context);
+  
+  console.log(`    📌 Variable: "${variable}"`);
+  console.log(`    📌 Actual value from context:`, actualValue, `(type: ${typeof actualValue})`);
+  console.log(`    📌 Expected value:`, value, `(type: ${typeof value})`);
+  console.log(`    📌 Operator: "${operator}"`);
+
+  let result = false;
 
   switch (operator) {
     case "equals":
-      return actualValue === value;
+      result = actualValue === value;
+      if (!result && actualValue == value) {
+        console.warn(`    ⚠️  Values are loosely equal (==) but not strictly equal (===)`);
+        console.warn(`    💡 Tip: Check data types - "${actualValue}" vs ${value}`);
+      }
+      break;
 
     case "not_equals":
-      return actualValue !== value;
+      result = actualValue !== value;
+      break;
 
     case "contains":
-      return (
+      result = (
         typeof actualValue === "string" &&
         typeof value === "string" &&
         actualValue.includes(value)
       );
+      if (!result) {
+        if (typeof actualValue !== "string") {
+          console.warn(`    ⚠️  Actual value is not a string (got ${typeof actualValue})`);
+        }
+        if (typeof value !== "string") {
+          console.warn(`    ⚠️  Expected value is not a string (got ${typeof value})`);
+        }
+      }
+      break;
 
     case "not_contains":
-      return (
+      result = (
         typeof actualValue === "string" &&
         typeof value === "string" &&
         !actualValue.includes(value)
       );
+      break;
 
     case "greater_than":
-      return (
+      result = (
         typeof actualValue === "number" &&
         typeof value === "number" &&
         actualValue > value
       );
+      if (!result) {
+        if (typeof actualValue !== "number") {
+          console.warn(`    ⚠️  Actual value is not a number (got ${typeof actualValue})`);
+          console.warn(`    💡 Tip: Use Number(${actualValue}) or parse the value`);
+        }
+        if (typeof value !== "number") {
+          console.warn(`    ⚠️  Expected value is not a number (got ${typeof value})`);
+        }
+      }
+      break;
 
     case "less_than":
-      return (
+      result = (
         typeof actualValue === "number" &&
         typeof value === "number" &&
         actualValue < value
       );
+      if (!result) {
+        if (typeof actualValue !== "number") {
+          console.warn(`    ⚠️  Actual value is not a number (got ${typeof actualValue})`);
+        }
+        if (typeof value !== "number") {
+          console.warn(`    ⚠️  Expected value is not a number (got ${typeof value})`);
+        }
+      }
+      break;
+
+    case "greater_or_equal":
+      result = (
+        typeof actualValue === "number" &&
+        typeof value === "number" &&
+        actualValue >= value
+      );
+      break;
+
+    case "less_or_equal":
+      result = (
+        typeof actualValue === "number" &&
+        typeof value === "number" &&
+        actualValue <= value
+      );
+      break;
+
+    case "starts_with":
+      result = (
+        typeof actualValue === "string" &&
+        typeof value === "string" &&
+        actualValue.startsWith(value)
+      );
+      break;
+
+    case "ends_with":
+      result = (
+        typeof actualValue === "string" &&
+        typeof value === "string" &&
+        actualValue.endsWith(value)
+      );
+      break;
 
     case "exists":
-      return actualValue !== undefined && actualValue !== null;
+      result = actualValue !== undefined && actualValue !== null;
+      break;
 
     case "not_exists":
-      return actualValue === undefined || actualValue === null;
+      result = actualValue === undefined || actualValue === null;
+      break;
 
     case "empty":
-      return (
+      result = (
         actualValue === undefined ||
         actualValue === null ||
         actualValue === "" ||
         (Array.isArray(actualValue) && actualValue.length === 0) ||
         (typeof actualValue === "object" && Object.keys(actualValue).length === 0)
       );
+      break;
 
     case "not_empty":
-      return !(
+      result = !(
         actualValue === undefined ||
         actualValue === null ||
         actualValue === "" ||
         (Array.isArray(actualValue) && actualValue.length === 0) ||
         (typeof actualValue === "object" && Object.keys(actualValue).length === 0)
       );
+      break;
 
     default:
+      console.error(`    ❌ Unknown operator: "${operator}"`);
       throw new Error(`Unknown operator: ${operator}`);
   }
+  
+  console.log(`    📊 Comparison result: ${result ? '✅ TRUE' : '❌ FALSE'}`);
+  return result;
 }
 
 /**
