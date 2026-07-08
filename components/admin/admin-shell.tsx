@@ -42,11 +42,20 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     visibleModules.get(MODULE_KEYS.workflowAnalytics)
   ].filter(Boolean) as AdminSession["modules"];
   
+  // Workflow submenu module keys to exclude from administration list
+  const workflowKeys = [
+    MODULE_KEYS.workflowTrainingSetup,
+    MODULE_KEYS.workflowSelfHealingReview,
+    MODULE_KEYS.workflowAnalytics
+  ];
+  
   // Dynamically group all modules under /control-panel/administration/ path
+  // Exclude workflow submenu modules as they're rendered separately
   const administrationModules = session.modules
     .filter((module) => 
-      module.href.startsWith('/control-panel/administration/') ||
-      module.key === MODULE_KEYS.administration
+      (module.href.startsWith('/control-panel/administration/') ||
+       module.key === MODULE_KEYS.administration) &&
+      !workflowKeys.includes(module.key)
     )
     .sort((a, b) => a.sortOrder - b.sortOrder);
   
