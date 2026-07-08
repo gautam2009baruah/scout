@@ -563,13 +563,18 @@
             }
             
             console.log(`✅ Data capture completed:`, stepResult);
-            // Store captured data under 'capturedData' namespace for clean separation
+            // Store captured data using configured output variable name
             if (stepResult && stepResult.capturedData) {
-              context.capturedData = stepResult.capturedData;
+              // Get output variable name from config (default: 'capturedData')
+              const outputVarName = step.config?.outputVariable || 'capturedData';
+              console.log(`📊 Storing captured data as: ${outputVarName}`);
+              
+              context[outputVarName] = stepResult.capturedData;
+              
               // Mark that we have captured data to clean up later
-              pendingClearData = ['capturedData'];
+              pendingClearData = [outputVarName];
               dataCapturedAtStep = i; // Track which step captured the data
-              console.log(`📊 Updated context with captured data under 'capturedData' namespace (will be cleared after step ${i + 2})`);
+              console.log(`📊 Updated context with captured data under '${outputVarName}' namespace (will be cleared after step ${i + 2})`);
               console.log(`   Available fields:`, Object.keys(stepResult.capturedData));
             }
           }
