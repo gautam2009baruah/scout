@@ -20,7 +20,7 @@ export default async function EmailCredentialsPage() {
   requireModuleAccess(session, MODULE_KEYS.administration);
 
   return (
-    <AdminShell active={MODULE_KEYS.administration} session={session} title="Email Credentials">
+    <AdminShell active={MODULE_KEYS.emailCredentials} session={session} title="Email Credentials">
       <EmailCredentialsManager />
     </AdminShell>
   );

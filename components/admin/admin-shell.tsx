@@ -41,11 +41,15 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     visibleModules.get(MODULE_KEYS.workflowSelfHealingReview),
     visibleModules.get(MODULE_KEYS.workflowAnalytics)
   ].filter(Boolean) as AdminSession["modules"];
-  const administrationModules = [
-    visibleModules.get(MODULE_KEYS.administration),
-    visibleModules.get(MODULE_KEYS.userManagement),
-    visibleModules.get(MODULE_KEYS.aiConfiguration)
-  ].filter(Boolean) as AdminSession["modules"];
+  
+  // Dynamically group all modules under /control-panel/administration/ path
+  const administrationModules = session.modules
+    .filter((module) => 
+      module.href.startsWith('/control-panel/administration/') ||
+      module.key === MODULE_KEYS.administration
+    )
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  
   const isAdministrationActive = administrationModules.some((module) => module.key === active) || workflowSubmenuModules.some((module) => module.key === active);
 
   return (
