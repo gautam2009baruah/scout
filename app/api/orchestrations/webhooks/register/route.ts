@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     let webhookUrl: string;
     let webhookId: string;
 
-    if (existingResult.rowCount > 0) {
+    if (existingResult.rowCount && existingResult.rowCount > 0) {
       // Update existing webhook trigger
       const existing = existingResult.rows[0];
       webhookToken = existing.webhook_token;

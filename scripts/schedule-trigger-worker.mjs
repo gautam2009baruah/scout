@@ -120,7 +120,7 @@ async function processScheduleTrigger(trigger) {
       [triggerId, config.nextRunAt]
     );
     
-    if (existingResult.rowCount > 0) {
+    if (existingResult.rowCount && existingResult.rowCount > 0) {
       console.log(`  Already executed for scheduled time ${config.nextRunAt}`);
       return;
     }
