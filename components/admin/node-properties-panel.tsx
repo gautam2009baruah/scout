@@ -2946,18 +2946,22 @@ function VariableConfig({ config, updateConfig }: any) {
   return (
     <div className="space-y-4">
       {/* Help Section */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm">
-        <p className="font-semibold text-blue-900 mb-2">💡 What are Variables?</p>
-        <p className="text-blue-800 mb-2">
-          Variables let you store and reuse values throughout your orchestration.
-        </p>
-        <div className="space-y-1 text-xs text-blue-700">
-          <p><strong>Literal value:</strong> <code className="bg-blue-100 px-1 rounded">Premium</code>, <code className="bg-blue-100 px-1 rounded">100</code>, <code className="bg-blue-100 px-1 rounded">true</code></p>
-          <p><strong>From another source:</strong> <code className="bg-blue-100 px-1 rounded">{'{{capturedData.name.value}}'}</code></p>
-          <p><strong>Calculate:</strong> <code className="bg-blue-100 px-1 rounded">{'{{capturedData.price.value}} * 1.13'}</code></p>
-          <p className="mt-2 text-blue-900"><strong>Use later:</strong> <code className="bg-blue-100 px-1 rounded">{'{{variables.yourVariableName}}'}</code></p>
+      <details className="border border-slate-300 rounded-lg bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
+          💡 What are Variables?
+        </summary>
+        <div className="px-4 py-3 space-y-3 text-sm border-t border-slate-200 bg-blue-50">
+          <p className="text-blue-800">
+            Variables let you store and reuse values throughout your orchestration.
+          </p>
+          <div className="space-y-1 text-xs text-blue-700">
+            <p><strong>Literal value:</strong> <code className="bg-blue-100 px-1 rounded">Premium</code>, <code className="bg-blue-100 px-1 rounded">100</code>, <code className="bg-blue-100 px-1 rounded">true</code></p>
+            <p><strong>From another source:</strong> <code className="bg-blue-100 px-1 rounded">{'{{capturedData.name.value}}'}</code></p>
+            <p><strong>Calculate:</strong> <code className="bg-blue-100 px-1 rounded">{'{{capturedData.price.value}} * 1.13'}</code></p>
+            <p className="mt-2 text-blue-900"><strong>Use later:</strong> <code className="bg-blue-100 px-1 rounded">{'{{variables.yourVariableName}}'}</code></p>
+          </div>
         </div>
-      </div>
+      </details>
 
       {/* Variables List */}
       <div>
@@ -3029,13 +3033,17 @@ function VariableConfig({ config, updateConfig }: any) {
       </div>
 
       {/* Usage Example */}
-      <div className="bg-slate-100 border border-slate-300 rounded-lg p-3 text-xs">
-        <p className="font-semibold text-slate-800 mb-2">📋 Example Usage:</p>
-        <div className="space-y-1 font-mono text-slate-700">
-          <p><strong>Set:</strong> Name: <code className="bg-white px-1 rounded">total</code>, Value: <code className="bg-white px-1 rounded">{'{{capturedData.price.value}} * {{capturedData.qty.value}}'}</code></p>
-          <p><strong>Use:</strong> In Condition or Notification: <code className="bg-white px-1 rounded">{'{{variables.total}}'}</code></p>
+      <details className="border border-slate-300 rounded-lg bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
+          📋 Example Usage
+        </summary>
+        <div className="px-4 py-3 text-xs border-t border-slate-200 bg-slate-50">
+          <div className="space-y-1 font-mono text-slate-700">
+            <p><strong>Set:</strong> Name: <code className="bg-white px-1 rounded">total</code>, Value: <code className="bg-white px-1 rounded">{'{{capturedData.price.value}} * {{capturedData.qty.value}}'}</code></p>
+            <p><strong>Use:</strong> In Condition or Notification: <code className="bg-white px-1 rounded">{'{{variables.total}}'}</code></p>
+          </div>
         </div>
-      </div>
+      </details>
     </div>
   );
 }
