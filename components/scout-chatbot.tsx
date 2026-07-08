@@ -1197,7 +1197,7 @@ function normalizeMessages(messages: ScoutChatMessage[]): RenderedMessage[] {
     
     return createRenderedMessage({
       ...message,
-      id: needsNewId ? `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${index}` : message.id,
+      id: needsNewId ? `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${index}` : message.id!,
       time: message.time ?? "09:41"
     });
   });
