@@ -705,6 +705,22 @@ function TriggerConfig({ config, updateConfig }: any) {
             </select>
           </div>
 
+          {config.scheduleType === "one-time" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Date & Time</label>
+              <input
+                type="datetime-local"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.oneTimeDate ? new Date(config.oneTimeDate).toISOString().slice(0, 16) : ""}
+                onChange={(e) => {
+                  const date = e.target.value ? new Date(e.target.value).toISOString() : "";
+                  updateConfig({ oneTimeDate: date });
+                }}
+              />
+              <p className="text-xs text-slate-500 mt-1">Select a future date and time</p>
+            </div>
+          )}
+
           {config.scheduleType === "cron" && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Cron Expression</label>
@@ -716,6 +732,12 @@ function TriggerConfig({ config, updateConfig }: any) {
                 onChange={(e) => updateConfig({ cronExpression: e.target.value })}
               />
               <p className="text-xs text-slate-500 mt-1">Format: minute hour day month weekday</p>
+              <div className="text-xs text-slate-600 mt-2 space-y-1">
+                <div>Examples:</div>
+                <div className="font-mono">0 9 * * * = Every day at 9:00 AM</div>
+                <div className="font-mono">0 9 * * 1 = Every Monday at 9:00 AM</div>
+                <div className="font-mono">*/15 * * * * = Every 15 minutes</div>
+              </div>
             </div>
           )}
 
@@ -773,7 +795,41 @@ function TriggerConfig({ config, updateConfig }: any) {
               value={config.timezone || "UTC"}
               onChange={(e) => updateConfig({ timezone: e.target.value })}
             />
+            <p className="text-xs text-slate-500 mt-1">Common: UTC, America/New_York, America/Los_Angeles, Europe/London</p>
           </div>
+
+          {/* Schedule Preview */}
+          {config.scheduleType && (
+            <div className="bg-purple-100 border border-purple-300 rounded p-3">
+              <div className="text-xs font-semibold text-purple-900 mb-1">📅 Schedule Preview:</div>
+              <div className="text-sm text-purple-800 font-medium">
+                {(() => {
+                  const timezone = config.timezone || "UTC";
+                  switch (config.scheduleType) {
+                    case "daily":
+                      return `Every day at ${config.specificTime || "00:00"} ${timezone}`;
+                    case "weekly":
+                      const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                      return `Every ${days[config.dayOfWeek || 0]} at ${config.specificTime || "00:00"} ${timezone}`;
+                    case "monthly":
+                      const day = config.dayOfMonth || 1;
+                      const suffix = day === 1 ? "st" : day === 2 ? "nd" : day === 3 ? "rd" : "th";
+                      return `${day}${suffix} of every month at ${config.specificTime || "00:00"} ${timezone}`;
+                    case "one-time":
+                      if (config.oneTimeDate) {
+                        const date = new Date(config.oneTimeDate);
+                        return `Once on ${date.toLocaleDateString()} at ${date.toLocaleTimeString()} ${timezone}`;
+                      }
+                      return "One-time (date not set)";
+                    case "cron":
+                      return config.cronExpression || "Cron expression not set";
+                    default:
+                      return "Schedule not configured";
+                  }
+                })()}
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <input
@@ -784,6 +840,10 @@ function TriggerConfig({ config, updateConfig }: any) {
             />
             <label htmlFor="scheduleEnabled" className="text-sm text-slate-700">Enabled</label>
           </div>
+
+          <p className="text-xs text-purple-700">
+            ℹ️ Schedule triggers will be executed by the scheduler worker process
+          </p>
         </div>
       )}
 
