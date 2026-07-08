@@ -49,6 +49,7 @@ export async function POST(
         
       case 'variable':
         console.log('📊 [SERVER] Executing variable node...');
+        console.log('📊 [SERVER] Variable config:', JSON.stringify(step.config, null, 2));
         const variableResult = await executeVariableNode(step.config, context);
         console.log('✅ [SERVER] Variable result:', variableResult);
         output = variableResult;
