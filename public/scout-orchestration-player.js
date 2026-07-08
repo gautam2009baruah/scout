@@ -2162,15 +2162,25 @@
         const fieldLabel = (value && typeof value === 'object' && 'label' in value) ? value.label : key;
         const displayValue = typeof actualValue === 'boolean' ? (actualValue ? 'Yes' : 'No') : String(actualValue);
         
+        // Get output variable name from config (default: capturedData)
+        const outputVar = config.outputVariable || 'capturedData';
+        const variablePath = `{{${outputVar}.${key}}}`;
+        
+        // Field label cell with variable name underneath
+        const fieldCell = `<div style="line-height: 1.4;">
+          <div style="font-weight: 500; color: #1e293b;">${escapeHtml(fieldLabel)}</div>
+          <div style="font-size: 11px; color: #64748b; font-family: monospace; margin-top: 2px;">${escapeHtml(variablePath)}</div>
+        </div>`;
+        
         if (allowEdit) {
           const inputId = `edit_${key.replace(/[^a-zA-Z0-9]/g, '_')}`;
           if (typeof actualValue === 'boolean') {
-            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(fieldLabel)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="checkbox" id="${inputId}" ${actualValue ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer;"></td></tr>`;
+            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${fieldCell}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="checkbox" id="${inputId}" ${actualValue ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer;"></td></tr>`;
           } else {
-            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(fieldLabel)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="text" id="${inputId}" value="${escapeHtml(displayValue)}" style="width: 100%; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;"></td></tr>`;
+            tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${fieldCell}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;"><input type="text" id="${inputId}" value="${escapeHtml(displayValue)}" style="width: 100%; padding: 6px; border: 1px solid #d1d5db; border-radius: 4px;"></td></tr>`;
           }
         } else {
-          tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-weight: 500;">${escapeHtml(fieldLabel)}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(displayValue)}</td></tr>`;
+          tableHTML += `<tr><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${fieldCell}</td><td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">${escapeHtml(displayValue)}</td></tr>`;
         }
       }
 
