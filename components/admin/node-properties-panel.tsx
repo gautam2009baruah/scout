@@ -5,12 +5,13 @@
 
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { X, Trash2, Plus, Minus, Move, Maximize2, Save } from "lucide-react";
 import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
 import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS, UPCOMING_TRIGGER_TYPES } from "@/shared/orchestrationTypes";
 import Draggable from "react-draggable";
+import { createPortal } from "react-dom";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 
 // Declare global showScoutNotification function
@@ -33,6 +34,45 @@ const NODE_CONFIGS = [
   { type: "end", label: "End", icon: "🏁" },
 ];
 
+const PANEL_MARGIN = 16;
+const DEFAULT_PANEL_WIDTH = 384;
+const DEFAULT_PANEL_HEIGHT = 600;
+const MIN_PANEL_WIDTH = 300;
+const MIN_PANEL_HEIGHT = 400;
+
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getViewportPanelSize(width: number, height: number) {
+  if (typeof window === "undefined") {
+    return { width, height };
+  }
+
+  const maxWidth = Math.max(240, window.innerWidth - PANEL_MARGIN * 2);
+  const maxHeight = Math.max(240, window.innerHeight - PANEL_MARGIN * 2);
+
+  return {
+    width: clampValue(width, Math.min(MIN_PANEL_WIDTH, maxWidth), maxWidth),
+    height: clampValue(height, Math.min(MIN_PANEL_HEIGHT, maxHeight), maxHeight),
+  };
+}
+
+function clampPanelPosition(
+  position: { x: number; y: number },
+  width: number,
+  height: number
+) {
+  if (typeof window === "undefined") {
+    return position;
+  }
+
+  return {
+    x: clampValue(position.x, PANEL_MARGIN, Math.max(PANEL_MARGIN, window.innerWidth - width - PANEL_MARGIN)),
+    y: clampValue(position.y, PANEL_MARGIN, Math.max(PANEL_MARGIN, window.innerHeight - height - PANEL_MARGIN)),
+  };
+}
+
 interface NodePropertiesPanelProps {
   node: Node;
   nodes?: Node[]; // All nodes in the flow for context-aware suggestions
@@ -54,17 +94,38 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
   const [validationError, setValidationError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   
-  const [panelWidth, setPanelWidth] = useState(384);
-  const [panelHeight, setPanelHeight] = useState(600);
-  const [position, setPosition] = useState({ x: 0, y: 80 });
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
+  const [position, setPosition] = useState({ x: PANEL_MARGIN, y: PANEL_MARGIN });
   const nodeRef = useRef<HTMLDivElement>(null);
 
-  // Calculate initial position after mount to ensure it's fully visible on LEFT side
+  const placePanelInViewport = useCallback((width = panelWidth, height = panelHeight) => {
+    const size = getViewportPanelSize(width, height);
+    setPanelWidth(size.width);
+    setPanelHeight(size.height);
+    setPosition((current) => clampPanelPosition(current, size.width, size.height));
+  }, [panelHeight, panelWidth]);
+
+  // Calculate initial position after mount to ensure the full panel is visible.
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      setPosition({ x: 32, y: 80 });
+      const size = getViewportPanelSize(DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT);
+      setPanelWidth(size.width);
+      setPanelHeight(size.height);
+      setPosition(clampPanelPosition({ x: 32, y: 32 }, size.width, size.height));
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleWindowResize = () => {
+      placePanelInViewport();
+    };
+
+    window.addEventListener("resize", handleWindowResize);
+    return () => window.removeEventListener("resize", handleWindowResize);
+  }, [placePanelInViewport]);
 
   // Reset local state when node changes (different node selected)
   useEffect(() => {
@@ -290,8 +351,10 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         newHeight = startHeight + deltaY;
       }
       
-      setPanelWidth(Math.max(300, Math.min(newWidth, typeof window !== 'undefined' ? window.innerWidth - 32 : 1200)));
-      setPanelHeight(Math.max(400, Math.min(newHeight, typeof window !== 'undefined' ? window.innerHeight - 100 : 800)));
+      const size = getViewportPanelSize(newWidth, newHeight);
+      setPanelWidth(size.width);
+      setPanelHeight(size.height);
+      setPosition((current) => clampPanelPosition(current, size.width, size.height));
     };
 
     const handleMouseUp = () => {
@@ -310,14 +373,21 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     };
   }, [panelWidth, panelHeight]);
 
-  return (
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal((
     <>
       <Draggable
         handle=".drag-handle"
         nodeRef={nodeRef}
         position={position}
         onDrag={(e, data) => {
-          setPosition({ x: data.x, y: data.y });
+          setPosition(clampPanelPosition({ x: data.x, y: data.y }, panelWidth, panelHeight));
+        }}
+        onStop={(e, data) => {
+          setPosition(clampPanelPosition({ x: data.x, y: data.y }, panelWidth, panelHeight));
         }}
         onStart={(e) => {
           // Prevent dragging when clicking on resize handles
@@ -331,6 +401,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         ref={nodeRef}
         className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl"
         style={{ 
+          top: 0,
+          left: 0,
           width: `${panelWidth}px`,
           height: `${panelHeight}px`,
           zIndex: 9999
@@ -349,8 +421,10 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
                 <button
                   className="text-slate-300 hover:text-white transition-colors p-1 rounded hover:bg-slate-600"
                   onClick={() => {
-                    setPanelWidth(384);
-                    setPanelHeight(600);
+                    const size = getViewportPanelSize(DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT);
+                    setPanelWidth(size.width);
+                    setPanelHeight(size.height);
+                    setPosition(clampPanelPosition({ x: 32, y: 32 }, size.width, size.height));
                   }}
                   type="button"
                   title="Reset size"
@@ -509,7 +583,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       </div>
     )}
   </>
-  );
+  ), document.body);
 }
 
 // ============================================================================
