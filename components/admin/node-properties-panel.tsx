@@ -1829,7 +1829,14 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                       setOutputMappings(updated);
                     }}
                   />
-                  <p className="mt-1 text-[10px] text-slate-500">Variable name for next nodes</p>
+                  {mapping.fieldName && (
+                    <p className="mt-1 text-[10px] text-blue-700 bg-blue-50 px-2 py-1 rounded">
+                      Access as: <code className="font-mono bg-blue-100 px-1 rounded">{`{{workflow.${currentNode?.data?.label || 'WorkflowName'}.${mapping.fieldName}}}`}</code>
+                    </p>
+                  )}
+                  {!mapping.fieldName && (
+                    <p className="mt-1 text-[10px] text-slate-500">Variable name for next nodes</p>
+                  )}
                 </div>
                 
                 <div>
@@ -2120,8 +2127,17 @@ function DataCaptureConfig({ config, updateConfig }: any) {
                 placeholder="capturedData"
               />
               <p className="mt-1 text-xs text-slate-500">
-                Variable name to store captured data. Access as {'{{capturedData.fieldName}}'}. Useful when you have multiple data capture nodes and need to keep their data separate (e.g., userInfo, orderDetails).
+                Variable name to store captured data. Useful when you have multiple data capture nodes and need to keep their data separate (e.g., userInfo, orderDetails).
               </p>
+              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                <p className="font-semibold text-blue-900 mb-1">💡 How to use in Condition/Variable nodes:</p>
+                <code className="text-blue-800">
+                  {`{{${config.outputVariable || "capturedData"}.fieldName}}`}
+                </code>
+                <p className="mt-1 text-blue-700">
+                  Example: <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.email}}`}</code> or <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.customerName}}`}</code>
+                </p>
+              </div>
             </div>
           </div>
         )}
