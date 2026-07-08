@@ -282,8 +282,6 @@
       context: savedState.context,
       _resumeFrom: savedState.currentStep,
       _executionPlan: savedState.executionPlan,
-      _pendingClearData: savedState.pendingClearData,
-      _dataCapturedAtStep: savedState.dataCapturedAtStep,
     };
     
     // Resume execution
@@ -295,9 +293,7 @@
    */
   async function handleStartExecution(payload) {
     const { executionId, orchestrationId, orchestrationName, triggerData, targetAppId, scoutBaseUrl } = payload;
-    let context = payload.context || {}; // Use let so we can reassign when capturing data
-    let pendingClearData = payload._pendingClearData || null; // Track captured data keys to clear after next step (one-step retention)
-    let dataCapturedAtStep = payload._dataCapturedAtStep || -1; // Track which step captured the data
+    let context = payload.context || {};
     const resumeFromStep = payload._resumeFrom || 0; // Resume from this step if navigated
     
     // Initialize context scopes if not present
@@ -514,8 +510,6 @@
               currentStep: i,
               totalSteps: executionPlan.length,
               executionPlan,
-              pendingClearData,
-              dataCapturedAtStep,
             });
             console.log(`   Context has ${Object.keys(context).length} fields`);
             
@@ -571,10 +565,7 @@
               
               context[outputVarName] = stepResult.capturedData;
               
-              // Mark that we have captured data to clean up later
-              pendingClearData = [outputVarName];
-              dataCapturedAtStep = i; // Track which step captured the data
-              console.log(`📊 Updated context with captured data under '${outputVarName}' namespace (will be cleared after step ${i + 2})`);
+              console.log(`📊 Stored data under '${outputVarName}' namespace (persists throughout orchestration)`);
               console.log(`   Available fields:`, Object.keys(stepResult.capturedData));
             }
           }
@@ -684,17 +675,6 @@
 
           // Reset sliding timeout after successful step completion
           resetSlidingTimeout();
-
-          // Clear captured data AFTER the consuming step completes (one-step retention)
-          // Only clear if: 1) there's pending data, 2) current step is AFTER the capture step
-          if (pendingClearData && i > dataCapturedAtStep) {
-            console.log(`🧹 Clearing captured data after step ${i + 1} (data from step ${dataCapturedAtStep + 1}): [${pendingClearData.join(', ')}]`);
-            for (const key of pendingClearData) {
-              delete context[key];
-            }
-            pendingClearData = null;
-            dataCapturedAtStep = -1;
-          }
 
         } catch (stepError) {
           console.error(`❌ Step failed: ${step.label}`, stepError);
