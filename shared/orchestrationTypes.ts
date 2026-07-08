@@ -15,6 +15,34 @@ export type OrchestrationTriggerType =
   | "email"
   | "file_upload";
 
+/**
+ * All available trigger types as a constant array
+ * Use this for dropdowns, filters, and validation
+ */
+export const TRIGGER_TYPES: readonly OrchestrationTriggerType[] = [
+  "manual",
+  "chatbot",
+  "schedule",
+  "webhook",
+  "api",
+  "email",
+  "file_upload",
+] as const;
+
+/**
+ * Display labels for trigger types
+ * Use this for consistent UI labeling
+ */
+export const TRIGGER_TYPE_LABELS: Record<OrchestrationTriggerType, string> = {
+  manual: "Manual",
+  chatbot: "Chatbot",
+  schedule: "Schedule",
+  webhook: "Webhook",
+  api: "API",
+  email: "Email",
+  file_upload: "File Upload",
+};
+
 export type Orchestration = {
   id: string;
   companyId: string;

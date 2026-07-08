@@ -9,6 +9,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, Trash2, Plus, Minus, Move, Maximize2, Save } from "lucide-react";
 import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
+import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 import Draggable from "react-draggable";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 
@@ -549,13 +550,11 @@ function TriggerConfig({ config, updateConfig }: any) {
           value={triggerType}
           onChange={(e) => handleTriggerTypeChange(e.target.value)}
         >
-          <option value="manual">Manual</option>
-          <option value="chatbot">Chatbot</option>
-          <option value="schedule">Schedule</option>
-          <option value="webhook">Webhook</option>
-          <option value="api">API</option>
-          <option value="email">Email</option>
-          <option value="file_upload">File Upload</option>
+          {TRIGGER_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {TRIGGER_TYPE_LABELS[type]}
+            </option>
+          ))}
         </select>
         <p className="mt-1 text-xs text-slate-500">How this orchestration is triggered</p>
       </div>

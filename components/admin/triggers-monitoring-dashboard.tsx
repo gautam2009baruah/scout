@@ -18,6 +18,7 @@ import {
   AlertCircle,
   Filter,
 } from "lucide-react";
+import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 
 type TriggerStatus = {
   id: string;
@@ -205,11 +206,11 @@ export function TriggersMonitoringDashboard() {
                 }
               >
                 <option value="all">All Types</option>
-                <option value="schedule">Schedule</option>
-                <option value="email">Email</option>
-                <option value="webhook">Webhook</option>
-                <option value="manual">Manual</option>
-                <option value="chatbot">Chatbot</option>
+                {TRIGGER_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {TRIGGER_TYPE_LABELS[type]}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
