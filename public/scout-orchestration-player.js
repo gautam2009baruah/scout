@@ -603,6 +603,20 @@
           else {
             // Server-side node (condition, variable, api_call, notification, etc.)
             console.log(`🔄 Sending to server for execution: ${step.nodeType}`);
+            
+            // Debug: Show variable config before sending
+            if (step.nodeType === 'variable' && step.config) {
+              console.log(`📊 [CLIENT] Variable node config:`, JSON.stringify(step.config, null, 2));
+              if (step.config.variables) {
+                step.config.variables.forEach((v, idx) => {
+                  console.log(`   Variable ${idx + 1}:`);
+                  console.log(`      Name: "${v.name}"`);
+                  console.log(`      Value: "${v.value}"`);
+                  console.log(`      Type: ${typeof v.value}`);
+                });
+              }
+            }
+            
             stepResult = await executeServerSideNode(executionId, i, step, context);
             
             // Handle variable node output - merge into context.variables
