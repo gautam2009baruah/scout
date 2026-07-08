@@ -436,6 +436,12 @@
         }
 
         const step = executionPlan[i];
+        
+        // Skip if marked as skipped by conditional branching
+        if (step.status === 'skipped') {
+          console.log(`⏭️  Skipping step ${i + 1}/${executionPlan.length}: ${step.label} (skipped by condition branch)`);
+          continue;
+        }
 
         console.log(`▶️ Executing step ${i + 1}/${executionPlan.length}: ${step.label}`);
 
@@ -582,9 +588,45 @@
             }
           }
           else {
-            // Server-side node (api_call, notification, etc.)
+            // Server-side node (condition, variable, api_call, notification, etc.)
             console.log(`🔄 Sending to server for execution: ${step.nodeType}`);
             stepResult = await executeServerSideNode(executionId, i, step, context);
+            
+            // Handle condition node branching
+            if (step.nodeType === 'condition' && stepResult && stepResult.outputHandle) {
+              const branchTaken = stepResult.outputHandle; // "true" or "false"
+              console.log(`\n🔀 [BRANCH] Condition evaluated to: ${branchTaken.toUpperCase()}`);
+              console.log(`   Remaining steps: ${executionPlan.length - i - 1}`);
+              
+              // Skip all steps that are on the OTHER branch
+              // This is a simplified approach: skip until we find an END node
+              // In a complete implementation, we'd use graph connections to determine reachable nodes
+              
+              // For now: Both end nodes are sequential after the condition
+              // We need to skip the FIRST end node if condition is false, or the SECOND if true
+              // This works for the simple case of condition -> end (true) -> end (false)
+              
+              const remainingSteps = executionPlan.slice(i + 1);
+              const endNodeCount = remainingSteps.filter(s => s.nodeType === 'end').length;
+              
+              if (endNodeCount >= 2) {
+                // Two end nodes - typical true/false branch pattern
+                const firstEndIndex = remainingSteps.findIndex(s => s.nodeType === 'end');
+                const secondEndIndex = remainingSteps.findIndex((s, idx) => s.nodeType === 'end' && idx > firstEndIndex);
+                
+                if (branchTaken === 'true') {
+                  // Take first end node, skip second
+                  const skipIndex = i + 1 + secondEndIndex;
+                  console.log(`   ✓ Taking TRUE branch - will skip step ${skipIndex + 1} (${executionPlan[skipIndex]?.label})`);
+                  executionPlan[skipIndex].status = 'skipped';
+                } else {
+                  // Skip first end node, take second
+                  const skipIndex = i + 1 + firstEndIndex;
+                  console.log(`   ✓ Taking FALSE branch - will skip step ${skipIndex + 1} (${executionPlan[skipIndex]?.label})`);
+                  executionPlan[skipIndex].status = 'skipped';
+                }
+              }
+            }
           }
 
           // Mark as completed
@@ -2250,7 +2292,7 @@
   }
 
   /**
-   * Execute server-side node (API call, notification, etc.)
+   * Execute server-side node (API call, notification, condition, variable, etc.)
    */
   async function executeServerSideNode(executionId, nodeIndex, step, context) {
     console.log(`🔄 Executing server-side node: ${step.nodeType}`);
@@ -2260,6 +2302,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         nodeIndex: nodeIndex,
+        step: step,  // Include step config for server execution
         context: context,
       }),
     });

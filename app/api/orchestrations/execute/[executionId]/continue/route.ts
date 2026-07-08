@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { executeConditionNode } from "@/lib/orchestrations/nodes/condition-node";
+import { executeVariableNode } from "@/lib/orchestrations/nodes/variable-node";
 
 export const runtime = "nodejs";
 
@@ -7,7 +9,8 @@ export const runtime = "nodejs";
  * POST /api/orchestrations/execute/[executionId]/continue
  * 
  * Body: {
- *   nodeIndex: number,    // Index of the node that just completed on client
+ *   nodeIndex: number,    // Index of the node in execution plan
+ *   step: object,         // Step config with nodeType and config
  *   context: object       // Current execution context (including captured data)
  * }
  */
@@ -19,38 +22,59 @@ export async function POST(
     const { executionId } = await routeContext.params;
     const body = await request.json().catch(() => null);
 
-    if (!body || typeof body.nodeIndex !== 'number' || !body.context) {
+    if (!body || typeof body.nodeIndex !== 'number' || !body.context || !body.step) {
       return NextResponse.json(
-        { error: "nodeIndex and context are required" },
+        { error: "nodeIndex, step, and context are required" },
         { status: 400 }
       );
     }
 
-    const { nodeIndex, context } = body;
+    const { nodeIndex, step, context } = body;
 
-    console.log(`\n🔄 Server continuation request for execution ${executionId}`);
+    console.log(`\n🔄 [SERVER] Execution request for: ${executionId}`);
     console.log(`   Node index: ${nodeIndex}`);
+    console.log(`   Node type: ${step.nodeType}`);
     console.log(`   Context keys: ${Object.keys(context).join(', ')}`);
 
-    // For now, just return success
-    // In a complete implementation, this would:
-    // 1. Look up the execution plan
-    // 2. Find the next node after nodeIndex
-    // 3. If it's a server-side node (api_call, notification), execute it
-    // 4. Return the output
+    let output: any = {};
+    
+    // Execute server-side node based on type
+    switch (step.nodeType) {
+      case 'condition':
+        console.log('🔀 [SERVER] Executing condition node...');
+        const conditionResult = await executeConditionNode(step.config, context);
+        console.log('✅ [SERVER] Condition result:', conditionResult);
+        output = conditionResult;
+        break;
+        
+      case 'variable':
+        console.log('📊 [SERVER] Executing variable node...');
+        const variableResult = await executeVariableNode(step.config, context);
+        console.log('✅ [SERVER] Variable result:', variableResult);
+        output = variableResult;
+        break;
+        
+      case 'notification':
+      case 'api_call':
+        console.log(`⚠️  [SERVER] ${step.nodeType} not yet implemented`);
+        output = { success: true, message: `${step.nodeType} placeholder` };
+        break;
+        
+      default:
+        console.warn(`⚠️  [SERVER] Unknown node type: ${step.nodeType}`);
+        output = { success: true, message: "Unknown node type" };
+    }
 
     return NextResponse.json({
       success: true,
-      output: {
-        message: "Server-side node executed successfully",
-      },
+      output,
     });
 
   } catch (error) {
-    console.error("❌ Server continuation failed:", error);
+    console.error("❌ [SERVER] Execution failed:", error);
     return NextResponse.json(
       { 
-        error: "Server continuation failed",
+        error: "Server execution failed",
         message: error instanceof Error ? error.message : "Unknown error"
       },
       { status: 500 }
