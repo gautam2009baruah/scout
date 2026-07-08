@@ -18,7 +18,7 @@ import {
   AlertCircle,
   Filter,
 } from "lucide-react";
-import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
+import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS, UPCOMING_TRIGGER_TYPES } from "@/shared/orchestrationTypes";
 
 type TriggerStatus = {
   id: string;
@@ -206,11 +206,19 @@ export function TriggersMonitoringDashboard() {
                 }
               >
                 <option value="all">All Types</option>
-                {TRIGGER_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {TRIGGER_TYPE_LABELS[type]}
-                  </option>
-                ))}
+                {TRIGGER_TYPES.map((type) => {
+                  const isUpcoming = UPCOMING_TRIGGER_TYPES.includes(type);
+                  return (
+                    <option
+                      key={type}
+                      value={type}
+                      disabled={isUpcoming}
+                      style={{ textDecoration: isUpcoming ? 'line-through' : 'none', color: isUpcoming ? '#94a3b8' : 'inherit' }}
+                    >
+                      {TRIGGER_TYPE_LABELS[type]}{isUpcoming ? ' (Coming Soon)' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
             <div>

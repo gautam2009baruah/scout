@@ -9,7 +9,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, Trash2, Plus, Minus, Move, Maximize2, Save } from "lucide-react";
 import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
-import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
+import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS, UPCOMING_TRIGGER_TYPES } from "@/shared/orchestrationTypes";
 import Draggable from "react-draggable";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 
@@ -550,11 +550,19 @@ function TriggerConfig({ config, updateConfig }: any) {
           value={triggerType}
           onChange={(e) => handleTriggerTypeChange(e.target.value)}
         >
-          {TRIGGER_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {TRIGGER_TYPE_LABELS[type]}
-            </option>
-          ))}
+          {TRIGGER_TYPES.map((type) => {
+            const isUpcoming = UPCOMING_TRIGGER_TYPES.includes(type);
+            return (
+              <option
+                key={type}
+                value={type}
+                disabled={isUpcoming}
+                style={{ textDecoration: isUpcoming ? 'line-through' : 'none', color: isUpcoming ? '#94a3b8' : 'inherit' }}
+              >
+                {TRIGGER_TYPE_LABELS[type]}{isUpcoming ? ' (Coming Soon)' : ''}
+              </option>
+            );
+          })}
         </select>
         <p className="mt-1 text-xs text-slate-500">How this orchestration is triggered</p>
       </div>
