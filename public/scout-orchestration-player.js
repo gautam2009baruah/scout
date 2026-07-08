@@ -2207,11 +2207,37 @@
         // Get output variable name from config (default: capturedData)
         const outputVar = config.outputVariable || 'capturedData';
         const variablePath = `{{${outputVar}.${key}.value}}`;
+        const varPathId = `varpath_${key.replace(/[^a-zA-Z0-9]/g, '_')}`;
         
-        // Field label cell with variable name underneath
+        // Field label cell with collapsible variable name
         const fieldCell = `<div style="line-height: 1.4;">
           <div style="font-weight: 500; color: #1e293b;">${escapeHtml(fieldLabel)}</div>
-          <div style="font-size: 11px; color: #64748b; font-family: monospace; margin-top: 2px;">${escapeHtml(variablePath)}</div>
+          <div style="margin-top: 2px;">
+            <span id="${varPathId}_toggle" style="cursor: pointer; font-size: 10px; color: #64748b; user-select: none;" onclick="
+              const content = document.getElementById('${varPathId}_content');
+              const toggle = document.getElementById('${varPathId}_toggle');
+              if (content.style.display === 'none') {
+                content.style.display = 'inline-flex';
+                toggle.textContent = '−';
+              } else {
+                content.style.display = 'none';
+                toggle.textContent = '+';
+              }
+            ">+</span>
+            <div id="${varPathId}_content" style="display: none; align-items: center; gap: 4px; margin-top: 2px;">
+              <code style="font-size: 10px; color: #64748b; font-family: monospace; background: #f1f5f9; padding: 2px 4px; border-radius: 2px;">${escapeHtml(variablePath)}</code>
+              <button onclick="
+                navigator.clipboard.writeText('${variablePath.replace(/'/g, "\\'")}')
+                  .then(() => {
+                    const btn = event.target;
+                    const orig = btn.textContent;
+                    btn.textContent = '✓';
+                    btn.style.color = '#10b981';
+                    setTimeout(() => { btn.textContent = orig; btn.style.color = '#64748b'; }, 1000);
+                  })
+              " style="cursor: pointer; font-size: 10px; border: none; background: none; color: #64748b; padding: 0 2px;" title="Copy to clipboard">📋</button>
+            </div>
+          </div>
         </div>`;
         
         if (allowEdit) {

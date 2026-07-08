@@ -2367,8 +2367,8 @@ function AIDecisionConfig({ config, updateConfig }: any) {
 }
 
 function ConditionConfig({ config, updateConfig }: any) {
-  const [conditions, setConditions] = useState<Array<{ variable: string; operator: string; value?: string; logicAfter?: "and" | "or" }>>(
-    config.conditions || [{ variable: "", operator: "equals", value: "", logicAfter: "and" }]
+  const [conditions, setConditions] = useState<Array<{ variable: string; operator: string; value?: string; logicAfter?: "and" | "or"; caseSensitive?: boolean }>>(
+    config.conditions || [{ variable: "", operator: "equals", value: "", logicAfter: "and", caseSensitive: false }]
   );
 
   useEffect(() => {
@@ -2376,7 +2376,7 @@ function ConditionConfig({ config, updateConfig }: any) {
   }, [conditions]);
 
   const addCondition = () => {
-    setConditions([...conditions, { variable: "", operator: "equals", value: "", logicAfter: "and" }]);
+    setConditions([...conditions, { variable: "", operator: "equals", value: "", logicAfter: "and", caseSensitive: false }]);
   };
 
   const removeCondition = (index: number) => {
@@ -2670,6 +2670,22 @@ function ConditionConfig({ config, updateConfig }: any) {
                       onChange={(e) => updateCondition(index, "value", e.target.value)}
                       placeholder="{{variableName}} or literal value"
                     />
+                  </div>
+                )}
+
+                {/* Case Sensitive Checkbox - Show for string comparison operators */}
+                {["equals", "not_equals", "contains", "not_contains", "starts_with", "ends_with"].includes(condition.operator) && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id={`caseSensitive_${index}`}
+                      checked={condition.caseSensitive === true}
+                      onChange={(e) => updateCondition(index, "caseSensitive", e.target.checked)}
+                      className="h-3.5 w-3.5"
+                    />
+                    <label htmlFor={`caseSensitive_${index}`} className="text-xs text-slate-600">
+                      Case sensitive
+                    </label>
                   </div>
                 )}
               </div>

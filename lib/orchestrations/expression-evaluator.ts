@@ -110,7 +110,8 @@ export function evaluateCondition(
   variable: string,
   operator: string,
   value: unknown,
-  context: Record<string, unknown>
+  context: Record<string, unknown>,
+  caseSensitive = true
 ): boolean {
   const actualValue = resolveVariablePath(variable, context);
   
@@ -121,24 +122,39 @@ export function evaluateCondition(
 
   let result = false;
 
+  // Apply case insensitivity for string comparisons if needed
+  const normalizeForComparison = (val: unknown) => {
+    if (!caseSensitive && typeof val === "string") {
+      return val.toLowerCase();
+    }
+    return val;
+  };
+
+  const normalizedActual = normalizeForComparison(actualValue);
+  const normalizedExpected = normalizeForComparison(value);
+
+  if (!caseSensitive && (typeof actualValue === "string" || typeof value === "string")) {
+    console.log(`    🔄 Case-insensitive mode: "${actualValue}" → "${normalizedActual}", "${value}" → "${normalizedExpected}"`);
+  }
+
   switch (operator) {
     case "equals":
-      result = actualValue === value;
-      if (!result && actualValue == value) {
+      result = normalizedActual === normalizedExpected;
+      if (!result && normalizedActual == normalizedExpected) {
         console.warn(`    ⚠️  Values are loosely equal (==) but not strictly equal (===)`);
-        console.warn(`    💡 Tip: Check data types - "${actualValue}" vs ${value}`);
+        console.warn(`    💡 Tip: Check data types - "${normalizedActual}" vs ${normalizedExpected}`);
       }
       break;
 
     case "not_equals":
-      result = actualValue !== value;
+      result = normalizedActual !== normalizedExpected;
       break;
 
     case "contains":
       result = (
         typeof actualValue === "string" &&
         typeof value === "string" &&
-        actualValue.includes(value)
+        (normalizedActual as string).includes(normalizedExpected as string)
       );
       if (!result) {
         if (typeof actualValue !== "string") {
@@ -154,7 +170,7 @@ export function evaluateCondition(
       result = (
         typeof actualValue === "string" &&
         typeof value === "string" &&
-        !actualValue.includes(value)
+        !(normalizedActual as string).includes(normalizedExpected as string)
       );
       break;
 
@@ -211,7 +227,7 @@ export function evaluateCondition(
       result = (
         typeof actualValue === "string" &&
         typeof value === "string" &&
-        actualValue.startsWith(value)
+        (normalizedActual as string).startsWith(normalizedExpected as string)
       );
       break;
 
@@ -219,7 +235,7 @@ export function evaluateCondition(
       result = (
         typeof actualValue === "string" &&
         typeof value === "string" &&
-        actualValue.endsWith(value)
+        (normalizedActual as string).endsWith(normalizedExpected as string)
       );
       break;
 
