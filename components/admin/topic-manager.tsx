@@ -878,7 +878,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
               type="button"
             >
               <FolderPlus className="h-4 w-4 text-emerald-600" />
-              Create
+              Create Folder
             </button>
             {actionTarget.topicId ? (
               <>
@@ -888,7 +888,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
                   type="button"
                 >
                   <Pencil className="h-4 w-4 text-sky-600" />
-                  Edit
+                  Edit Folder
                 </button>
                 <button
                   className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold text-violet-700 hover:bg-violet-50"
@@ -912,7 +912,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
                   type="button"
                 >
                   <ShieldCheck className="h-4 w-4 text-teal-600" />
-                  Chat Access
+                  Chatbot Access
                 </button>
                 <button
                   className={`flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold ${
@@ -925,7 +925,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
                   type="button"
                 >
                   <Trash2 className={`h-4 w-4 ${canManageAccess ? "text-red-600" : "text-slate-400"}`} />
-                  Delete
+                  Delete Folder
                 </button>
               </>
             ) : null}
