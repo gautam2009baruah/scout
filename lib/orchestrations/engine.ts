@@ -15,6 +15,8 @@ import type {
   HumanApprovalNodeConfig,
   NotificationNodeConfig,
   VariableNodeConfig,
+  TriggerNodeConfig,
+  OrchestrationTriggerType,
 } from "@/shared/orchestrationTypes";
 
 import { executeWorkflowNode } from "./nodes/workflow-node";
@@ -32,6 +34,11 @@ import {
   updateNodeExecution,
   getApprovals,
 } from "./db";
+import {
+  isNodeCompatibleWithTrigger,
+  getIncompatibilityReason,
+  getAlternativeSuggestions,
+} from "./node-compatibility";
 
 export class OrchestrationEngine {
   private execution: OrchestrationExecution;
@@ -99,6 +106,29 @@ export class OrchestrationEngine {
     const node = this.nodes.get(nodeId);
     if (!node) {
       throw new Error(`Node ${nodeId} not found`);
+    }
+
+    // Validate node compatibility with trigger type (Phase 4: Node Compatibility Validation)
+    const triggerType = this.getTriggerType();
+    if (!isNodeCompatibleWithTrigger(node.nodeType, triggerType)) {
+      const reason = getIncompatibilityReason(node.nodeType, triggerType!);
+      const suggestions = getAlternativeSuggestions(node.nodeType, triggerType!);
+      
+      const errorMessage = [
+        `❌ INCOMPATIBLE NODE: ${node.label || node.nodeType}`,
+        ``,
+        `Reason: ${reason}`,
+        ``,
+        suggestions.length > 0 ? `💡 Alternative Approaches:` : '',
+        ...suggestions.map((s, i) => `   ${i + 1}. ${s}`),
+      ].filter(Boolean).join('\n');
+
+      console.error('\n' + '='.repeat(80));
+      console.error(errorMessage);
+      console.error('='.repeat(80) + '\n');
+
+      await this.recordNodeExecution(nodeId, "failed", this.context, { error: errorMessage });
+      throw new Error(errorMessage);
     }
 
     // Check if this is an end node
@@ -280,6 +310,19 @@ export class OrchestrationEngine {
       }
     }
     return null;
+  }
+
+  /**
+   * Get the trigger type from the trigger node
+   */
+  private getTriggerType(): OrchestrationTriggerType | undefined {
+    for (const node of Array.from(this.nodes.values())) {
+      if (node.nodeType === "trigger") {
+        const triggerConfig = node.config as TriggerNodeConfig;
+        return triggerConfig.triggerType;
+      }
+    }
+    return undefined;
   }
 
   /**

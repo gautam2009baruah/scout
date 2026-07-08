@@ -43,11 +43,12 @@ import {
   ChevronRight,
   List,
 } from "lucide-react";
-import type { NodeType, Orchestration, ManualTriggerConfig } from "@/shared/orchestrationTypes";
+import type { NodeType, Orchestration, ManualTriggerConfig, OrchestrationTriggerType } from "@/shared/orchestrationTypes";
 import { NodePropertiesPanel } from "./node-properties-panel";
 import { ManualTriggerDialog } from "./manual-trigger-dialog";
 import { ExecutionMonitor } from "./execution-monitor";
 import { OrchestrationList } from "./orchestration-list";
+import { isNodeCompatibleWithTrigger, getIncompatibilityReason } from "@/lib/orchestrations/node-compatibility";
 
 type CompanyOption = { id: string; name: string };
 type TargetAppOption = { id: string; name: string; companyId: string };
@@ -172,14 +173,17 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Get current trigger type from trigger node
+  const currentTriggerType = useMemo<OrchestrationTriggerType | undefined>(() => {
+    const triggerNode = nodes.find(n => n.data.nodeType === "trigger");
+    return triggerNode?.data.config?.triggerType;
+  }, [nodes]);
+
   // Determine if Run button should be shown (only for manual triggers)
   const shouldShowRunButton = useMemo(() => {
     if (!orchestration) return false;
-    const triggerNode = nodes.find(n => n.data.nodeType === "trigger");
-    if (!triggerNode) return false;
-    const triggerType = triggerNode.data.config?.triggerType;
-    return triggerType === "manual";
-  }, [orchestration, nodes]);
+    return currentTriggerType === "manual";
+  }, [orchestration, currentTriggerType]);
 
   // Load orchestration data when orchestration changes
   useEffect(() => {
@@ -402,6 +406,13 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         return;
       }
 
+      // Check node compatibility with trigger type
+      if (!isNodeCompatibleWithTrigger(nodeType, currentTriggerType)) {
+        const reason = getIncompatibilityReason(nodeType, currentTriggerType!);
+        showToast(reason || "Node is not compatible with this trigger type", 'error');
+        return;
+      }
+
       const config = NODE_CONFIGS.find((n) => n.type === nodeType);
       const newNode: Node = {
         id: `node-${Date.now()}`,
@@ -419,7 +430,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       };
       setNodes((nds) => [...nds, newNode]);
     },
-    [orchestration, setNodes, deleteNode]
+    [orchestration, currentTriggerType, setNodes, deleteNode, showToast]
   );
 
   // Delete selected node
@@ -866,19 +877,40 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
           >
             <h3 className="mb-3 text-sm font-bold text-slate-900">Node Types</h3>
             <div className="space-y-2">
-              {NODE_CONFIGS.map((nodeConfig) => (
-                <button
-                  key={nodeConfig.type}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition-colors"
-                  onClick={() => addNode(nodeConfig.type)}
-                  type="button"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg">{nodeConfig.icon}</span>
-                    <span>{nodeConfig.label}</span>
-                  </div>
-                </button>
-              ))}
+              {NODE_CONFIGS.map((nodeConfig) => {
+                const isCompatible = isNodeCompatibleWithTrigger(nodeConfig.type, currentTriggerType);
+                const reason = !isCompatible && currentTriggerType
+                  ? getIncompatibilityReason(nodeConfig.type, currentTriggerType)
+                  : null;
+
+                return (
+                  <button
+                    key={nodeConfig.type}
+                    className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold transition-colors ${
+                      isCompatible
+                        ? "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 cursor-pointer"
+                        : "border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed opacity-60"
+                    }`}
+                    onClick={() => isCompatible && addNode(nodeConfig.type)}
+                    disabled={!isCompatible}
+                    title={reason || undefined}
+                    type="button"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{nodeConfig.icon}</span>
+                      <span>{nodeConfig.label}</span>
+                      {!isCompatible && (
+                        <span className="ml-auto text-xs">🚫</span>
+                      )}
+                    </div>
+                    {!isCompatible && reason && (
+                      <div className="mt-1 text-xs text-slate-500 leading-tight">
+                        {reason.split('.')[0]}.
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="mt-6 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
