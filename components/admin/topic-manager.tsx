@@ -904,7 +904,7 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
                   type="button"
                 >
                   <FileText className="h-4 w-4 text-slate-600" />
-                  Documents
+                  View Documents
                 </button>
                 <button
                   className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold text-teal-700 hover:bg-teal-50"
