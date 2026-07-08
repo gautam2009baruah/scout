@@ -2385,7 +2385,7 @@ function ConditionConfig({ config, updateConfig }: any) {
     }
   };
 
-  const updateCondition = (index: number, field: string, value: string) => {
+  const updateCondition = (index: number, field: string, value: string | boolean) => {
     const updated = [...conditions];
     updated[index] = { ...updated[index], [field]: value };
     setConditions(updated);
