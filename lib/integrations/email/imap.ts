@@ -298,7 +298,7 @@ export async function markEmailsAsRead(
 
         Promise.all(searchPromises).then((allResults) => {
           // Flatten array and get unique UIDs
-          const uids = [...new Set(allResults.flat())];
+          const uids = Array.from(new Set(allResults.flat()));
 
           if (uids.length === 0) {
             console.log("[IMAP] No messages found to mark as read");

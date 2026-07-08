@@ -10,10 +10,10 @@ import { getPool } from "@/lib/db/pool";
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  routeContext: { params: Promise<{ id: string }> }
 ) {
   try {
-    const triggerId = params.id;
+    const { id: triggerId } = await routeContext.params;
 
     const pool = getPool();
 

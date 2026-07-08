@@ -1,13 +1,23 @@
 -- Migration 059: Add Email Credentials to Administration Menu
 
--- Insert Email Credentials module under Administration submenu
-INSERT INTO modules (key, name, href, parent_key, display_order, is_active)
+-- Insert Email Credentials module in the flat modules menu.
+INSERT INTO modules (key, name, href, sort_order)
 VALUES (
-  (SELECT COALESCE(MAX(key), 0) + 1 FROM modules),
+  11,
   'Email Credentials',
   '/control-panel/administration/email-credentials',
-  1, -- Administration parent
-  70, -- Display order (after existing items)
-  true
+  70
 )
-ON CONFLICT DO NOTHING;
+ON CONFLICT (key)
+DO UPDATE SET
+  name = EXCLUDED.name,
+  href = EXCLUDED.href,
+  sort_order = EXCLUDED.sort_order;
+
+-- Grant access to admin roles.
+INSERT INTO role_module_permissions (role_id, module_key)
+SELECT roles.id, 11
+FROM roles
+WHERE roles.is_admin_role = true
+ON CONFLICT (role_id, module_key)
+DO UPDATE SET deleted_at = NULL, updated_at = now();

@@ -20,7 +20,7 @@ import {
  * Runs in-process, suitable for single-server deployments
  */
 export class NodeCronEngine implements ISchedulerEngine {
-  private schedules: Map<string, cron.ScheduledTask> = new Map();
+  private schedules: Map<string, { start(): void; stop(): void }> = new Map();
   private triggers: Map<string, ScheduledTrigger> = new Map();
   private callback: ScheduleCallback;
   private isInitialized: boolean = false;
@@ -83,7 +83,6 @@ export class NodeCronEngine implements ISchedulerEngine {
           await this.executeSchedule(trigger);
         },
         {
-          scheduled: true,
           timezone: trigger.config.timezone || "UTC",
         }
       );
@@ -213,7 +212,7 @@ export class NodeCronEngine implements ISchedulerEngine {
     console.log("[NodeCronEngine] Shutting down...");
     
     // Stop all schedules
-    for (const [triggerId, schedule] of this.schedules.entries()) {
+    for (const [triggerId, schedule] of Array.from(this.schedules.entries())) {
       console.log(`  Stopping trigger ${triggerId}`);
       schedule.stop();
     }

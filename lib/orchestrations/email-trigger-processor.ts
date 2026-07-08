@@ -106,7 +106,7 @@ export async function processEmailTrigger(
   orchestrationId: string,
   email: EmailMessage,
   config: EmailTriggerConfig
-): Promise<{ success: boolean; executionId?: string; error?: string }> {
+): Promise<{ success: boolean; executionId?: string; messageId?: string; error?: string }> {
   const pool = await getPool();
   
   try {
