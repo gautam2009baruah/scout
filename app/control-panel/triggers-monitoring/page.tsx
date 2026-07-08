@@ -16,11 +16,11 @@ export default async function TriggersMonitoringPage() {
     redirect("/control-panel/login");
   }
 
-  // Require guided workflows access (triggers are part of orchestrations)
-  await requireModuleAccess(MODULE_KEYS.guidedWorkflows);
+  // Require triggers monitoring access
+  requireModuleAccess(session, MODULE_KEYS.triggersMonitoring);
 
   return (
-    <AdminShell activeModule="orchestration-monitoring">
+    <AdminShell active={MODULE_KEYS.triggersMonitoring} session={session} title="Triggers Monitoring">
       <TriggersMonitoringDashboard />
     </AdminShell>
   );

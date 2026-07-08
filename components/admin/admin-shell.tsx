@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { BarChart3, Bell, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, SlidersHorizontal, Sparkles, TableProperties, UsersRound } from "lucide-react";
+import { Activity, BarChart3, Bell, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, SlidersHorizontal, Sparkles, TableProperties, UsersRound } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
 import { ScoutChatbot } from "@/components/scout-chatbot";
@@ -26,7 +26,8 @@ const moduleIcons = {
   [MODULE_KEYS.workflowAnalytics]: BarChart3,
   [MODULE_KEYS.orchestrationDesigner]: GitBranch,
   [MODULE_KEYS.emailCredentials]: Bot,
-  [MODULE_KEYS.companyRoleSetup]: TableProperties
+  [MODULE_KEYS.companyRoleSetup]: TableProperties,
+  [MODULE_KEYS.triggersMonitoring]: Activity
 } as const;
 
 const CRS_SCOUT_BASE_URL = "http://localhost:3000";

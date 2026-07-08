@@ -14,7 +14,8 @@ export const MODULE_KEYS = {
   workflowAnalytics: 9,
   orchestrationDesigner: 10,
   emailCredentials: 11,
-  companyRoleSetup: 12
+  companyRoleSetup: 12,
+  triggersMonitoring: 13
 } as const;
 
 export type AdminModuleKey = number;
