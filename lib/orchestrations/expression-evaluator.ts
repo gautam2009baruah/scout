@@ -111,7 +111,7 @@ export function evaluateCondition(
   operator: string,
   value: unknown,
   context: Record<string, unknown>,
-  caseSensitive = true
+  caseSensitive = false // default to case-insensitive for better UX
 ): boolean {
   const actualValue = resolveVariablePath(variable, context);
   

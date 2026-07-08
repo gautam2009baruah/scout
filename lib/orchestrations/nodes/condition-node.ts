@@ -37,7 +37,7 @@ export async function executeConditionNode(
       config.conditions[0].operator,
       config.conditions[0].value,
       context,
-      config.conditions[0].caseSensitive !== false // default true if not specified
+      config.conditions[0].caseSensitive === true // default false if not specified (case-insensitive)
     );
     
     console.log(`  ➜ Result: ${finalResult}`);
@@ -60,7 +60,7 @@ export async function executeConditionNode(
         nextCondition.operator,
         nextCondition.value,
         context,
-        nextCondition.caseSensitive !== false // default true if not specified
+        nextCondition.caseSensitive === true // default false if not specified (case-insensitive)
       );
       
       console.log(`  ➜ Result: ${nextResult}`);

@@ -162,7 +162,7 @@ export type ConditionNodeConfig = {
     operator: ConditionOperator;
     value?: unknown;
     logicAfter?: "and" | "or"; // Logic operator to apply AFTER this condition (not used for last condition)
-    caseSensitive?: boolean; // Whether string comparison is case-sensitive (default: false)
+    caseSensitive?: boolean; // Whether string comparison is case-sensitive (default: false - case-insensitive)
   }>;
 };
 
