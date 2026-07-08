@@ -1,5 +1,5 @@
 -- Migration 063: Add Triggers Monitoring Menu Item
--- Adds a menu link for the Triggers Monitoring Dashboard under Guided Workflows
+-- Adds a menu link for the Triggers Monitoring Dashboard under Administration
 
 -- Add Triggers Monitoring module (key 13)
 INSERT INTO modules (key, name, href, sort_order, parent_key)
@@ -8,7 +8,7 @@ VALUES (
   'Triggers Monitoring',
   '/control-panel/triggers-monitoring',
   49,  -- After Workflow Analytics (48)
-  6    -- Child of Guided Workflows
+  2    -- Child of Administration
 )
 ON CONFLICT (key)
 DO UPDATE SET
