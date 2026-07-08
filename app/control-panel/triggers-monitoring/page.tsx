@@ -20,7 +20,7 @@ export default async function TriggersMonitoringPage() {
   requireModuleAccess(session, MODULE_KEYS.triggersMonitoring);
 
   return (
-    <AdminShell active={MODULE_KEYS.triggersMonitoring} session={session} title="Triggers Monitoring">
+    <AdminShell active={MODULE_KEYS.triggersMonitoring} session={session}>
       <TriggersMonitoringDashboard />
     </AdminShell>
   );

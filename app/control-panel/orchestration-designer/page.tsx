@@ -37,7 +37,6 @@ export default async function OrchestrationDesignerPage() {
     <AdminShell
       active={MODULE_KEYS.orchestrationDesigner}
       session={session}
-      title="Orchestration Designer"
     >
       <OrchestrationDesigner companies={companies} targetApps={targetApps} />
     </AdminShell>

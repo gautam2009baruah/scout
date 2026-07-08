@@ -53,7 +53,7 @@ export default async function GuidedWorkflowsPage() {
   }
 
   return (
-    <AdminShell active={MODULE_KEYS.guidedWorkflows} session={session} title="Guided Workflows">
+    <AdminShell active={MODULE_KEYS.guidedWorkflows} session={session}>
       <GuidedWorkflowManager companies={companies} guides={guides} recordingSessions={recordingSessions} targetApps={targetApps} />
     </AdminShell>
   );

@@ -38,7 +38,7 @@ export default async function AIConfigurationPage() {
   const config = adminAIProviderConfig(await getAdminAIProviderConfig());
 
   return (
-    <AdminShell active={MODULE_KEYS.aiConfiguration} session={session} title="AI Configuration">
+    <AdminShell active={MODULE_KEYS.aiConfiguration} session={session}>
       <AIConfigurationForm config={config} embeddingProviders={embeddingProviders} llmProviders={llmProviders} />
     </AdminShell>
   );

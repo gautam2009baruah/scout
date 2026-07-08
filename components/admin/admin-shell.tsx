@@ -11,7 +11,7 @@ type AdminShellProps = {
   activeHref?: string;
   children: ReactNode;
   session: AdminSession;
-  title: string;
+  title?: string; // Optional - defaults to module name from database
 };
 
 const moduleIcons = {
@@ -34,6 +34,14 @@ const CRS_SCOUT_BASE_URL = "http://localhost:3000";
 const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
+  // Get title from database if not explicitly provided
+  // If activeHref is specified, find by href; otherwise find by key
+  const pageTitle = title || 
+    (activeHref 
+      ? session.modules.find(m => m.href === activeHref)?.name 
+      : session.modules.find(m => m.key === active)?.name) || 
+    "Control Panel";
+  
   // Group modules by parent-child relationship
   const topLevelModules = session.modules.filter(m => m.parentKey === null);
   const modulesByParent = new Map<number, typeof session.modules>();
@@ -107,7 +115,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-medium text-teal-700">{session.tenant.name}</p>
-                <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{title}</h1>
+                <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
               </div>
               <div className="flex items-center gap-2">
                 <button aria-label="Notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 hover:text-slate-950">

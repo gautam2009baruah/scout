@@ -31,7 +31,7 @@ export default async function SelfHealingReviewPage() {
   ]);
 
   return (
-    <AdminShell active={MODULE_KEYS.guidedWorkflows} activeHref="/control-panel/administration/self-healing-review" session={session} title="Self-Healing Review">
+    <AdminShell active={MODULE_KEYS.guidedWorkflows} activeHref="/control-panel/administration/self-healing-review" session={session}>
       <HealingSuggestionReviewer
         companies={companies}
         displayMode="table"

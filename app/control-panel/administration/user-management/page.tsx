@@ -50,7 +50,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
   ]);
 
   return (
-    <AdminShell active={MODULE_KEYS.userManagement} session={session} title="User Management">
+    <AdminShell active={MODULE_KEYS.userManagement} session={session}>
       <UserRegisterForm companies={companies} modules={modules} roles={roles} />
       <UserList
         companies={companies}

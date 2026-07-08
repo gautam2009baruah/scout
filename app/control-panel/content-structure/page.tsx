@@ -32,7 +32,7 @@ export default async function TopicsPage() {
   ]);
 
   return (
-    <AdminShell active={MODULE_KEYS.contentStructure} session={session} title="Content Structure">
+    <AdminShell active={MODULE_KEYS.contentStructure} session={session}>
       <TopicManager
         canManageAccess={workspace.canManageAccess}
         companies={companies}

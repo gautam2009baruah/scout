@@ -82,7 +82,7 @@ export default async function AdminDashboardPage() {
   }>;
 
   return (
-    <AdminShell active={MODULE_KEYS.overview} session={session} title="Overview">
+    <AdminShell active={MODULE_KEYS.overview} session={session}>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" key={card.label}>
