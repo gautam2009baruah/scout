@@ -558,14 +558,14 @@
             }
             
             console.log(`✅ Data capture completed:`, stepResult);
-            // Merge captured data into context for NEXT step only (one-step retention)
+            // Store captured data under 'capturedData' namespace for clean separation
             if (stepResult && stepResult.capturedData) {
-              const capturedKeys = Object.keys(stepResult.capturedData);
-              context = { ...context, ...stepResult.capturedData };
-              // Schedule these keys for cleanup after next step completes
-              pendingClearData = capturedKeys;
+              context.capturedData = stepResult.capturedData;
+              // Mark that we have captured data to clean up later
+              pendingClearData = ['capturedData'];
               dataCapturedAtStep = i; // Track which step captured the data
-              console.log(`📊 Updated context with captured data (will be cleared after step ${i + 2}):`, capturedKeys);
+              console.log(`📊 Updated context with captured data under 'capturedData' namespace (will be cleared after step ${i + 2})`);
+              console.log(`   Available fields:`, Object.keys(stepResult.capturedData));
             }
           }
           else if (step.nodeType === 'end') {
@@ -2206,7 +2206,7 @@
         
         // Get output variable name from config (default: capturedData)
         const outputVar = config.outputVariable || 'capturedData';
-        const variablePath = `{{${outputVar}.${key}}}`;
+        const variablePath = `{{${outputVar}.${key}.value}}`;
         
         // Field label cell with variable name underneath
         const fieldCell = `<div style="line-height: 1.4;">

@@ -2132,10 +2132,10 @@ function DataCaptureConfig({ config, updateConfig }: any) {
               <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
                 <p className="font-semibold text-blue-900 mb-1">💡 How to use in Condition/Variable nodes:</p>
                 <code className="text-blue-800">
-                  {`{{${config.outputVariable || "capturedData"}.fieldName}}`}
+                  {`{{${config.outputVariable || "capturedData"}.fieldName.value}}`}
                 </code>
                 <p className="mt-1 text-blue-700">
-                  Example: <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.email}}`}</code> or <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.customerName}}`}</code>
+                  Example: <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.email.value}}`}</code> or <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.customerName.value}}`}</code>
                 </p>
               </div>
             </div>
@@ -2408,7 +2408,7 @@ function ConditionConfig({ config, updateConfig }: any) {
             </p>
             <div className="bg-white border border-slate-200 rounded p-2 text-xs font-mono">
               <div className="text-blue-600">{"{{variables.orderAmount}}"}</div>
-              <div className="text-blue-600">{"{{datacapture.email}}"}</div>
+              <div className="text-blue-600">{"{{capturedData.email.value}}"}</div>
               <div className="text-blue-600">{"{{workflow.CreateInvoice.total}}"}</div>
             </div>
           </div>
@@ -2437,13 +2437,13 @@ function ConditionConfig({ config, updateConfig }: any) {
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-lg">📋</span>
                   <span className="font-semibold text-slate-800">Data Capture Node</span>
-                  <code className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs">{"{{datacapture.xxx}}"}</code>
+                  <code className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs">{"{{capturedData.xxx.value}}"}</code>
                 </div>
                 <p className="text-xs text-slate-600 mb-1">Captures user input from forms during workflow execution.</p>
                 <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
                   <div className="text-slate-500">Captured fields: email, phone, address</div>
-                  <div className="text-blue-600 mt-1">Use: {"{{datacapture.email}}"}</div>
-                  <div className="text-blue-600">Use: {"{{datacapture.phone}}"}</div>
+                  <div className="text-blue-600 mt-1">Use: {"{{capturedData.email.value}}"}</div>
+                  <div className="text-blue-600">Use: {"{{capturedData.phone.value}}"}</div>
                 </div>
               </div>
 
@@ -2511,7 +2511,7 @@ function ConditionConfig({ config, updateConfig }: any) {
               <div className="bg-white border border-slate-200 rounded p-2">
                 <div className="text-xs font-semibold text-slate-700 mb-1">Check customer type:</div>
                 <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
-                  <div>Variable: <span className="text-blue-600">{"{{datacapture.customerType}}"}</span></div>
+                  <div>Variable: <span className="text-blue-600">{"{{capturedData.customerType.value}}"}</span></div>
                   <div>Operator: <span className="text-slate-600">equals</span></div>
                   <div>Value: <span className="text-blue-600">Premium</span></div>
                 </div>
@@ -2529,7 +2529,7 @@ function ConditionConfig({ config, updateConfig }: any) {
               <div className="bg-white border border-slate-200 rounded p-2">
                 <div className="text-xs font-semibold text-slate-700 mb-1">Check if email exists:</div>
                 <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
-                  <div>Variable: <span className="text-blue-600">{"{{datacapture.email}}"}</span></div>
+                  <div>Variable: <span className="text-blue-600">{"{{capturedData.email.value}}"}</span></div>
                   <div>Operator: <span className="text-slate-600">not_empty</span></div>
                   <div className="text-slate-500 italic">(No value needed for this operator)</div>
                 </div>
