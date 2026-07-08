@@ -42,12 +42,12 @@ CREATE TABLE IF NOT EXISTS email_credentials (
 );
 
 -- Indexes
-CREATE INDEX idx_email_credentials_company ON email_credentials(company_id);
-CREATE INDEX idx_email_credentials_provider ON email_credentials(provider);
-CREATE INDEX idx_email_credentials_active ON email_credentials(is_active);
+CREATE INDEX IF NOT EXISTS idx_email_credentials_company ON email_credentials(company_id);
+CREATE INDEX IF NOT EXISTS idx_email_credentials_provider ON email_credentials(provider);
+CREATE INDEX IF NOT EXISTS idx_email_credentials_active ON email_credentials(is_active);
 
 -- Unique constraint: one active credential per email address per company
-CREATE UNIQUE INDEX idx_email_credentials_unique_active 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_email_credentials_unique_active 
   ON email_credentials(company_id, email_address, provider) 
   WHERE is_active = true;
 
@@ -60,6 +60,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_email_credentials_updated_at ON email_credentials;
 CREATE TRIGGER trigger_email_credentials_updated_at
   BEFORE UPDATE ON email_credentials
   FOR EACH ROW
