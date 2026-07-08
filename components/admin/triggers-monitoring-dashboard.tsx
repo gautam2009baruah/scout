@@ -173,10 +173,7 @@ export function TriggersMonitoringDashboard() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Triggers Monitoring
-          </h1>
-          <p className="text-sm text-slate-600 mt-1">
+          <p className="text-sm text-slate-600">
             Monitor and manage all orchestration triggers
           </p>
         </div>

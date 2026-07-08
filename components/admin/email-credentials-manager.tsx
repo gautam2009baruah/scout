@@ -144,8 +144,7 @@ export function EmailCredentialsManager() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Email Credentials</h2>
-          <p className="text-sm text-slate-600 mt-1">
+          <p className="text-sm text-slate-600">
             Manage email accounts for email trigger monitoring
           </p>
         </div>
