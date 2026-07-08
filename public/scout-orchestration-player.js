@@ -2296,6 +2296,7 @@
    */
   async function executeServerSideNode(executionId, nodeIndex, step, context) {
     console.log(`🔄 Executing server-side node: ${step.nodeType}`);
+    console.log(`📤 Sending context to server:`, context);
 
     const response = await fetch(`${config.apiBaseUrl}/api/orchestrations/execute/${executionId}/continue`, {
       method: 'POST',
@@ -2312,6 +2313,21 @@
     }
 
     const result = await response.json();
+    console.log(`📥 Server response:`, result);
+    
+    if (result.output) {
+      console.log(`📊 Output details:`, JSON.stringify(result.output, null, 2));
+      
+      // For condition nodes, show what was evaluated
+      if (step.nodeType === 'condition' && result.output.outputHandle) {
+        console.log(`\n🔀 [SERVER RESULT] Condition evaluated to: ${result.output.outputHandle.toUpperCase()}`);
+        console.log(`   Success: ${result.output.success}`);
+        if (result.output.error) {
+          console.error(`   ❌ Error: ${result.output.error}`);
+        }
+      }
+    }
+    
     return result.output;
   }
 
