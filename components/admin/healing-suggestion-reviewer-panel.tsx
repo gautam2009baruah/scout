@@ -227,7 +227,7 @@ export function HealingSuggestionReviewerPanel({ companies = [], displayMode = "
     }
   }
 
-  const shellClass = embedded ? "grid gap-4" : "mx-auto grid max-w-6xl gap-5 p-6";
+  const shellClass = embedded ? "grid gap-4" : "mx-auto grid max-w-6xl gap-5";
 
   return (
     <div className={shellClass}>
