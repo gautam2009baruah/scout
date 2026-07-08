@@ -852,43 +852,189 @@ function TriggerConfig({ config, updateConfig }: any) {
         <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded space-y-3">
           <h4 className="text-sm font-semibold text-slate-700">Webhook Settings</h4>
           
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-2">Allowed HTTP Methods</label>
-            <div className="flex gap-3">
-              {["GET", "POST", "PUT"].map((method) => (
-                <label key={method} className="flex items-center gap-1 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={(config.allowedMethods || ["POST"]).includes(method)}
-                    onChange={(e) => {
-                      const current = config.allowedMethods || ["POST"];
-                      const updated = e.target.checked
-                        ? [...current, method]
-                        : current.filter((m: string) => m !== method);
-                      updateConfig({ allowedMethods: updated });
-                    }}
-                  />
-                  {method}
+          {/* Webhook URL Display */}
+          {config.webhookUrl && (
+            <div className="bg-white border border-blue-200 rounded-lg p-3 space-y-2">
+              <label className="block text-xs font-semibold text-slate-700">Webhook URL</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="flex-1 rounded border border-slate-300 px-3 py-2 text-xs font-mono bg-slate-50"
+                  value={config.webhookUrl}
+                  readOnly
+                />
+                <button
+                  type="button"
+                  className="px-3 py-2 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                  onClick={() => {
+                    navigator.clipboard.writeText(config.webhookUrl);
+                    alert("Webhook URL copied to clipboard!");
+                  }}
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="text-xs text-blue-700">
+                📌 Use this URL to receive webhooks from external services
+              </p>
+            </div>
+          )}
+
+          {/* Security Section */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Security</h5>
+            
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="requireSignature"
+                checked={config.requireSignature === true}
+                onChange={(e) => updateConfig({ requireSignature: e.target.checked })}
+              />
+              <label htmlFor="requireSignature" className="text-sm text-slate-700">
+                Require HMAC-SHA256 signature validation
+              </label>
+            </div>
+
+            {config.requireSignature && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Secret Key <span className="text-red-500">*</span>
                 </label>
-              ))}
+                <input
+                  type="text"
+                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
+                  placeholder="Enter a secure secret key"
+                  value={config.secretKey || ""}
+                  onChange={(e) => updateConfig({ secretKey: e.target.value })}
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Share this key with the webhook sender. They'll use it to sign requests.
+                </p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                IP Allowlist (optional)
+              </label>
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                placeholder="192.168.1.1, 10.0.0.5"
+                value={(config.allowedIps || []).join(", ")}
+                onChange={(e) => {
+                  const ips = e.target.value.split(",").map(ip => ip.trim()).filter(ip => ip);
+                  updateConfig({ allowedIps: ips });
+                }}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Comma-separated IP addresses. Leave empty to allow all IPs.
+              </p>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">IP Allowlist (optional)</label>
-            <input
-              type="text"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="192.168.1.1, 10.0.0.5"
-              value={(config.allowedIPs || []).join(", ")}
-              onChange={(e) => {
-                const ips = e.target.value.split(",").map(ip => ip.trim()).filter(ip => ip);
-                updateConfig({ allowedIPs: ips });
-              }}
-            />
-            <p className="text-xs text-slate-500 mt-1">Comma-separated IP addresses</p>
+          {/* Request Configuration */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Request Configuration</h5>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Expected HTTP Method</label>
+              <select
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.expectedMethod || "POST"}
+                onChange={(e) => updateConfig({ expectedMethod: e.target.value })}
+              >
+                <option value="POST">POST</option>
+                <option value="GET">GET</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Expected Content-Type</label>
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                placeholder="application/json"
+                value={config.expectedContentType || "application/json"}
+                onChange={(e) => updateConfig({ expectedContentType: e.target.value })}
+              />
+            </div>
           </div>
 
+          {/* Payload Filtering */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Payload Filtering</h5>
+            <p className="text-xs text-slate-600">
+              Only trigger if the webhook payload matches these filters
+            </p>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Filters (JSON)
+              </label>
+              <textarea
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
+                rows={4}
+                placeholder={'{\n  "event": "user.created",\n  "source": "github"\n}'}
+                value={
+                  config.payloadFilters
+                    ? JSON.stringify(config.payloadFilters, null, 2)
+                    : ""
+                }
+                onChange={(e) => {
+                  try {
+                    const filters = e.target.value ? JSON.parse(e.target.value) : {};
+                    updateConfig({ payloadFilters: filters });
+                  } catch (err) {
+                    // Invalid JSON, don't update
+                  }
+                }}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Example: {`{"event": "user.created"}`} - only process if event equals "user.created"
+              </p>
+            </div>
+          </div>
+
+          {/* Data Mapping */}
+          <div className="space-y-3">
+            <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Data Extraction</h5>
+            <p className="text-xs text-slate-600">
+              Extract specific fields from webhook payload
+            </p>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Data Mapping (JSON)
+              </label>
+              <textarea
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
+                rows={4}
+                placeholder={'{\n  "userId": "$.user.id",\n  "email": "$.user.email"\n}'}
+                value={
+                  config.dataMapping
+                    ? JSON.stringify(config.dataMapping, null, 2)
+                    : ""
+                }
+                onChange={(e) => {
+                  try {
+                    const mapping = e.target.value ? JSON.parse(e.target.value) : {};
+                    updateConfig({ dataMapping: mapping });
+                  } catch (err) {
+                    // Invalid JSON, don't update
+                  }
+                }}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Use JSONPath: {`{"userId": "$.user.id"}`} or dot notation: {`{"userId": "user.id"}`}
+              </p>
+            </div>
+          </div>
+
+          {/* Status */}
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -899,7 +1045,48 @@ function TriggerConfig({ config, updateConfig }: any) {
             <label htmlFor="webhookEnabled" className="text-sm text-slate-700">Enabled</label>
           </div>
 
-          <p className="text-xs text-blue-700">ℹ️ Webhook URL and secret will be generated when trigger is created</p>
+          {/* Statistics */}
+          {config.webhookStats && (
+            <div className="bg-white border border-blue-200 rounded-lg p-3 space-y-2">
+              <h6 className="text-xs font-semibold text-slate-700">Webhook Statistics</h6>
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div>
+                  <div className="text-slate-500">Total</div>
+                  <div className="text-lg font-semibold">{config.webhookStats.total || 0}</div>
+                </div>
+                <div>
+                  <div className="text-green-600">Success</div>
+                  <div className="text-lg font-semibold text-green-700">{config.webhookStats.success || 0}</div>
+                </div>
+                <div>
+                  <div className="text-red-600">Failed</div>
+                  <div className="text-lg font-semibold text-red-700">{config.webhookStats.failed || 0}</div>
+                </div>
+              </div>
+              {config.webhookStats.lastTriggered && (
+                <p className="text-xs text-slate-600">
+                  Last triggered: {new Date(config.webhookStats.lastTriggered).toLocaleString()}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs space-y-2">
+            <p className="font-semibold text-blue-900">💡 How Webhook Triggers Work:</p>
+            <div className="space-y-1 text-blue-800">
+              <p><strong>1. External Service:</strong> Sends HTTP POST to your webhook URL</p>
+              <p><strong>2. Validation:</strong> Checks signature (if enabled) and IP allowlist</p>
+              <p><strong>3. Filtering:</strong> Matches payload against filters</p>
+              <p><strong>4. Extraction:</strong> Pulls data using mapping rules</p>
+              <p><strong>5. Execution:</strong> Triggers orchestration with extracted data</p>
+            </div>
+          </div>
+
+          {!config.webhookUrl && (
+            <p className="text-xs text-blue-700">
+              ℹ️ Save the orchestration to generate a webhook URL
+            </p>
+          )}
         </div>
       )}
 
