@@ -300,6 +300,11 @@
     let dataCapturedAtStep = payload._dataCapturedAtStep || -1; // Track which step captured the data
     const resumeFromStep = payload._resumeFrom || 0; // Resume from this step if navigated
     
+    // Initialize context scopes if not present
+    if (!context.variables) {
+      context.variables = {};
+    }
+    
     // Check storage availability for cross-page orchestrations
     if (!isSessionStorageAvailable() && !payload._resumeFrom) {
       console.error('❌ sessionStorage is not available');
@@ -599,6 +604,16 @@
             // Server-side node (condition, variable, api_call, notification, etc.)
             console.log(`🔄 Sending to server for execution: ${step.nodeType}`);
             stepResult = await executeServerSideNode(executionId, i, step, context);
+            
+            // Handle variable node output - merge into context.variables
+            if (step.nodeType === 'variable' && stepResult && stepResult.output) {
+              if (!context.variables) {
+                context.variables = {};
+              }
+              // Merge variable outputs into context.variables
+              Object.assign(context.variables, stepResult.output);
+              console.log(`📊 [VARIABLES] Updated context.variables:`, context.variables);
+            }
             
             // Handle condition node branching
             if (step.nodeType === 'condition' && stepResult && stepResult.outputHandle) {
@@ -2376,6 +2391,7 @@
     // Replace {{variable}} patterns
     return template.replace(/\{\{([^}]+)\}\}/g, (match, varName) => {
       const trimmedName = varName.trim();
+      console.log(`   🔍 Resolving: ${match}`);
       
       // Support nested access like {{trigger.input.name}}
       const parts = trimmedName.split('.');
@@ -2383,11 +2399,14 @@
       for (const part of parts) {
         if (value && typeof value === 'object' && part in value) {
           value = value[part];
+          console.log(`      ✓ Found '${part}':`, value);
         } else {
+          console.log(`      ❌ '${part}' not found in:`, Object.keys(value || {}));
           return match; // Keep original if not found
         }
       }
       
+      console.log(`   ✅ Resolved to:`, value);
       return value !== undefined ? value : match;
     });
   }
