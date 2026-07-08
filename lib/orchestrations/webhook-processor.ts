@@ -6,6 +6,7 @@
 import crypto from "crypto";
 import { getPool } from "@/lib/db/pool";
 import { OrchestrationEngine } from "./engine";
+import { createExecution, getNodes, getConnections } from "./db";
 import type {
   WebhookTrigger,
   WebhookRequest,
@@ -332,12 +333,29 @@ export async function processWebhook(
       ? extractData(payload, trigger.dataMapping)
       : {};
 
-    // Trigger orchestration
-    const engine = new OrchestrationEngine();
-    const execution = await engine.execute(trigger.orchestrationId, {
-      webhookPayload: payload,
-      ...extractedData,
+    // Create execution record
+    const execution = await createExecution({
+      orchestrationId: trigger.orchestrationId,
+      orchestrationVersion: 1, // TODO: Get actual version from orchestration
+      context: {
+        trigger: {
+          type: "webhook",
+          webhookToken: trigger.webhookToken,
+          webhookPayload: payload,
+          extractedData,
+          requestIp: request.ip,
+        },
+      },
+      triggerData: payload,
+      triggeredBy: request.ip,
     });
+
+    // Get nodes and connections for orchestration
+    const nodes = await getNodes(trigger.orchestrationId);
+    const connections = await getConnections(trigger.orchestrationId);
+
+    // Execute orchestration in background
+    executeInBackground(execution, nodes, connections, trigger, startTime);
 
     // Update webhook statistics
     await pool.query(
@@ -451,4 +469,56 @@ async function logWebhookDelivery(
       result.extractedData ? JSON.stringify(result.extractedData) : null,
     ]
   );
+}
+
+/**
+ * Execute orchestration in background
+ */
+async function executeInBackground(
+  execution: any,
+  nodes: any[],
+  connections: any[],
+  trigger: WebhookTrigger,
+  startTime: number
+): Promise<void> {
+  try {
+    const engine = new OrchestrationEngine(execution, nodes, connections);
+    const result = await engine.execute();
+
+    if (!result.success) {
+      // Update failed deliveries count
+      const pool = getPool();
+      await pool.query(
+        `UPDATE webhook_triggers
+         SET failed_deliveries = failed_deliveries + 1,
+             successful_deliveries = successful_deliveries - 1
+         WHERE id = $1`,
+        [trigger.id]
+      );
+
+      console.error(
+        `[WebhookProcessor] Orchestration execution failed for webhook ${trigger.id}:`,
+        result.error
+      );
+    }
+  } catch (error) {
+    console.error(
+      `[WebhookProcessor] Background execution error for webhook ${trigger.id}:`,
+      error
+    );
+
+    // Update failed deliveries count
+    try {
+      const pool = getPool();
+      await pool.query(
+        `UPDATE webhook_triggers
+         SET failed_deliveries = failed_deliveries + 1,
+             successful_deliveries = successful_deliveries - 1
+         WHERE id = $1`,
+        [trigger.id]
+      );
+    } catch (updateError) {
+      console.error("[WebhookProcessor] Failed to update delivery statistics:", updateError);
+    }
+  }
 }
