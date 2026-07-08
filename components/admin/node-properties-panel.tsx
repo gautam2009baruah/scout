@@ -732,12 +732,61 @@ function TriggerConfig({ config, updateConfig }: any) {
                 onChange={(e) => updateConfig({ cronExpression: e.target.value })}
               />
               <p className="text-xs text-slate-500 mt-1">Format: minute hour day month weekday</p>
-              <div className="text-xs text-slate-600 mt-2 space-y-1">
-                <div>Examples:</div>
-                <div className="font-mono">0 9 * * * = Every day at 9:00 AM</div>
-                <div className="font-mono">0 9 * * 1 = Every Monday at 9:00 AM</div>
-                <div className="font-mono">*/15 * * * * = Every 15 minutes</div>
-              </div>
+              
+              {/* Cron Cheat Sheet */}
+              <details className="text-xs mt-2 bg-white border border-purple-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-purple-900 hover:text-purple-700">
+                  📖 Cron Expression Cheat Sheet
+                </summary>
+                <div className="mt-2 space-y-3">
+                  <div>
+                    <div className="font-semibold text-slate-700 mb-1">Field Format:</div>
+                    <div className="font-mono text-xs bg-slate-50 p-2 rounded">
+                      ┌───────────── minute (0-59)<br/>
+                      │ ┌─────────── hour (0-23)<br/>
+                      │ │ ┌───────── day of month (1-31)<br/>
+                      │ │ │ ┌─────── month (1-12)<br/>
+                      │ │ │ │ ┌───── day of week (0-6, Sunday=0)<br/>
+                      │ │ │ │ │<br/>
+                      * * * * *
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className="font-semibold text-slate-700 mb-1">Special Characters:</div>
+                    <div className="space-y-1 text-slate-600">
+                      <div><span className="font-mono">*</span> = Any value</div>
+                      <div><span className="font-mono">,</span> = List (e.g., 1,15 = 1st and 15th)</div>
+                      <div><span className="font-mono">-</span> = Range (e.g., 1-5 = 1 through 5)</div>
+                      <div><span className="font-mono">/</span> = Step (e.g., */15 = every 15 units)</div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="font-semibold text-slate-700 mb-1">Common Examples:</div>
+                    <div className="space-y-1 text-slate-600">
+                      <div><span className="font-mono">0 9 * * *</span> = Every day at 9:00 AM</div>
+                      <div><span className="font-mono">0 9 * * 1-5</span> = Weekdays at 9:00 AM</div>
+                      <div><span className="font-mono">0 9 * * 1</span> = Every Monday at 9:00 AM</div>
+                      <div><span className="font-mono">0 9 1 * *</span> = 1st of every month at 9:00 AM</div>
+                      <div><span className="font-mono">*/15 * * * *</span> = Every 15 minutes</div>
+                      <div><span className="font-mono">0 */2 * * *</span> = Every 2 hours</div>
+                      <div><span className="font-mono">30 8 * * 1,5</span> = Monday & Friday at 8:30 AM</div>
+                      <div><span className="font-mono">0 0 1,15 * *</span> = 1st & 15th at midnight</div>
+                    </div>
+                  </div>
+
+                  <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
+                    <div className="font-semibold text-yellow-900 mb-1">⚠️ Troubleshooting:</div>
+                    <ul className="list-disc list-inside text-yellow-800 space-y-1">
+                      <li>Check timezone setting if schedule seems off</li>
+                      <li>Use online tools like crontab.guru to validate</li>
+                      <li>Schedule worker must be running</li>
+                      <li>Enable trigger and save orchestration</li>
+                    </ul>
+                  </div>
+                </div>
+              </details>
             </div>
           )}
 
@@ -1280,6 +1329,74 @@ function TriggerConfig({ config, updateConfig }: any) {
             />
             <label htmlFor="emailEnabled" className="text-sm text-slate-700">Enabled</label>
           </div>
+
+          {/* Email Filter Help & Examples */}
+          <details className="text-xs bg-white border border-pink-200 rounded p-2">
+            <summary className="cursor-pointer font-semibold text-pink-900 hover:text-pink-700">
+              📖 Email Filter Examples & Tips
+            </summary>
+            <div className="mt-2 space-y-3">
+              <div>
+                <div className="font-semibold text-slate-700 mb-1">Subject Filter Examples:</div>
+                <div className="space-y-1 text-slate-600">
+                  <div><span className="font-mono">"Invoice"</span> - Matches emails with "Invoice" in subject</div>
+                  <div><span className="font-mono">"Invoice,Receipt"</span> - Matches either word (comma-separated)</div>
+                  <div><span className="font-mono">"Daily Report"</span> - Matches exact phrase</div>
+                  <div><span className="font-mono">"[Action Required]"</span> - Works with special characters</div>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-semibold text-slate-700 mb-1">Sender Filter Examples:</div>
+                <div className="space-y-1 text-slate-600">
+                  <div><span className="font-mono">notifications@company.com</span> - Specific sender</div>
+                  <div><span className="font-mono">*@company.com</span> - Any sender from domain</div>
+                  <div><span className="font-mono">noreply@*</span> - All noreply addresses</div>
+                </div>
+              </div>
+
+              <div>
+                <div className="font-semibold text-slate-700 mb-1">Common Use Cases:</div>
+                <div className="space-y-2 text-slate-600">
+                  <div>
+                    <div className="font-medium">📄 Process Invoices:</div>
+                    <div className="ml-3">Subject: "Invoice" | Sender: billing@vendor.com</div>
+                  </div>
+                  <div>
+                    <div className="font-medium">📊 Daily Reports:</div>
+                    <div className="ml-3">Subject: "Daily Report" | Unread only: ✓</div>
+                  </div>
+                  <div>
+                    <div className="font-medium">🚨 Alert Processing:</div>
+                    <div className="ml-3">Subject: "[ALERT]" | Mark processed: ✓</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
+                <div className="font-semibold text-yellow-900 mb-1">⚠️ Troubleshooting:</div>
+                <ul className="list-disc list-inside text-yellow-800 space-y-1">
+                  <li>Configure email credentials in Email Credentials menu</li>
+                  <li>Enable OAuth2 or App Passwords for Gmail</li>
+                  <li>Check polling interval (minimum 1 minute)</li>
+                  <li>Email poller worker must be running</li>
+                  <li>Test with "unread only" disabled first</li>
+                  <li>Check spam/junk folder if emails not triggering</li>
+                </ul>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded p-2">
+                <div className="font-semibold text-blue-900 mb-1">💡 Best Practices:</div>
+                <ul className="list-disc list-inside text-blue-800 space-y-1">
+                  <li>Use specific sender filters to avoid false triggers</li>
+                  <li>Enable "mark as processed" to avoid duplicates</li>
+                  <li>Start with longer polling intervals (5-15 min)</li>
+                  <li>Use dedicated mailbox for automation</li>
+                  <li>Test filters with sample emails first</li>
+                </ul>
+              </div>
+            </div>
+          </details>
 
           <p className="text-xs text-pink-700">ℹ️ Email credentials must be configured separately</p>
         </div>

@@ -16,5 +16,6 @@ export { MasterDataForms } from "./master-data-forms";
 export { MasterDataSummary } from "./master-data-summary";
 export { MultiSelectDropdown } from "./multi-select-dropdown";
 export { TopicManager } from "./topic-manager";
+export { TriggersMonitoringDashboard } from "./triggers-monitoring-dashboard";
 export { WebhookDeliveriesViewer } from "./webhook-deliveries-viewer";
 export { WorkflowAnalyticsDashboard } from "./workflow-analytics-dashboard";
