@@ -3,6 +3,8 @@
 
 import { getPool } from "@/lib/db/pool";
 import { createDecipheriv } from "crypto";
+import Imap from "imap";
+import { simpleParser, ParsedMail, Attachment } from "mailparser";
 
 export type IMAPConfig = {
   host: string;
@@ -70,82 +72,182 @@ export async function getIMAPCredentials(credentialId: string): Promise<IMAPConf
 
 /**
  * Connect to IMAP server and fetch unread emails
- * 
- * Note: This is a placeholder implementation. In production, use a proper IMAP library
- * like 'node-imap' or 'emailjs-imap-client'
  */
 export async function fetchIMAPEmails(
   config: IMAPConfig,
   folder: string = "INBOX",
   unreadOnly: boolean = true
 ): Promise<EmailMessage[]> {
-  console.log(`Connecting to IMAP server: ${config.host}:${config.port}`);
-  console.log(`Folder: ${folder}, Unread only: ${unreadOnly}`);
-  
-  // TODO: Implement actual IMAP connection using a library like 'node-imap'
-  // For now, return empty array as placeholder
-  
-  /*
-  Example implementation with node-imap:
-  
-  const Imap = require('node-imap');
-  
-  const imap = new Imap({
-    user: config.username,
-    password: config.password,
-    host: config.host,
-    port: config.port,
-    tls: config.tls,
-    tlsOptions: { rejectUnauthorized: false }
-  });
+  console.log(`[IMAP] Connecting to ${config.host}:${config.port}`);
+  console.log(`[IMAP] Folder: ${folder}, Unread only: ${unreadOnly}`);
   
   return new Promise((resolve, reject) => {
-    imap.once('ready', () => {
+    const imap = new Imap({
+      user: config.username,
+      password: config.password,
+      host: config.host,
+      port: config.port,
+      tls: config.tls,
+      tlsOptions: { rejectUnauthorized: false },
+    });
+
+    let messages: EmailMessage[] = [];
+
+    imap.once("ready", () => {
+      console.log("[IMAP] Connected, opening mailbox...");
+      
       imap.openBox(folder, false, (err, box) => {
-        if (err) return reject(err);
-        
-        const searchCriteria = unreadOnly ? ['UNSEEN'] : ['ALL'];
-        const fetchOptions = { bodies: '', struct: true };
+        if (err) {
+          console.error("[IMAP] Error opening mailbox:", err);
+          imap.end();
+          return reject(err);
+        }
+
+        console.log(`[IMAP] Mailbox opened: ${box.messages.total} total messages`);
+
+        // Search criteria: unread or all
+        const searchCriteria = unreadOnly ? ["UNSEEN"] : ["ALL"];
         
         imap.search(searchCriteria, (err, results) => {
-          if (err) return reject(err);
+          if (err) {
+            console.error("[IMAP] Search error:", err);
+            imap.end();
+            return reject(err);
+          }
+
           if (!results || results.length === 0) {
+            console.log("[IMAP] No messages found");
             imap.end();
             return resolve([]);
           }
-          
-          const messages: EmailMessage[] = [];
-          const fetch = imap.fetch(results, fetchOptions);
-          
-          fetch.on('message', (msg, seqno) => {
-            const message: Partial<EmailMessage> = {};
+
+          console.log(`[IMAP] Found ${results.length} message(s)`);
+
+          // Fetch message details
+          const fetch = imap.fetch(results, {
+            bodies: "",
+            struct: true,
+          });
+
+          let processed = 0;
+
+          fetch.on("message", (msg, seqno) => {
+            console.log(`[IMAP] Processing message #${seqno}`);
             
-            msg.on('body', (stream, info) => {
-              let buffer = '';
-              stream.on('data', (chunk) => buffer += chunk.toString('utf8'));
-              stream.once('end', () => {
-                // Parse email headers and body
-                // Extract messageId, from, to, subject, body, attachments
-                messages.push(message as EmailMessage);
+            let buffer = "";
+
+            msg.on("body", (stream, info) => {
+              stream.on("data", (chunk) => {
+                buffer += chunk.toString("utf8");
+              });
+
+              stream.once("end", async () => {
+                try {
+                  // Parse email with mailparser
+                  const parsed = await simpleParser(buffer);
+                  
+                  // Extract message data
+                  const emailMessage: EmailMessage = {
+                    messageId: parsed.messageId || `${seqno}-${Date.now()}`,
+                    from: extractEmailAddress(parsed.from),
+                    to: extractEmailAddress(parsed.to),
+                    subject: parsed.subject || "(no subject)",
+                    bodyText: parsed.text || "",
+                    bodyHtml: parsed.html || "",
+                    receivedAt: parsed.date || new Date(),
+                    attachments: extractAttachments(parsed),
+                  };
+
+                  messages.push(emailMessage);
+                  processed++;
+
+                  console.log(`[IMAP] ✅ Parsed message: ${emailMessage.subject}`);
+
+                  // If all messages processed, close connection
+                  if (processed === results.length) {
+                    imap.end();
+                  }
+                } catch (parseError) {
+                  console.error("[IMAP] Error parsing message:", parseError);
+                  processed++;
+                  
+                  if (processed === results.length) {
+                    imap.end();
+                  }
+                }
               });
             });
+
+            msg.once("attributes", (attrs) => {
+              // Could use attrs for additional metadata if needed
+            });
+
+            msg.once("end", () => {
+              // Message fetched completely
+            });
           });
-          
-          fetch.once('end', () => {
+
+          fetch.once("error", (err) => {
+            console.error("[IMAP] Fetch error:", err);
             imap.end();
-            resolve(messages);
+            reject(err);
+          });
+
+          fetch.once("end", () => {
+            console.log("[IMAP] Fetch completed");
+            // Connection will be closed after all messages are parsed
           });
         });
       });
     });
-    
-    imap.once('error', reject);
+
+    imap.once("error", (err) => {
+      console.error("[IMAP] Connection error:", err);
+      reject(err);
+    });
+
+    imap.once("end", () => {
+      console.log(`[IMAP] Connection closed. Returning ${messages.length} message(s)`);
+      resolve(messages);
+    });
+
     imap.connect();
   });
-  */
+}
+
+/**
+ * Extract email address from parsed address object
+ */
+function extractEmailAddress(addressObj: any): string {
+  if (!addressObj) return "";
   
-  console.warn("IMAP implementation pending. Install 'node-imap' package and implement above.");
-  return [];
+  if (typeof addressObj === "string") return addressObj;
+  
+  if (Array.isArray(addressObj.value) && addressObj.value.length > 0) {
+    return addressObj.value[0].address || "";
+  }
+  
+  if (addressObj.value && typeof addressObj.value === "object") {
+    return addressObj.value.address || "";
+  }
+  
+  return "";
+}
+
+/**
+ * Extract attachments from parsed email
+ */
+function extractAttachments(parsed: ParsedMail): EmailMessage["attachments"] {
+  if (!parsed.attachments || parsed.attachments.length === 0) {
+    return [];
+  }
+
+  return parsed.attachments.map((att: Attachment) => ({
+    filename: att.filename || "unnamed",
+    contentType: att.contentType || "application/octet-stream",
+    size: att.size || 0,
+    data: att.content,
+  }));
 }
 
 /**
