@@ -3070,19 +3070,47 @@ function EndConfig({ config, updateConfig }: any) {
       </div>
 
       {config.displayMessage && (
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1">
-            Message <span className="text-red-500">*</span>
-          </label>
-          <textarea
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-            value={config.message || ""}
-            onChange={(e) => updateConfig({ message: e.target.value })}
-            placeholder="e.g., Orchestration completed successfully!"
-            rows={3}
-          />
-          <p className="mt-1 text-xs text-slate-500">Message shown to user at completion</p>
-        </div>
+        <>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">
+              Message <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+              value={config.message || ""}
+              onChange={(e) => updateConfig({ message: e.target.value })}
+              placeholder="e.g., Order {{variables.orderId}} completed with total ${{variables.total}}"
+              rows={3}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              You can use variables like {'{{variables.total}}'}, {'{{capturedData.name.value}}'}, or {'{{workflow.Result.status}}'}
+            </p>
+          </div>
+
+          {/* Help Section */}
+          <details className="border border-slate-300 rounded-lg bg-white">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
+              💡 Using Variables in Messages
+            </summary>
+            <div className="px-4 py-3 space-y-2 text-xs border-t border-slate-200 bg-blue-50">
+              <p className="text-blue-800">
+                You can include dynamic values from your orchestration in the end message:
+              </p>
+              <div className="space-y-1 text-blue-700">
+                <p><strong>From Variables:</strong> <code className="bg-blue-100 px-1 rounded">{'{{variables.total}}'}</code></p>
+                <p><strong>From Captured Data:</strong> <code className="bg-blue-100 px-1 rounded">{'{{capturedData.customerName.value}}'}</code></p>
+                <p><strong>From Workflow:</strong> <code className="bg-blue-100 px-1 rounded">{'{{workflow.ProcessOrder.orderId}}'}</code></p>
+                <p><strong>From Trigger:</strong> <code className="bg-blue-100 px-1 rounded">{'{{trigger.requestId}}'}</code></p>
+              </div>
+              <div className="mt-2 p-2 bg-white border border-blue-200 rounded">
+                <p className="font-semibold text-blue-900 mb-1">Example:</p>
+                <p className="font-mono text-blue-800">
+                  Order #{'{{variables.orderId}}'} completed! Total: ${'{{variables.total}}'}
+                </p>
+              </div>
+            </div>
+          </details>
+        </>
       )}
     </div>
   );

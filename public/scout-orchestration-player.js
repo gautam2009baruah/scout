@@ -575,15 +575,23 @@
             const endConfig = step.config || {};
             if (endConfig.displayMessage && endConfig.message) {
               console.log('📢 Displaying end node message to user');
+              
+              // Resolve variables in message
+              const resolvedMessage = resolveVariable(endConfig.message, context);
+              console.log(`   Original message: ${endConfig.message}`);
+              if (resolvedMessage !== endConfig.message) {
+                console.log(`   Resolved message: ${resolvedMessage}`);
+              }
+              
               if (typeof window.showScoutNotification === 'function') {
                 window.showScoutNotification({
-                  message: endConfig.message,
+                  message: resolvedMessage,
                   type: 'info',
                   duration: 8000 // Auto-hide after 8 seconds
                 });
               } else {
                 // Fallback to alert if notification system not available
-                alert(endConfig.message);
+                alert(resolvedMessage);
               }
             }
           }
