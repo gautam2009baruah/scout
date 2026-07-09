@@ -41,6 +41,7 @@ export function EmailCredentialsManager() {
   });
   const [testingId, setTestingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [editingCredential, setEditingCredential] = useState<EmailCredential | null>(null);
   const [editForm, setEditForm] = useState<Partial<NewCredential>>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
@@ -236,6 +237,37 @@ export function EmailCredentialsManager() {
     } catch (error: any) {
       setMessage({ type: "error", text: "Unable to update credential. Please try again." });
       console.error("[Email Credentials] Update exception:", error);
+    }
+  }
+
+  async function handleToggleActive(credentialId: string, currentStatus: boolean, credentialName: string) {
+    const action = currentStatus ? "disable" : "enable";
+    if (!confirm(`Are you sure you want to ${action} "${credentialName}"?`)) {
+      return;
+    }
+
+    setTogglingId(credentialId);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/orchestrations/email-credentials/${credentialId}/toggle`, {
+        method: "PATCH",
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMessage({ type: "success", text: `Email credential ${action}d successfully` });
+        await loadCredentials();
+      } else {
+        setMessage({ type: "error", text: `Unable to ${action} credential. Please try again.` });
+        console.error("[Email Credentials] Toggle error:", data.error);
+      }
+    } catch (error: any) {
+      setMessage({ type: "error", text: `Unable to ${action} credential. Please try again.` });
+      console.error("[Email Credentials] Toggle exception:", error);
+    } finally {
+      setTogglingId(null);
     }
   }
 
@@ -581,9 +613,9 @@ export function EmailCredentialsManager() {
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleTestCredential(cred.id)}
-                        disabled={testingId !== null || deletingId !== null}
+                        disabled={!cred.is_active || testingId !== null || deletingId !== null || togglingId !== null}
                         className="p-2 text-blue-600 hover:bg-blue-50 rounded disabled:text-slate-400 disabled:cursor-not-allowed transition"
-                        title="Test Connection"
+                        title={cred.is_active ? "Test Connection" : "Cannot test disabled credential"}
                       >
                         {testingId === cred.id ? (
                           <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -597,9 +629,32 @@ export function EmailCredentialsManager() {
                         )}
                       </button>
                       <button
+                        onClick={() => handleToggleActive(cred.id, cred.is_active, cred.name)}
+                        disabled={testingId !== null || deletingId !== null || togglingId !== null}
+                        className={`p-2 rounded disabled:text-slate-400 disabled:cursor-not-allowed transition ${
+                          cred.is_active ? 'text-orange-600 hover:bg-orange-50' : 'text-green-600 hover:bg-green-50'
+                        }`}
+                        title={cred.is_active ? "Disable Credential" : "Enable Credential"}
+                      >
+                        {togglingId === cred.id ? (
+                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : cred.is_active ? (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        )}
+                      </button>
+                      <button
                         onClick={() => handleEditClick(cred)}
-                        disabled={testingId !== null || deletingId !== null}
-                        className="p-2 text-green-600 hover:bg-green-50 rounded disabled:text-slate-400 disabled:cursor-not-allowed transition"
+                        disabled={testingId !== null || deletingId !== null || togglingId !== null}
+                        className="p-2 text-purple-600 hover:bg-purple-50 rounded disabled:text-slate-400 disabled:cursor-not-allowed transition"
                         title="Edit Credential"
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -608,7 +663,7 @@ export function EmailCredentialsManager() {
                       </button>
                       <button
                         onClick={() => handleDeleteCredential(cred.id, cred.name)}
-                        disabled={testingId !== null || deletingId !== null}
+                        disabled={testingId !== null || deletingId !== null || togglingId !== null}
                         className="p-2 text-red-600 hover:bg-red-50 rounded disabled:text-slate-400 disabled:cursor-not-allowed transition"
                         title="Delete Credential"
                       >
