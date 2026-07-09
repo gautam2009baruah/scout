@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
         is_active,
         last_tested_at,
         last_test_status,
+        last_test_error,
         created_at
        FROM email_credentials
        WHERE company_id = $1

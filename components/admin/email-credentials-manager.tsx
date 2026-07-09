@@ -10,6 +10,7 @@ type EmailCredential = {
   is_active: boolean;
   last_tested_at: string | null;
   last_test_status: "success" | "failed" | null;
+  last_test_error: string | null;
   created_at: string;
 };
 
@@ -361,9 +362,16 @@ export function EmailCredentialsManager() {
                       <div>
                         <div>{new Date(cred.last_tested_at).toLocaleDateString()}</div>
                         {cred.last_test_status && (
-                          <span className={`text-xs ${cred.last_test_status === "success" ? "text-green-600" : "text-red-600"}`}>
-                            {cred.last_test_status}
-                          </span>
+                          <div>
+                            <span className={`text-xs ${cred.last_test_status === "success" ? "text-green-600" : "text-red-600"}`}>
+                              {cred.last_test_status}
+                            </span>
+                            {cred.last_test_status === "failed" && cred.last_test_error && (
+                              <div className="text-xs text-red-600 mt-1 max-w-xs" title={cred.last_test_error}>
+                                {cred.last_test_error.length > 50 ? cred.last_test_error.substring(0, 50) + "..." : cred.last_test_error}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     ) : (

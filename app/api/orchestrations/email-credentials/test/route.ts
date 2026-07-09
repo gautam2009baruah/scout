@@ -43,6 +43,14 @@ export async function POST(request: NextRequest) {
       const cred = result.rows[0];
       
       if (cred.provider === "imap") {
+        // Validate credentials exist
+        if (!cred.imap_password) {
+          return NextResponse.json(
+            { success: false, error: "Password not found for this credential" },
+            { status: 400 }
+          );
+        }
+
         const config: IMAPConfig = {
           host: cred.imap_host,
           port: cred.imap_port,
@@ -109,6 +117,16 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("[API] Error testing email credentials:", error);
     
+    // Provide user-friendly error messages
+    let errorMessage = error.message;
+    if (error.message.includes("authentication") || error.message.includes("Lookup failed")) {
+      errorMessage = "Authentication failed. For Gmail: Enable IMAP and use an App Password (Settings → Security → 2-Step Verification → App Passwords). For Outlook: Verify IMAP is enabled and password is correct.";
+    } else if (error.message.includes("ENOTFOUND") || error.message.includes("getaddrinfo")) {
+      errorMessage = "Cannot reach IMAP server. Check host address and internet connection.";
+    } else if (error.message.includes("timeout") || error.message.includes("ETIMEDOUT")) {
+      errorMessage = "Connection timeout. Check port number and firewall settings.";
+    }
+    
     // Update failed test status if testing existing credential
     if (credentialIdForError) {
       try {
@@ -119,7 +137,7 @@ export async function POST(request: NextRequest) {
                last_test_status = 'failed',
                last_test_error = $1
            WHERE id = $2`,
-          [error.message, credentialIdForError]
+          [errorMessage, credentialIdForError]
         );
       } catch (updateError) {
         console.error("[API] Error updating test status:", updateError);
@@ -127,7 +145,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }
