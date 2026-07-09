@@ -130,7 +130,7 @@ export function EmailCredentialsManager() {
       if (data.success) {
         setMessage({ 
           type: "success", 
-          text: `Connection successful! Found ${data.emailsFound} email(s) in inbox.` 
+          text: "Connection successful" 
         });
         await loadCredentials();
       } else {

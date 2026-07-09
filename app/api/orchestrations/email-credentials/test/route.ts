@@ -75,7 +75,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: true,
           message: "Connection successful",
-          emailsFound: emails.length,
         });
       }
 
@@ -108,7 +107,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "Connection successful",
-        emailsFound: emails.length,
       });
     }
 
