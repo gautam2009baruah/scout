@@ -6,7 +6,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { X, Trash2, Plus, Minus, Move, Maximize2, Save } from "lucide-react";
+import { X, Trash2, Plus, Minus, Move, Maximize2, Save, ChevronDown, ChevronRight } from "lucide-react";
 import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
 import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS, UPCOMING_TRIGGER_TYPES } from "@/shared/orchestrationTypes";
@@ -2602,6 +2602,26 @@ function AIExtractionConfig({ config, updateConfig }: any) {
     })
   );
 
+  // Active LLM provider (from AI Configuration), shown for reference
+  const [activeProvider, setActiveProvider] = useState<{ provider: string; model: string } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/orchestrations/ai-provider")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data.success) {
+          setActiveProvider({ provider: data.provider, model: data.model });
+        }
+      })
+      .catch(() => {
+        /* non-fatal: just don't show the provider */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     const schema = schemaFields.reduce((acc, field) => {
       if (field.key) {
@@ -2614,42 +2634,87 @@ function AIExtractionConfig({ config, updateConfig }: any) {
 
   return (
     <div className="space-y-4">
+      {/* Active provider */}
       <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
-        This node uses the active AI provider configured on the{" "}
-        <span className="font-semibold">AI Configuration</span> page.
+        <div>
+          Active AI provider:{" "}
+          {activeProvider ? (
+            <span className="font-semibold">
+              {activeProvider.provider}
+              {activeProvider.model ? ` (${activeProvider.model})` : ""}
+            </span>
+          ) : (
+            <span className="italic">loading…</span>
+          )}
+        </div>
+        <div className="mt-1">
+          Change it on the <span className="font-semibold">AI Configuration</span> page.
+        </div>
       </div>
+
+      {/* How to use */}
+      <CollapsibleHelp title="How to use this node">
+        <p>
+          AI Extraction reads some input text, uses the active AI provider to pull
+          out the fields you describe, and stores the result in an output variable
+          you can reference in later nodes.
+        </p>
+        <ol className="list-decimal pl-4 space-y-1 mt-2">
+          <li>Put the text to analyze in <strong>Input Text</strong> (use variables from earlier nodes).</li>
+          <li>List the <strong>Fields to Extract</strong>, each with a short description.</li>
+          <li>Reference results downstream as <code className="bg-slate-100 px-1 rounded">{`{{output.field}}`}</code>.</li>
+        </ol>
+      </CollapsibleHelp>
 
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Input Text <span className="text-red-500">*</span>
         </label>
-        <textarea
+        <input
+          type="text"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-          rows={4}
           value={config.input || ""}
           onChange={(e) => updateConfig({ input: e.target.value })}
-          placeholder={"{{bodyText}}"}
+          placeholder="{{bodyText}}"
         />
-        <p className="mt-1 text-xs text-slate-500">
-          The text to extract from. Reference variables from any earlier node —
-          e.g. a trigger field{" "}
-          <code className="bg-slate-100 px-1 rounded">{`{{bodyText}}`}</code> or a
-          previous step&rsquo;s output{" "}
-          <code className="bg-slate-100 px-1 rounded">{`{{workflow.getOrder.output}}`}</code>.
-          You can combine several and mix in literal text.
-        </p>
+        <CollapsibleHelp title="Examples by node type">
+          <ul className="space-y-2">
+            <li>
+              <div className="font-semibold text-slate-700">After an Email trigger</div>
+              <code className="block bg-slate-100 px-1 rounded">{`{{subject}} {{bodyText}}`}</code>
+            </li>
+            <li>
+              <div className="font-semibold text-slate-700">After a Webhook trigger</div>
+              <code className="block bg-slate-100 px-1 rounded">{`{{payload.message}}`}</code>
+            </li>
+            <li>
+              <div className="font-semibold text-slate-700">After a Workflow node</div>
+              <code className="block bg-slate-100 px-1 rounded">{`{{workflow.getOrder.output}}`}</code>
+            </li>
+            <li>
+              <div className="font-semibold text-slate-700">After another AI Extraction</div>
+              <code className="block bg-slate-100 px-1 rounded">{`{{extracted.rawText}}`}</code>
+            </li>
+            <li>
+              <div className="font-semibold text-slate-700">Mixing literal text + variables</div>
+              <code className="block bg-slate-100 px-1 rounded">{`Order: {{payload.orderId}} from {{from}}`}</code>
+            </li>
+          </ul>
+        </CollapsibleHelp>
       </div>
 
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-2">
           Fields to Extract <span className="text-red-500">*</span>
         </label>
-        <p className="mb-2 text-xs text-slate-500">
-          Give each field a name and describe what to look for. The AI matches
-          synonyms/variants automatically (e.g. &ldquo;invoice number&rdquo; also
-          finds Invoice #, Invoice ID, Invoice No.).
-        </p>
-        <div className="space-y-3">
+        <CollapsibleHelp title="How fields work">
+          <p>
+            Give each field a name (used downstream) and describe what to look for.
+            The AI matches synonyms/variants automatically — e.g. a field described
+            as &ldquo;invoice number&rdquo; also finds Invoice #, Invoice ID, Invoice No.
+          </p>
+        </CollapsibleHelp>
+        <div className="space-y-3 mt-2">
           {schemaFields.map((field, index) => (
             <div key={index} className="rounded-lg border border-slate-200 p-3 space-y-2">
               <div className="flex gap-2">
@@ -2687,10 +2752,10 @@ function AIExtractionConfig({ config, updateConfig }: any) {
                   <Minus className="h-4 w-4" />
                 </button>
               </div>
-              <textarea
+              <input
+                type="text"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                rows={2}
-                placeholder="Describe what to extract, e.g. 'The invoice number — may appear as Invoice #, Invoice ID, Invoice No.'"
+                placeholder="Describe what to extract (e.g. the invoice number, may appear as Invoice #, Invoice ID)"
                 value={field.description}
                 onChange={(e) => {
                   const updated = [...schemaFields];
@@ -2717,9 +2782,9 @@ function AIExtractionConfig({ config, updateConfig }: any) {
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Additional Instructions (optional)
         </label>
-        <textarea
+        <input
+          type="text"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          rows={2}
           value={config.prompt || ""}
           onChange={(e) => updateConfig({ prompt: e.target.value })}
           placeholder="Any extra guidance for the extraction (optional)"
@@ -2742,6 +2807,27 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           <code className="bg-slate-100 px-1 rounded">{`{{${config.outputVariable || "extracted"}.invoiceNumber}}`}</code>.
         </p>
       </div>
+    </div>
+  );
+}
+
+function CollapsibleHelp({ title, children }: { title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+      >
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {title}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 space-y-1">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
