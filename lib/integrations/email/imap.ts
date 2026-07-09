@@ -76,10 +76,11 @@ export async function getIMAPCredentials(credentialId: string): Promise<IMAPConf
 export async function fetchIMAPEmails(
   config: IMAPConfig,
   folder: string = "INBOX",
-  unreadOnly: boolean = true
+  unreadOnly: boolean = true,
+  limit?: number
 ): Promise<EmailMessage[]> {
   console.log(`[IMAP] Connecting to ${config.host}:${config.port}`);
-  console.log(`[IMAP] Folder: ${folder}, Unread only: ${unreadOnly}`);
+  console.log(`[IMAP] Folder: ${folder}, Unread only: ${unreadOnly}, Limit: ${limit || 'none'}`);
   
   return new Promise((resolve, reject) => {
     const imap = new Imap({
@@ -123,8 +124,12 @@ export async function fetchIMAPEmails(
 
           console.log(`[IMAP] Found ${results.length} message(s)`);
 
+          // Apply limit if specified (for testing)
+          const messagesToFetch = limit ? results.slice(-limit) : results;
+          console.log(`[IMAP] Fetching ${messagesToFetch.length} message(s)`);
+
           // Fetch message details
-          const fetch = imap.fetch(results, {
+          const fetch = imap.fetch(messagesToFetch, {
             bodies: "",
             struct: true,
           });
@@ -164,14 +169,14 @@ export async function fetchIMAPEmails(
                   console.log(`[IMAP] ✅ Parsed message: ${emailMessage.subject}`);
 
                   // If all messages processed, close connection
-                  if (processed === results.length) {
+                  if (processed === messagesToFetch.length) {
                     imap.end();
                   }
                 } catch (parseError) {
                   console.error("[IMAP] Error parsing message:", parseError);
                   processed++;
                   
-                  if (processed === results.length) {
+                  if (processed === messagesToFetch.length) {
                     imap.end();
                   }
                 }

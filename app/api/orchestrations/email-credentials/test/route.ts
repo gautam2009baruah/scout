@@ -59,7 +59,8 @@ export async function POST(request: NextRequest) {
           tls: cred.imap_tls,
         };
 
-        const emails = await fetchIMAPEmails(config, "INBOX", false);
+        // For testing, only fetch 1 recent message to verify connection
+        const emails = await fetchIMAPEmails(config, "INBOX", false, 1);
         
         // Update last test status
         await pool.query(
@@ -101,7 +102,8 @@ export async function POST(request: NextRequest) {
         tls: imapTls !== false,
       };
 
-      const emails = await fetchIMAPEmails(config, "INBOX", false);
+      // For testing, only fetch 1 recent message to verify connection
+      const emails = await fetchIMAPEmails(config, "INBOX", false, 1);
 
       return NextResponse.json({
         success: true,
