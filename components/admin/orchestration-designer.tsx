@@ -479,6 +479,7 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
 
       // Save nodes
       const nodeIdMap = new Map<string, string>();
+      console.log(`[Save] Saving ${nodes.length} nodes:`, nodes.map(n => `${n.data.label} (${n.data.nodeType})`));
       for (const node of nodes) {
         const nodeResponse = await fetch("/api/admin/orchestrations/nodes", {
           method: "POST",
@@ -490,9 +491,18 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
             positionX: node.position.x,
             positionY: node.position.y,
             config: node.data.config,
+            displayDescription: node.data.displayDescription,
           }),
         });
+        
+        if (!nodeResponse.ok) {
+          const error = await nodeResponse.json();
+          console.error(`Failed to save node ${node.data.label}:`, error);
+          throw new Error(`Failed to save node ${node.data.label}: ${error.message || 'Unknown error'}`);
+        }
+        
         const savedNode = await nodeResponse.json();
+        console.log(`[Save] Saved node: ${node.data.label} (${node.data.nodeType}) with DB ID: ${savedNode.node?.id}`);
         nodeIdMap.set(node.id, savedNode.node?.id || savedNode.id);
       }
 
