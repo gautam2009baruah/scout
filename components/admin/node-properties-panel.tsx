@@ -2589,46 +2589,34 @@ function DataCaptureConfig({ config, updateConfig }: any) {
 }
 
 function AIExtractionConfig({ config, updateConfig }: any) {
-  const [schemaFields, setSchemaFields] = useState<Array<{ key: string; type: string }>>(
-    Object.entries(config.schema || {}).map(([key, type]) => ({ key, type: type as string }))
+  const [schemaFields, setSchemaFields] = useState<Array<{ key: string; type: string; description: string }>>(
+    Object.entries(config.schema || {}).map(([key, def]) => {
+      if (def && typeof def === "object") {
+        return {
+          key,
+          type: (def as any).type || "string",
+          description: (def as any).description || "",
+        };
+      }
+      return { key, type: (def as string) || "string", description: "" };
+    })
   );
 
   useEffect(() => {
     const schema = schemaFields.reduce((acc, field) => {
-      if (field.key) acc[field.key] = field.type;
+      if (field.key) {
+        acc[field.key] = { type: field.type, description: field.description };
+      }
       return acc;
-    }, {} as Record<string, string>);
+    }, {} as Record<string, { type: string; description: string }>);
     updateConfig({ schema });
   }, [schemaFields]);
 
   return (
     <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          AI Provider <span className="text-red-500">*</span>
-        </label>
-        <select
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.provider || "openai"}
-          onChange={(e) => updateConfig({ provider: e.target.value })}
-        >
-          <option value="openai">OpenAI</option>
-          <option value="gemini">Google Gemini</option>
-          <option value="anthropic">Anthropic Claude</option>
-          <option value="ollama">Ollama</option>
-          <option value="custom">Custom</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">Model</label>
-        <input
-          type="text"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.model || ""}
-          onChange={(e) => updateConfig({ model: e.target.value })}
-          placeholder="gpt-4, gemini-pro, claude-3-opus, etc."
-        />
+      <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
+        This node uses the active AI provider configured on the{" "}
+        <span className="font-semibold">AI Configuration</span> page.
       </div>
 
       <div>
@@ -2636,67 +2624,120 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           Input Text <span className="text-red-500">*</span>
         </label>
         <textarea
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          rows={3}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+          rows={4}
           value={config.input || ""}
           onChange={(e) => updateConfig({ input: e.target.value })}
-          placeholder="{{variableName}} or literal text"
+          placeholder={"Subject: {{subject}}\n\n{{bodyText}}"}
         />
-        <p className="mt-1 text-xs text-slate-500">Text to extract data from</p>
+        <p className="mt-1 text-xs text-slate-500">
+          The text to extract from. Combine email fields with variables like{" "}
+          <code className="bg-slate-100 px-1 rounded">{`{{subject}}`}</code> and{" "}
+          <code className="bg-slate-100 px-1 rounded">{`{{bodyText}}`}</code>.
+        </p>
       </div>
 
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-2">
-          Extraction Schema <span className="text-red-500">*</span>
+          Fields to Extract <span className="text-red-500">*</span>
         </label>
-        <div className="space-y-2">
+        <p className="mb-2 text-xs text-slate-500">
+          Give each field a name and describe what to look for. The AI matches
+          synonyms/variants automatically (e.g. &ldquo;invoice number&rdquo; also
+          finds Invoice #, Invoice ID, Invoice No.).
+        </p>
+        <div className="space-y-3">
           {schemaFields.map((field, index) => (
-            <div key={index} className="flex gap-2">
-              <input
-                type="text"
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                placeholder="Field name"
-                value={field.key}
+            <div key={index} className="rounded-lg border border-slate-200 p-3 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Field name (e.g. invoiceNumber)"
+                  value={field.key}
+                  onChange={(e) => {
+                    const updated = [...schemaFields];
+                    updated[index].key = e.target.value;
+                    setSchemaFields(updated);
+                  }}
+                />
+                <select
+                  className="w-28 rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                  value={field.type}
+                  onChange={(e) => {
+                    const updated = [...schemaFields];
+                    updated[index].type = e.target.value;
+                    setSchemaFields(updated);
+                  }}
+                >
+                  <option value="string">String</option>
+                  <option value="number">Number</option>
+                  <option value="boolean">Boolean</option>
+                  <option value="array">Array</option>
+                  <option value="object">Object</option>
+                </select>
+                <button
+                  type="button"
+                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                  onClick={() => setSchemaFields(schemaFields.filter((_, i) => i !== index))}
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+              </div>
+              <textarea
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                rows={2}
+                placeholder="Describe what to extract, e.g. 'The invoice number — may appear as Invoice #, Invoice ID, Invoice No.'"
+                value={field.description}
                 onChange={(e) => {
                   const updated = [...schemaFields];
-                  updated[index].key = e.target.value;
+                  updated[index].description = e.target.value;
                   setSchemaFields(updated);
                 }}
               />
-              <select
-                className="w-32 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                value={field.type}
-                onChange={(e) => {
-                  const updated = [...schemaFields];
-                  updated[index].type = e.target.value;
-                  setSchemaFields(updated);
-                }}
-              >
-                <option value="string">String</option>
-                <option value="number">Number</option>
-                <option value="boolean">Boolean</option>
-                <option value="array">Array</option>
-                <option value="object">Object</option>
-              </select>
-              <button
-                type="button"
-                className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                onClick={() => setSchemaFields(schemaFields.filter((_, i) => i !== index))}
-              >
-                <Minus className="h-4 w-4" />
-              </button>
             </div>
           ))}
           <button
             type="button"
             className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700"
-            onClick={() => setSchemaFields([...schemaFields, { key: "", type: "string" }])}
+            onClick={() =>
+              setSchemaFields([...schemaFields, { key: "", type: "string", description: "" }])
+            }
           >
             <Plus className="h-4 w-4" />
             Add Field
           </button>
         </div>
-        <p className="mt-1 text-xs text-slate-500">Define fields to extract from text</p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Additional Instructions (optional)
+        </label>
+        <textarea
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          rows={2}
+          value={config.prompt || ""}
+          onChange={(e) => updateConfig({ prompt: e.target.value })}
+          placeholder="Any extra guidance for the extraction (optional)"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Output Variable <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={config.outputVariable || "extracted"}
+          onChange={(e) => updateConfig({ outputVariable: e.target.value })}
+          placeholder="extracted"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Reference extracted fields downstream as{" "}
+          <code className="bg-slate-100 px-1 rounded">{`{{${config.outputVariable || "extracted"}.invoiceNumber}}`}</code>.
+        </p>
       </div>
     </div>
   );

@@ -18,11 +18,20 @@ export async function executeAIExtractionNode(
   error?: string;
 }> {
   try {
-    // Get input data
-    const inputData = resolveVariablePath(config.inputSource, context);
+    // Resolve the input text. Prefer the interpolated `input` template (so
+    // users can combine fields, e.g. "Subject: {{subject}}\n\n{{bodyText}}");
+    // fall back to the legacy single-path `inputSource`.
+    let inputData: unknown;
+    if (typeof config.input === "string" && config.input.trim() !== "") {
+      inputData = evaluateExpression(config.input, context);
+    } else if (config.inputSource) {
+      inputData = resolveVariablePath(config.inputSource, context);
+    }
 
-    if (!inputData) {
-      throw new Error(`Input source "${config.inputSource}" not found in context`);
+    if (inputData === undefined || inputData === null || inputData === "") {
+      throw new Error(
+        'AI Extraction has no input. Set the "Input Text" field, e.g. "Subject: {{subject}}\\n\\n{{bodyText}}".'
+      );
     }
 
     // Prepare input text based on type
@@ -37,7 +46,7 @@ export async function executeAIExtractionNode(
     const systemPrompt = buildExtractionSystemPrompt(config);
     const userPrompt = buildExtractionUserPrompt(inputText, config);
 
-    // Call AI provider
+    // Call the active AI provider (configured on the AI Configuration page)
     const provider = await getLLMProvider();
     const aiResponse = await provider.generate_answer(systemPrompt, userPrompt, "");
 
@@ -49,9 +58,10 @@ export async function executeAIExtractionNode(
       validateAgainstSchema(extractedData, config.schema);
     }
 
-    // Store extracted data in output variable
+    // Store extracted data in output variable (default: "extracted")
+    const outputVariable = config.outputVariable || "extracted";
     const output: Record<string, unknown> = {};
-    setVariablePath(config.outputVariable, extractedData, output);
+    setVariablePath(outputVariable, extractedData, output);
 
     return { success: true, output };
   } catch (error) {
@@ -79,11 +89,15 @@ function buildExtractionSystemPrompt(config: AIExtractionNodeConfig): string {
   return [
     "You are a data extraction specialist.",
     "Your task is to extract structured data from the provided input.",
-    "Return ONLY valid JSON that matches the requested schema.",
+    "Each field below has a description of what to look for. Use it to find the",
+    "value even when the input labels it differently or uses a synonym/variant",
+    "(for example, a field described as 'invoice number' should also match",
+    "'Invoice #', 'Invoice ID', 'Invoice No.', 'Inv No', etc.).",
+    "Return ONLY valid JSON whose keys are exactly the field names below.",
     "Do not include any explanations, markdown formatting, or additional text.",
-    "If a field cannot be extracted, omit it or set it to null.",
+    "If a field cannot be found, set it to null.",
     "",
-    "Expected output schema:",
+    "Fields to extract:",
     schemaDescription,
   ].join("\n");
 }

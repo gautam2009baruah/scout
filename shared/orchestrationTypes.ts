@@ -161,10 +161,11 @@ export type DataCaptureNodeConfig = {
 
 export type AIExtractionNodeConfig = {
   type: "ai_extraction";
-  inputType: "email" | "document" | "text" | "variables";
-  inputSource: string; // variable expression
-  prompt?: string;
-  schema: Record<string, unknown>; // JSON schema for output validation
+  inputType?: "email" | "document" | "text" | "variables";
+  input?: string; // template text (supports {{variable}} interpolation)
+  inputSource?: string; // legacy: single variable path
+  prompt?: string; // optional extra instructions for the model
+  schema: Record<string, unknown>; // fields to extract: { key: { type, description } }
   outputVariable: string; // where to store extracted data
 };
 
