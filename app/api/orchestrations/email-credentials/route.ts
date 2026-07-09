@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 import { fetchIMAPEmails } from "@/lib/integrations/email/imap";
 
 /**
@@ -11,8 +12,16 @@ import { fetchIMAPEmails } from "@/lib/integrations/email/imap";
  */
 export async function GET(request: NextRequest) {
   try {
-    // TODO: Get company_id from session/auth
-    const companyId = "00000000-0000-0000-0000-000000000000"; // Placeholder
+    const session = await getCurrentAdminSession();
+    
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const companyId = session.user.tenantId;
 
     const pool = getPool();
     
@@ -51,6 +60,15 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await getCurrentAdminSession();
+    
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const {
       provider,
@@ -77,9 +95,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Get company_id from session/auth
-    const companyId = "00000000-0000-0000-0000-000000000000"; // Placeholder
-    const createdBy = "admin@example.com"; // TODO: Get from session
+    const companyId = session.user.tenantId;
+    const createdBy = session.user.email;
 
     const pool = getPool();
 
