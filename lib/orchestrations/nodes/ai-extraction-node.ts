@@ -45,11 +45,14 @@ export async function executeAIExtractionNode(
 
     // Build extraction prompt
     const systemPrompt = buildExtractionSystemPrompt(config);
-    const userPrompt = buildExtractionUserPrompt(inputText, config);
+    const userPrompt = buildExtractionUserPrompt(config);
 
-    // Call the active AI provider (configured on the AI Configuration page)
+    // Call the active AI provider (configured on the AI Configuration page).
+    // generate_answer is a grounded method: the input text must be passed as the
+    // CONTEXT (3rd arg). Passing an empty context makes the provider refuse with
+    // "I could not find enough information in the available documents."
     const provider = await getLLMProvider();
-    const aiResponse = await provider.generate_answer(systemPrompt, userPrompt, "");
+    const aiResponse = await provider.generate_answer(systemPrompt, userPrompt, inputText);
 
     // Parse JSON response
     const extractedData = parseExtractionResponse(aiResponse, config);
@@ -104,21 +107,18 @@ function buildExtractionSystemPrompt(config: AIExtractionNodeConfig): string {
 }
 
 /**
- * Build user prompt for extraction
+ * Build user prompt for extraction.
+ * The input text is supplied separately as the provider context, so the user
+ * prompt only carries the extraction instruction.
  */
-function buildExtractionUserPrompt(
-  inputText: string,
-  config: AIExtractionNodeConfig
-): string {
-  const customPrompt = config.prompt || "Extract the following data from the input:";
+function buildExtractionUserPrompt(config: AIExtractionNodeConfig): string {
+  const customPrompt =
+    config.prompt || "Extract the requested fields from the provided context.";
 
   return [
     customPrompt,
-    "",
-    "Input:",
-    inputText,
-    "",
-    "Extract data as JSON matching the schema provided in the system prompt.",
+    "Return the result as JSON matching the schema in the system instructions,",
+    "using null for any field that is not present in the context.",
   ].join("\n");
 }
 
