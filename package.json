@@ -12,7 +12,7 @@
     "jobs:worker": "node scripts/jobs/worker.mjs",
     "extension:build": "node scripts/build-extension.mjs",
     "triggers:schedule": "node scripts/schedule-trigger-worker.mjs",
-    "triggers:email": "node scripts/email-trigger-poller.mjs"
+    "triggers:email": "tsx scripts/email-trigger-poller.mjs"
   },
   "dependencies": {
     "@types/d3": "^7.4.3",
@@ -49,6 +49,7 @@
     "eslint-config-next": "^16.2.9",
     "postcss": "^8.5.10",
     "tailwindcss": "^3.4.4",
+    "tsx": "^4.23.0",
     "typescript": "^5.5.3"
   },
   "overrides": {

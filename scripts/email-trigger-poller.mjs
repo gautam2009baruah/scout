@@ -8,10 +8,10 @@ import {
   emailMatchesTrigger, 
   processEmailTrigger,
   updateTriggerLastPolled 
-} from "../lib/orchestrations/email-trigger-processor.js";
-import { fetchIMAPEmails, getIMAPCredentials, markIMAPEmailAsRead } from "../lib/integrations/email/imap.js";
-import { fetchGmailEmails, getGmailCredentials, buildGmailQuery, markGmailEmailAsRead } from "../lib/integrations/email/gmail.js";
-import { fetchOutlookEmails, getOutlookCredentials, buildOutlookFilter, markOutlookEmailAsRead } from "../lib/integrations/email/outlook.js";
+} from "../lib/orchestrations/email-trigger-processor.ts";
+import { fetchIMAPEmails, getIMAPCredentials, markIMAPEmailAsRead } from "../lib/integrations/email/imap.ts";
+import { fetchGmailEmails, getGmailCredentials, buildGmailQuery, markGmailEmailAsRead } from "../lib/integrations/email/gmail.ts";
+import { fetchOutlookEmails, getOutlookCredentials, buildOutlookFilter, markOutlookEmailAsRead } from "../lib/integrations/email/outlook.ts";
 
 const { Pool } = pg;
 
