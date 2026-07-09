@@ -3671,6 +3671,7 @@ function EndConfig({ config, updateConfig }: any) {
               <div className="space-y-1 text-blue-700">
                 <p><strong>From Variables:</strong> <code className="bg-blue-100 px-1 rounded">{'{{variables.total}}'}</code></p>
                 <p><strong>From Captured Data:</strong> <code className="bg-blue-100 px-1 rounded">{'{{capturedData.customerName.value}}'}</code></p>
+                <p><strong>From AI Extraction:</strong> <code className="bg-blue-100 px-1 rounded">{'{{extracted.invoiceNumber}}'}</code></p>
                 <p><strong>From Workflow:</strong> <code className="bg-blue-100 px-1 rounded">{'{{workflow.ProcessOrder.orderId}}'}</code></p>
                 <p><strong>From Trigger:</strong> <code className="bg-blue-100 px-1 rounded">{'{{trigger.requestId}}'}</code></p>
               </div>
