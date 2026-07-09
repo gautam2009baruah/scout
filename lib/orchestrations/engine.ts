@@ -16,7 +16,6 @@ import type {
   NotificationNodeConfig,
   VariableNodeConfig,
   TriggerNodeConfig,
-  EndNodeConfig,
   OrchestrationTriggerType,
 } from "@/shared/orchestrationTypes";
 
@@ -28,7 +27,7 @@ import { executeConditionNode } from "./nodes/condition-node";
 import { executeHumanApprovalNode, resumeAfterApproval } from "./nodes/human-approval-node";
 import { executeNotificationNode } from "./nodes/notification-node";
 import { executeVariableNode } from "./nodes/variable-node";
-import { evaluateExpression, resolveVariablePath } from "./expression-evaluator";
+import { evaluateExpression } from "./expression-evaluator";
 import {
   updateExecution,
   createNodeExecution,
@@ -134,26 +133,7 @@ export class OrchestrationEngine {
 
     // Check if this is an end node
     if (node.nodeType === "end") {
-      const endConfig = node.config as EndNodeConfig;
-      const output: Record<string, unknown> = {};
-
-      // Honor the optional completion message, interpolating any variables
-      // (e.g. {{extracted.invoiceNumber}}) against the current context.
-      if (endConfig.displayMessage && endConfig.message) {
-        output.message = evaluateExpression(endConfig.message, this.context);
-      }
-
-      // If specific output variables are listed, resolve and include them;
-      // this becomes the execution's final, human-readable result.
-      if (Array.isArray(endConfig.outputVariables) && endConfig.outputVariables.length > 0) {
-        const finalOutput: Record<string, unknown> = {};
-        for (const path of endConfig.outputVariables) {
-          finalOutput[path] = resolveVariablePath(path, this.context);
-        }
-        output.output = finalOutput;
-      }
-
-      await this.recordNodeExecution(nodeId, "completed", this.context, output);
+      await this.recordNodeExecution(nodeId, "completed", {}, {});
       return { success: true, status: "completed" };
     }
 

@@ -152,6 +152,15 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     setValidationError(null); // Clear validation error when user makes changes
   };
 
+  // The orchestration's trigger type (from the trigger node). Some node options
+  // (e.g. the End node's "Display message") only apply to interactive triggers.
+  const orchestrationTriggerType: string | null = (() => {
+    const triggerNode = nodes.find((n: any) => n.data?.nodeType === "trigger");
+    return triggerNode?.data?.config?.triggerType || null;
+  })();
+  const supportsEndMessage =
+    orchestrationTriggerType === "manual" || orchestrationTriggerType === "chatbot";
+
   // Validate fields before saving
   const validateFields = (): { valid: boolean; error: string | null } => {
     // Check node label is not empty
@@ -160,7 +169,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     }
 
     // Node-specific validations
-    if (nodeType === "end" && localConfig.displayMessage && !localConfig.message?.trim()) {
+    if (nodeType === "end" && supportsEndMessage && localConfig.displayMessage && !localConfig.message?.trim()) {
       return { valid: false, error: "Message is required when 'Display message' is checked" };
     }
 
@@ -499,7 +508,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "human_approval" && <HumanApprovalConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "notification" && <NotificationConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
-        {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
 
         {/* Validation Error */}
         {validationError && (
@@ -3620,7 +3629,23 @@ function VariableConfig({ config, updateConfig }: any) {
   );
 }
 
-function EndConfig({ config, updateConfig }: any) {
+function EndConfig({ config, updateConfig, supportsMessage }: any) {
+  // "Display message" only makes sense for interactive triggers (manual/chatbot)
+  // where a user actually sees the completion message via the player. For other
+  // trigger types (email, webhook, schedule, ...) there is no viewer, so hide it.
+  if (!supportsMessage) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600">
+          This is the end of the orchestration. A completion message can only be
+          shown for <span className="font-semibold">Manual</span> and{" "}
+          <span className="font-semibold">Chatbot</span> triggers, so there are no
+          options to configure here for this trigger type.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div>
