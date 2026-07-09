@@ -20,6 +20,9 @@ import {
 } from "lucide-react";
 import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS, UPCOMING_TRIGGER_TYPES } from "@/shared/orchestrationTypes";
 
+type CompanyOption = { id: string; name: string };
+type TargetAppOption = { id: string; name: string; companyId: string };
+
 type TriggerStatus = {
   id: string;
   orchestrationId: string;
@@ -27,7 +30,11 @@ type TriggerStatus = {
   orchestrationStatus: string;
   triggerType: string;
   isActive: boolean;
+  companyId: string | null;
+  targetAppId: string | null;
+  targetAppName: string | null;
   lastTriggeredAt: string | null;
+  lastPolledAt: string | null;
   createdAt: string;
   updatedAt: string;
   // Schedule-specific
@@ -57,14 +64,28 @@ type TriggerStatus = {
   }>;
 };
 
-export function TriggersMonitoringDashboard() {
+export function TriggersMonitoringDashboard({
+  companies = [],
+  targetApps = [],
+}: {
+  companies?: CompanyOption[];
+  targetApps?: TargetAppOption[];
+}) {
   const [triggers, setTriggers] = useState<TriggerStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<{
     triggerType: string;
     status: string;
-  }>({ triggerType: "all", status: "all" });
+    companyId: string;
+    targetAppId: string;
+  }>({ triggerType: "all", status: "all", companyId: "all", targetAppId: "all" });
   const [testing, setTesting] = useState<string | null>(null);
+
+  // Target apps available for the selected company
+  const availableTargetApps =
+    filter.companyId === "all"
+      ? targetApps
+      : targetApps.filter((app) => app.companyId === filter.companyId);
 
   const loadTriggers = async () => {
     try {
@@ -74,6 +95,12 @@ export function TriggersMonitoringDashboard() {
       }
       if (filter.status !== "all") {
         params.append("status", filter.status);
+      }
+      if (filter.companyId !== "all") {
+        params.append("companyId", filter.companyId);
+      }
+      if (filter.targetAppId !== "all") {
+        params.append("targetAppId", filter.targetAppId);
       }
 
       const response = await fetch(
@@ -188,9 +215,56 @@ export function TriggersMonitoringDashboard() {
 
       {/* Filters */}
       <div className="bg-white border border-slate-200 rounded-lg p-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-wrap">
           <Filter className="h-5 w-5 text-slate-600" />
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
+            {companies.length > 0 && (
+              <div>
+                <label className="text-xs font-medium text-slate-700 mr-2">
+                  Company:
+                </label>
+                <select
+                  className="rounded border border-slate-300 px-3 py-1 text-sm"
+                  value={filter.companyId}
+                  onChange={(e) =>
+                    setFilter({
+                      ...filter,
+                      companyId: e.target.value,
+                      // Reset target app when company changes
+                      targetAppId: "all",
+                    })
+                  }
+                >
+                  <option value="all">All Companies</option>
+                  {companies.map((company) => (
+                    <option key={company.id} value={company.id}>
+                      {company.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {targetApps.length > 0 && (
+              <div>
+                <label className="text-xs font-medium text-slate-700 mr-2">
+                  Target App:
+                </label>
+                <select
+                  className="rounded border border-slate-300 px-3 py-1 text-sm"
+                  value={filter.targetAppId}
+                  onChange={(e) =>
+                    setFilter({ ...filter, targetAppId: e.target.value })
+                  }
+                >
+                  <option value="all">All Target Apps</option>
+                  {availableTargetApps.map((app) => (
+                    <option key={app.id} value={app.id}>
+                      {app.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-slate-700 mr-2">
                 Trigger Type:
@@ -259,7 +333,8 @@ export function TriggersMonitoringDashboard() {
                       {trigger.orchestrationName}
                     </h3>
                     <p className="text-xs text-slate-600">
-                      {trigger.triggerType} trigger • ID: {trigger.id}
+                      {trigger.triggerType} trigger
+                      {trigger.targetAppName ? ` • ${trigger.targetAppName}` : ""} • ID: {trigger.id}
                     </p>
                   </div>
                 </div>

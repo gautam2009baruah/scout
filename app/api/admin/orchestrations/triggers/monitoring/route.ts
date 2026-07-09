@@ -21,32 +21,37 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const triggerType = searchParams.get("triggerType") || undefined;
     const status = searchParams.get("status") || undefined; // "active" or "inactive"
+    const companyId = searchParams.get("companyId") || undefined;
+    const targetAppId = searchParams.get("targetAppId") || undefined;
 
     const pool = getPool();
 
-    // Build query with filters
+    // Build query with filters.
+    // Note: orchestration_triggers uses a `status` text column ('active' |
+    // 'inactive' | 'error'), not an is_active boolean. Schedule/email do not
+    // have dedicated per-trigger tables; email stats are derived from
+    // email_trigger_messages and the last_polled_at watermark.
     let query = `
       SELECT 
         ot.id,
         ot.orchestration_id,
         ot.trigger_type,
         ot.config,
-        ot.is_active,
+        ot.status,
         ot.last_triggered_at,
+        ot.last_polled_at,
         ot.created_at,
         ot.updated_at,
         o.name as orchestration_name,
         o.status as orchestration_status,
-        -- Schedule-specific fields
-        st.next_run_at as schedule_next_run,
-        st.last_run_at as schedule_last_run,
-        st.execution_count as schedule_execution_count,
-        st.error_count as schedule_error_count,
-        st.last_error as schedule_last_error,
-        -- Email-specific fields
-        et.last_check_at as email_last_check,
-        et.last_triggered_email_id as email_last_triggered_id,
-        et.total_emails_processed as email_total_processed,
+        o.company_id,
+        o.target_app_id,
+        ta.name as target_app_name,
+        -- Email-specific fields (derived)
+        (
+          SELECT COUNT(*)::int FROM email_trigger_messages etm
+          WHERE etm.trigger_id = ot.id AND etm.status = 'processed'
+        ) as email_total_processed,
         -- Webhook-specific fields
         wt.webhook_url,
         wt.total_deliveries as webhook_total_deliveries,
@@ -55,14 +60,25 @@ export async function GET(request: NextRequest) {
         wt.last_triggered_at as webhook_last_triggered
       FROM orchestration_triggers ot
       INNER JOIN orchestrations o ON ot.orchestration_id = o.id
-      LEFT JOIN schedule_triggers st ON ot.id = st.trigger_id
-      LEFT JOIN email_triggers et ON ot.id = et.trigger_id
       LEFT JOIN webhook_triggers wt ON ot.id = wt.trigger_id
-      WHERE o.company_id = $1
+      LEFT JOIN guided_workflow_target_apps ta ON ta.id = o.target_app_id
+      WHERE 1 = 1
     `;
 
-    const params: any[] = [session.user.tenantId];
-    let paramIndex = 2;
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (companyId) {
+      query += ` AND o.company_id = $${paramIndex}`;
+      params.push(companyId);
+      paramIndex++;
+    }
+
+    if (targetAppId) {
+      query += ` AND o.target_app_id = $${paramIndex}`;
+      params.push(targetAppId);
+      paramIndex++;
+    }
 
     if (triggerType) {
       query += ` AND ot.trigger_type = $${paramIndex}`;
@@ -71,9 +87,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (status === "active") {
-      query += ` AND ot.is_active = true`;
+      query += ` AND ot.status = 'active'`;
     } else if (status === "inactive") {
-      query += ` AND ot.is_active = false`;
+      query += ` AND ot.status <> 'active'`;
     }
 
     query += ` ORDER BY ot.created_at DESC`;
@@ -106,19 +122,23 @@ export async function GET(request: NextRequest) {
           orchestrationName: trigger.orchestration_name,
           orchestrationStatus: trigger.orchestration_status,
           triggerType: trigger.trigger_type,
-          isActive: trigger.is_active,
+          isActive: trigger.status === "active",
+          companyId: trigger.company_id,
+          targetAppId: trigger.target_app_id,
+          targetAppName: trigger.target_app_name,
           lastTriggeredAt: trigger.last_triggered_at,
+          lastPolledAt: trigger.last_polled_at,
           createdAt: trigger.created_at,
           updatedAt: trigger.updated_at,
-          // Schedule-specific
-          scheduleNextRun: trigger.schedule_next_run,
-          scheduleLastRun: trigger.schedule_last_run,
-          scheduleExecutionCount: trigger.schedule_execution_count,
-          scheduleErrorCount: trigger.schedule_error_count,
-          scheduleLastError: trigger.schedule_last_error,
+          // Schedule-specific (no dedicated table yet)
+          scheduleNextRun: null,
+          scheduleLastRun: null,
+          scheduleExecutionCount: 0,
+          scheduleErrorCount: 0,
+          scheduleLastError: null,
           // Email-specific
-          emailLastCheck: trigger.email_last_check,
-          emailLastTriggeredId: trigger.email_last_triggered_id,
+          emailLastCheck: trigger.last_polled_at,
+          emailLastTriggeredId: null,
           emailTotalProcessed: trigger.email_total_processed,
           // Webhook-specific
           webhookUrl: trigger.webhook_url,
