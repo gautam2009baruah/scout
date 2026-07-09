@@ -97,71 +97,40 @@ export async function GET(request: NextRequest) {
     const result = await pool.query(query, params);
 
     // Get recent execution history for each trigger
-    const triggersWithHistory = await Promise.all(
-      result.rows.map(async (trigger) => {
-        const historyResult = await pool.query(
-          `SELECT 
-            tel.id,
-            tel.status,
-            tel.payload,
-            tel.error_message,
-            tel.triggered_at,
-            oe.id as execution_id,
-            oe.status as execution_status
-           FROM trigger_execution_logs tel
-           LEFT JOIN orchestration_executions oe ON tel.execution_id = oe.id
-           WHERE tel.trigger_id = $1
-           ORDER BY tel.triggered_at DESC
-           LIMIT 10`,
-          [trigger.id]
-        );
-
-        return {
-          id: trigger.id,
-          orchestrationId: trigger.orchestration_id,
-          orchestrationName: trigger.orchestration_name,
-          orchestrationStatus: trigger.orchestration_status,
-          triggerType: trigger.trigger_type,
-          isActive: trigger.status === "active",
-          companyId: trigger.company_id,
-          targetAppId: trigger.target_app_id,
-          targetAppName: trigger.target_app_name,
-          lastTriggeredAt: trigger.last_triggered_at,
-          lastPolledAt: trigger.last_polled_at,
-          createdAt: trigger.created_at,
-          updatedAt: trigger.updated_at,
-          // Schedule-specific (no dedicated table yet)
-          scheduleNextRun: null,
-          scheduleLastRun: null,
-          scheduleExecutionCount: 0,
-          scheduleErrorCount: 0,
-          scheduleLastError: null,
-          // Email-specific
-          emailLastCheck: trigger.last_polled_at,
-          emailLastTriggeredId: null,
-          emailTotalProcessed: trigger.email_total_processed,
-          // Webhook-specific
-          webhookUrl: trigger.webhook_url,
-          webhookTotalDeliveries: trigger.webhook_total_deliveries,
-          webhookSuccessfulDeliveries: trigger.webhook_successful_deliveries,
-          webhookFailedDeliveries: trigger.webhook_failed_deliveries,
-          webhookLastTriggered: trigger.webhook_last_triggered,
-          // Recent history
-          recentExecutions: historyResult.rows.map((log) => ({
-            id: log.id,
-            status: log.status,
-            triggeredAt: log.triggered_at,
-            executionId: log.execution_id,
-            executionStatus: log.execution_status,
-            errorMessage: log.error_message,
-          })),
-        };
-      })
-    );
+    const triggers = result.rows.map((trigger) => ({
+      id: trigger.id,
+      orchestrationId: trigger.orchestration_id,
+      orchestrationName: trigger.orchestration_name,
+      orchestrationStatus: trigger.orchestration_status,
+      triggerType: trigger.trigger_type,
+      isActive: trigger.status === "active",
+      companyId: trigger.company_id,
+      targetAppId: trigger.target_app_id,
+      targetAppName: trigger.target_app_name,
+      lastTriggeredAt: trigger.last_triggered_at,
+      lastPolledAt: trigger.last_polled_at,
+      createdAt: trigger.created_at,
+      updatedAt: trigger.updated_at,
+      // Schedule-specific (no dedicated table yet)
+      scheduleNextRun: null,
+      scheduleLastRun: null,
+      scheduleExecutionCount: 0,
+      scheduleErrorCount: 0,
+      scheduleLastError: null,
+      // Email-specific
+      emailLastCheck: trigger.last_polled_at,
+      emailTotalProcessed: trigger.email_total_processed,
+      // Webhook-specific
+      webhookUrl: trigger.webhook_url,
+      webhookTotalDeliveries: trigger.webhook_total_deliveries,
+      webhookSuccessfulDeliveries: trigger.webhook_successful_deliveries,
+      webhookFailedDeliveries: trigger.webhook_failed_deliveries,
+      webhookLastTriggered: trigger.webhook_last_triggered,
+    }));
 
     return NextResponse.json({
       success: true,
-      triggers: triggersWithHistory,
+      triggers,
     });
   } catch (error: any) {
     console.error("[TriggersMonitoringAPI] Error:", error);

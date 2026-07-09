@@ -41,7 +41,7 @@ export async function POST(
         ot.orchestration_id,
         ot.trigger_type,
         ot.config,
-        ot.is_active,
+        ot.status,
         o.name as orchestration_name,
         o.status as orchestration_status,
         o.version,
@@ -143,21 +143,24 @@ async function executeInBackground(
     const engine = new OrchestrationEngine(execution, nodes, connections);
     const result = await engine.execute();
 
-    const pool = getPool();
-    await pool.query(
-      `INSERT INTO trigger_execution_logs
-       (trigger_id, orchestration_id, execution_id, status, triggered_by)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        triggerId,
-        orchestrationId,
-        execution.id,
-        result.success ? "completed" : "failed",
-        "manual-test-result",
-      ]
-    );
-
+    // Only log a terminal row on failure. trigger_execution_logs.status only
+    // allows ('received','validated','started','failed'); overall execution
+    // completion is tracked on orchestration_executions.status instead.
     if (!result.success) {
+      const pool = getPool();
+      await pool.query(
+        `INSERT INTO trigger_execution_logs
+         (trigger_id, orchestration_id, execution_id, status, error_message, triggered_by)
+         VALUES ($1, $2, $3, 'failed', $4, $5)`,
+        [
+          triggerId,
+          orchestrationId,
+          execution.id,
+          result.error ?? "Test execution failed",
+          "manual-test-result",
+        ]
+      );
+
       console.error(
         `[ManualTriggerTest] Execution failed for trigger ${triggerId}:`,
         result.error
