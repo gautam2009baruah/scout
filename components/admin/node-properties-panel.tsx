@@ -78,13 +78,15 @@ interface NodePropertiesPanelProps {
   nodes?: Node[]; // All nodes in the flow for context-aware suggestions
   edges?: Edge[]; // All edges for checking node connections
   orchestrationId?: string; // Orchestration ID for saving to database
+  companyId?: string; // Company ID for filtering email credentials
+  targetAppId?: string | null; // Target App ID for filtering email credentials
   onClose: () => void;
   onUpdate: (updates: Partial<Node>) => void;
   onDelete: () => void;
   onDatabaseSave?: () => void; // Called after successful database save
 }
 
-export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestrationId, onClose, onUpdate, onDelete, onDatabaseSave }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestrationId, companyId, targetAppId, onClose, onUpdate, onDelete, onDatabaseSave }: NodePropertiesPanelProps) {
   const nodeType = node.data.nodeType as NodeType;
   
   // Local state for editing (not saved until Save button clicked)
@@ -93,6 +95,11 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
   const [localConfig, setLocalConfig] = useState(node.data.config || {});
   const [validationError, setValidationError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  
+  // Email credentials for email trigger
+  type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean };
+  const [emailCredentials, setEmailCredentials] = useState<EmailCredential[]>([]);
+  const [loadingCredentials, setLoadingCredentials] = useState(false);
   
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
@@ -134,6 +141,49 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     setLocalConfig(node.data.config || {});
     setValidationError(null);
   }, [node]);
+
+  // Fetch email credentials when companyId and targetAppId are available and trigger type is email
+  useEffect(() => {
+    const triggerType = localConfig.triggerType;
+    
+    if (triggerType === 'email' && companyId) {
+      setLoadingCredentials(true);
+      
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('companyId', companyId);
+      
+      fetch(`/api/orchestrations/email-credentials?${params.toString()}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            // Filter credentials by target app if targetAppId is specified
+            let credentials = data.credentials.filter((c: EmailCredential) => c.is_active);
+            
+            if (targetAppId) {
+              credentials = credentials.filter((c: any) => {
+                const targetApps = c.target_apps || [];
+                return targetApps.some((app: any) => app.id === targetAppId);
+              });
+            }
+            
+            setEmailCredentials(credentials);
+          } else {
+            console.error('[Node Properties] Failed to load email credentials:', data.error);
+            setEmailCredentials([]);
+          }
+        })
+        .catch(error => {
+          console.error('[Node Properties] Error fetching email credentials:', error);
+          setEmailCredentials([]);
+        })
+        .finally(() => {
+          setLoadingCredentials(false);
+        });
+    } else {
+      setEmailCredentials([]);
+    }
+  }, [companyId, targetAppId, localConfig.triggerType]);
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = () => {
@@ -1325,27 +1375,37 @@ function TriggerConfig({ config, updateConfig }: any) {
           <h4 className="text-sm font-semibold text-slate-700">Email Trigger Settings</h4>
           
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Email Provider</label>
-            <select
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              value={config.provider || "gmail"}
-              onChange={(e) => updateConfig({ provider: e.target.value })}
-            >
-              <option value="gmail">Gmail</option>
-              <option value="outlook">Microsoft Outlook</option>
-              <option value="imap">IMAP (Generic)</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Mailbox/Email Address</label>
-            <input
-              type="email"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="inbox@company.com"
-              value={config.mailbox || ""}
-              onChange={(e) => updateConfig({ mailbox: e.target.value })}
-            />
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Email Inbox *
+            </label>
+            {loadingCredentials ? (
+              <div className="w-full rounded border border-slate-300 px-3 py-2 text-sm text-slate-500 bg-slate-50">
+                Loading email credentials...
+              </div>
+            ) : emailCredentials.length === 0 ? (
+              <div className="w-full rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                No active email credentials found for this {targetAppId ? 'target app' : 'company'}. 
+                <a href="/control-panel/orchestration-designer/email-credentials" target="_blank" className="underline ml-1">
+                  Configure email credentials
+                </a>
+              </div>
+            ) : (
+              <select
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.emailCredentialId || ""}
+                onChange={(e) => updateConfig({ emailCredentialId: e.target.value })}
+              >
+                <option value="">Select email inbox</option>
+                {emailCredentials.map((cred) => (
+                  <option key={cred.id} value={cred.id}>
+                    {cred.name} ({cred.email_address}) - {cred.provider.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            )}
+            <p className="mt-1 text-xs text-slate-500">
+              Email credentials are pre-configured in Email Credentials Manager
+            </p>
           </div>
 
           <div>
@@ -1357,6 +1417,9 @@ function TriggerConfig({ config, updateConfig }: any) {
               value={config.subjectContains || ""}
               onChange={(e) => updateConfig({ subjectContains: e.target.value })}
             />
+            <p className="mt-1 text-xs text-slate-500">
+              Filter emails by keywords in subject (comma-separated)
+            </p>
           </div>
 
           <div>
@@ -1364,10 +1427,13 @@ function TriggerConfig({ config, updateConfig }: any) {
             <input
               type="email"
               className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="sender@domain.com"
+              placeholder="sender@domain.com or *@domain.com"
               value={config.senderFilter || ""}
               onChange={(e) => updateConfig({ senderFilter: e.target.value })}
             />
+            <p className="mt-1 text-xs text-slate-500">
+              Filter emails by sender address (supports wildcards)
+            </p>
           </div>
 
           <div>
@@ -1379,6 +1445,9 @@ function TriggerConfig({ config, updateConfig }: any) {
               value={config.pollingIntervalMinutes || 5}
               onChange={(e) => updateConfig({ pollingIntervalMinutes: parseInt(e.target.value) || 5 })}
             />
+            <p className="mt-1 text-xs text-slate-500">
+              How often to check for new emails (minimum 1 minute)
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -1410,44 +1479,8 @@ function TriggerConfig({ config, updateConfig }: any) {
             />
             <label htmlFor="emailEnabled" className="text-sm text-slate-700">Enabled</label>
           </div>
-
-          {/* Email Filter Help & Examples */}
-          <details className="text-xs bg-white border border-pink-200 rounded p-2">
-            <summary className="cursor-pointer font-semibold text-pink-900 hover:text-pink-700">
-              📖 Email Filter Examples & Tips
-            </summary>
-            <div className="mt-2 space-y-3">
-              <div>
-                <div className="font-semibold text-slate-700 mb-1">Subject Filter Examples:</div>
-                <div className="space-y-1 text-slate-600">
-                  <div><span className="font-mono">"Invoice"</span> - Matches emails with "Invoice" in subject</div>
-                  <div><span className="font-mono">"Invoice,Receipt"</span> - Matches either word (comma-separated)</div>
-                  <div><span className="font-mono">"Daily Report"</span> - Matches exact phrase</div>
-                  <div><span className="font-mono">"[Action Required]"</span> - Works with special characters</div>
-                </div>
-              </div>
-
-              <div>
-                <div className="font-semibold text-slate-700 mb-1">Sender Filter Examples:</div>
-                <div className="space-y-1 text-slate-600">
-                  <div><span className="font-mono">notifications@company.com</span> - Specific sender</div>
-                  <div><span className="font-mono">*@company.com</span> - Any sender from domain</div>
-                  <div><span className="font-mono">noreply@*</span> - All noreply addresses</div>
-                </div>
-              </div>
-
-              <div>
-                <div className="font-semibold text-slate-700 mb-1">Common Use Cases:</div>
-                <div className="space-y-2 text-slate-600">
-                  <div>
-                    <div className="font-medium">📄 Process Invoices:</div>
-                    <div className="ml-3">Subject: "Invoice" | Sender: billing@vendor.com</div>
-                  </div>
-                  <div>
-                    <div className="font-medium">📊 Daily Reports:</div>
-                    <div className="ml-3">Subject: "Daily Report" | Unread only: ✓</div>
-                  </div>
-                  <div>
+        </div>
+      )}
                     <div className="font-medium">🚨 Alert Processing:</div>
                     <div className="ml-3">Subject: "[ALERT]" | Mark processed: ✓</div>
                   </div>
