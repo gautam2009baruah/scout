@@ -209,6 +209,7 @@ export function buildGmailQuery(config: {
   subjectContains?: string;
   bodyContains?: string;
   hasAttachment?: boolean;
+  after?: Date;
 }): string {
   const parts: string[] = [];
   
@@ -230,6 +231,12 @@ export function buildGmailQuery(config: {
   
   if (config.hasAttachment) {
     parts.push("has:attachment");
+  }
+  
+  if (config.after) {
+    // Gmail supports a Unix-timestamp (seconds) argument to after: for
+    // finer-than-day granularity.
+    parts.push(`after:${Math.floor(config.after.getTime() / 1000)}`);
   }
   
   return parts.join(" ");

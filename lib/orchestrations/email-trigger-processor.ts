@@ -196,6 +196,14 @@ export async function processEmailTrigger(
       ]
     );
     
+    // Record that this trigger actually fired (distinct from last_polled_at)
+    await pool.query(
+      `UPDATE orchestration_triggers
+       SET last_triggered_at = NOW(), updated_at = NOW()
+       WHERE id = $1`,
+      [triggerId]
+    );
+    
     // Execute orchestration in background
     const nodesResult = await pool.query(
       `SELECT * FROM orchestration_nodes WHERE orchestration_id = $1 ORDER BY created_at`,
@@ -287,16 +295,16 @@ export async function getActiveEmailTriggers(): Promise<Array<{
     orchestration_id: string;
     name: string;
     config: EmailTriggerConfig;
-    last_triggered_at: Date | null;
+    last_polled_at: Date | null;
   }>(
-    `SELECT t.id, t.orchestration_id, t.name, t.config, t.last_triggered_at
+    `SELECT t.id, t.orchestration_id, t.name, t.config, t.last_polled_at
      FROM orchestration_triggers t
      INNER JOIN orchestrations o ON o.id = t.orchestration_id
      WHERE t.trigger_type = 'email'
        AND t.status = 'active'
        AND (t.config->>'enabled')::boolean = true
        AND o.status = 'published'
-     ORDER BY t.last_triggered_at ASC NULLS FIRST`
+     ORDER BY t.last_polled_at ASC NULLS FIRST`
   );
   
   return result.rows.map(row => ({
@@ -304,20 +312,25 @@ export async function getActiveEmailTriggers(): Promise<Array<{
     orchestrationId: row.orchestration_id,
     name: row.name,
     config: row.config,
-    lastPolledAt: row.last_triggered_at,
+    lastPolledAt: row.last_polled_at,
   }));
 }
 
 /**
- * Update trigger last polled timestamp
+ * Update the trigger's last polled watermark.
+ * Pass the timestamp captured at the START of the poll cycle so emails that
+ * arrive during the fetch are not skipped on the next cycle.
  */
-export async function updateTriggerLastPolled(triggerId: string): Promise<void> {
+export async function updateTriggerLastPolled(
+  triggerId: string,
+  polledAt?: Date
+): Promise<void> {
   const pool = await getPool();
   
   await pool.query(
     `UPDATE orchestration_triggers
-     SET last_triggered_at = NOW(), updated_at = NOW()
+     SET last_polled_at = $2, updated_at = NOW()
      WHERE id = $1`,
-    [triggerId]
+    [triggerId, polledAt ?? new Date()]
   );
 }

@@ -77,10 +77,11 @@ export async function fetchIMAPEmails(
   config: IMAPConfig,
   folder: string = "INBOX",
   unreadOnly: boolean = true,
-  limit?: number
+  limit?: number,
+  since?: Date
 ): Promise<EmailMessage[]> {
   console.log(`[IMAP] Connecting to ${config.host}:${config.port}`);
-  console.log(`[IMAP] Folder: ${folder}, Unread only: ${unreadOnly}, Limit: ${limit || 'none'}`);
+  console.log(`[IMAP] Folder: ${folder}, Unread only: ${unreadOnly}, Limit: ${limit || 'none'}, Since: ${since ? since.toISOString() : 'none'}`);
   
   return new Promise((resolve, reject) => {
     const imap = new Imap({
@@ -106,8 +107,13 @@ export async function fetchIMAPEmails(
 
         console.log(`[IMAP] Mailbox opened: ${box.messages.total} total messages`);
 
-        // Search criteria: unread or all
-        const searchCriteria = unreadOnly ? ["UNSEEN"] : ["ALL"];
+        // Search criteria: unread or all, optionally bounded by a SINCE date.
+        // Note: IMAP SINCE is date-granular (ignores time-of-day); the poller
+        // applies a precise receivedAt >= since filter in memory afterwards.
+        const searchCriteria: any[] = unreadOnly ? ["UNSEEN"] : ["ALL"];
+        if (since) {
+          searchCriteria.push(["SINCE", since]);
+        }
         
         imap.search(searchCriteria, (err, results) => {
           if (err) {

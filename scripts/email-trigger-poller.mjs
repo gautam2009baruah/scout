@@ -47,7 +47,7 @@ function getPollingInterval(config) {
 /**
  * Fetch emails for a specific provider
  */
-async function fetchEmailsForProvider(trigger, config) {
+async function fetchEmailsForProvider(trigger, config, since) {
   const { provider, credentialId } = config;
   
   if (provider === "gmail") {
@@ -68,6 +68,7 @@ async function fetchEmailsForProvider(trigger, config) {
       subjectContains: config.subjectContains,
       bodyContains: config.bodyContains,
       hasAttachment: config.hasAttachment,
+      after: since,
     });
     
     return await fetchGmailEmails(credentialId, credentials, query);
@@ -89,6 +90,7 @@ async function fetchEmailsForProvider(trigger, config) {
       senderFilter: config.senderFilter,
       subjectContains: config.subjectContains,
       hasAttachment: config.hasAttachment,
+      receivedAfter: since,
     });
     
     const folder = config.folder || "inbox";
@@ -107,7 +109,7 @@ async function fetchEmailsForProvider(trigger, config) {
     }
     
     const folder = config.folder || "INBOX";
-    return await fetchIMAPEmails(credentials, folder, config.unreadOnly);
+    return await fetchIMAPEmails(credentials, folder, config.unreadOnly, undefined, since);
     
   } else {
     console.warn(`Trigger ${trigger.id}: Unknown provider ${provider}`);
@@ -151,26 +153,66 @@ async function markEmailAsProcessed(trigger, config, messageId) {
 }
 
 /**
+ * Compute the start-of-today timestamp (local time).
+ */
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+/**
+ * Determine the initial fetch watermark for a trigger.
+ * - If we have a persisted last_polled_at that is within today, resume from it.
+ * - Otherwise (first ever poll, or the service was down since before today),
+ *   cap the look-back to the start of today.
+ */
+function computeInitialWatermark(trigger) {
+  const today = startOfToday();
+  const lastPolled = trigger.lastPolledAt ? new Date(trigger.lastPolledAt) : null;
+  if (lastPolled && lastPolled.getTime() > today.getTime()) {
+    return lastPolled;
+  }
+  return today;
+}
+
+/**
  * Process a single email trigger
  */
-async function processEmailTriggerPolling(trigger) {
+async function processEmailTriggerPolling(trigger, since) {
   const triggerId = trigger.id;
   const config = trigger.config;
+  
+  // Capture the poll start BEFORE fetching so emails that arrive during the
+  // fetch are not skipped on the next cycle. This becomes the next watermark.
+  const pollStart = new Date();
   
   console.log(`\nPolling trigger: ${trigger.name} (${triggerId})`);
   console.log(`  Provider: ${config.provider}`);
   console.log(`  Mailbox: ${config.mailbox}`);
+  console.log(`  Since: ${since ? since.toISOString() : 'beginning'}`);
   
   try {
-    // Fetch emails from provider
-    const emails = await fetchEmailsForProvider(trigger, config);
+    // Fetch emails from provider (provider-side filtering by since where supported)
+    const fetched = await fetchEmailsForProvider(trigger, config, since);
     
-    console.log(`  Fetched ${emails.length} emails`);
+    // Enforce the exact time window in memory, regardless of provider
+    // granularity (e.g. IMAP SINCE is date-only).
+    const emails = since
+      ? fetched.filter((email) => {
+          const receivedAt = email.receivedAt instanceof Date
+            ? email.receivedAt
+            : new Date(email.receivedAt);
+          return receivedAt.getTime() >= since.getTime();
+        })
+      : fetched;
+    
+    console.log(`  Fetched ${fetched.length} emails, ${emails.length} within window`);
     
     if (emails.length === 0) {
-      // Update last polled timestamp even if no emails
-      await updateTriggerLastPolled(triggerId);
-      return;
+      // Advance the watermark even if no emails matched the window
+      await updateTriggerLastPolled(triggerId, pollStart);
+      return pollStart;
     }
     
     let processedCount = 0;
@@ -214,8 +256,10 @@ async function processEmailTriggerPolling(trigger) {
     
     console.log(`  Summary: ${matchedCount} matched, ${processedCount} processed`);
     
-    // Update last polled timestamp
-    await updateTriggerLastPolled(triggerId);
+    // Advance the watermark to the poll start
+    await updateTriggerLastPolled(triggerId, pollStart);
+    
+    return pollStart;
     
   } catch (error) {
     console.error(`  Error polling trigger: ${error.message}`);
@@ -227,6 +271,9 @@ async function processEmailTriggerPolling(trigger) {
        WHERE id = $1`,
       [triggerId, error.message]
     );
+    
+    // Do not advance the watermark on failure so the window is retried next cycle
+    return null;
   }
 }
 
@@ -238,21 +285,30 @@ function startTriggerPolling(trigger) {
   
   console.log(`Starting polling for trigger ${trigger.name} (every ${interval / 1000}s)`);
   
+  const entry = {
+    trigger,
+    intervalId: null,
+    interval,
+    watermark: computeInitialWatermark(trigger),
+  };
+  activeTriggers.set(trigger.id, entry);
+  
+  // Run one poll cycle, advancing the watermark on success
+  const runCycle = async () => {
+    if (isShuttingDown) return;
+    const active = activeTriggers.get(trigger.id);
+    if (!active) return;
+    const nextWatermark = await processEmailTriggerPolling(active.trigger, active.watermark);
+    if (nextWatermark) {
+      active.watermark = nextWatermark;
+    }
+  };
+  
   // Poll immediately
-  processEmailTriggerPolling(trigger);
+  runCycle();
   
   // Schedule recurring polls
-  const intervalId = setInterval(() => {
-    if (!isShuttingDown) {
-      processEmailTriggerPolling(trigger);
-    }
-  }, interval);
-  
-  activeTriggers.set(trigger.id, {
-    trigger,
-    intervalId,
-    interval,
-  });
+  entry.intervalId = setInterval(runCycle, interval);
 }
 
 /**

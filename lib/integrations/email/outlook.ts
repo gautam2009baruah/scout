@@ -196,6 +196,7 @@ export function buildOutlookFilter(config: {
   senderFilter?: string;
   subjectContains?: string;
   hasAttachment?: boolean;
+  receivedAfter?: Date;
 }): string {
   const filters: string[] = [];
   
@@ -213,6 +214,11 @@ export function buildOutlookFilter(config: {
   
   if (config.hasAttachment) {
     filters.push("hasAttachments eq true");
+  }
+  
+  if (config.receivedAfter) {
+    // Microsoft Graph supports full ISO 8601 timestamp comparison.
+    filters.push(`receivedDateTime ge ${config.receivedAfter.toISOString()}`);
   }
   
   return filters.join(" and ");
