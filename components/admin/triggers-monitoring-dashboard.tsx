@@ -537,7 +537,6 @@ export function TriggersMonitoringDashboard({
                   {trigger.triggerType === "email" && (
                     <>
                       <Stat label="Last Found" value={formatDateTime(trigger.emailLastFound)} />
-                      <Stat label="Last Ran" value={formatDateTime(trigger.emailLastRan)} />
                       <Stat
                         label="Emails Found"
                         value={String(trigger.emailMessageCount || 0)}
