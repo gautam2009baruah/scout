@@ -274,6 +274,19 @@ export function EmailCredentialsManager() {
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Edit Email Credential</h3>
 
             <div className="space-y-4">
+              {/* Provider (read-only) */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Provider (cannot be changed)</label>
+                <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded uppercase font-semibold">
+                    {editingCredential.provider}
+                  </span>
+                  <span className="text-xs text-slate-500 ml-2">
+                    To use a different provider, delete this credential and create a new one
+                  </span>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
