@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { X } from "lucide-react";
 
 type EmailCredential = {
   id: string;
@@ -44,7 +45,14 @@ export function EmailCredentialsManager() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [editingCredential, setEditingCredential] = useState<EmailCredential | null>(null);
   const [editForm, setEditForm] = useState<Partial<NewCredential>>({});
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
+  // Show toast notification
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
 
   useEffect(() => {
     loadCredentials();
@@ -58,11 +66,11 @@ export function EmailCredentialsManager() {
       if (data.success) {
         setCredentials(data.credentials);
       } else {
-        setMessage({ type: "error", text: "Failed to load email credentials. Please try again." });
+        showToast("Failed to load email credentials. Please try again.", "error");
         console.error("[Email Credentials] Load error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: "Unable to connect to server. Please check your connection." });
+      showToast("Unable to connect to server. Please check your connection.", "error");
       console.error("[Email Credentials] Load exception:", error);
     } finally {
       setLoading(false);
@@ -71,13 +79,13 @@ export function EmailCredentialsManager() {
 
   async function handleAddCredential() {
     if (!newCredential.name || !newCredential.emailAddress) {
-      setMessage({ type: "error", text: "Name and email address are required" });
+      showToast("Name and email address are required", "error");
       return;
     }
 
     if (newCredential.provider === "imap") {
       if (!newCredential.imapHost || !newCredential.imapUsername || !newCredential.imapPassword) {
-        setMessage({ type: "error", text: "IMAP host, username, and password are required" });
+        showToast("IMAP host, username, and password are required", "error");
         return;
       }
     }
@@ -92,7 +100,7 @@ export function EmailCredentialsManager() {
       const data = await response.json();
 
       if (data.success) {
-        setMessage({ type: "success", text: "Email credential added successfully" });
+        showToast("Email credential added successfully", "success");
         setShowAddForm(false);
         setNewCredential({
           provider: "imap",
@@ -106,18 +114,17 @@ export function EmailCredentialsManager() {
         });
         await loadCredentials();
       } else {
-        setMessage({ type: "error", text: "Failed to add email credential. Please check your settings." });
+        showToast("Failed to add email credential. Please check your settings.", "error");
         console.error("[Email Credentials] Add error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: "Unable to save credential. Please try again." });
+      showToast("Unable to save credential. Please try again.", "error");
       console.error("[Email Credentials] Add exception:", error);
     }
   }
 
   async function handleTestCredential(credentialId: string) {
     setTestingId(credentialId);
-    setMessage(null);
 
     try {
       const response = await fetch("/api/orchestrations/email-credentials/test", {
@@ -129,17 +136,14 @@ export function EmailCredentialsManager() {
       const data = await response.json();
 
       if (data.success) {
-        setMessage({ 
-          type: "success", 
-          text: "Connection successful" 
-        });
+        showToast("Connection successful", "success");
         await loadCredentials();
       } else {
-        setMessage({ type: "error", text: data.error || "Connection test failed. Please verify your settings." });
+        showToast(data.error || "Connection test failed. Please verify your settings.", "error");
         console.error("[Email Credentials] Test error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: "Unable to test connection. Please try again." });
+      showToast("Unable to test connection. Please try again.", "error");
       console.error("[Email Credentials] Test exception:", error);
     } finally {
       setTestingId(null);
@@ -147,33 +151,34 @@ export function EmailCredentialsManager() {
   }
 
   async function handleDeleteCredential(credentialId: string, credentialName: string) {
-    if (!confirm(`Are you sure you want to delete "${credentialName}"? This cannot be undone.`)) {
-      return;
-    }
+    setConfirmDialog({
+      message: `Are you sure you want to delete "${credentialName}"? This cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setDeletingId(credentialId);
 
-    setDeletingId(credentialId);
-    setMessage(null);
+        try {
+          const response = await fetch(`/api/orchestrations/email-credentials/${credentialId}`, {
+            method: "DELETE",
+          });
 
-    try {
-      const response = await fetch(`/api/orchestrations/email-credentials/${credentialId}`, {
-        method: "DELETE",
-      });
+          const data = await response.json();
 
-      const data = await response.json();
-
-      if (data.success) {
-        setMessage({ type: "success", text: "Email credential deleted successfully" });
-        await loadCredentials();
-      } else {
-        setMessage({ type: "error", text: data.error || "Unable to delete credential. Please try again." });
-        console.error("[Email Credentials] Delete error:", data.error);
-      }
-    } catch (error: any) {
-      setMessage({ type: "error", text: "Unable to delete credential. Please try again." });
-      console.error("[Email Credentials] Delete exception:", error);
-    } finally {
-      setDeletingId(null);
-    }
+          if (data.success) {
+            showToast("Email credential deleted successfully", "success");
+            await loadCredentials();
+          } else {
+            showToast(data.error || "Unable to delete credential. Please try again.", "error");
+            console.error("[Email Credentials] Delete error:", data.error);
+          }
+        } catch (error: any) {
+          showToast("Unable to delete credential. Please try again.", "error");
+          console.error("[Email Credentials] Delete exception:", error);
+        } finally {
+          setDeletingId(null);
+        }
+      },
+    });
   }
 
   async function handleEditClick(cred: EmailCredential) {
@@ -197,12 +202,12 @@ export function EmailCredentialsManager() {
           imapTls: fullCred.imap_tls !== false,
         });
       } else {
-        setMessage({ type: "error", text: "Unable to load credential details. Please try again." });
+        showToast("Unable to load credential details. Please try again.", "error");
         console.error("[Email Credentials] Fetch for edit error:", data.error);
         setEditingCredential(null);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: "Unable to load credential details. Please try again." });
+      showToast("Unable to load credential details. Please try again.", "error");
       console.error("[Email Credentials] Fetch for edit exception:", error);
       setEditingCredential(null);
     }
@@ -212,7 +217,7 @@ export function EmailCredentialsManager() {
     if (!editingCredential) return;
 
     if (!editForm.name || !editForm.emailAddress) {
-      setMessage({ type: "error", text: "Name and email address are required" });
+      showToast("Name and email address are required", "error");
       return;
     }
 
@@ -226,49 +231,51 @@ export function EmailCredentialsManager() {
       const data = await response.json();
 
       if (data.success) {
-        setMessage({ type: "success", text: "Email credential updated successfully" });
+        showToast("Email credential updated successfully", "success");
         setEditingCredential(null);
         setEditForm({});
         await loadCredentials();
       } else {
-        setMessage({ type: "error", text: "Failed to update credential. Please check your settings." });
+        showToast("Failed to update credential. Please check your settings.", "error");
         console.error("[Email Credentials] Update error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: "Unable to update credential. Please try again." });
+      showToast("Unable to update credential. Please try again.", "error");
       console.error("[Email Credentials] Update exception:", error);
     }
   }
 
   async function handleToggleActive(credentialId: string, currentStatus: boolean, credentialName: string) {
     const action = currentStatus ? "disable" : "enable";
-    if (!confirm(`Are you sure you want to ${action} "${credentialName}"?`)) {
-      return;
-    }
+    
+    setConfirmDialog({
+      message: `Are you sure you want to ${action} "${credentialName}"?`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setTogglingId(credentialId);
 
-    setTogglingId(credentialId);
-    setMessage(null);
+        try {
+          const response = await fetch(`/api/orchestrations/email-credentials/${credentialId}/toggle`, {
+            method: "PATCH",
+          });
 
-    try {
-      const response = await fetch(`/api/orchestrations/email-credentials/${credentialId}/toggle`, {
-        method: "PATCH",
-      });
+          const data = await response.json();
 
-      const data = await response.json();
-
-      if (data.success) {
-        setMessage({ type: "success", text: `Email credential ${action}d successfully` });
-        await loadCredentials();
-      } else {
-        setMessage({ type: "error", text: `Unable to ${action} credential. Please try again.` });
-        console.error("[Email Credentials] Toggle error:", data.error);
-      }
-    } catch (error: any) {
-      setMessage({ type: "error", text: `Unable to ${action} credential. Please try again.` });
-      console.error("[Email Credentials] Toggle exception:", error);
-    } finally {
-      setTogglingId(null);
-    }
+          if (data.success) {
+            showToast(`Email credential ${action}d successfully`, "success");
+            await loadCredentials();
+          } else {
+            showToast(`Unable to ${action} credential. Please try again.`, "error");
+            console.error("[Email Credentials] Toggle error:", data.error);
+          }
+        } catch (error: any) {
+          showToast(`Unable to ${action} credential. Please try again.", "error");
+          console.error("[Email Credentials] Toggle exception:", error);
+        } finally {
+          setTogglingId(null);
+        }
+      },
+    });
   }
 
   if (loading) {
@@ -291,13 +298,6 @@ export function EmailCredentialsManager() {
           {showAddForm ? "Cancel" : "+ Add Credential"}
         </button>
       </div>
-
-      {/* Message */}
-      {message && (
-        <div className={`p-4 rounded-lg ${message.type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"}`}>
-          {message.text}
-        </div>
-      )}
 
       {/* Edit Credential Modal */}
       {editingCredential && (
@@ -698,6 +698,52 @@ export function EmailCredentialsManager() {
           <li>Use these credentials in Email Triggers within orchestrations</li>
         </ul>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] animate-in fade-in slide-in-from-top-2 duration-300">
+          <div className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-lg border ${
+            toast.type === 'success' 
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+              : 'bg-red-50 border-red-200 text-red-900'
+          }`}>
+            <span className="text-lg">{toast.type === 'success' ? '✓' : '✕'}</span>
+            <span className="text-sm font-medium">{toast.message}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="ml-2 rounded p-0.5 hover:bg-black/5 transition-colors"
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
+                type="button"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
