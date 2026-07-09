@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error("[API] Error fetching email credentials:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: "Unable to retrieve email credentials" },
       { status: 500 }
     );
   }
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("[API] Error creating email credential:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: "Unable to save email credential" },
       { status: 500 }
     );
   }

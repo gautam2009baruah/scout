@@ -57,10 +57,12 @@ export function EmailCredentialsManager() {
       if (data.success) {
         setCredentials(data.credentials);
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to load credentials" });
+        setMessage({ type: "error", text: "Failed to load email credentials. Please try again." });
+        console.error("[Email Credentials] Load error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: "Unable to connect to server. Please check your connection." });
+      console.error("[Email Credentials] Load exception:", error);
     } finally {
       setLoading(false);
     }
@@ -103,10 +105,12 @@ export function EmailCredentialsManager() {
         });
         await loadCredentials();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to add credential" });
+        setMessage({ type: "error", text: "Failed to add email credential. Please check your settings." });
+        console.error("[Email Credentials] Add error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: "Unable to save credential. Please try again." });
+      console.error("[Email Credentials] Add exception:", error);
     }
   }
 
@@ -130,10 +134,12 @@ export function EmailCredentialsManager() {
         });
         await loadCredentials();
       } else {
-        setMessage({ type: "error", text: data.error || "Connection test failed" });
+        setMessage({ type: "error", text: data.error || "Connection test failed. Please verify your settings." });
+        console.error("[Email Credentials] Test error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: "Unable to test connection. Please try again." });
+      console.error("[Email Credentials] Test exception:", error);
     } finally {
       setTestingId(null);
     }
@@ -158,27 +164,47 @@ export function EmailCredentialsManager() {
         setMessage({ type: "success", text: "Email credential deleted successfully" });
         await loadCredentials();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to delete credential" });
+        setMessage({ type: "error", text: data.error || "Unable to delete credential. Please try again." });
+        console.error("[Email Credentials] Delete error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: "Unable to delete credential. Please try again." });
+      console.error("[Email Credentials] Delete exception:", error);
     } finally {
       setDeletingId(null);
     }
   }
 
-  function handleEditClick(cred: EmailCredential) {
+  async function handleEditClick(cred: EmailCredential) {
     setEditingCredential(cred);
-    setEditForm({
-      name: cred.name,
-      emailAddress: cred.email_address,
-      provider: cred.provider,
-      imapHost: "",
-      imapPort: 993,
-      imapUsername: "",
-      imapPassword: "",
-      imapTls: true,
-    });
+    
+    // Fetch full credential details for editing
+    try {
+      const response = await fetch(`/api/orchestrations/email-credentials/${cred.id}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        const fullCred = data.credential;
+        setEditForm({
+          name: fullCred.name,
+          emailAddress: fullCred.email_address,
+          provider: fullCred.provider,
+          imapHost: fullCred.imap_host || "",
+          imapPort: fullCred.imap_port || 993,
+          imapUsername: fullCred.imap_username || "",
+          imapPassword: "", // Never pre-fill password
+          imapTls: fullCred.imap_tls !== false,
+        });
+      } else {
+        setMessage({ type: "error", text: "Unable to load credential details. Please try again." });
+        console.error("[Email Credentials] Fetch for edit error:", data.error);
+        setEditingCredential(null);
+      }
+    } catch (error: any) {
+      setMessage({ type: "error", text: "Unable to load credential details. Please try again." });
+      console.error("[Email Credentials] Fetch for edit exception:", error);
+      setEditingCredential(null);
+    }
   }
 
   async function handleUpdateCredential() {
@@ -204,10 +230,12 @@ export function EmailCredentialsManager() {
         setEditForm({});
         await loadCredentials();
       } else {
-        setMessage({ type: "error", text: data.error || "Failed to update credential" });
+        setMessage({ type: "error", text: "Failed to update credential. Please check your settings." });
+        console.error("[Email Credentials] Update error:", data.error);
       }
     } catch (error: any) {
-      setMessage({ type: "error", text: error.message });
+      setMessage({ type: "error", text: "Unable to update credential. Please try again." });
+      console.error("[Email Credentials] Update exception:", error);
     }
   }
 
@@ -537,27 +565,50 @@ export function EmailCredentialsManager() {
                     )}
                   </td>
                   <td className="px-6 py-4 text-sm">
-                    <div className="flex gap-3">
+                    <div className="flex gap-2">
                       <button
                         onClick={() => handleTestCredential(cred.id)}
-                        disabled={testingId === cred.id || deletingId === cred.id}
-                        className="text-blue-600 hover:text-blue-800 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        disabled={testingId !== null || deletingId !== null}
+                        className="p-2 text-blue-600 hover:bg-blue-50 rounded disabled:text-slate-400 disabled:cursor-not-allowed transition"
+                        title="Test Connection"
                       >
-                        {testingId === cred.id ? "Testing..." : "Test"}
+                        {testingId === cred.id ? (
+                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        )}
                       </button>
                       <button
                         onClick={() => handleEditClick(cred)}
-                        disabled={testingId === cred.id || deletingId === cred.id}
-                        className="text-green-600 hover:text-green-800 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        disabled={testingId !== null || deletingId !== null}
+                        className="p-2 text-green-600 hover:bg-green-50 rounded disabled:text-slate-400 disabled:cursor-not-allowed transition"
+                        title="Edit Credential"
                       >
-                        Edit
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
                       </button>
                       <button
                         onClick={() => handleDeleteCredential(cred.id, cred.name)}
-                        disabled={testingId === cred.id || deletingId === cred.id}
-                        className="text-red-600 hover:text-red-800 disabled:text-slate-400 disabled:cursor-not-allowed"
+                        disabled={testingId !== null || deletingId !== null}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded disabled:text-slate-400 disabled:cursor-not-allowed transition"
+                        title="Delete Credential"
                       >
-                        {deletingId === cred.id ? "Deleting..." : "Delete"}
+                        {deletingId === cred.id ? (
+                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        )}
                       </button>
                     </div>
                   </td>

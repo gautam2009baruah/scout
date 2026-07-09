@@ -6,6 +6,69 @@ import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 /**
+ * GET /api/orchestrations/email-credentials/[id]
+ * Get full details of a single email credential (for editing)
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getCurrentAdminSession();
+    
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const { id: credentialId } = await params;
+    const companyId = session.user.tenantId;
+
+    const pool = getPool();
+
+    // Fetch credential details (excluding password for security)
+    const result = await pool.query(
+      `SELECT 
+        id,
+        provider,
+        name,
+        email_address,
+        imap_host,
+        imap_port,
+        imap_username,
+        imap_tls,
+        is_active,
+        last_tested_at,
+        last_test_status,
+        created_at
+       FROM email_credentials
+       WHERE id = $1 AND company_id = $2`,
+      [credentialId, companyId]
+    );
+
+    if (result.rowCount === 0) {
+      return NextResponse.json(
+        { success: false, error: "Credential not found or access denied" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      credential: result.rows[0],
+    });
+  } catch (error: any) {
+    console.error("[API] Error fetching email credential:", error);
+    return NextResponse.json(
+      { success: false, error: "Unable to retrieve credential details" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
  * DELETE /api/orchestrations/email-credentials/[id]
  * Delete an email credential
  */
@@ -76,7 +139,7 @@ export async function DELETE(
   } catch (error: any) {
     console.error("[API] Error deleting email credential:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: "Unable to delete credential" },
       { status: 500 }
     );
   }
@@ -211,7 +274,7 @@ export async function PATCH(
   } catch (error: any) {
     console.error("[API] Error updating email credential:", error);
     return NextResponse.json(
-      { success: false, error: error.message },
+      { success: false, error: "Unable to update credential" },
       { status: 500 }
     );
   }
