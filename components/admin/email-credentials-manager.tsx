@@ -94,7 +94,7 @@ export function EmailCredentialsManager() {
 
   async function loadCompanies() {
     try {
-      const response = await fetch("/api/admin/user-companies");
+      const response = await fetch("/api/admin/companies");
       const data = await response.json();
       
       if (data.success) {
