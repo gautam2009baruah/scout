@@ -160,7 +160,7 @@ export async function processEmailTrigger(
       `INSERT INTO email_trigger_messages
        (trigger_id, orchestration_id, execution_id, message_id, provider, mailbox,
         from_address, to_address, subject, body_text, body_html, attachments, received_at, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'started')`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'received')`,
       [
         triggerId,
         orchestrationId,
@@ -226,7 +226,7 @@ export async function processEmailTrigger(
         
         // Update status to completed
         await pool.query(
-          `UPDATE email_trigger_messages SET status = 'matched'
+          `UPDATE email_trigger_messages SET status = 'processed'
            WHERE trigger_id = $1 AND message_id = $2`,
           [triggerId, email.messageId]
         );
