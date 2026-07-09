@@ -26,7 +26,7 @@ export default async function WorkflowAnalyticsPage() {
   ]);
 
   return (
-    <AdminShell active={MODULE_KEYS.guidedWorkflows} activeHref="/control-panel/administration/workflow-analytics" session={session}>
+    <AdminShell active={MODULE_KEYS.workflowAnalytics} session={session}>
       <WorkflowAnalyticsDashboard companies={companies} recordingSessions={recordingSessions} targetApps={targetApps} />
     </AdminShell>
   );

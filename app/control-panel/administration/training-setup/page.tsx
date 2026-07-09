@@ -31,7 +31,7 @@ export default async function TrainingSetupPage() {
   ]);
 
   return (
-    <AdminShell active={MODULE_KEYS.guidedWorkflows} activeHref="/control-panel/administration/training-setup" session={session}>
+    <AdminShell active={MODULE_KEYS.workflowTrainingSetup} session={session}>
       <GuidedWorkflowTrainingSetup companies={companies} recordingSessions={recordingSessions} targetApps={targetApps} />
     </AdminShell>
   );
