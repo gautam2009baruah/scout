@@ -41,6 +41,8 @@ export function EmailCredentialsManager() {
   });
   const [testingId, setTestingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingCredential, setEditingCredential] = useState<EmailCredential | null>(null);
+  const [editForm, setEditForm] = useState<Partial<NewCredential>>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -165,6 +167,50 @@ export function EmailCredentialsManager() {
     }
   }
 
+  function handleEditClick(cred: EmailCredential) {
+    setEditingCredential(cred);
+    setEditForm({
+      name: cred.name,
+      emailAddress: cred.email_address,
+      provider: cred.provider,
+      imapHost: "",
+      imapPort: 993,
+      imapUsername: "",
+      imapPassword: "",
+      imapTls: true,
+    });
+  }
+
+  async function handleUpdateCredential() {
+    if (!editingCredential) return;
+
+    if (!editForm.name || !editForm.emailAddress) {
+      setMessage({ type: "error", text: "Name and email address are required" });
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/orchestrations/email-credentials/${editingCredential.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMessage({ type: "success", text: "Email credential updated successfully" });
+        setEditingCredential(null);
+        setEditForm({});
+        await loadCredentials();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to update credential" });
+      }
+    } catch (error: any) {
+      setMessage({ type: "error", text: error.message });
+    }
+  }
+
   if (loading) {
     return <div className="p-6">Loading email credentials...</div>;
   }
@@ -190,6 +236,118 @@ export function EmailCredentialsManager() {
       {message && (
         <div className={`p-4 rounded-lg ${message.type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"}`}>
           {message.text}
+        </div>
+      )}
+
+      {/* Edit Credential Modal */}
+      {editingCredential && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">Edit Email Credential</h3>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
+                  <input
+                    type="text"
+                    className="w-full rounded border border-slate-300 px-3 py-2"
+                    value={editForm.name || ""}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Email Address *</label>
+                  <input
+                    type="email"
+                    className="w-full rounded border border-slate-300 px-3 py-2"
+                    value={editForm.emailAddress || ""}
+                    onChange={(e) => setEditForm({ ...editForm, emailAddress: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {editingCredential.provider === "imap" && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Host</label>
+                      <input
+                        type="text"
+                        className="w-full rounded border border-slate-300 px-3 py-2"
+                        placeholder="imap.gmail.com"
+                        value={editForm.imapHost || ""}
+                        onChange={(e) => setEditForm({ ...editForm, imapHost: e.target.value })}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Port</label>
+                      <input
+                        type="number"
+                        className="w-full rounded border border-slate-300 px-3 py-2"
+                        value={editForm.imapPort || 993}
+                        onChange={(e) => setEditForm({ ...editForm, imapPort: parseInt(e.target.value) })}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+                    <input
+                      type="text"
+                      className="w-full rounded border border-slate-300 px-3 py-2"
+                      placeholder="Usually same as email address"
+                      value={editForm.imapUsername || ""}
+                      onChange={(e) => setEditForm({ ...editForm, imapUsername: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      New Password (leave blank to keep existing)
+                    </label>
+                    <input
+                      type="password"
+                      className="w-full rounded border border-slate-300 px-3 py-2"
+                      placeholder="Enter new password only if changing"
+                      value={editForm.imapPassword || ""}
+                      onChange={(e) => setEditForm({ ...editForm, imapPassword: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="editImapTls"
+                      checked={editForm.imapTls !== false}
+                      onChange={(e) => setEditForm({ ...editForm, imapTls: e.target.checked })}
+                    />
+                    <label htmlFor="editImapTls" className="text-sm text-slate-700">Use TLS/SSL</label>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={handleUpdateCredential}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+              >
+                Update Credential
+              </button>
+              <button
+                onClick={() => {
+                  setEditingCredential(null);
+                  setEditForm({});
+                }}
+                className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -386,6 +544,13 @@ export function EmailCredentialsManager() {
                         className="text-blue-600 hover:text-blue-800 disabled:text-slate-400 disabled:cursor-not-allowed"
                       >
                         {testingId === cred.id ? "Testing..." : "Test"}
+                      </button>
+                      <button
+                        onClick={() => handleEditClick(cred)}
+                        disabled={testingId === cred.id || deletingId === cred.id}
+                        className="text-green-600 hover:text-green-800 disabled:text-slate-400 disabled:cursor-not-allowed"
+                      >
+                        Edit
                       </button>
                       <button
                         onClick={() => handleDeleteCredential(cred.id, cred.name)}
