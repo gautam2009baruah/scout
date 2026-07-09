@@ -46,10 +46,10 @@ export async function PATCH(
     // Toggle the status
     const result = await pool.query(
       `UPDATE email_credentials
-       SET is_active = $1, updated_at = NOW(), updated_by_email = $2
+       SET is_active = $1, updated_at = NOW(), updated_by = $2
        WHERE id = $3
        RETURNING id, is_active`,
-      [!currentStatus, session.user.email, credentialId]
+      [!currentStatus, session.user.id, credentialId]
     );
 
     return NextResponse.json({

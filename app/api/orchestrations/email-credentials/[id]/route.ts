@@ -176,7 +176,7 @@ export async function PATCH(
     }
 
     const { id: credentialId } = await params;
-    const updatedBy = session.user.email;
+    const updatedBy = session.user.id;
 
     const body = await request.json();
     const {
@@ -268,7 +268,7 @@ export async function PATCH(
 
     let result;
     if (updates.length > 0) {
-      updates.push(`updated_by_email = $${paramIndex++}`);
+      updates.push(`updated_by = $${paramIndex++}`);
       values.push(updatedBy);
       values.push(credentialId);
 
@@ -293,7 +293,7 @@ export async function PATCH(
       if (targetAppIds.length > 0) {
         const appAssignments = targetAppIds.map((appId: string) => 
           client.query(
-            `INSERT INTO email_credential_target_apps (email_credential_id, target_app_id, created_by_email)
+            `INSERT INTO email_credential_target_apps (email_credential_id, target_app_id, created_by)
              VALUES ($1, $2, $3)
              ON CONFLICT (email_credential_id, target_app_id) DO NOTHING`,
             [credentialId, appId, updatedBy]

@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
       name,
       description,
       config: finalConfig,
-      createdByEmail: session.user.email,
+      createdById: session.user.id,
     });
 
     // Clear cache if chatbot trigger was created
@@ -153,7 +153,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const updates: any = { updatedByEmail: session.user.email };
+    const updates: any = { updatedById: session.user.id };
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (config !== undefined) {

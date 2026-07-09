@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const createdBy = session.user.email;
+    const createdBy = session.user.id;
 
     const pool = getPool();
     const client = await pool.connect();
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
       // Insert credential
       const result = await client.query(
         `INSERT INTO email_credentials
-         (company_id, provider, name, email_address, imap_host, imap_port, imap_password, imap_tls, created_by_email, updated_by_email)
+         (company_id, provider, name, email_address, imap_host, imap_port, imap_password, imap_tls, created_by, updated_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
          RETURNING id, provider, name, email_address, is_active`,
         [
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
       if (targetAppIds && Array.isArray(targetAppIds) && targetAppIds.length > 0) {
         const appAssignments = targetAppIds.map((appId: string) => 
           client.query(
-            `INSERT INTO email_credential_target_apps (email_credential_id, target_app_id, created_by_email)
+            `INSERT INTO email_credential_target_apps (email_credential_id, target_app_id, created_by)
              VALUES ($1, $2, $3)
              ON CONFLICT (email_credential_id, target_app_id) DO NOTHING`,
             [credentialId, appId, createdBy]

@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
       status,
       responseData: responseData || {},
       notes: notes || null,
-      respondedByEmail: session.user.email,
+      respondedById: session.user.id,
     });
 
     // Update the node execution status

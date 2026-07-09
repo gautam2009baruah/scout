@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       name,
       description,
       variables,
-      createdByEmail: session.user.email,
+      createdById: session.user.id,
     });
 
     return NextResponse.json({ orchestration }, { status: 201 });
@@ -110,7 +110,7 @@ export async function PUT(request: NextRequest) {
 
     // Handle publish action
     if (publish) {
-      const orchestration = await publishOrchestration(id, session.user.email);
+      const orchestration = await publishOrchestration(id, session.user.id);
       return NextResponse.json({ orchestration });
     }
 
@@ -119,7 +119,7 @@ export async function PUT(request: NextRequest) {
       name,
       description,
       variables,
-      updatedByEmail: session.user.email,
+      updatedById: session.user.id,
     });
 
     return NextResponse.json({ orchestration });

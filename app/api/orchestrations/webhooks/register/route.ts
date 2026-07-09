@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
              expected_content_type = $5,
              payload_filters = $6,
              data_mapping = $7,
-             updated_by_email = $8,
+             updated_by = $8,
              updated_at = NOW()
          WHERE id = $9`,
         [
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
           expectedContentType || "application/json",
           payloadFilters ? JSON.stringify(payloadFilters) : null,
           dataMapping ? JSON.stringify(dataMapping) : null,
-          session.user.email,
+          session.user.id,
           webhookId,
         ]
       );
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
           expected_content_type,
           payload_filters,
           data_mapping,
-          created_by_email
+          created_by
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id, webhook_token, webhook_url, created_at`,
         [
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
           expectedContentType || "application/json",
           payloadFilters ? JSON.stringify(payloadFilters) : null,
           dataMapping ? JSON.stringify(dataMapping) : null,
-          session.user.email,
+          session.user.id,
         ]
       );
 

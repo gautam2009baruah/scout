@@ -27,6 +27,8 @@ type TriggerRow = {
   last_error: string | null;
   created_at: Date;
   updated_at: Date;
+  created_by: string | null;
+  updated_by: string | null;
   created_by_email: string | null;
   updated_by_email: string | null;
 };
@@ -44,6 +46,8 @@ function mapTriggerRow(row: TriggerRow): OrchestrationTrigger {
     lastError: row.last_error,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
+    createdById: row.created_by,
+    updatedById: row.updated_by,
     createdByEmail: row.created_by_email,
     updatedByEmail: row.updated_by_email,
   };
@@ -85,7 +89,7 @@ export async function createTrigger(data: {
   name: string;
   description?: string;
   config: TriggerConfig;
-  createdByEmail: string;
+  createdById: string;
 }): Promise<OrchestrationTrigger> {
   const pool = getPool();
   
@@ -94,7 +98,7 @@ export async function createTrigger(data: {
 
   const result = await pool.query<TriggerRow>(
     `INSERT INTO orchestration_triggers 
-     (orchestration_id, trigger_type, name, description, config, created_by_email, updated_by_email)
+     (orchestration_id, trigger_type, name, description, config, created_by, updated_by)
      VALUES ($1, $2, $3, $4, $5, $6, $6)
      RETURNING *`,
     [
@@ -103,11 +107,15 @@ export async function createTrigger(data: {
       data.name,
       data.description || null,
       JSON.stringify(encryptedConfig),
-      data.createdByEmail,
+      data.createdById,
     ]
   );
 
-  return mapTriggerRow(result.rows[0]);
+  const trigger = await getTriggerById(result.rows[0].id);
+  if (!trigger) {
+    throw new Error("Failed to load created trigger");
+  }
+  return trigger;
 }
 
 export async function getTriggers(filters: {
@@ -116,25 +124,33 @@ export async function getTriggers(filters: {
   status?: TriggerStatus;
 }): Promise<OrchestrationTrigger[]> {
   const pool = getPool();
-  let query = "SELECT * FROM orchestration_triggers WHERE 1=1";
+  let query = `
+    SELECT
+      t.*,
+      created_user.email AS created_by_email,
+      updated_user.email AS updated_by_email
+    FROM orchestration_triggers t
+    LEFT JOIN users created_user ON created_user.id = t.created_by
+    LEFT JOIN users updated_user ON updated_user.id = t.updated_by
+    WHERE 1=1`;
   const params: any[] = [];
 
   if (filters.orchestrationId) {
     params.push(filters.orchestrationId);
-    query += ` AND orchestration_id = $${params.length}`;
+    query += ` AND t.orchestration_id = $${params.length}`;
   }
 
   if (filters.triggerType) {
     params.push(filters.triggerType);
-    query += ` AND trigger_type = $${params.length}`;
+    query += ` AND t.trigger_type = $${params.length}`;
   }
 
   if (filters.status) {
     params.push(filters.status);
-    query += ` AND status = $${params.length}`;
+    query += ` AND t.status = $${params.length}`;
   }
 
-  query += " ORDER BY created_at DESC";
+  query += " ORDER BY t.created_at DESC";
 
   const result = await pool.query<TriggerRow>(query, params);
   return result.rows.map(mapTriggerRow);
@@ -143,7 +159,14 @@ export async function getTriggers(filters: {
 export async function getTriggerById(id: string): Promise<OrchestrationTrigger | null> {
   const pool = getPool();
   const result = await pool.query<TriggerRow>(
-    "SELECT * FROM orchestration_triggers WHERE id = $1",
+    `SELECT
+       t.*,
+       created_user.email AS created_by_email,
+       updated_user.email AS updated_by_email
+     FROM orchestration_triggers t
+     LEFT JOIN users created_user ON created_user.id = t.created_by
+     LEFT JOIN users updated_user ON updated_user.id = t.updated_by
+     WHERE t.id = $1`,
     [id]
   );
 
@@ -158,12 +181,12 @@ export async function updateTrigger(
     config?: TriggerConfig;
     status?: TriggerStatus;
     lastError?: string | null;
-    updatedByEmail: string;
+    updatedById: string;
   }
 ): Promise<OrchestrationTrigger> {
   const pool = getPool();
-  const updates: string[] = ["updated_at = now()", "updated_by_email = $2"];
-  const params: any[] = [id, data.updatedByEmail];
+  const updates: string[] = ["updated_at = now()", "updated_by = $2"];
+  const params: any[] = [id, data.updatedById];
   let paramIndex = 3;
 
   if (data.name !== undefined) {
@@ -204,7 +227,11 @@ export async function updateTrigger(
     throw new Error(`Trigger ${id} not found`);
   }
 
-  return mapTriggerRow(result.rows[0]);
+  const trigger = await getTriggerById(result.rows[0].id);
+  if (!trigger) {
+    throw new Error(`Trigger ${id} not found`);
+  }
+  return trigger;
 }
 
 export async function deleteTrigger(id: string): Promise<void> {
@@ -457,6 +484,7 @@ type APIClientRow = {
   allowed_orchestrations: string[];
   last_used_at: string | null;
   created_at: string;
+  created_by: string | null;
   created_by_email: string | null;
 };
 
@@ -471,6 +499,7 @@ function mapAPIClientRow(row: APIClientRow): APIClient {
     allowedOrchestrations: row.allowed_orchestrations,
     lastUsedAt: row.last_used_at,
     createdAt: row.created_at,
+    createdById: row.created_by,
     createdByEmail: row.created_by_email,
   };
 }
@@ -501,7 +530,7 @@ export async function createAPIClient(data: {
   description?: string;
   rateLimit?: number;
   allowedOrchestrations?: string[];
-  createdByEmail?: string;
+  createdById?: string;
 }): Promise<APIClient> {
   const pool = await getPool();
 
@@ -513,7 +542,7 @@ export async function createAPIClient(data: {
 
   const result = await pool.query(
     `INSERT INTO api_clients (
-      name, description, api_key, rate_limit, allowed_orchestrations, created_by_email
+      name, description, api_key, rate_limit, allowed_orchestrations, created_by
     ) VALUES ($1, $2, $3, $4, $5, $6)
     RETURNING *`,
     [
@@ -522,7 +551,7 @@ export async function createAPIClient(data: {
       encryptedKey,
       data.rateLimit || 60,
       data.allowedOrchestrations || [],
-      data.createdByEmail || null,
+      data.createdById || null,
     ]
   );
 
@@ -542,12 +571,15 @@ export async function getAPIClients(filters?: {
 }): Promise<APIClient[]> {
   const pool = await getPool();
 
-  let query = "SELECT * FROM api_clients";
+  let query = `
+    SELECT api_clients.*, created_user.email AS created_by_email
+    FROM api_clients
+    LEFT JOIN users created_user ON created_user.id = api_clients.created_by`;
   const conditions: string[] = [];
   const params: unknown[] = [];
 
   if (filters?.isActive !== undefined) {
-    conditions.push(`is_active = $${params.length + 1}`);
+    conditions.push(`api_clients.is_active = $${params.length + 1}`);
     params.push(filters.isActive);
   }
 
@@ -555,7 +587,7 @@ export async function getAPIClients(filters?: {
     query += " WHERE " + conditions.join(" AND ");
   }
 
-  query += " ORDER BY created_at DESC";
+  query += " ORDER BY api_clients.created_at DESC";
 
   const result = await pool.query(query, params);
   
@@ -574,7 +606,10 @@ export async function getAPIClientById(id: string): Promise<APIClient | null> {
   const pool = await getPool();
 
   const result = await pool.query(
-    "SELECT * FROM api_clients WHERE id = $1",
+    `SELECT api_clients.*, created_user.email AS created_by_email
+     FROM api_clients
+     LEFT JOIN users created_user ON created_user.id = api_clients.created_by
+     WHERE api_clients.id = $1`,
     [id]
   );
 

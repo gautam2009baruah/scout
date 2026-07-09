@@ -34,10 +34,11 @@ export async function GET() {
     
     const result = await pool.query(
       `SELECT 
-        id, name, description, provider, email_address, is_active,
-        last_used_at, last_error, created_at, created_by_email
-       FROM email_credentials
-       ORDER BY created_at DESC`
+        ec.id, ec.name, ec.description, ec.provider, ec.email_address, ec.is_active,
+        ec.last_used_at, ec.last_error, ec.created_at, created_user.email AS created_by_email
+       FROM email_credentials ec
+       LEFT JOIN users created_user ON created_user.id = ec.created_by
+       ORDER BY ec.created_at DESC`
     );
     
     return NextResponse.json({
@@ -117,12 +118,13 @@ export async function POST(request: Request) {
     
     const result = await pool.query(
       `INSERT INTO email_credentials
-       (name, description, provider, email_address, oauth_access_token, oauth_refresh_token,
+       (company_id, name, description, provider, email_address, oauth_access_token, oauth_refresh_token,
         oauth_token_expires_at, imap_host, imap_port, imap_password, imap_tls,
-        is_active, created_by_email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true, $12)
+        is_active, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13)
        RETURNING id, name, provider, email_address, created_at`,
       [
+        session.user.tenantId,
         name,
         description || null,
         provider,
@@ -134,7 +136,7 @@ export async function POST(request: Request) {
         imapPort || null,
         encryptedPassword,
         imapTls !== false,
-        session.user.email,
+        session.user.id,
       ]
     );
     

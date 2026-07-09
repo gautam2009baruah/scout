@@ -63,9 +63,12 @@ export type Orchestration = {
   variables: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  createdById?: string | null;
+  updatedById?: string | null;
   createdByEmail: string | null;
   updatedByEmail: string | null;
   publishedAt: string | null;
+  publishedById?: string | null;
   publishedByEmail: string | null;
 };
 
@@ -327,6 +330,7 @@ export type OrchestrationApproval = {
   responseData: Record<string, unknown> | null;
   requestedAt: string;
   respondedAt: string | null;
+  respondedById?: string | null;
   respondedByEmail: string | null;
   notes: string | null;
 };
@@ -341,6 +345,7 @@ export type OrchestrationVersion = {
   version: number;
   snapshot: OrchestrationSnapshot;
   createdAt: string;
+  createdById?: string | null;
   createdByEmail: string | null;
   changeNotes: string | null;
 };
@@ -439,6 +444,8 @@ export type OrchestrationTrigger = {
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
+  createdById?: string | null;
+  updatedById?: string | null;
   createdByEmail: string | null;
   updatedByEmail: string | null;
 };
@@ -585,6 +592,7 @@ export type APIClient = {
   allowedOrchestrations: string[]; // Empty = all orchestrations
   lastUsedAt: string | null;
   createdAt: string;
+  createdById?: string | null;
   createdByEmail: string | null;
 };
 

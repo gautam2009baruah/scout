@@ -37,9 +37,12 @@ type OrchestrationRow = {
   variables: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
+  created_by: string | null;
+  updated_by: string | null;
   created_by_email: string | null;
   updated_by_email: string | null;
   published_at: Date | null;
+  published_by: string | null;
   published_by_email: string | null;
 };
 
@@ -55,9 +58,12 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
     variables: row.variables,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
+    createdById: row.created_by,
+    updatedById: row.updated_by,
     createdByEmail: row.created_by_email,
     updatedByEmail: row.updated_by_email,
     publishedAt: row.published_at?.toISOString() || null,
+    publishedById: row.published_by,
     publishedByEmail: row.published_by_email,
   };
 }
@@ -68,12 +74,12 @@ export async function createOrchestration(data: {
   name: string;
   description?: string | null;
   variables?: Record<string, unknown>;
-  createdByEmail: string;
+  createdById: string;
 }): Promise<Orchestration> {
   const pool = getPool();
   const result = await pool.query<OrchestrationRow>(
     `INSERT INTO orchestrations 
-     (company_id, target_app_id, name, description, variables, created_by_email, updated_by_email)
+     (company_id, target_app_id, name, description, variables, created_by, updated_by)
      VALUES ($1, $2, $3, $4, $5, $6, $6)
      RETURNING *`,
     [
@@ -82,11 +88,15 @@ export async function createOrchestration(data: {
       data.name,
       data.description || null,
       JSON.stringify(data.variables || {}),
-      data.createdByEmail,
+      data.createdById,
     ]
   );
 
-  return mapOrchestrationRow(result.rows[0]);
+  const orchestration = await getOrchestrationById(result.rows[0].id);
+  if (!orchestration) {
+    throw new Error("Failed to load created orchestration");
+  }
+  return orchestration;
 }
 
 export async function getOrchestrations(filters: {
@@ -95,25 +105,35 @@ export async function getOrchestrations(filters: {
   id?: string;
 }): Promise<Orchestration[]> {
   const pool = getPool();
-  let query = "SELECT * FROM orchestrations WHERE 1=1";
+  let query = `
+    SELECT
+      o.*,
+      created_user.email AS created_by_email,
+      updated_user.email AS updated_by_email,
+      published_user.email AS published_by_email
+    FROM orchestrations o
+    LEFT JOIN users created_user ON created_user.id = o.created_by
+    LEFT JOIN users updated_user ON updated_user.id = o.updated_by
+    LEFT JOIN users published_user ON published_user.id = o.published_by
+    WHERE 1=1`;
   const params: any[] = [];
 
   if (filters.id) {
     params.push(filters.id);
-    query += ` AND id = $${params.length}`;
+    query += ` AND o.id = $${params.length}`;
   }
 
   if (filters.companyId) {
     params.push(filters.companyId);
-    query += ` AND company_id = $${params.length}`;
+    query += ` AND o.company_id = $${params.length}`;
   }
 
   if (filters.status) {
     params.push(filters.status);
-    query += ` AND status = $${params.length}`;
+    query += ` AND o.status = $${params.length}`;
   }
 
-  query += " ORDER BY updated_at DESC";
+  query += " ORDER BY o.updated_at DESC";
 
   const result = await pool.query<OrchestrationRow>(query, params);
   return result.rows.map(mapOrchestrationRow);
@@ -130,13 +150,13 @@ export async function updateOrchestration(
     name?: string;
     description?: string | null;
     variables?: Record<string, unknown>;
-    updatedByEmail: string;
+    updatedById: string;
   }
 ): Promise<Orchestration> {
   const pool = getPool();
 
-  const updates: string[] = ["updated_at = now()", "updated_by_email = $1"];
-  const params: any[] = [data.updatedByEmail];
+  const updates: string[] = ["updated_at = now()", "updated_by = $1"];
+  const params: any[] = [data.updatedById];
 
   if (data.name !== undefined) {
     params.push(data.name);
@@ -163,12 +183,16 @@ export async function updateOrchestration(
     throw new Error(`Orchestration ${id} not found`);
   }
 
-  return mapOrchestrationRow(result.rows[0]);
+  const orchestration = await getOrchestrationById(result.rows[0].id);
+  if (!orchestration) {
+    throw new Error(`Orchestration ${id} not found`);
+  }
+  return orchestration;
 }
 
 export async function publishOrchestration(
   id: string,
-  publishedByEmail: string
+  publishedById: string
 ): Promise<Orchestration> {
   const pool = getPool();
 
@@ -214,7 +238,7 @@ export async function publishOrchestration(
     orchestrationId: id,
     version: newVersion,
     snapshot: { orchestration, nodes, connections },
-    createdByEmail: publishedByEmail,
+    createdById: publishedById,
     changeNotes: "Published",
   });
 
@@ -250,7 +274,7 @@ export async function publishOrchestration(
           name: `${orchestration.name} - Chatbot Trigger`,
           description: `Auto-created chatbot trigger for ${orchestration.name}`,
           config: chatbotTriggerConfig,
-          createdByEmail: publishedByEmail,
+          createdById: publishedById,
         });
         
         console.log('✅ Chatbot trigger created successfully');
@@ -335,7 +359,7 @@ export async function publishOrchestration(
           name: `${orchestration.name} - Email Trigger`,
           description: `Auto-created email trigger for ${orchestration.name}`,
           config: emailTriggerConfig,
-          createdByEmail: publishedByEmail,
+          createdById: publishedById,
         });
 
         console.log('Email trigger created successfully');
@@ -347,7 +371,7 @@ export async function publishOrchestration(
                description = $2,
                config = $3,
                status = $4,
-               updated_by_email = $5,
+               updated_by = $5,
                updated_at = NOW()
            WHERE id = $6`,
           [
@@ -355,7 +379,7 @@ export async function publishOrchestration(
             `Auto-created email trigger for ${orchestration.name}`,
             JSON.stringify(emailTriggerConfig),
             emailTriggerConfig.enabled ? "active" : "inactive",
-            publishedByEmail,
+            publishedById,
             triggerId,
           ]
         );
@@ -371,13 +395,17 @@ export async function publishOrchestration(
   // Update status to published
   const result = await pool.query<OrchestrationRow>(
     `UPDATE orchestrations 
-     SET status = 'published', published_at = now(), published_by_email = $1, updated_at = now()
+     SET status = 'published', published_at = now(), published_by = $1, updated_by = $1, updated_at = now()
      WHERE id = $2
      RETURNING *`,
-    [publishedByEmail, id]
+    [publishedById, id]
   );
 
-  return mapOrchestrationRow(result.rows[0]);
+  const updated = await getOrchestrationById(result.rows[0].id);
+  if (!updated) {
+    throw new Error(`Orchestration ${id} not found after publish`);
+  }
+  return updated;
 }
 
 export async function deleteOrchestration(id: string): Promise<void> {
@@ -896,6 +924,7 @@ type ApprovalRow = {
   response_data: Record<string, unknown> | null;
   requested_at: Date;
   responded_at: Date | null;
+  responded_by: string | null;
   responded_by_email: string | null;
   notes: string | null;
 };
@@ -911,6 +940,7 @@ function mapApprovalRow(row: ApprovalRow): OrchestrationApproval {
     responseData: row.response_data,
     requestedAt: row.requested_at.toISOString(),
     respondedAt: row.responded_at?.toISOString() || null,
+    respondedById: row.responded_by,
     respondedByEmail: row.responded_by_email,
     notes: row.notes,
   };
@@ -944,20 +974,21 @@ export async function updateApproval(
   data: {
     status: ApprovalStatus;
     responseData?: Record<string, unknown>;
-    respondedByEmail: string;
+    respondedById: string;
     notes?: string;
   }
 ): Promise<OrchestrationApproval> {
   const pool = getPool();
   const result = await pool.query<ApprovalRow>(
     `UPDATE orchestration_approvals 
-     SET status = $1, response_data = $2, responded_at = now(), responded_by_email = $3, notes = $4
+     SET status = $1, response_data = $2, responded_at = now(), responded_by = $3, notes = $4
      WHERE id = $5
-     RETURNING *`,
+     RETURNING *,
+       (SELECT users.email FROM users WHERE users.id = orchestration_approvals.responded_by) AS responded_by_email`,
     [
       data.status,
       data.responseData ? JSON.stringify(data.responseData) : null,
-      data.respondedByEmail,
+      data.respondedById,
       data.notes || null,
       id,
     ]
@@ -976,25 +1007,29 @@ export async function getApprovals(filters: {
   status?: ApprovalStatus;
 }): Promise<OrchestrationApproval[]> {
   const pool = getPool();
-  let query = "SELECT * FROM orchestration_approvals WHERE 1=1";
+  let query = `
+    SELECT oa.*, responded_user.email AS responded_by_email
+    FROM orchestration_approvals oa
+    LEFT JOIN users responded_user ON responded_user.id = oa.responded_by
+    WHERE 1=1`;
   const params: any[] = [];
 
   if (filters.executionId) {
     params.push(filters.executionId);
-    query += ` AND execution_id = $${params.length}`;
+    query += ` AND oa.execution_id = $${params.length}`;
   }
 
   if (filters.approverEmail) {
     params.push(filters.approverEmail);
-    query += ` AND approver_email = $${params.length}`;
+    query += ` AND oa.approver_email = $${params.length}`;
   }
 
   if (filters.status) {
     params.push(filters.status);
-    query += ` AND status = $${params.length}`;
+    query += ` AND oa.status = $${params.length}`;
   }
 
-  query += " ORDER BY requested_at DESC";
+  query += " ORDER BY oa.requested_at DESC";
 
   const result = await pool.query<ApprovalRow>(query, params);
   return result.rows.map(mapApprovalRow);
@@ -1010,6 +1045,7 @@ type VersionRow = {
   version: number;
   snapshot: OrchestrationSnapshot;
   created_at: Date;
+  created_by: string | null;
   created_by_email: string | null;
   change_notes: string | null;
 };
@@ -1021,6 +1057,7 @@ function mapVersionRow(row: VersionRow): OrchestrationVersion {
     version: row.version,
     snapshot: row.snapshot,
     createdAt: row.created_at.toISOString(),
+    createdById: row.created_by,
     createdByEmail: row.created_by_email,
     changeNotes: row.change_notes,
   };
@@ -1030,20 +1067,20 @@ export async function createOrchestrationVersion(data: {
   orchestrationId: string;
   version: number;
   snapshot: OrchestrationSnapshot;
-  createdByEmail: string;
+  createdById: string;
   changeNotes?: string;
 }): Promise<OrchestrationVersion> {
   const pool = getPool();
   const result = await pool.query<VersionRow>(
     `INSERT INTO orchestration_versions 
-     (orchestration_id, version, snapshot, created_by_email, change_notes)
+     (orchestration_id, version, snapshot, created_by, change_notes)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
     [
       data.orchestrationId,
       data.version,
       JSON.stringify(data.snapshot),
-      data.createdByEmail,
+      data.createdById,
       data.changeNotes || null,
     ]
   );
@@ -1056,7 +1093,11 @@ export async function getOrchestrationVersions(
 ): Promise<OrchestrationVersion[]> {
   const pool = getPool();
   const result = await pool.query<VersionRow>(
-    "SELECT * FROM orchestration_versions WHERE orchestration_id = $1 ORDER BY version DESC",
+    `SELECT v.*, created_user.email AS created_by_email
+     FROM orchestration_versions v
+     LEFT JOIN users created_user ON created_user.id = v.created_by
+     WHERE v.orchestration_id = $1
+     ORDER BY v.version DESC`,
     [orchestrationId]
   );
 
