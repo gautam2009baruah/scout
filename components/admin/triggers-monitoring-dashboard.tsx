@@ -181,8 +181,10 @@ export function TriggersMonitoringDashboard({
   const [detailOpen, setDetailOpen] = useState(false);
   const [nodeSteps, setNodeSteps] = useState<NodeStep[]>([]);
   const [nodeStepsLoading, setNodeStepsLoading] = useState(false);
-  // Per-step output view mode ("readable" default, or "json")
+  // Per-step output view mode ("json" default, or "readable")
   const [stepView, setStepView] = useState<Record<string, "readable" | "json">>({});
+  // Per-step expand/collapse (collapsed by default)
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
 
   const availableTargetApps =
     filter.companyId === "all"
@@ -296,6 +298,7 @@ export function TriggersMonitoringDashboard({
     setDetail(null);
     setNodeSteps([]);
     setStepView({});
+    setExpandedSteps({});
     try {
       const response = await fetch(
         `/api/admin/orchestrations/triggers/${triggerId}/executions/${logId}`
@@ -765,16 +768,30 @@ export function TriggersMonitoringDashboard({
                       ) : (
                         <div className="space-y-2">
                           {nodeSteps.map((step, index) => {
-                            const view = stepView[step.id] ?? "readable";
+                            const view = stepView[step.id] ?? "json";
                             const hasOutput = step.output && Object.keys(step.output).length > 0;
+                            const isStepOpen = !!expandedSteps[step.id];
                             return (
                               <div
                                 key={step.id}
-                                className="rounded-lg border border-slate-200 p-2"
+                                className="rounded-lg border border-slate-200"
                               >
-                                <div className="flex items-center justify-between">
+                                <button
+                                  onClick={() =>
+                                    setExpandedSteps((prev) => ({
+                                      ...prev,
+                                      [step.id]: !isStepOpen,
+                                    }))
+                                  }
+                                  className="w-full flex items-center justify-between p-2 hover:bg-slate-50"
+                                >
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
+                                    {isStepOpen ? (
+                                      <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
+                                    ) : (
+                                      <ChevronRight className="h-4 w-4 text-slate-500 shrink-0" />
+                                    )}
+                                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold shrink-0">
                                       {index + 1}
                                     </span>
                                     <span className="text-sm font-medium text-slate-900 truncate">
@@ -793,39 +810,48 @@ export function TriggersMonitoringDashboard({
                                   >
                                     {step.status}
                                   </span>
-                                </div>
-                                {step.errorMessage && (
-                                  <div className="mt-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2 whitespace-pre-wrap">
-                                    {step.errorMessage}
-                                  </div>
-                                )}
-                                {hasOutput && (
-                                  <div className="mt-2">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className="text-xs font-medium text-slate-600">
-                                        Output
-                                      </span>
-                                      <button
-                                        onClick={() =>
-                                          setStepView((prev) => ({
-                                            ...prev,
-                                            [step.id]: view === "readable" ? "json" : "readable",
-                                          }))
-                                        }
-                                        className="text-xs text-blue-600 hover:text-blue-700"
-                                      >
-                                        {view === "readable" ? "View JSON" : "View readable"}
-                                      </button>
-                                    </div>
-                                    <div className="bg-slate-50 border border-slate-200 rounded p-2 max-h-64 overflow-auto text-xs">
-                                      {view === "json" ? (
-                                        <pre className="text-slate-700 whitespace-pre-wrap">
-                                          {JSON.stringify(step.output, null, 2)}
-                                        </pre>
-                                      ) : (
-                                        <ReadableValue value={step.output} />
-                                      )}
-                                    </div>
+                                </button>
+
+                                {isStepOpen && (
+                                  <div className="px-2 pb-2">
+                                    {step.errorMessage && (
+                                      <div className="mt-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2 whitespace-pre-wrap">
+                                        {step.errorMessage}
+                                      </div>
+                                    )}
+                                    {hasOutput ? (
+                                      <div className="mt-2">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="text-xs font-medium text-slate-600">
+                                            Output
+                                          </span>
+                                          <button
+                                            onClick={() =>
+                                              setStepView((prev) => ({
+                                                ...prev,
+                                                [step.id]: view === "readable" ? "json" : "readable",
+                                              }))
+                                            }
+                                            className="text-xs text-blue-600 hover:text-blue-700"
+                                          >
+                                            {view === "readable" ? "View JSON" : "View readable"}
+                                          </button>
+                                        </div>
+                                        <div className="bg-slate-50 border border-slate-200 rounded p-2 max-h-64 overflow-auto text-xs">
+                                          {view === "json" ? (
+                                            <pre className="text-slate-700 whitespace-pre-wrap">
+                                              {JSON.stringify(step.output, null, 2)}
+                                            </pre>
+                                          ) : (
+                                            <ReadableValue value={step.output} />
+                                          )}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      !step.errorMessage && (
+                                        <p className="mt-2 text-xs text-slate-500">No output.</p>
+                                      )
+                                    )}
                                   </div>
                                 )}
                               </div>
