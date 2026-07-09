@@ -1481,40 +1481,6 @@ function TriggerConfig({ config, updateConfig }: any) {
           </div>
         </div>
       )}
-                    <div className="font-medium">🚨 Alert Processing:</div>
-                    <div className="ml-3">Subject: "[ALERT]" | Mark processed: ✓</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
-                <div className="font-semibold text-yellow-900 mb-1">⚠️ Troubleshooting:</div>
-                <ul className="list-disc list-inside text-yellow-800 space-y-1">
-                  <li>Configure email credentials in Email Credentials menu</li>
-                  <li>Enable OAuth2 or App Passwords for Gmail</li>
-                  <li>Check polling interval (minimum 1 minute)</li>
-                  <li>Email poller worker must be running</li>
-                  <li>Test with "unread only" disabled first</li>
-                  <li>Check spam/junk folder if emails not triggering</li>
-                </ul>
-              </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded p-2">
-                <div className="font-semibold text-blue-900 mb-1">💡 Best Practices:</div>
-                <ul className="list-disc list-inside text-blue-800 space-y-1">
-                  <li>Use specific sender filters to avoid false triggers</li>
-                  <li>Enable "mark as processed" to avoid duplicates</li>
-                  <li>Start with longer polling intervals (5-15 min)</li>
-                  <li>Use dedicated mailbox for automation</li>
-                  <li>Test filters with sample emails first</li>
-                </ul>
-              </div>
-            </div>
-          </details>
-
-          <p className="text-xs text-pink-700">ℹ️ Email credentials must be configured separately</p>
-        </div>
-      )}
 
       {/* File Upload Trigger Configuration */}
       {triggerType === "file_upload" && (
