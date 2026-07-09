@@ -114,6 +114,24 @@ function localInputToUtcIso(value: string): string | undefined {
   return `${withSeconds}Z`;
 }
 
+// Format a Date as a UTC datetime-local string (YYYY-MM-DDTHH:mm) for the inputs.
+function toUtcInputValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}` +
+    `T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
+  );
+}
+
+// Defaults: start of today (UTC) -> now (UTC)
+function defaultDateRange(): { from: string; to: string } {
+  const now = new Date();
+  const startOfTodayUtc = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)
+  );
+  return { from: toUtcInputValue(startOfTodayUtc), to: toUtcInputValue(now) };
+}
+
 function formatDateTime(dateStr: string | null) {
   if (!dateStr) return "Never";
   return new Date(dateStr).toLocaleString();
@@ -129,13 +147,16 @@ export function TriggersMonitoringDashboard({
   const [triggers, setTriggers] = useState<TriggerStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [filter, setFilter] = useState({
-    triggerType: "all",
-    status: "all",
-    companyId: "all",
-    targetAppId: "all",
-    from: "",
-    to: "",
+  const [filter, setFilter] = useState(() => {
+    const { from, to } = defaultDateRange();
+    return {
+      triggerType: "all",
+      status: "all",
+      companyId: "all",
+      targetAppId: "all",
+      from,
+      to,
+    };
   });
   const [testing, setTesting] = useState<string | null>(null);
 
