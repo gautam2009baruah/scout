@@ -181,6 +181,8 @@ export function TriggersMonitoringDashboard({
   const [detailOpen, setDetailOpen] = useState(false);
   const [nodeSteps, setNodeSteps] = useState<NodeStep[]>([]);
   const [nodeStepsLoading, setNodeStepsLoading] = useState(false);
+  // Per-step output view mode ("readable" default, or "json")
+  const [stepView, setStepView] = useState<Record<string, "readable" | "json">>({});
 
   const availableTargetApps =
     filter.companyId === "all"
@@ -293,6 +295,7 @@ export function TriggersMonitoringDashboard({
     setDetailLoading(true);
     setDetail(null);
     setNodeSteps([]);
+    setStepView({});
     try {
       const response = await fetch(
         `/api/admin/orchestrations/triggers/${triggerId}/executions/${logId}`
@@ -741,88 +744,15 @@ export function TriggersMonitoringDashboard({
                 <p className="text-sm text-slate-500">Failed to load detail.</p>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <DetailField label="Log Status" value={detail.status} />
-                    <DetailField label="Execution Status" value={detail.executionStatus ?? "—"} />
-                    <DetailField label="Triggered At" value={formatDateTime(detail.triggeredAt)} />
-                    <DetailField label="Triggered By" value={detail.triggeredBy ?? "—"} />
-                    <DetailField
-                      label="Started At"
-                      value={formatDateTime(detail.executionStartedAt)}
-                    />
-                    <DetailField
-                      label="Completed At"
-                      value={formatDateTime(detail.executionCompletedAt)}
-                    />
-                  </div>
-
                   {detail.errorMessage && (
-                    <div>
-                      <div className="text-xs font-semibold text-slate-700 mb-1">Error</div>
-                      <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2 whitespace-pre-wrap">
-                        {detail.errorMessage}
-                      </div>
-                    </div>
-                  )}
-
-                  {detail.email && (
-                    <div className="border-t border-slate-200 pt-3 space-y-3">
-                      <div className="text-sm font-semibold text-slate-800">Email</div>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <DetailField label="From" value={detail.email.fromAddress} />
-                        <DetailField label="To" value={detail.email.toAddress} />
-                        <DetailField label="Subject" value={detail.email.subject} span />
-                        <DetailField label="Mailbox" value={detail.email.mailbox} />
-                        <DetailField label="Provider" value={detail.email.provider} />
-                        <DetailField
-                          label="Received At"
-                          value={formatDateTime(detail.email.receivedAt)}
-                        />
-                        <DetailField
-                          label="Processed At"
-                          value={formatDateTime(detail.email.processedAt)}
-                        />
-                        <DetailField label="Status" value={detail.email.status} />
-                      </div>
-                      <div>
-                        <div className="text-xs font-semibold text-slate-700 mb-1">Body</div>
-                        <div className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 max-h-64 overflow-y-auto whitespace-pre-wrap">
-                          {detail.email.bodyText || "(no text body)"}
-                        </div>
-                      </div>
-                      {Array.isArray(detail.email.attachments) &&
-                        detail.email.attachments.length > 0 && (
-                          <div>
-                            <div className="text-xs font-semibold text-slate-700 mb-1">
-                              Attachments
-                            </div>
-                            <ul className="text-xs text-slate-700 list-disc pl-5">
-                              {(detail.email.attachments as Array<{ filename?: string; size?: number }>).map(
-                                (att, idx) => (
-                                  <li key={idx}>
-                                    {att.filename || "attachment"}
-                                    {att.size ? ` (${att.size} bytes)` : ""}
-                                  </li>
-                                )
-                              )}
-                            </ul>
-                          </div>
-                        )}
-                    </div>
-                  )}
-
-                  {!detail.email && (
-                    <div>
-                      <div className="text-xs font-semibold text-slate-700 mb-1">Payload</div>
-                      <pre className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 max-h-64 overflow-auto">
-                        {JSON.stringify(detail.payload ?? {}, null, 2)}
-                      </pre>
+                    <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2 whitespace-pre-wrap">
+                      {detail.errorMessage}
                     </div>
                   )}
 
                   {/* Node steps / outputs for the orchestration run */}
-                  {detail.executionId && (
-                    <div className="border-t border-slate-200 pt-3">
+                  {detail.executionId ? (
+                    <div>
                       <div className="text-sm font-semibold text-slate-800 mb-2">
                         Orchestration Steps
                       </div>
@@ -834,53 +764,80 @@ export function TriggersMonitoringDashboard({
                         <p className="text-xs text-slate-500">No steps recorded.</p>
                       ) : (
                         <div className="space-y-2">
-                          {nodeSteps.map((step, index) => (
-                            <div
-                              key={step.id}
-                              className="rounded-lg border border-slate-200 p-2"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
-                                    {index + 1}
+                          {nodeSteps.map((step, index) => {
+                            const view = stepView[step.id] ?? "readable";
+                            const hasOutput = step.output && Object.keys(step.output).length > 0;
+                            return (
+                              <div
+                                key={step.id}
+                                className="rounded-lg border border-slate-200 p-2"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
+                                      {index + 1}
+                                    </span>
+                                    <span className="text-sm font-medium text-slate-900 truncate">
+                                      {step.nodeLabel}
+                                    </span>
+                                    <span className="text-xs text-slate-500">{step.nodeType}</span>
+                                  </div>
+                                  <span
+                                    className={`text-xs font-medium px-2 py-0.5 rounded ${
+                                      step.status === "completed"
+                                        ? "bg-green-100 text-green-700"
+                                        : step.status === "failed"
+                                        ? "bg-red-100 text-red-700"
+                                        : "bg-slate-100 text-slate-600"
+                                    }`}
+                                  >
+                                    {step.status}
                                   </span>
-                                  <span className="text-sm font-medium text-slate-900 truncate">
-                                    {step.nodeLabel}
-                                  </span>
-                                  <span className="text-xs text-slate-500">{step.nodeType}</span>
                                 </div>
-                                <span
-                                  className={`text-xs font-medium px-2 py-0.5 rounded ${
-                                    step.status === "completed"
-                                      ? "bg-green-100 text-green-700"
-                                      : step.status === "failed"
-                                      ? "bg-red-100 text-red-700"
-                                      : "bg-slate-100 text-slate-600"
-                                  }`}
-                                >
-                                  {step.status}
-                                </span>
+                                {step.errorMessage && (
+                                  <div className="mt-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2 whitespace-pre-wrap">
+                                    {step.errorMessage}
+                                  </div>
+                                )}
+                                {hasOutput && (
+                                  <div className="mt-2">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-xs font-medium text-slate-600">
+                                        Output
+                                      </span>
+                                      <button
+                                        onClick={() =>
+                                          setStepView((prev) => ({
+                                            ...prev,
+                                            [step.id]: view === "readable" ? "json" : "readable",
+                                          }))
+                                        }
+                                        className="text-xs text-blue-600 hover:text-blue-700"
+                                      >
+                                        {view === "readable" ? "View JSON" : "View readable"}
+                                      </button>
+                                    </div>
+                                    <div className="bg-slate-50 border border-slate-200 rounded p-2 max-h-64 overflow-auto text-xs">
+                                      {view === "json" ? (
+                                        <pre className="text-slate-700 whitespace-pre-wrap">
+                                          {JSON.stringify(step.output, null, 2)}
+                                        </pre>
+                                      ) : (
+                                        <ReadableValue value={step.output} />
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              {step.errorMessage && (
-                                <div className="mt-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2 whitespace-pre-wrap">
-                                  {step.errorMessage}
-                                </div>
-                              )}
-                              {step.output && Object.keys(step.output).length > 0 && (
-                                <details className="mt-1">
-                                  <summary className="text-xs font-medium text-slate-600 cursor-pointer hover:text-slate-900">
-                                    View output
-                                  </summary>
-                                  <pre className="mt-1 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 max-h-48 overflow-auto">
-                                    {JSON.stringify(step.output, null, 2)}
-                                  </pre>
-                                </details>
-                              )}
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      This email did not start an orchestration run.
+                    </p>
                   )}
                 </>
               )}
@@ -909,19 +866,45 @@ function Stat({
   );
 }
 
-function DetailField({
-  label,
-  value,
-  span = false,
-}: {
-  label: string;
-  value: string;
-  span?: boolean;
-}) {
-  return (
-    <div className={span ? "col-span-2" : ""}>
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-sm text-slate-900 break-words">{value}</div>
-    </div>
-  );
+// Renders an arbitrary JSON value as a readable, nested key/value view.
+function ReadableValue({ value }: { value: unknown }) {
+  if (value === null || value === undefined) {
+    return <span className="text-slate-400 italic">null</span>;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return <span className="text-slate-400 italic">(empty)</span>;
+    }
+    return (
+      <ul className="list-disc pl-4 space-y-0.5">
+        {value.map((item, i) => (
+          <li key={i}>
+            <ReadableValue value={item} />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) {
+      return <span className="text-slate-400 italic">(empty)</span>;
+    }
+    return (
+      <div className="space-y-1">
+        {entries.map(([key, val]) => (
+          <div key={key} className="flex gap-2">
+            <span className="font-medium text-slate-600 shrink-0">{key}:</span>
+            <span className="text-slate-900 break-words min-w-0">
+              <ReadableValue value={val} />
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return <span className="text-slate-900 break-words">{String(value)}</span>;
 }
