@@ -247,11 +247,12 @@ function providerMap<T extends EmbeddingProviderConfig | LLMProviderConfig>(conf
 
 function embeddingStateFromConfig(provider: string, config: AIConfig): EmbeddingFormState {
   const saved = providerMap(config.embedding_configs).get(provider);
+  const activeDimension = config.active.embedding_provider === provider ? config.active.embedding_dimension : null;
 
   return {
     provider,
     model: saved?.model ?? "",
-    dimension: saved?.dimension ? String(saved.dimension) : "",
+    dimension: saved?.dimension ? String(saved.dimension) : activeDimension ? String(activeDimension) : "",
     endpoint: saved?.endpoint ?? "",
     apiKey: saved?.api_key ?? ""
   };

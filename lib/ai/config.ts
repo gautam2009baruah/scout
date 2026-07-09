@@ -169,8 +169,15 @@ export async function updateAIProviderConfig(
 ) {
   const pool = getPool();
   const current = await getAIProviderConfig();
-  const next = { ...current, ...input };
+  const cleanInput = Object.fromEntries(
+    Object.entries(input).filter(([, value]) => value !== undefined)
+  ) as Partial<AIProviderConfig>;
+  const next = { ...current, ...cleanInput };
   next.embedding_model = normalizeEmbeddingModel(next.embedding_provider, next.embedding_model);
+
+  if (!Number.isFinite(next.embedding_dimension) || next.embedding_dimension <= 0) {
+    next.embedding_dimension = current.embedding_dimension || DEFAULT_AI_CONFIG.embedding_dimension;
+  }
 
   const client = await pool.connect();
 
