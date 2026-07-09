@@ -6,8 +6,8 @@ import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 /**
- * GET /api/orchestrations/target-apps
- * List all target apps for current company
+ * GET /api/orchestrations/target-apps?companyId=xxx
+ * List all target apps for specified company (or current user's company if not specified)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +20,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const companyId = session.user.tenantId;
+    const { searchParams } = request.nextUrl;
+    const companyId = searchParams.get("companyId") || session.user.tenantId;
+
     const pool = getPool();
     
     const result = await pool.query(

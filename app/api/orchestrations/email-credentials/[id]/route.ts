@@ -32,6 +32,7 @@ export async function GET(
     const result = await pool.query(
       `SELECT 
         ec.id,
+        ec.company_id,
         ec.provider,
         ec.name,
         ec.email_address,
@@ -186,7 +187,6 @@ export async function PATCH(
       emailAddress,
       imapHost,
       imapPort,
-      imapUsername,
       imapPassword,
       imapTls,
       isActive,
@@ -242,9 +242,10 @@ export async function PATCH(
         values.push(imapPort);
       }
 
-      if (imapUsername !== undefined) {
+      // Always sync imap_username with email_address for consistency
+      if (emailAddress !== undefined) {
         updates.push(`imap_username = $${paramIndex++}`);
-        values.push(imapUsername);
+        values.push(emailAddress);
       }
 
       if (imapPassword !== undefined && imapPassword !== "") {

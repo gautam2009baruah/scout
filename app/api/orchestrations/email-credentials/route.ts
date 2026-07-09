@@ -7,8 +7,8 @@ import { getCurrentAdminSession } from "@/lib/admin/session";
 import { fetchIMAPEmails } from "@/lib/integrations/email/imap";
 
 /**
- * GET /api/orchestrations/email-credentials
- * List all email credentials for current company
+ * GET /api/orchestrations/email-credentials?companyId=xxx
+ * List all email credentials for specified company (or all if admin)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const companyId = session.user.tenantId;
+    const { searchParams } = request.nextUrl;
+    const companyId = searchParams.get("companyId");
 
     const pool = getPool();
     
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
     const result = await pool.query(
       `SELECT 
         ec.id,
+        ec.company_id,
         ec.provider,
         ec.name,
         ec.email_address,
@@ -50,7 +52,7 @@ export async function GET(request: NextRequest) {
        FROM email_credentials ec
        LEFT JOIN email_credential_target_apps ecta ON ec.id = ecta.email_credential_id
        LEFT JOIN guided_workflow_target_apps ta ON ecta.target_app_id = ta.id
-       WHERE ec.company_id = $1
+       WHERE ($1::uuid IS NULL OR ec.company_id = $1::uuid)
        GROUP BY ec.id
        ORDER BY ec.created_at DESC`,
       [companyId]
@@ -86,32 +88,31 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
+      companyId,
       provider,
       name,
       emailAddress,
       imapHost,
       imapPort,
-      imapUsername,
       imapPassword,
       imapTls,
       targetAppIds,
     } = body;
 
-    if (!provider || !name || !emailAddress) {
+    if (!companyId || !provider || !name || !emailAddress) {
       return NextResponse.json(
-        { success: false, error: "Missing required fields" },
+        { success: false, error: "Company, provider, name, and email address are required" },
         { status: 400 }
       );
     }
 
-    if (provider === "imap" && (!imapHost || !imapUsername || !imapPassword)) {
+    if (provider === "imap" && (!imapHost || !imapPassword)) {
       return NextResponse.json(
-        { success: false, error: "IMAP credentials require host, username, and password" },
+        { success: false, error: "IMAP host and password are required" },
         { status: 400 }
       );
     }
 
-    const companyId = session.user.tenantId;
     const createdBy = session.user.email;
 
     const pool = getPool();
@@ -123,7 +124,7 @@ export async function POST(request: NextRequest) {
       // TODO: Encrypt password before storing
       const encryptedPassword = provider === "imap" ? `encrypted:${imapPassword}` : null;
 
-      // Insert credential
+      // Insert credential (use email as IMAP username)
       const result = await client.query(
         `INSERT INTO email_credentials
          (company_id, provider, name, email_address, imap_host, imap_port, imap_username, imap_password, imap_tls, created_by_email, updated_by_email)
@@ -136,7 +137,7 @@ export async function POST(request: NextRequest) {
           emailAddress,
           provider === "imap" ? imapHost : null,
           provider === "imap" ? (imapPort || 993) : null,
-          provider === "imap" ? imapUsername : null,
+          provider === "imap" ? emailAddress : null, // Use email as username
           encryptedPassword,
           provider === "imap" ? (imapTls !== false) : null,
           createdBy,
