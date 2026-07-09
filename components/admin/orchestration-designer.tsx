@@ -63,6 +63,7 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: 
   { type: "condition", label: "Condition", icon: "❓", color: "#f59e0b" },
   { type: "human_approval", label: "Human Approval", icon: "✋", color: "#ec4899" },
   { type: "notification", label: "Notification", icon: "📧", color: "#06b6d4" },
+  { type: "api_call", label: "API Call", icon: "🌐", color: "#f97316" },
   { type: "variable", label: "Variable", icon: "📊", color: "#14b8a6" },
   { type: "end", label: "End", icon: "🏁", color: "#ef4444" },
 ];

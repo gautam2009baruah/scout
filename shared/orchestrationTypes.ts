@@ -86,6 +86,7 @@ export type NodeType =
   | "human_approval"
   | "notification"
   | "variable"
+  | "api_call"
   | "end";
 
 export type OrchestrationNode = {
@@ -112,6 +113,7 @@ export type NodeConfig =
   | HumanApprovalNodeConfig
   | NotificationNodeConfig
   | VariableNodeConfig
+  | ApiCallNodeConfig
   | EndNodeConfig;
 
 export type TriggerNodeConfig = {
@@ -242,6 +244,29 @@ export type VariableNodeConfig = {
     name: string;
     value: string; // Can be literal value or expression like {{capturedData.xxx}}
   }>;
+};
+
+export type ApiCallAuthConfig = {
+  type: "none" | "api_key" | "bearer" | "basic";
+  headerName?: string; // For API Key: e.g., "X-API-Key"
+  value?: string; // Auth value (for api_key)
+  username?: string; // For Basic Auth
+  password?: string; // For Basic Auth
+  token?: string; // For Bearer
+};
+
+export type ApiCallNodeConfig = {
+  type: "api_call";
+  apiUrl: string; // Can be expression like {{workflowId}}
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  headers?: Record<string, string>; // Custom headers, values can be expressions
+  auth: ApiCallAuthConfig;
+  requestBodyTemplate?: string; // JSON template, supports {{variable}} syntax
+  responseMapping?: Record<string, string>; // Map response fields to output (JSONPath)
+  timeout: number; // milliseconds
+  retryAttempts: number;
+  retryDelayMs: number;
+  failureStrategy: "stop" | "continue" | "alert"; // What to do on API failure
 };
 
 export type EndNodeConfig = {

@@ -80,6 +80,7 @@ export function getIncompatibilityReason(
     human_approval: "Human Approval",
     notification: "Notification",
     variable: "Variable",
+    api_call: "API Call",
     end: "End",
   };
 

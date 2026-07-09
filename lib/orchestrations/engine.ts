@@ -15,6 +15,7 @@ import type {
   HumanApprovalNodeConfig,
   NotificationNodeConfig,
   VariableNodeConfig,
+  ApiCallNodeConfig,
   TriggerNodeConfig,
   OrchestrationTriggerType,
 } from "@/shared/orchestrationTypes";
@@ -27,6 +28,7 @@ import { executeConditionNode } from "./nodes/condition-node";
 import { executeHumanApprovalNode, resumeAfterApproval } from "./nodes/human-approval-node";
 import { executeNotificationNode } from "./nodes/notification-node";
 import { executeVariableNode } from "./nodes/variable-node";
+import { executeApiCallNode } from "./nodes/api-call-node";
 import { evaluateExpression } from "./expression-evaluator";
 import {
   updateExecution,
@@ -294,6 +296,9 @@ export class OrchestrationEngine {
 
       case "variable":
         return await executeVariableNode(config as VariableNodeConfig, this.context);
+
+      case "api_call":
+        return await executeApiCallNode(config as ApiCallNodeConfig, this.context);
 
       default:
         throw new Error(`Unknown node type: ${node.nodeType}`);

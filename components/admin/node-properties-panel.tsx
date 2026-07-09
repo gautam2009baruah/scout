@@ -13,6 +13,7 @@ import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS, UPCOMING_TRIGGER_TYPES } from "@/sh
 import Draggable from "react-draggable";
 import { createPortal } from "react-dom";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
+import { ApiCallConfig } from "./api-call-config";
 
 // Declare global showScoutNotification function
 declare global {
@@ -30,6 +31,7 @@ const NODE_CONFIGS = [
   { type: "condition", label: "Condition", icon: "❓" },
   { type: "human_approval", label: "Human Approval", icon: "✋" },
   { type: "notification", label: "Notification", icon: "📧" },
+  { type: "api_call", label: "API Call", icon: "🌐" },
   { type: "variable", label: "Variable", icon: "📊" },
   { type: "end", label: "End", icon: "🏁" },
 ];
@@ -507,6 +509,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "condition" && <ConditionConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "human_approval" && <HumanApprovalConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "notification" && <NotificationConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "api_call" && <ApiCallConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
 
