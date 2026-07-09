@@ -269,7 +269,7 @@ export function EmailCredentialsManager() {
             console.error("[Email Credentials] Toggle error:", data.error);
           }
         } catch (error: any) {
-          showToast(`Unable to ${action} credential. Please try again.", "error");
+          showToast(`Unable to ${action} credential. Please try again.`, "error");
           console.error("[Email Credentials] Toggle exception:", error);
         } finally {
           setTogglingId(null);
