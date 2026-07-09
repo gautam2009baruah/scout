@@ -60,12 +60,12 @@ export function MultiSelectDropdown({
 
   return (
     <div className="relative" ref={rootRef}>
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span className="block text-sm font-medium text-slate-700 mb-2">{label}</span>
       {name
         ? selectedValues.map((value) => <input key={value} name={name} type="hidden" value={value} />)
         : null}
       <button
-        className="mt-2 flex h-11 w-full items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+        className="flex h-11 w-full items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >

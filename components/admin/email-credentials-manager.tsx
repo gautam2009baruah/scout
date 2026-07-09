@@ -82,6 +82,8 @@ export function EmailCredentialsManager() {
   useEffect(() => {
     if (newCredential.companyId) {
       loadTargetApps(newCredential.companyId);
+    } else {
+      setTargetApps([]);
     }
   }, [newCredential.companyId]);
 
@@ -89,6 +91,8 @@ export function EmailCredentialsManager() {
   useEffect(() => {
     if (editForm.companyId) {
       loadTargetApps(editForm.companyId);
+    } else {
+      setTargetApps([]);
     }
   }, [editForm.companyId]);
 
@@ -99,10 +103,6 @@ export function EmailCredentialsManager() {
       
       if (data.success) {
         setCompanies(data.companies);
-        // Auto-select first company if available
-        if (data.companies.length > 0 && !selectedCompanyId) {
-          setSelectedCompanyId(data.companies[0].id);
-        }
       } else {
         console.error("[Email Credentials] Load companies error:", data.error);
       }
