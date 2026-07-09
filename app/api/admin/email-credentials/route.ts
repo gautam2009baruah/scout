@@ -75,7 +75,7 @@ export async function POST(request: Request) {
   
   try {
     const body = await request.json();
-    const { name, description, provider, emailAddress, oauthAccessToken, oauthRefreshToken, tokenExpiresAt, imapHost, imapPort, imapUsername, imapPassword, imapTls } = body;
+    const { name, description, provider, emailAddress, oauthAccessToken, oauthRefreshToken, tokenExpiresAt, imapHost, imapPort, imapPassword, imapTls } = body;
     
     if (!name || !provider || !emailAddress) {
       return NextResponse.json(

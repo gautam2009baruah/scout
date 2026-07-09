@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
   let credentialIdForError: string | null = null;
   try {
     const body = await request.json();
-    const { credentialId, provider, imapHost, imapPort, imapUsername, imapPassword, imapTls } = body;
+    const { credentialId, provider, emailAddress, imapHost, imapPort, imapPassword, imapTls } = body;
     credentialIdForError = credentialId || null;
 
     // Test existing credential by ID
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
 
     // Test new credentials (not yet saved)
     if (provider === "imap") {
-      if (!imapHost || !imapUsername || !imapPassword) {
+      if (!imapHost || !emailAddress || !imapPassword) {
         return NextResponse.json(
           { success: false, error: "Missing IMAP credentials" },
           { status: 400 }
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
       const config: IMAPConfig = {
         host: imapHost,
         port: imapPort || 993,
-        username: imapUsername,
+        username: emailAddress,
         password: imapPassword,
         tls: imapTls !== false,
       };

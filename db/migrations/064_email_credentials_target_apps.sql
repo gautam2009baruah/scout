@@ -8,7 +8,7 @@ DROP INDEX IF EXISTS idx_email_credentials_unique_active;
 -- Add unique constraint to prevent duplicate credentials at company level
 -- Allows same email to exist for multiple apps, but prevents true duplicates
 CREATE UNIQUE INDEX IF NOT EXISTS idx_email_credentials_unique_per_company
-  ON email_credentials(company_id, email_address, provider, COALESCE(imap_host, ''), COALESCE(imap_username, ''))
+  ON email_credentials(company_id, email_address, provider, COALESCE(imap_host, ''))
   WHERE is_active = true;
 
 -- Create junction table for email_credentials and target_apps (many-to-many)
@@ -31,7 +31,8 @@ CREATE INDEX IF NOT EXISTS idx_email_cred_target_apps_credential
 CREATE INDEX IF NOT EXISTS idx_email_cred_target_apps_target 
   ON email_credential_target_apps(target_app_id);
 
--- Composite index for common query: get all active credentials for a specific app
+-- Composite index for common query: get all credentials for a specific app.
+-- Active filtering happens by joining email_credentials because PostgreSQL
+-- does not allow subqueries in partial index predicates.
 CREATE INDEX IF NOT EXISTS idx_email_cred_apps_active_lookup
-  ON email_credential_target_apps(target_app_id, email_credential_id)
-  WHERE (SELECT is_active FROM email_credentials ec WHERE ec.id = email_credential_id) = true;
+  ON email_credential_target_apps(target_app_id, email_credential_id);

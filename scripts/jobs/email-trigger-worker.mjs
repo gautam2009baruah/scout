@@ -37,7 +37,6 @@ async function loadEmailTriggers() {
         c.email_address,
         c.imap_host,
         c.imap_port,
-        c.imap_username,
         c.imap_password,
         c.imap_tls,
         o.status as orchestration_status
@@ -65,7 +64,7 @@ async function loadEmailTriggers() {
         imap: row.provider === 'imap' ? {
           host: row.imap_host,
           port: row.imap_port,
-          username: row.imap_username,
+          username: row.email_address,
           password: row.imap_password?.replace('encrypted:', '') || '',
           tls: row.imap_tls,
         } : null,

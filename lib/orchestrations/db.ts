@@ -19,6 +19,7 @@ import type {
 } from "@/shared/orchestrationTypes";
 import { createTrigger } from "./triggers";
 import { clearTriggerCache } from "./chatbot-trigger-matcher";
+import type { EmailTriggerConfig } from "@/shared/orchestrationTypes";
 
 // ============================================================================
 // Orchestrations
@@ -217,7 +218,7 @@ export async function publishOrchestration(
     changeNotes: "Published",
   });
 
-  // Auto-create orchestration_triggers record for chatbot triggers
+  // Auto-create orchestration_triggers record for trigger node types that run outside manual execution.
   const triggerNodeConfig = triggerNode.config as any;
   if (triggerNodeConfig.triggerType === 'chatbot') {
     console.log('📝 Auto-creating/updating chatbot trigger record...');
@@ -278,6 +279,92 @@ export async function publishOrchestration(
     } catch (error) {
       console.error('⚠️ Failed to auto-create/update chatbot trigger:', error);
       // Don't fail the publish if trigger creation fails
+    }
+  }
+
+  if (triggerNodeConfig.triggerType === 'email') {
+    console.log('Auto-creating/updating email trigger record...');
+
+    try {
+      if (!triggerNodeConfig.emailCredentialId) {
+        throw new Error("Email credential is required for email trigger");
+      }
+
+      const credentialResult = await pool.query<{
+        id: string;
+        provider: "gmail" | "outlook" | "imap";
+        email_address: string;
+      }>(
+        `SELECT id, provider, email_address
+         FROM email_credentials
+         WHERE id = $1 AND company_id = $2 AND is_active = true`,
+        [triggerNodeConfig.emailCredentialId, orchestration.companyId]
+      );
+
+      const credential = credentialResult.rows[0];
+      if (!credential) {
+        throw new Error("Selected email credential was not found or is inactive");
+      }
+
+      const emailTriggerConfig: EmailTriggerConfig = {
+        type: "email",
+        provider: credential.provider,
+        mailbox: credential.email_address,
+        folder: triggerNodeConfig.folder || "INBOX",
+        senderFilter: triggerNodeConfig.senderFilter || undefined,
+        subjectContains: triggerNodeConfig.subjectContains || undefined,
+        bodyContains: triggerNodeConfig.bodyContains || undefined,
+        unreadOnly: triggerNodeConfig.unreadOnly !== false,
+        hasAttachment: triggerNodeConfig.hasAttachment === true,
+        pollingIntervalMinutes: Number(triggerNodeConfig.pollingIntervalMinutes) || 5,
+        markAsProcessed: triggerNodeConfig.markAsProcessed !== false,
+        credentialId: credential.id,
+        enabled: triggerNodeConfig.enabled !== false,
+      };
+
+      const existingTriggers = await pool.query(
+        `SELECT id FROM orchestration_triggers
+         WHERE orchestration_id = $1 AND trigger_type = 'email'`,
+        [id]
+      );
+
+      if (existingTriggers.rows.length === 0) {
+        await createTrigger({
+          orchestrationId: id,
+          triggerType: "email",
+          name: `${orchestration.name} - Email Trigger`,
+          description: `Auto-created email trigger for ${orchestration.name}`,
+          config: emailTriggerConfig,
+          createdByEmail: publishedByEmail,
+        });
+
+        console.log('Email trigger created successfully');
+      } else {
+        const triggerId = existingTriggers.rows[0].id;
+        await pool.query(
+          `UPDATE orchestration_triggers
+           SET name = $1,
+               description = $2,
+               config = $3,
+               status = $4,
+               updated_by_email = $5,
+               updated_at = NOW()
+           WHERE id = $6`,
+          [
+            `${orchestration.name} - Email Trigger`,
+            `Auto-created email trigger for ${orchestration.name}`,
+            JSON.stringify(emailTriggerConfig),
+            emailTriggerConfig.enabled ? "active" : "inactive",
+            publishedByEmail,
+            triggerId,
+          ]
+        );
+
+        console.log('Email trigger updated successfully');
+      }
+    } catch (error) {
+      console.error('Failed to auto-create/update email trigger:', error);
+      throw error;
     }
   }
 
