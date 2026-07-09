@@ -23,14 +23,22 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") || undefined; // "active" or "inactive"
     const companyId = searchParams.get("companyId") || undefined;
     const targetAppId = searchParams.get("targetAppId") || undefined;
+    const from = searchParams.get("from") || null; // ISO datetime (UTC)
+    const to = searchParams.get("to") || null; // ISO datetime (UTC)
 
     const pool = getPool();
 
+    // $1/$2 are the (optional) email received_at date range used by the email
+    // stat subqueries so the counts match the executions panel exactly.
+    // The dynamic trigger filters start at $3.
+    const params: any[] = [from, to];
+    let paramIndex = 3;
+
     // Build query with filters.
     // Note: orchestration_triggers uses a `status` text column ('active' |
-    // 'inactive' | 'error'), not an is_active boolean. Schedule/email do not
-    // have dedicated per-trigger tables; email stats are derived from
-    // email_trigger_messages and the last_polled_at watermark.
+    // 'inactive' | 'error'), not an is_active boolean. Email stats are derived
+    // from email_trigger_messages within the same date range as the executions
+    // panel so the numbers agree.
     let query = `
       SELECT 
         ot.id,
@@ -47,11 +55,25 @@ export async function GET(request: NextRequest) {
         o.company_id,
         o.target_app_id,
         ta.name as target_app_name,
-        -- Email-specific fields (derived)
+        -- Email-specific fields (derived, respecting the received_at date range)
         (
           SELECT COUNT(*)::int FROM email_trigger_messages etm
-          WHERE etm.trigger_id = ot.id AND etm.status = 'processed'
-        ) as email_total_processed,
+          WHERE etm.trigger_id = ot.id
+            AND ($1::timestamptz IS NULL OR etm.received_at >= $1::timestamptz)
+            AND ($2::timestamptz IS NULL OR etm.received_at <= $2::timestamptz)
+        ) as email_message_count,
+        (
+          SELECT MAX(etm.received_at) FROM email_trigger_messages etm
+          WHERE etm.trigger_id = ot.id
+            AND ($1::timestamptz IS NULL OR etm.received_at >= $1::timestamptz)
+            AND ($2::timestamptz IS NULL OR etm.received_at <= $2::timestamptz)
+        ) as email_last_found,
+        (
+          SELECT MAX(etm.processed_at) FROM email_trigger_messages etm
+          WHERE etm.trigger_id = ot.id
+            AND ($1::timestamptz IS NULL OR etm.received_at >= $1::timestamptz)
+            AND ($2::timestamptz IS NULL OR etm.received_at <= $2::timestamptz)
+        ) as email_last_ran,
         -- Webhook-specific fields
         wt.webhook_url,
         wt.total_deliveries as webhook_total_deliveries,
@@ -64,9 +86,6 @@ export async function GET(request: NextRequest) {
       LEFT JOIN guided_workflow_target_apps ta ON ta.id = o.target_app_id
       WHERE 1 = 1
     `;
-
-    const params: any[] = [];
-    let paramIndex = 1;
 
     if (companyId) {
       query += ` AND o.company_id = $${paramIndex}`;
@@ -117,9 +136,10 @@ export async function GET(request: NextRequest) {
       scheduleExecutionCount: 0,
       scheduleErrorCount: 0,
       scheduleLastError: null,
-      // Email-specific
-      emailLastCheck: trigger.last_polled_at,
-      emailTotalProcessed: trigger.email_total_processed,
+      // Email-specific (respecting the date range)
+      emailLastFound: trigger.email_last_found,
+      emailLastRan: trigger.email_last_ran,
+      emailMessageCount: trigger.email_message_count,
       // Webhook-specific
       webhookUrl: trigger.webhook_url,
       webhookTotalDeliveries: trigger.webhook_total_deliveries,

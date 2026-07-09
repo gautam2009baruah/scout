@@ -47,9 +47,10 @@ type TriggerStatus = {
   scheduleExecutionCount: number;
   scheduleErrorCount: number;
   scheduleLastError: string | null;
-  // Email-specific
-  emailLastCheck: string | null;
-  emailTotalProcessed: number;
+  // Email-specific (respecting the date range)
+  emailLastFound: string | null;
+  emailLastRan: string | null;
+  emailMessageCount: number;
   // Webhook-specific
   webhookUrl: string | null;
   webhookTotalDeliveries: number;
@@ -186,6 +187,10 @@ export function TriggersMonitoringDashboard({
       if (filter.status !== "all") params.append("status", filter.status);
       if (filter.companyId !== "all") params.append("companyId", filter.companyId);
       if (filter.targetAppId !== "all") params.append("targetAppId", filter.targetAppId);
+      const fromIso = localInputToUtcIso(filter.from);
+      const toIso = localInputToUtcIso(filter.to);
+      if (fromIso) params.append("from", fromIso);
+      if (toIso) params.append("to", toIso);
 
       const response = await fetch(
         `/api/admin/orchestrations/triggers/monitoring?${params.toString()}`
@@ -531,11 +536,11 @@ export function TriggersMonitoringDashboard({
 
                   {trigger.triggerType === "email" && (
                     <>
-                      <Stat label="Last Check" value={formatDateTime(trigger.emailLastCheck)} />
-                      <Stat label="Last Triggered" value={formatDateTime(trigger.lastTriggeredAt)} />
+                      <Stat label="Last Found" value={formatDateTime(trigger.emailLastFound)} />
+                      <Stat label="Last Ran" value={formatDateTime(trigger.emailLastRan)} />
                       <Stat
-                        label="Emails Processed"
-                        value={String(trigger.emailTotalProcessed || 0)}
+                        label="Emails Found"
+                        value={String(trigger.emailMessageCount || 0)}
                         valueClass="text-green-700"
                       />
                     </>
