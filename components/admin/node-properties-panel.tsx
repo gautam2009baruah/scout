@@ -96,11 +96,6 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
   const [validationError, setValidationError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   
-  // Email credentials for email trigger
-  type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean };
-  const [emailCredentials, setEmailCredentials] = useState<EmailCredential[]>([]);
-  const [loadingCredentials, setLoadingCredentials] = useState(false);
-  
   const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
   const [position, setPosition] = useState({ x: PANEL_MARGIN, y: PANEL_MARGIN });
@@ -141,49 +136,6 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     setLocalConfig(node.data.config || {});
     setValidationError(null);
   }, [node]);
-
-  // Fetch email credentials when companyId and targetAppId are available and trigger type is email
-  useEffect(() => {
-    const triggerType = localConfig.triggerType;
-    
-    if (triggerType === 'email' && companyId) {
-      setLoadingCredentials(true);
-      
-      // Build query parameters
-      const params = new URLSearchParams();
-      params.append('companyId', companyId);
-      
-      fetch(`/api/orchestrations/email-credentials?${params.toString()}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            // Filter credentials by target app if targetAppId is specified
-            let credentials = data.credentials.filter((c: EmailCredential) => c.is_active);
-            
-            if (targetAppId) {
-              credentials = credentials.filter((c: any) => {
-                const targetApps = c.target_apps || [];
-                return targetApps.some((app: any) => app.id === targetAppId);
-              });
-            }
-            
-            setEmailCredentials(credentials);
-          } else {
-            console.error('[Node Properties] Failed to load email credentials:', data.error);
-            setEmailCredentials([]);
-          }
-        })
-        .catch(error => {
-          console.error('[Node Properties] Error fetching email credentials:', error);
-          setEmailCredentials([]);
-        })
-        .finally(() => {
-          setLoadingCredentials(false);
-        });
-    } else {
-      setEmailCredentials([]);
-    }
-  }, [companyId, targetAppId, localConfig.triggerType]);
 
   // Check if there are unsaved changes
   const hasUnsavedChanges = () => {
@@ -538,7 +490,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         </div>
 
         {/* Node-specific configuration */}
-        {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} />}
         {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} />}
         {nodeType === "data_capture" && <DataCaptureConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "ai_extraction" && <AIExtractionConfig config={localConfig} updateConfig={updateLocalConfig} />}
@@ -640,11 +592,16 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
 // Node-specific configuration components
 // ============================================================================
 
-function TriggerConfig({ config, updateConfig }: any) {
+function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
   const [triggerType, setTriggerType] = useState(config.triggerType || "manual");
   const [inputFields, setInputFields] = useState<any[]>(config.inputFields || []);
   const [examplePhrases, setExamplePhrases] = useState<string[]>(config.examplePhrases || []);
   const [requiredVariables, setRequiredVariables] = useState<any[]>(config.requiredVariables || []);
+  
+  // Email credentials for email trigger
+  type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean };
+  const [emailCredentials, setEmailCredentials] = useState<EmailCredential[]>([]);
+  const [loadingCredentials, setLoadingCredentials] = useState(false);
   
   const handleTriggerTypeChange = (newType: string) => {
     setTriggerType(newType);
@@ -662,6 +619,47 @@ function TriggerConfig({ config, updateConfig }: any) {
       updateConfig({ examplePhrases, requiredVariables });
     }
   }, [examplePhrases, requiredVariables]);
+
+  // Fetch email credentials when companyId and targetAppId are available and trigger type is email
+  useEffect(() => {
+    if (triggerType === 'email' && companyId) {
+      setLoadingCredentials(true);
+      
+      // Build query parameters
+      const params = new URLSearchParams();
+      params.append('companyId', companyId);
+      
+      fetch(`/api/orchestrations/email-credentials?${params.toString()}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            // Filter credentials by target app if targetAppId is specified
+            let credentials = data.credentials.filter((c: EmailCredential) => c.is_active);
+            
+            if (targetAppId) {
+              credentials = credentials.filter((c: any) => {
+                const targetApps = c.target_apps || [];
+                return targetApps.some((app: any) => app.id === targetAppId);
+              });
+            }
+            
+            setEmailCredentials(credentials);
+          } else {
+            console.error('[Node Properties] Failed to load email credentials:', data.error);
+            setEmailCredentials([]);
+          }
+        })
+        .catch(error => {
+          console.error('[Node Properties] Error fetching email credentials:', error);
+          setEmailCredentials([]);
+        })
+        .finally(() => {
+          setLoadingCredentials(false);
+        });
+    } else {
+      setEmailCredentials([]);
+    }
+  }, [companyId, targetAppId, triggerType]);
 
   return (
     <div className="space-y-4">
