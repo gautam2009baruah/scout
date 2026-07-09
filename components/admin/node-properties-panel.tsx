@@ -2628,12 +2628,15 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           rows={4}
           value={config.input || ""}
           onChange={(e) => updateConfig({ input: e.target.value })}
-          placeholder={"Subject: {{subject}}\n\n{{bodyText}}"}
+          placeholder={"{{bodyText}}"}
         />
         <p className="mt-1 text-xs text-slate-500">
-          The text to extract from. Combine email fields with variables like{" "}
-          <code className="bg-slate-100 px-1 rounded">{`{{subject}}`}</code> and{" "}
-          <code className="bg-slate-100 px-1 rounded">{`{{bodyText}}`}</code>.
+          The text to extract from. Reference variables from any earlier node —
+          e.g. a trigger field{" "}
+          <code className="bg-slate-100 px-1 rounded">{`{{bodyText}}`}</code> or a
+          previous step&rsquo;s output{" "}
+          <code className="bg-slate-100 px-1 rounded">{`{{workflow.getOrder.output}}`}</code>.
+          You can combine several and mix in literal text.
         </p>
       </div>
 

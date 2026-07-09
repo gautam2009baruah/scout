@@ -19,8 +19,9 @@ export async function executeAIExtractionNode(
 }> {
   try {
     // Resolve the input text. Prefer the interpolated `input` template (so
-    // users can combine fields, e.g. "Subject: {{subject}}\n\n{{bodyText}}");
-    // fall back to the legacy single-path `inputSource`.
+    // users can combine variables from any earlier node, e.g.
+    // "{{bodyText}}" or "{{workflow.getOrder.output}}"); fall back to the
+    // legacy single-path `inputSource`.
     let inputData: unknown;
     if (typeof config.input === "string" && config.input.trim() !== "") {
       inputData = evaluateExpression(config.input, context);
@@ -30,7 +31,7 @@ export async function executeAIExtractionNode(
 
     if (inputData === undefined || inputData === null || inputData === "") {
       throw new Error(
-        'AI Extraction has no input. Set the "Input Text" field, e.g. "Subject: {{subject}}\\n\\n{{bodyText}}".'
+        'AI Extraction has no input. Set the "Input Text" field to text or variables from earlier nodes, e.g. "{{bodyText}}" or "{{workflow.getOrder.output}}".'
       );
     }
 
