@@ -38,7 +38,6 @@ export async function GET(
         ec.email_address,
         ec.imap_host,
         ec.imap_port,
-        ec.imap_username,
         ec.imap_tls,
         ec.is_active,
         ec.last_tested_at,
@@ -240,12 +239,6 @@ export async function PATCH(
       if (imapPort !== undefined) {
         updates.push(`imap_port = $${paramIndex++}`);
         values.push(imapPort);
-      }
-
-      // Always sync imap_username with email_address for consistency
-      if (emailAddress !== undefined) {
-        updates.push(`imap_username = $${paramIndex++}`);
-        values.push(emailAddress);
       }
 
       if (imapPassword !== undefined && imapPassword !== "") {

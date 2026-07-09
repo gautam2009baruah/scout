@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
           provider,
           imap_host,
           imap_port,
-          imap_username,
+          email_address,
           imap_password,
           imap_tls
          FROM email_credentials
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
         const config: IMAPConfig = {
           host: cred.imap_host,
           port: cred.imap_port,
-          username: cred.imap_username,
+          username: cred.email_address,
           password: cred.imap_password.replace("encrypted:", ""),
           tls: cred.imap_tls,
         };

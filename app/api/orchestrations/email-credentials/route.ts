@@ -124,11 +124,11 @@ export async function POST(request: NextRequest) {
       // TODO: Encrypt password before storing
       const encryptedPassword = provider === "imap" ? `encrypted:${imapPassword}` : null;
 
-      // Insert credential (use email as IMAP username)
+      // Insert credential
       const result = await client.query(
         `INSERT INTO email_credentials
-         (company_id, provider, name, email_address, imap_host, imap_port, imap_username, imap_password, imap_tls, created_by_email, updated_by_email)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+         (company_id, provider, name, email_address, imap_host, imap_port, imap_password, imap_tls, created_by_email, updated_by_email)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
          RETURNING id, provider, name, email_address, is_active`,
         [
           companyId,
@@ -137,7 +137,6 @@ export async function POST(request: NextRequest) {
           emailAddress,
           provider === "imap" ? imapHost : null,
           provider === "imap" ? (imapPort || 993) : null,
-          provider === "imap" ? emailAddress : null, // Use email as username
           encryptedPassword,
           provider === "imap" ? (imapTls !== false) : null,
           createdBy,

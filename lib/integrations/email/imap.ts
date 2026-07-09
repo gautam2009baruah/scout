@@ -49,7 +49,7 @@ export async function getIMAPCredentials(credentialId: string): Promise<IMAPConf
   const pool = await getPool();
   
   const result = await pool.query(
-    `SELECT imap_host, imap_port, imap_username, imap_password, imap_tls
+    `SELECT imap_host, imap_port, email_address, imap_password, imap_tls
      FROM email_credentials
      WHERE id = $1 AND provider = 'imap' AND is_active = true`,
     [credentialId]
@@ -64,7 +64,7 @@ export async function getIMAPCredentials(credentialId: string): Promise<IMAPConf
   return {
     host: row.imap_host,
     port: row.imap_port,
-    username: row.imap_username,
+    username: row.email_address,
     password: decryptPassword(row.imap_password),
     tls: row.imap_tls,
   };

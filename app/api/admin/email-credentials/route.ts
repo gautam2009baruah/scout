@@ -118,9 +118,9 @@ export async function POST(request: Request) {
     const result = await pool.query(
       `INSERT INTO email_credentials
        (name, description, provider, email_address, oauth_access_token, oauth_refresh_token,
-        oauth_token_expires_at, imap_host, imap_port, imap_username, imap_password, imap_tls,
+        oauth_token_expires_at, imap_host, imap_port, imap_password, imap_tls,
         is_active, created_by_email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, true, $13)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true, $12)
        RETURNING id, name, provider, email_address, created_at`,
       [
         name,
@@ -132,7 +132,6 @@ export async function POST(request: Request) {
         tokenExpiresAt || null,
         imapHost || null,
         imapPort || null,
-        imapUsername || null,
         encryptedPassword,
         imapTls !== false,
         session.user.email,
