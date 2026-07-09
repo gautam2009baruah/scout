@@ -386,76 +386,80 @@ export function EmailCredentialsManager() {
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Edit Email Credential</h3>
 
             <div className="space-y-4">
-              {/* Row 1: Company (read-only) + Target Apps */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Company (read-only)</label>
-                  <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                    {companies.find(c => c.id === editForm.companyId)?.name || "Loading..."}
-                  </div>
-                </div>
-
-                <div>
-                  <MultiSelectDropdown
-                    label="Target Applications *"
-                    options={targetApps.map((app) => ({ label: app.name, value: app.id }))}
-                    selectedValues={editForm.targetAppIds || []}
-                    onChange={(values) => setEditForm({ ...editForm, targetAppIds: values })}
-                    emptyLabel="Select target applications"
-                  />
+              {/* Row 1: Company (read-only) */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Company (read-only)</label>
+                <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  {companies.find(c => c.id === editForm.companyId)?.name || "Loading..."}
                 </div>
               </div>
 
-              {/* Row 2: Provider + IMAP Host + Port + TLS */}
+              {/* Row 2: Target Apps */}
+              <div>
+                <MultiSelectDropdown
+                  label="Target Applications *"
+                  options={targetApps.map((app) => ({ label: app.name, value: app.id }))}
+                  selectedValues={editForm.targetAppIds || []}
+                  onChange={(values) => setEditForm({ ...editForm, targetAppIds: values })}
+                  emptyLabel="Select target applications"
+                />
+              </div>
+
+              {/* Row 3: Provider + IMAP Host */}
               {editingCredential.provider === "imap" && (
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Provider (read-only)</label>
-                    <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded uppercase font-semibold">
-                        {editingCredential.provider}
-                      </span>
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Provider (read-only)</label>
+                      <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2">
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded uppercase font-semibold">
+                          {editingCredential.provider}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Host</label>
+                      <input
+                        type="text"
+                        className="w-full rounded border border-slate-300 px-3 py-2"
+                        placeholder="imap.gmail.com"
+                        value={editForm.imapHost || ""}
+                        onChange={(e) => setEditForm({ ...editForm, imapHost: e.target.value })}
+                      />
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Host</label>
-                    <input
-                      type="text"
-                      className="w-full rounded border border-slate-300 px-3 py-2"
-                      placeholder="imap.gmail.com"
-                      value={editForm.imapHost || ""}
-                      onChange={(e) => setEditForm({ ...editForm, imapHost: e.target.value })}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Port</label>
-                    <input
-                      type="number"
-                      className="w-full rounded border border-slate-300 px-3 py-2"
-                      value={editForm.imapPort || 993}
-                      onChange={(e) => setEditForm({ ...editForm, imapPort: parseInt(e.target.value) })}
-                    />
-                  </div>
-
-                  <div className="flex items-end">
-                    <label className="flex items-center gap-2 cursor-pointer">
+                  {/* Row 4: Port + TLS */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Port</label>
                       <input
-                        type="checkbox"
-                        id="editImapTls"
-                        checked={editForm.imapTls !== false}
-                        onChange={(e) => setEditForm({ ...editForm, imapTls: e.target.checked })}
-                        className="w-4 h-4"
+                        type="number"
+                        className="w-full rounded border border-slate-300 px-3 py-2"
+                        value={editForm.imapPort || 993}
+                        onChange={(e) => setEditForm({ ...editForm, imapPort: parseInt(e.target.value) })}
                       />
-                      <span className="text-sm text-slate-700">Use TLS/SSL</span>
-                    </label>
+                    </div>
+
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          id="editImapTls"
+                          checked={editForm.imapTls !== false}
+                          onChange={(e) => setEditForm({ ...editForm, imapTls: e.target.checked })}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-slate-700">Use TLS/SSL</span>
+                      </label>
+                    </div>
                   </div>
-                </div>
+                </>
               )}
 
-              {/* Row 3: Display Name + Email + Password */}
-              <div className="grid grid-cols-3 gap-4">
+              {/* Row 5: Display Name + Email */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
                   <input
@@ -475,19 +479,20 @@ export function EmailCredentialsManager() {
                     onChange={(e) => setEditForm({ ...editForm, emailAddress: e.target.value })}
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    New Password <span className="text-xs text-slate-500">(leave blank to keep)</span>
-                  </label>
-                  <input
-                    type="password"
-                    className="w-full rounded border border-slate-300 px-3 py-2"
-                    placeholder="Enter new password"
-                    value={editForm.imapPassword || ""}
-                    onChange={(e) => setEditForm({ ...editForm, imapPassword: e.target.value })}
-                  />
-                </div>
+              {/* Row 6: Password */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  New Password <span className="text-xs text-slate-500">(leave blank to keep)</span>
+                </label>
+                <input
+                  type="password"
+                  className="w-full rounded border border-slate-300 px-3 py-2"
+                  placeholder="Enter new password"
+                  value={editForm.imapPassword || ""}
+                  onChange={(e) => setEditForm({ ...editForm, imapPassword: e.target.value })}
+                />
               </div>
             </div>
 
