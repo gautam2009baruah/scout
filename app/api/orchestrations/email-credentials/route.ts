@@ -25,20 +25,34 @@ export async function GET(request: NextRequest) {
 
     const pool = getPool();
     
+    // Fetch credentials with their assigned target apps
     const result = await pool.query(
       `SELECT 
-        id,
-        provider,
-        name,
-        email_address,
-        is_active,
-        last_tested_at,
-        last_test_status,
-        last_test_error,
-        created_at
-       FROM email_credentials
-       WHERE company_id = $1
-       ORDER BY created_at DESC`,
+        ec.id,
+        ec.provider,
+        ec.name,
+        ec.email_address,
+        ec.is_active,
+        ec.last_tested_at,
+        ec.last_test_status,
+        ec.last_test_error,
+        ec.created_at,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'id', ta.id,
+              'name', ta.name
+            )
+            ORDER BY ta.name
+          ) FILTER (WHERE ta.id IS NOT NULL),
+          '[]'
+        ) as target_apps
+       FROM email_credentials ec
+       LEFT JOIN email_credential_target_apps ecta ON ec.id = ecta.email_credential_id
+       LEFT JOIN guided_workflow_target_apps ta ON ecta.target_app_id = ta.id
+       WHERE ec.company_id = $1
+       GROUP BY ec.id
+       ORDER BY ec.created_at DESC`,
       [companyId]
     );
 
@@ -80,6 +94,7 @@ export async function POST(request: NextRequest) {
       imapUsername,
       imapPassword,
       imapTls,
+      targetAppIds,
     } = body;
 
     if (!provider || !name || !emailAddress) {
@@ -100,33 +115,61 @@ export async function POST(request: NextRequest) {
     const createdBy = session.user.email;
 
     const pool = getPool();
+    const client = await pool.connect();
 
-    // TODO: Encrypt password before storing
-    const encryptedPassword = provider === "imap" ? `encrypted:${imapPassword}` : null;
+    try {
+      await client.query('BEGIN');
 
-    const result = await pool.query(
-      `INSERT INTO email_credentials
-       (company_id, provider, name, email_address, imap_host, imap_port, imap_username, imap_password, imap_tls, created_by_email, updated_by_email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
-       RETURNING id, provider, name, email_address, is_active`,
-      [
-        companyId,
-        provider,
-        name,
-        emailAddress,
-        provider === "imap" ? imapHost : null,
-        provider === "imap" ? (imapPort || 993) : null,
-        provider === "imap" ? imapUsername : null,
-        encryptedPassword,
-        provider === "imap" ? (imapTls !== false) : null,
-        createdBy,
-      ]
-    );
+      // TODO: Encrypt password before storing
+      const encryptedPassword = provider === "imap" ? `encrypted:${imapPassword}` : null;
 
-    return NextResponse.json({
-      success: true,
-      credential: result.rows[0],
-    });
+      // Insert credential
+      const result = await client.query(
+        `INSERT INTO email_credentials
+         (company_id, provider, name, email_address, imap_host, imap_port, imap_username, imap_password, imap_tls, created_by_email, updated_by_email)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+         RETURNING id, provider, name, email_address, is_active`,
+        [
+          companyId,
+          provider,
+          name,
+          emailAddress,
+          provider === "imap" ? imapHost : null,
+          provider === "imap" ? (imapPort || 993) : null,
+          provider === "imap" ? imapUsername : null,
+          encryptedPassword,
+          provider === "imap" ? (imapTls !== false) : null,
+          createdBy,
+        ]
+      );
+
+      const credentialId = result.rows[0].id;
+
+      // Insert target app assignments if provided
+      if (targetAppIds && Array.isArray(targetAppIds) && targetAppIds.length > 0) {
+        const appAssignments = targetAppIds.map((appId: string) => 
+          client.query(
+            `INSERT INTO email_credential_target_apps (email_credential_id, target_app_id, created_by_email)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (email_credential_id, target_app_id) DO NOTHING`,
+            [credentialId, appId, createdBy]
+          )
+        );
+        await Promise.all(appAssignments);
+      }
+
+      await client.query('COMMIT');
+
+      return NextResponse.json({
+        success: true,
+        credential: result.rows[0],
+      });
+    } catch (error: any) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error: any) {
     console.error("[API] Error creating email credential:", error);
     return NextResponse.json(

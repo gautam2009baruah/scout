@@ -2,6 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
+import { MultiSelectDropdown, MultiSelectOption } from "./multi-select-dropdown";
+
+type TargetApp = {
+  id: string;
+  name: string;
+};
 
 type EmailCredential = {
   id: string;
@@ -13,6 +19,7 @@ type EmailCredential = {
   last_test_status: "success" | "failed" | null;
   last_test_error: string | null;
   created_at: string;
+  target_apps: TargetApp[];
 };
 
 type NewCredential = {
@@ -24,10 +31,12 @@ type NewCredential = {
   imapUsername?: string;
   imapPassword?: string;
   imapTls?: boolean;
+  targetAppIds?: string[];
 };
 
 export function EmailCredentialsManager() {
   const [credentials, setCredentials] = useState<EmailCredential[]>([]);
+  const [targetApps, setTargetApps] = useState<TargetApp[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCredential, setNewCredential] = useState<NewCredential>({
@@ -39,6 +48,7 @@ export function EmailCredentialsManager() {
     imapUsername: "",
     imapPassword: "",
     imapTls: true,
+    targetAppIds: [],
   });
   const [testingId, setTestingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -56,7 +66,23 @@ export function EmailCredentialsManager() {
 
   useEffect(() => {
     loadCredentials();
+    loadTargetApps();
   }, []);
+
+  async function loadTargetApps() {
+    try {
+      const response = await fetch("/api/orchestrations/target-apps");
+      const data = await response.json();
+      
+      if (data.success) {
+        setTargetApps(data.targetApps);
+      } else {
+        console.error("[Email Credentials] Load target apps error:", data.error);
+      }
+    } catch (error: any) {
+      console.error("[Email Credentials] Load target apps exception:", error);
+    }
+  }
 
   async function loadCredentials() {
     try {
@@ -111,6 +137,7 @@ export function EmailCredentialsManager() {
           imapUsername: "",
           imapPassword: "",
           imapTls: true,
+          targetAppIds: [],
         });
         await loadCredentials();
       } else {
@@ -200,6 +227,7 @@ export function EmailCredentialsManager() {
           imapUsername: fullCred.imap_username || "",
           imapPassword: "", // Never pre-fill password
           imapTls: fullCred.imap_tls !== false,
+          targetAppIds: fullCred.target_apps?.map((app: TargetApp) => app.id) || [],
         });
       } else {
         showToast("Unable to load credential details. Please try again.", "error");
@@ -401,6 +429,20 @@ export function EmailCredentialsManager() {
                   </div>
                 </>
               )}
+
+              {/* Target Apps Multi-Select */}
+              <div>
+                <MultiSelectDropdown
+                  label="Target Applications (Optional)"
+                  options={targetApps.map((app) => ({ label: app.name, value: app.id }))}
+                  selectedValues={editForm.targetAppIds || []}
+                  onChange={(values) => setEditForm({ ...editForm, targetAppIds: values })}
+                  emptyLabel="Select target applications"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Choose which applications can use this credential. Leave empty to make available for all.
+                </p>
+              </div>
             </div>
 
             <div className="flex gap-3 mt-6">
@@ -532,6 +574,20 @@ export function EmailCredentialsManager() {
             </>
           )}
 
+          {/* Target Apps Multi-Select */}
+          <div>
+            <MultiSelectDropdown
+              label="Target Applications (Optional)"
+              options={targetApps.map((app) => ({ label: app.name, value: app.id }))}
+              selectedValues={newCredential.targetAppIds || []}
+              onChange={(values) => setNewCredential({ ...newCredential, targetAppIds: values })}
+              emptyLabel="Select target applications"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Choose which applications can use this credential. Leave empty to make available for all.
+            </p>
+          </div>
+
           <div className="flex gap-3">
             <button
               onClick={handleAddCredential}
@@ -558,6 +614,7 @@ export function EmailCredentialsManager() {
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Name</th>
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Email</th>
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Provider</th>
+              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Target Apps</th>
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Status</th>
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Last Test</th>
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Actions</th>
@@ -580,6 +637,19 @@ export function EmailCredentialsManager() {
                     <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded uppercase">
                       {cred.provider}
                     </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm text-slate-600">
+                    {cred.target_apps && cred.target_apps.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {cred.target_apps.map((app) => (
+                          <span key={app.id} className="px-2 py-0.5 bg-purple-100 text-purple-800 text-xs rounded">
+                            {app.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-xs">All apps</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-sm">
                     {cred.is_active ? (
