@@ -48,7 +48,7 @@ export async function DELETE(
        FROM orchestration_triggers
        WHERE trigger_type = 'email'
        AND config->>'emailCredentialId' = $1
-       AND is_active = true`,
+       AND status = 'active'`,
       [credentialId]
     );
 
