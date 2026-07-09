@@ -1,7 +1,8 @@
 // Email Trigger Poller
 // Polls email providers and triggers orchestrations based on matching emails
-// Run with: node scripts/email-trigger-poller.mjs
+// Run with: npm run triggers:email
 
+import "./db/load-env.mjs";
 import pg from "pg";
 import { 
   getActiveEmailTriggers, 
