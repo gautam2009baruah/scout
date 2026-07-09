@@ -388,8 +388,8 @@ export function EmailCredentialsManager() {
             <div className="space-y-4">
               {/* Row 1: Company (read-only) */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Company (read-only)</label>
-                <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                <label className="block text-sm font-medium text-slate-700 mb-2">Company (read-only)</label>
+                <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 h-11 flex items-center text-sm text-slate-600">
                   {companies.find(c => c.id === editForm.companyId)?.name || "Loading..."}
                 </div>
               </div>
@@ -408,7 +408,7 @@ export function EmailCredentialsManager() {
               {/* Row 3: Provider + IMAP Host */}
               {editingCredential.provider === "imap" && (
                 <>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Provider (read-only)</label>
                       <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2">
@@ -431,7 +431,7 @@ export function EmailCredentialsManager() {
                   </div>
 
                   {/* Row 4: Port + TLS */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Port</label>
                       <input
@@ -459,7 +459,7 @@ export function EmailCredentialsManager() {
               )}
 
               {/* Row 5: Display Name + Email */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
                   <input
@@ -523,11 +523,11 @@ export function EmailCredentialsManager() {
           <h3 className="text-lg font-semibold text-slate-900">Add New Email Credential</h3>
 
           {/* Row 1: Company + Target Apps */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Company *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Company *</label>
               <select
-                className="w-full rounded border border-slate-300 px-3 py-2"
+                className="w-full rounded border border-slate-300 px-3 py-2 h-11"
                 value={newCredential.companyId}
                 onChange={(e) => setNewCredential({ ...newCredential, companyId: e.target.value, targetAppIds: [] })}
               >
@@ -553,7 +553,7 @@ export function EmailCredentialsManager() {
 
           {/* Row 2: Provider + IMAP Host + Port + TLS */}
           {newCredential.provider === "imap" && (
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Provider *</label>
                 <select
@@ -604,7 +604,7 @@ export function EmailCredentialsManager() {
           )}
 
           {/* Row 3: Display Name + Email + Password */}
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
               <input
@@ -658,19 +658,20 @@ export function EmailCredentialsManager() {
 
       {/* Credentials List */}
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700 w-16">S.No</th>
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Name</th>
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Email</th>
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Provider</th>
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Target Apps</th>
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Status</th>
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Last Test</th>
-              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Actions</th>
-            </tr>
-          </thead>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700 w-16">S.No</th>
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Name</th>
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Email</th>
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Provider</th>
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Target Apps</th>
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Status</th>
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Last Test</th>
+                <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Actions</th>
+              </tr>
+            </thead>
           <tbody className="divide-y divide-slate-200">
             {credentials.length === 0 ? (
               <tr>
@@ -806,6 +807,7 @@ export function EmailCredentialsManager() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Help Section */}

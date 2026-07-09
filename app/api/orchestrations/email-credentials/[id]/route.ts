@@ -56,9 +56,9 @@ export async function GET(
        FROM email_credentials ec
        LEFT JOIN email_credential_target_apps ecta ON ec.id = ecta.email_credential_id
        LEFT JOIN guided_workflow_target_apps ta ON ecta.target_app_id = ta.id
-       WHERE ec.id = $1 AND ec.company_id = $2
+       WHERE ec.id = $1
        GROUP BY ec.id`,
-      [credentialId, companyId]
+      [credentialId]
     );
 
     if (result.rowCount === 0) {
