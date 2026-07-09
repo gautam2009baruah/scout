@@ -50,7 +50,11 @@ export function emailMatchesTrigger(
 }
 
 /**
- * Check if email has already been processed for this trigger
+ * Check if email has already been handled for this trigger.
+ * Only rows in a terminal-success state ('received' = execution created,
+ * 'processed' = execution completed) block reprocessing. Rows left in
+ * 'failed' are intentionally NOT counted, so a failed email is retried on the
+ * next poll (while it is still within the fetch window).
  */
 export async function isEmailAlreadyProcessed(
   triggerId: string,
@@ -60,7 +64,8 @@ export async function isEmailAlreadyProcessed(
   
   const result = await pool.query(
     `SELECT id FROM email_trigger_messages
-     WHERE trigger_id = $1 AND message_id = $2`,
+     WHERE trigger_id = $1 AND message_id = $2
+       AND status IN ('received', 'processed')`,
     [triggerId, messageId]
   );
   
@@ -155,12 +160,17 @@ export async function processEmailTrigger(
       triggeredBy: `email:${email.from}`,
     });
     
-    // Log email processing
+    // Log email processing (upsert so a prior 'failed' row is reused on retry)
     await pool.query(
       `INSERT INTO email_trigger_messages
        (trigger_id, orchestration_id, execution_id, message_id, provider, mailbox,
         from_address, to_address, subject, body_text, body_html, attachments, received_at, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'received')`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'received')
+       ON CONFLICT (trigger_id, message_id) DO UPDATE SET
+         execution_id = EXCLUDED.execution_id,
+         status = 'received',
+         error_message = NULL,
+         processed_at = now()`,
       [
         triggerId,
         orchestrationId,
@@ -250,13 +260,17 @@ export async function processEmailTrigger(
   } catch (error: any) {
     console.error(`Error processing email trigger: ${error.message}`);
     
-    // Log failed processing attempt
+    // Log failed processing attempt (upsert so retries update the same row)
     try {
       await pool.query(
         `INSERT INTO email_trigger_messages
          (trigger_id, orchestration_id, message_id, provider, mailbox,
           from_address, to_address, subject, received_at, status, error_message)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'failed', $10)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'failed', $10)
+         ON CONFLICT (trigger_id, message_id) DO UPDATE SET
+           status = 'failed',
+           error_message = EXCLUDED.error_message,
+           processed_at = now()`,
         [
           triggerId,
           orchestrationId,
