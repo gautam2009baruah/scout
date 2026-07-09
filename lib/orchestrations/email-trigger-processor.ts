@@ -4,7 +4,7 @@
 import { getPool } from "@/lib/db/pool";
 import type { EmailTriggerConfig } from "@/shared/orchestrationTypes";
 import type { EmailMessage } from "@/lib/integrations/email/imap";
-import { createExecution } from "@/lib/orchestrations/db";
+import { createExecution, getNodes, getConnections } from "@/lib/orchestrations/db";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
 
 /**
@@ -214,19 +214,13 @@ export async function processEmailTrigger(
       [triggerId]
     );
     
-    // Execute orchestration in background
-    const nodesResult = await pool.query(
-      `SELECT * FROM orchestration_nodes WHERE orchestration_id = $1 ORDER BY created_at`,
-      [orchestration.id]
-    );
-    
-    const connectionsResult = await pool.query(
-      `SELECT * FROM orchestration_connections WHERE orchestration_id = $1 ORDER BY created_at`,
-      [orchestration.id]
-    );
-    
-    const nodes = nodesResult.rows;
-    const connections = connectionsResult.rows;
+    // Execute orchestration in background.
+    // Use the mapped getNodes/getConnections (camelCase: nodeType, sourceNodeId,
+    // config) — the engine relies on those field names to find the trigger node
+    // and follow connections. Passing raw snake_case rows makes the engine fail
+    // to find a start node and record nothing.
+    const nodes = await getNodes(orchestration.id);
+    const connections = await getConnections(orchestration.id);
     
     // Execute in background
     setImmediate(async () => {
