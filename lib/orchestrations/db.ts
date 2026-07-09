@@ -180,9 +180,6 @@ export async function publishOrchestration(
   const nodes = await getNodes(id);
   const connections = await getConnections(id);
 
-  console.log(`[Publish Validation] Orchestration ${id}: Found ${nodes.length} nodes`);
-  console.log(`[Publish Validation] Node types:`, nodes.map(n => `${n.label} (${n.nodeType})`));
-
   // Validate orchestration before publishing
   const triggerNodes = nodes.filter(n => n.nodeType === "trigger");
   if (triggerNodes.length === 0) {
@@ -190,7 +187,6 @@ export async function publishOrchestration(
   }
 
   const endNodes = nodes.filter(n => n.nodeType === "end");
-  console.log(`[Publish Validation] Found ${endNodes.length} end nodes:`, endNodes.map(n => n.label));
   if (endNodes.length === 0) {
     throw new Error("Cannot publish: Orchestration must have at least one end node");
   }

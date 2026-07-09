@@ -44,6 +44,7 @@ import {
   List,
 } from "lucide-react";
 import type { NodeType, Orchestration, ManualTriggerConfig, OrchestrationTriggerType } from "@/shared/orchestrationTypes";
+import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 import { NodePropertiesPanel } from "./node-properties-panel";
 import { ManualTriggerDialog } from "./manual-trigger-dialog";
 import { ExecutionMonitor } from "./execution-monitor";
@@ -166,6 +167,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [savedSincePublish, setSavedSincePublish] = useState(false);
   const savedStateRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
+  const previousTriggerTypeRef = useRef<OrchestrationTriggerType | undefined>(undefined);
+
 
   // Show toast notification
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -184,6 +187,58 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
     if (!orchestration) return false;
     return currentTriggerType === "manual";
   }, [orchestration, currentTriggerType]);
+
+  // Check for incompatible nodes when trigger type changes
+  useEffect(() => {
+    if (!currentTriggerType || !orchestration) {
+      previousTriggerTypeRef.current = currentTriggerType;
+      return;
+    }
+
+    // Only check if trigger type actually changed (not on initial load)
+    const previousTriggerType = previousTriggerTypeRef.current;
+    if (previousTriggerType === currentTriggerType) return;
+    
+    // Skip check on initial load (when previous was undefined)
+    if (previousTriggerType === undefined) {
+      previousTriggerTypeRef.current = currentTriggerType;
+      return;
+    }
+
+    // Update ref for next comparison
+    previousTriggerTypeRef.current = currentTriggerType;
+
+    const incompatibleNodes = nodes.filter(node => {
+      const nodeType = node.data.nodeType;
+      // Skip the trigger node itself
+      if (nodeType === 'trigger') return false;
+      return !isNodeCompatibleWithTrigger(nodeType, currentTriggerType);
+    });
+
+    if (incompatibleNodes.length > 0) {
+      const incompatibleLabels = incompatibleNodes.map(n => `"${n.data.label}"`).join(', ');
+      const triggerLabel = TRIGGER_TYPE_LABELS[currentTriggerType];
+      
+      setConfirmDialog({
+        message: `${incompatibleNodes.length === 1 ? 'Node' : 'Nodes'} ${incompatibleLabels} ${incompatibleNodes.length === 1 ? 'is' : 'are'} not compatible with ${triggerLabel} trigger and will cause errors when saving. Remove ${incompatibleNodes.length === 1 ? 'it' : 'them'} from the canvas?`,
+        onConfirm: () => {
+          setConfirmDialog(null);
+          // Remove incompatible nodes
+          setNodes((nds) => nds.filter(node => {
+            const nodeType = node.data.nodeType;
+            if (nodeType === 'trigger') return true;
+            return isNodeCompatibleWithTrigger(nodeType, currentTriggerType);
+          }));
+          // Also remove edges connected to those nodes
+          const incompatibleIds = new Set(incompatibleNodes.map(n => n.id));
+          setEdges((eds) => eds.filter(edge => 
+            !incompatibleIds.has(edge.source) && !incompatibleIds.has(edge.target)
+          ));
+          showToast(`Removed ${incompatibleNodes.length} incompatible ${incompatibleNodes.length === 1 ? 'node' : 'nodes'}`, 'success');
+        },
+      });
+    }
+  }, [currentTriggerType, nodes, orchestration, setNodes, setEdges, showToast]);
 
   // Load orchestration data when orchestration changes
   useEffect(() => {
@@ -446,6 +501,22 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
   const saveOrchestration = async (): Promise<boolean> => {
     if (!orchestration || isSaving) return false;
 
+    // Validate nodes are compatible with current trigger type before saving
+    const incompatibleNodes = nodes.filter(node => {
+      const nodeType = node.data.nodeType;
+      return !isNodeCompatibleWithTrigger(nodeType, currentTriggerType);
+    });
+
+    if (incompatibleNodes.length > 0) {
+      const incompatibleLabels = incompatibleNodes.map(n => `"${n.data.label}" (${n.data.nodeType})`).join(', ');
+      const triggerLabel = currentTriggerType ? TRIGGER_TYPE_LABELS[currentTriggerType] : 'Unknown';
+      showToast(
+        `Cannot save: ${incompatibleNodes.length === 1 ? 'Node' : 'Nodes'} ${incompatibleLabels} ${incompatibleNodes.length === 1 ? 'is' : 'are'} not compatible with ${triggerLabel} trigger. Please remove ${incompatibleNodes.length === 1 ? 'it' : 'them'} from the canvas.`,
+        'error'
+      );
+      return false;
+    }
+
     setIsSaving(true);
     try {
       // Save/update orchestration
@@ -479,7 +550,6 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
 
       // Save nodes
       const nodeIdMap = new Map<string, string>();
-      console.log(`[Save] Saving ${nodes.length} nodes:`, nodes.map(n => `${n.data.label} (${n.data.nodeType})`));
       for (const node of nodes) {
         const nodeResponse = await fetch("/api/admin/orchestrations/nodes", {
           method: "POST",
@@ -502,7 +572,6 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
         }
         
         const savedNode = await nodeResponse.json();
-        console.log(`[Save] Saved node: ${node.data.label} (${node.data.nodeType}) with DB ID: ${savedNode.node?.id}`);
         nodeIdMap.set(node.id, savedNode.node?.id || savedNode.id);
       }
 
