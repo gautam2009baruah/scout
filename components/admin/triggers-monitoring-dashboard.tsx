@@ -79,8 +79,18 @@ type ExecutionsState = {
   totalPages: number;
 };
 
+type NodeStep = {
+  id: string;
+  nodeLabel: string;
+  nodeType: string;
+  status: string;
+  output: Record<string, unknown> | null;
+  errorMessage: string | null;
+};
+
 type ExecutionDetail = {
   id: string;
+  executionId: string | null;
   status: string;
   payload: unknown;
   errorMessage: string | null;
@@ -169,6 +179,8 @@ export function TriggersMonitoringDashboard({
   const [detail, setDetail] = useState<ExecutionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [nodeSteps, setNodeSteps] = useState<NodeStep[]>([]);
+  const [nodeStepsLoading, setNodeStepsLoading] = useState(false);
 
   const availableTargetApps =
     filter.companyId === "all"
@@ -280,12 +292,33 @@ export function TriggersMonitoringDashboard({
     setDetailOpen(true);
     setDetailLoading(true);
     setDetail(null);
+    setNodeSteps([]);
     try {
       const response = await fetch(
         `/api/admin/orchestrations/triggers/${triggerId}/executions/${logId}`
       );
       const data = await response.json();
-      if (data.success) setDetail(data.execution);
+      if (data.success) {
+        setDetail(data.execution);
+        // If this trigger created an orchestration execution, load its node steps
+        const executionId = data.execution?.executionId;
+        if (executionId) {
+          setNodeStepsLoading(true);
+          try {
+            const stepsResp = await fetch(
+              `/api/admin/orchestrations/executions/${executionId}`
+            );
+            const stepsData = await stepsResp.json();
+            setNodeSteps(
+              Array.isArray(stepsData.nodeExecutions) ? stepsData.nodeExecutions : []
+            );
+          } catch (err) {
+            console.error("Failed to load node steps:", err);
+          } finally {
+            setNodeStepsLoading(false);
+          }
+        }
+      }
     } catch (error) {
       console.error("Failed to load execution detail:", error);
     } finally {
@@ -784,6 +817,69 @@ export function TriggersMonitoringDashboard({
                       <pre className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 max-h-64 overflow-auto">
                         {JSON.stringify(detail.payload ?? {}, null, 2)}
                       </pre>
+                    </div>
+                  )}
+
+                  {/* Node steps / outputs for the orchestration run */}
+                  {detail.executionId && (
+                    <div className="border-t border-slate-200 pt-3">
+                      <div className="text-sm font-semibold text-slate-800 mb-2">
+                        Orchestration Steps
+                      </div>
+                      {nodeStepsLoading ? (
+                        <div className="flex items-center justify-center p-4">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
+                        </div>
+                      ) : nodeSteps.length === 0 ? (
+                        <p className="text-xs text-slate-500">No steps recorded.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {nodeSteps.map((step, index) => (
+                            <div
+                              key={step.id}
+                              className="rounded-lg border border-slate-200 p-2"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold">
+                                    {index + 1}
+                                  </span>
+                                  <span className="text-sm font-medium text-slate-900 truncate">
+                                    {step.nodeLabel}
+                                  </span>
+                                  <span className="text-xs text-slate-500">{step.nodeType}</span>
+                                </div>
+                                <span
+                                  className={`text-xs font-medium px-2 py-0.5 rounded ${
+                                    step.status === "completed"
+                                      ? "bg-green-100 text-green-700"
+                                      : step.status === "failed"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-slate-100 text-slate-600"
+                                  }`}
+                                >
+                                  {step.status}
+                                </span>
+                              </div>
+                              {step.errorMessage && (
+                                <div className="mt-1 text-xs text-red-600 bg-red-50 border border-red-100 rounded p-2 whitespace-pre-wrap">
+                                  {step.errorMessage}
+                                </div>
+                              )}
+                              {step.output && Object.keys(step.output).length > 0 && (
+                                <details className="mt-1">
+                                  <summary className="text-xs font-medium text-slate-600 cursor-pointer hover:text-slate-900">
+                                    View output
+                                  </summary>
+                                  <pre className="mt-1 text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 max-h-48 overflow-auto">
+                                    {JSON.stringify(step.output, null, 2)}
+                                  </pre>
+                                </details>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </>

@@ -102,6 +102,7 @@ async function getEmailDetail(
     success: true,
     execution: {
       id: row.id,
+      executionId: row.execution_id,
       status: row.status,
       payload: null,
       errorMessage: row.error_message,
@@ -166,6 +167,7 @@ async function getLogDetail(
     success: true,
     execution: {
       id: log.id,
+      executionId: log.execution_id,
       status: log.status,
       payload: log.payload,
       errorMessage: log.error_message,

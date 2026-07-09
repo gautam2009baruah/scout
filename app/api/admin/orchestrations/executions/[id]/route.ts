@@ -5,12 +5,18 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getExecutionById, getNodeExecutions } from "@/lib/orchestrations/db";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getCurrentAdminSession();
+    if (!session) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     const { id } = await params;
 
     const execution = await getExecutionById(id);
