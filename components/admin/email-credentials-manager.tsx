@@ -335,19 +335,14 @@ export function EmailCredentialsManager() {
 
             <div className="space-y-4">
               {/* Provider (read-only) */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Provider (cannot be changed)</label>
-                <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2">
-                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded uppercase font-semibold">
-                    {editingCredential.provider}
-                  </span>
-                  <span className="text-xs text-slate-500 ml-2">
-                    To use a different provider, delete this credential and create a new one
-                  </span>
-                </div>
+              <div className="bg-slate-50 border border-slate-200 rounded px-3 py-2">
+                <span className="text-xs font-medium text-slate-500">Provider (cannot be changed):</span>
+                <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs rounded uppercase font-semibold">
+                  {editingCredential.provider}
+                </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
                   <input
@@ -367,12 +362,23 @@ export function EmailCredentialsManager() {
                     onChange={(e) => setEditForm({ ...editForm, emailAddress: e.target.value })}
                   />
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+                  <input
+                    type="text"
+                    className="w-full rounded border border-slate-300 px-3 py-2"
+                    placeholder="Usually same as email"
+                    value={editForm.imapUsername || ""}
+                    onChange={(e) => setEditForm({ ...editForm, imapUsername: e.target.value })}
+                  />
+                </div>
               </div>
 
               {editingCredential.provider === "imap" && (
                 <>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="col-span-2">
                       <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Host</label>
                       <input
                         type="text"
@@ -384,7 +390,7 @@ export function EmailCredentialsManager() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Port</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Port</label>
                       <input
                         type="number"
                         className="w-full rounded border border-slate-300 px-3 py-2"
@@ -392,22 +398,24 @@ export function EmailCredentialsManager() {
                         onChange={(e) => setEditForm({ ...editForm, imapPort: parseInt(e.target.value) })}
                       />
                     </div>
-                  </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
-                    <input
-                      type="text"
-                      className="w-full rounded border border-slate-300 px-3 py-2"
-                      placeholder="Usually same as email address"
-                      value={editForm.imapUsername || ""}
-                      onChange={(e) => setEditForm({ ...editForm, imapUsername: e.target.value })}
-                    />
+                    <div className="flex items-end">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          id="editImapTls"
+                          checked={editForm.imapTls !== false}
+                          onChange={(e) => setEditForm({ ...editForm, imapTls: e.target.checked })}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-slate-700">Use TLS/SSL</span>
+                      </label>
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">
-                      New Password (leave blank to keep existing)
+                      New Password <span className="text-xs text-slate-500">(leave blank to keep existing)</span>
                     </label>
                     <input
                       type="password"
@@ -416,16 +424,6 @@ export function EmailCredentialsManager() {
                       value={editForm.imapPassword || ""}
                       onChange={(e) => setEditForm({ ...editForm, imapPassword: e.target.value })}
                     />
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id="editImapTls"
-                      checked={editForm.imapTls !== false}
-                      onChange={(e) => setEditForm({ ...editForm, imapTls: e.target.checked })}
-                    />
-                    <label htmlFor="editImapTls" className="text-sm text-slate-700">Use TLS/SSL</label>
                   </div>
                 </>
               )}
@@ -471,105 +469,103 @@ export function EmailCredentialsManager() {
         <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-4">
           <h3 className="text-lg font-semibold text-slate-900">Add New Email Credential</h3>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Provider</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Provider *</label>
               <select
                 className="w-full rounded border border-slate-300 px-3 py-2"
                 value={newCredential.provider}
                 onChange={(e) => setNewCredential({ ...newCredential, provider: e.target.value as any })}
               >
-                <option value="imap">IMAP (Generic)</option>
-                <option value="gmail">Gmail (OAuth - Coming Soon)</option>
-                <option value="outlook">Outlook (OAuth - Coming Soon)</option>
+                <option value="imap">IMAP</option>
+                <option value="gmail" disabled>Gmail (OAuth)</option>
+                <option value="outlook" disabled>Outlook (OAuth)</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Display Name</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
               <input
                 type="text"
                 className="w-full rounded border border-slate-300 px-3 py-2"
-                placeholder="e.g., Support Inbox"
+                placeholder="Support Inbox"
                 value={newCredential.name}
                 onChange={(e) => setNewCredential({ ...newCredential, name: e.target.value })}
               />
             </div>
-          </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Email Address</label>
-            <input
-              type="email"
-              className="w-full rounded border border-slate-300 px-3 py-2"
-              placeholder="support@company.com"
-              value={newCredential.emailAddress}
-              onChange={(e) => setNewCredential({ ...newCredential, emailAddress: e.target.value })}
-            />
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email Address *</label>
+              <input
+                type="email"
+                className="w-full rounded border border-slate-300 px-3 py-2"
+                placeholder="support@company.com"
+                value={newCredential.emailAddress}
+                onChange={(e) => setNewCredential({ ...newCredential, emailAddress: e.target.value })}
+              />
+            </div>
           </div>
 
           {newCredential.provider === "imap" && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Host</label>
+              <div className="grid grid-cols-4 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Host *</label>
                   <input
                     type="text"
                     className="w-full rounded border border-slate-300 px-3 py-2"
-                    placeholder="imap.gmail.com"
+                    placeholder="imap.gmail.com or outlook.office365.com"
                     value={newCredential.imapHost}
                     onChange={(e) => setNewCredential({ ...newCredential, imapHost: e.target.value })}
                   />
-                  <p className="text-xs text-slate-500 mt-1">
-                    Gmail: imap.gmail.com | Outlook: outlook.office365.com
-                  </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Port</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Port</label>
                   <input
                     type="number"
                     className="w-full rounded border border-slate-300 px-3 py-2"
                     value={newCredential.imapPort}
                     onChange={(e) => setNewCredential({ ...newCredential, imapPort: parseInt(e.target.value) })}
                   />
-                  <p className="text-xs text-slate-500 mt-1">Default: 993 (SSL/TLS)</p>
+                </div>
+
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="imapTls"
+                      checked={newCredential.imapTls}
+                      onChange={(e) => setNewCredential({ ...newCredential, imapTls: e.target.checked })}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm text-slate-700">Use TLS/SSL</span>
+                  </label>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
-                <input
-                  type="text"
-                  className="w-full rounded border border-slate-300 px-3 py-2"
-                  placeholder="Usually same as email address"
-                  value={newCredential.imapUsername}
-                  onChange={(e) => setNewCredential({ ...newCredential, imapUsername: e.target.value })}
-                />
-              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Username *</label>
+                  <input
+                    type="text"
+                    className="w-full rounded border border-slate-300 px-3 py-2"
+                    placeholder="Usually same as email address"
+                    value={newCredential.imapUsername}
+                    onChange={(e) => setNewCredential({ ...newCredential, imapUsername: e.target.value })}
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-                <input
-                  type="password"
-                  className="w-full rounded border border-slate-300 px-3 py-2"
-                  placeholder="App-specific password (for Gmail)"
-                  value={newCredential.imapPassword}
-                  onChange={(e) => setNewCredential({ ...newCredential, imapPassword: e.target.value })}
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  For Gmail: Use App Password (2FA required). For Outlook: Use account password.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="imapTls"
-                  checked={newCredential.imapTls}
-                  onChange={(e) => setNewCredential({ ...newCredential, imapTls: e.target.checked })}
-                />
-                <label htmlFor="imapTls" className="text-sm text-slate-700">Use TLS/SSL (Recommended)</label>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Password *</label>
+                  <input
+                    type="password"
+                    className="w-full rounded border border-slate-300 px-3 py-2"
+                    placeholder="App password for Gmail, account password for Outlook"
+                    value={newCredential.imapPassword}
+                    onChange={(e) => setNewCredential({ ...newCredential, imapPassword: e.target.value })}
+                  />
+                </div>
               </div>
             </>
           )}
