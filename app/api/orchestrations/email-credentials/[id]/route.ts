@@ -11,7 +11,7 @@ import { getCurrentAdminSession } from "@/lib/admin/session";
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getCurrentAdminSession();
@@ -23,7 +23,7 @@ export async function DELETE(
       );
     }
 
-    const credentialId = params.id;
+    const { id: credentialId } = await params;
     const companyId = session.user.tenantId;
 
     const pool = getPool();
@@ -88,7 +88,7 @@ export async function DELETE(
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getCurrentAdminSession();
@@ -100,7 +100,7 @@ export async function PATCH(
       );
     }
 
-    const credentialId = params.id;
+    const { id: credentialId } = await params;
     const companyId = session.user.tenantId;
     const updatedBy = session.user.email;
 
