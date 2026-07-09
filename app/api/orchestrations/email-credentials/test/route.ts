@@ -10,9 +10,11 @@ import { getPool } from "@/lib/db/pool";
  * Test email credentials (IMAP connection)
  */
 export async function POST(request: NextRequest) {
+  let credentialIdForError: string | null = null;
   try {
     const body = await request.json();
     const { credentialId, provider, imapHost, imapPort, imapUsername, imapPassword, imapTls } = body;
+    credentialIdForError = credentialId || null;
 
     // Test existing credential by ID
     if (credentialId) {
@@ -108,9 +110,8 @@ export async function POST(request: NextRequest) {
     console.error("[API] Error testing email credentials:", error);
     
     // Update failed test status if testing existing credential
-    if (request.json && (await request.json()).credentialId) {
+    if (credentialIdForError) {
       try {
-        const { credentialId } = await request.json();
         const pool = getPool();
         await pool.query(
           `UPDATE email_credentials
@@ -118,7 +119,7 @@ export async function POST(request: NextRequest) {
                last_test_status = 'failed',
                last_test_error = $1
            WHERE id = $2`,
-          [error.message, credentialId]
+          [error.message, credentialIdForError]
         );
       } catch (updateError) {
         console.error("[API] Error updating test status:", updateError);

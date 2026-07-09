@@ -39,6 +39,7 @@ export function EmailCredentialsManager() {
     imapTls: true,
   });
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -132,6 +133,34 @@ export function EmailCredentialsManager() {
       setMessage({ type: "error", text: error.message });
     } finally {
       setTestingId(null);
+    }
+  }
+
+  async function handleDeleteCredential(credentialId: string, credentialName: string) {
+    if (!confirm(`Are you sure you want to delete "${credentialName}"? This cannot be undone.`)) {
+      return;
+    }
+
+    setDeletingId(credentialId);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/orchestrations/email-credentials/${credentialId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMessage({ type: "success", text: "Email credential deleted successfully" });
+        await loadCredentials();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to delete credential" });
+      }
+    } catch (error: any) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -293,6 +322,7 @@ export function EmailCredentialsManager() {
         <table className="w-full">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
+              <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700 w-16">S.No</th>
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Name</th>
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Email</th>
               <th className="text-left px-6 py-3 text-sm font-semibold text-slate-700">Provider</th>
@@ -304,13 +334,14 @@ export function EmailCredentialsManager() {
           <tbody className="divide-y divide-slate-200">
             {credentials.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
                   No email credentials configured yet. Add one to get started.
                 </td>
               </tr>
             ) : (
-              credentials.map((cred) => (
+              credentials.map((cred, index) => (
                 <tr key={cred.id} className="hover:bg-slate-50">
+                  <td className="px-6 py-4 text-sm text-slate-600 font-medium">{index + 1}</td>
                   <td className="px-6 py-4 text-sm text-slate-900">{cred.name}</td>
                   <td className="px-6 py-4 text-sm text-slate-600">{cred.email_address}</td>
                   <td className="px-6 py-4 text-sm">
@@ -340,13 +371,22 @@ export function EmailCredentialsManager() {
                     )}
                   </td>
                   <td className="px-6 py-4 text-sm">
-                    <button
-                      onClick={() => handleTestCredential(cred.id)}
-                      disabled={testingId === cred.id}
-                      className="text-blue-600 hover:text-blue-800 disabled:text-slate-400 disabled:cursor-not-allowed"
-                    >
-                      {testingId === cred.id ? "Testing..." : "Test Connection"}
-                    </button>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={() => handleTestCredential(cred.id)}
+                        disabled={testingId === cred.id || deletingId === cred.id}
+                        className="text-blue-600 hover:text-blue-800 disabled:text-slate-400 disabled:cursor-not-allowed"
+                      >
+                        {testingId === cred.id ? "Testing..." : "Test"}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCredential(cred.id, cred.name)}
+                        disabled={testingId === cred.id || deletingId === cred.id}
+                        className="text-red-600 hover:text-red-800 disabled:text-slate-400 disabled:cursor-not-allowed"
+                      >
+                        {deletingId === cred.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))
