@@ -100,15 +100,14 @@ export async function DELETE(
     }
 
     const { id: credentialId } = await params;
-    const companyId = session.user.tenantId;
 
     const pool = getPool();
 
-    // Check if credential exists and belongs to this company
+    // Check if credential exists
     const checkResult = await pool.query(
       `SELECT id FROM email_credentials
-       WHERE id = $1 AND company_id = $2`,
-      [credentialId, companyId]
+       WHERE id = $1`,
+      [credentialId]
     );
 
     if (checkResult.rowCount === 0) {
@@ -177,7 +176,6 @@ export async function PATCH(
     }
 
     const { id: credentialId } = await params;
-    const companyId = session.user.tenantId;
     const updatedBy = session.user.email;
 
     const body = await request.json();
@@ -198,11 +196,11 @@ export async function PATCH(
     try {
       await client.query('BEGIN');
 
-      // Check if credential exists and belongs to this company
+      // Check if credential exists
       const checkResult = await client.query(
         `SELECT provider FROM email_credentials
-         WHERE id = $1 AND company_id = $2`,
-        [credentialId, companyId]
+         WHERE id = $1`,
+        [credentialId]
       );
 
       if (checkResult.rowCount === 0) {

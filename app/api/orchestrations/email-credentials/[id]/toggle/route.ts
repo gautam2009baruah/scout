@@ -24,15 +24,14 @@ export async function PATCH(
     }
 
     const { id: credentialId } = await params;
-    const companyId = session.user.tenantId;
 
     const pool = getPool();
 
-    // Check if credential exists and belongs to this company
+    // Check if credential exists
     const checkResult = await pool.query(
       `SELECT is_active FROM email_credentials
-       WHERE id = $1 AND company_id = $2`,
-      [credentialId, companyId]
+       WHERE id = $1`,
+      [credentialId]
     );
 
     if (checkResult.rowCount === 0) {
