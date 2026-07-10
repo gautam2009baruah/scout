@@ -7,11 +7,10 @@ import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, 
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
 import HealingSuggestionReviewer from "./healing-suggestion-reviewer-panel";
 
-type CompanyOption = { id: string; name: string };
-
 type GuidedWorkflowManagerProps = {
-  companies: CompanyOption[];
   guides: GuidedWorkflowRow[];
+  selectedCompanyId: string;
+  selectedCompanyName?: string;
   recordingSessions: GuidedWorkflowRecordingSessionRow[];
   targetApps: GuidedWorkflowTargetAppRow[];
 };
@@ -53,15 +52,16 @@ function getScoutBaseUrl() {
   return "http://localhost:3000";
 }
 
-export function GuidedWorkflowManager({ companies, guides, recordingSessions, targetApps }: GuidedWorkflowManagerProps) {
+export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompanyName, recordingSessions, targetApps }: GuidedWorkflowManagerProps) {
   const [apps, setApps] = useState(targetApps);
   const [sessions, setSessions] = useState(recordingSessions);
   const [items, setItems] = useState(guides);
-  const [selectedId, setSelectedId] = useState(guides[0]?.id ?? "");
-  const selected = useMemo(() => items.find((guide) => guide.id === selectedId) ?? items[0] ?? null, [items, selectedId]);
+  const companyGuides = useMemo(() => items.filter((guide) => !selectedCompanyId || guide.companyId === selectedCompanyId), [items, selectedCompanyId]);
+  const [selectedId, setSelectedId] = useState(companyGuides[0]?.id ?? "");
+  const selected = useMemo(() => companyGuides.find((guide) => guide.id === selectedId) ?? companyGuides[0] ?? null, [companyGuides, selectedId]);
   const [editor, setEditor] = useState<EditorState>(() => editorFromGuide(selected));
   const [setupForm, setSetupForm] = useState({
-    companyId: companies[0]?.id ?? "",
+    companyId: selectedCompanyId,
     targetAppMode: "new",
     targetAppId: "",
     appName: "",
@@ -74,28 +74,38 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(() => new Set(recordingSessions.map((session) => session.id)));
   const [sessionDetails, setSessionDetails] = useState<SessionDetailsState>({ session: null, actions: [] });
   const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>({ status: "idle", message: "" });
-  const firstCompanyId = companies[0]?.id ?? "";
-  const firstTargetAppId = apps.find((app) => app.companyId === firstCompanyId)?.id ?? "";
-  const [draftFilters, setDraftFilters] = useState({ companyId: firstCompanyId, targetAppId: firstTargetAppId, title: "" });
-  const [filters, setFilters] = useState({ companyId: firstCompanyId, targetAppId: firstTargetAppId, title: "" });
-  const filterApps = apps.filter((app) => app.companyId === draftFilters.companyId);
+  const firstTargetAppId = apps.find((app) => app.companyId === selectedCompanyId)?.id ?? "";
+  const [draftFilters, setDraftFilters] = useState({ targetAppId: firstTargetAppId, title: "" });
+  const [filters, setFilters] = useState({ targetAppId: firstTargetAppId, title: "" });
+  const filterApps = apps.filter((app) => app.companyId === selectedCompanyId);
   const filteredSessions = useMemo(() => sessions.filter((session) => {
-    const matchesCompany = session.companyId === filters.companyId;
+    const matchesCompany = session.companyId === selectedCompanyId;
     const matchesTargetApp = session.targetAppId === filters.targetAppId;
     const filterTitle = filters.title.trim().toLowerCase();
     const matchesTitle = !filterTitle || session.title.toLowerCase().includes(filterTitle) || session.topics.some((topic) => topic.title.toLowerCase().includes(filterTitle));
     return matchesCompany && matchesTargetApp && matchesTitle;
-  }), [filters.companyId, filters.targetAppId, filters.title, sessions]);
+  }), [filters.targetAppId, filters.title, selectedCompanyId, sessions]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === selectedSessionId) ?? null, [sessions, selectedSessionId]);
   const selectedTopic = useMemo(() => sessions.flatMap((session) => session.topics).find((topic) => topic.id === selectedTopicId) ?? null, [sessions, selectedTopicId]);
   const selectedRecorderConfig = selectedSession && selectedTopic ? recorderConfigForTopic(selectedTopic, selectedSession) : null;
 
   useEffect(() => {
-    const nextApps = apps.filter((app) => app.companyId === draftFilters.companyId);
+    const nextApps = apps.filter((app) => app.companyId === selectedCompanyId);
     if (!nextApps.some((app) => app.id === draftFilters.targetAppId)) {
       setDraftFilters((current) => ({ ...current, targetAppId: nextApps[0]?.id ?? "" }));
     }
-  }, [apps, draftFilters.companyId, draftFilters.targetAppId]);
+  }, [apps, draftFilters.targetAppId, selectedCompanyId]);
+
+  useEffect(() => {
+    const nextTargetAppId = apps.find((app) => app.companyId === selectedCompanyId)?.id ?? "";
+    setSetupForm((current) => ({
+      ...current,
+      companyId: selectedCompanyId,
+      targetAppId: current.targetAppMode === "existing" ? nextTargetAppId : current.targetAppId
+    }));
+    setDraftFilters({ targetAppId: nextTargetAppId, title: "" });
+    setFilters({ targetAppId: nextTargetAppId, title: "" });
+  }, [apps, selectedCompanyId]);
 
   useEffect(() => {
     const allTopicIds = new Set(filteredSessions.flatMap((session) => session.topics.map((topic) => topic.id)));
@@ -200,7 +210,7 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        companyId: setupForm.companyId,
+        companyId: selectedCompanyId,
         name: setupForm.appName,
         baseUrl: setupForm.baseUrl,
         allowedOrigins: splitLines(setupForm.allowedOrigins)
@@ -243,7 +253,7 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        companyId: setupForm.companyId,
+        companyId: selectedCompanyId,
         targetAppId,
         title: setupForm.sessionTitle
       })
@@ -513,9 +523,7 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
           <Field label="Company">
-            <select className="input" onChange={(event) => setDraftFilters({ companyId: event.target.value, targetAppId: apps.find((app) => app.companyId === event.target.value)?.id ?? "", title: "" })} required value={draftFilters.companyId}>
-              {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-            </select>
+            <div className="input flex h-10 items-center bg-slate-50 text-slate-600">{selectedCompanyName || "Selected company"}</div>
           </Field>
           <Field label="Target app">
             <select className="input" onChange={(event) => setDraftFilters((current) => ({ ...current, targetAppId: event.target.value, title: "" }))} required value={draftFilters.targetAppId}>
@@ -527,7 +535,7 @@ export function GuidedWorkflowManager({ companies, guides, recordingSessions, ta
           </Field>
           <button
             className="mt-auto inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!draftFilters.companyId || !draftFilters.targetAppId}
+            disabled={!draftFilters.targetAppId}
             onClick={() => setFilters(draftFilters)}
             type="button"
           >
