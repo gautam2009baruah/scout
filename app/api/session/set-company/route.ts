@@ -33,8 +33,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Failed to switch company" }, { status: 500 });
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     success: true,
     message: "Company context switched successfully"
   });
+
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+
+  return response;
 }

@@ -12,7 +12,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     currentCompanyId: session.user.tenantId,
     currentCompanyName: session.tenant.name,
     availableCompanies: session.availableCompanies.map(company => ({
@@ -24,4 +24,10 @@ export async function GET() {
       isPrimary: company.isPrimary
     }))
   });
+
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+
+  return response;
 }

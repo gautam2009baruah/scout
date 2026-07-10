@@ -26,13 +26,18 @@ export async function POST(request: Request) {
     expiresAt: login.session.expiresAt
   });
 
+  response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+
   response.cookies.set({
     name: ADMIN_SESSION_COOKIE,
     value: login.token,
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "strict",
     secure: process.env.NODE_ENV === "production",
-    path: "/"
+    path: "/",
+    maxAge: 15 * 60
   });
 
   return response;

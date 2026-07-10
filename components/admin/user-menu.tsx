@@ -66,7 +66,7 @@ export function UserMenu({ name }: { name: string }) {
       
       await fetch("/api/admin/auth/logout", { method: "POST" });
     } finally {
-      window.location.href = "/control-panel/login";
+      window.location.replace("/control-panel/login");
     }
   }
 
