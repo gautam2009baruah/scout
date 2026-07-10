@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, Bot, ChevronLeft, ChevronRight, Clock, Download, HeartPulse, ListFilter, RotateCcw, TimerReset, TrendingUp } from "lucide-react";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
 
-type CompanyOption = { id: string; name: string };
-
 type AnalyticsResponse = {
   summary: {
     totalExecutions: number;
@@ -80,15 +78,14 @@ const emptyRawData: RawAnalyticsResponse = {
   },
 };
 
-export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], recordingSessions = [] }: {
-  companies?: CompanyOption[];
+export function WorkflowAnalyticsDashboard({ selectedCompanyId = "", targetApps = [], recordingSessions = [] }: {
+  selectedCompanyId?: string;
   targetApps?: GuidedWorkflowTargetAppRow[];
   recordingSessions?: GuidedWorkflowRecordingSessionRow[];
 }) {
   const [days, setDays] = useState("30");
   const [appliedDays, setAppliedDays] = useState("30");
   const [filters, setFilters] = useState({
-    companyId: companies[0]?.id ?? "",
     targetAppId: "",
     sessionId: "",
     topicId: "all"
@@ -104,16 +101,16 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
   const [rawPageSize, setRawPageSize] = useState(25);
 
   const filteredTargetApps = useMemo(
-    () => targetApps.filter((app) => !filters.companyId || app.companyId === filters.companyId),
-    [filters.companyId, targetApps]
+    () => targetApps.filter((app) => !selectedCompanyId || app.companyId === selectedCompanyId),
+    [selectedCompanyId, targetApps]
   );
   const filteredRecordingSessions = useMemo(
     () => recordingSessions.filter((session) => {
-      const matchesCompany = !filters.companyId || session.companyId === filters.companyId;
+      const matchesCompany = !selectedCompanyId || session.companyId === selectedCompanyId;
       const matchesTargetApp = !filters.targetAppId || session.targetAppId === filters.targetAppId;
       return matchesCompany && matchesTargetApp;
     }),
-    [filters.companyId, filters.targetAppId, recordingSessions]
+    [selectedCompanyId, filters.targetAppId, recordingSessions]
   );
   const filteredTopics = useMemo(
     () => filteredRecordingSessions
@@ -132,10 +129,16 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
     });
   }, [filteredRecordingSessions, filteredTargetApps, filteredTopics]);
 
+  useEffect(() => {
+    setFilters({ targetAppId: "", sessionId: "", topicId: "all" });
+    setAppliedFilters({ targetAppId: "", sessionId: "", topicId: "all" });
+    setRawPage(1);
+  }, [selectedCompanyId]);
+
   function buildQueryString(includeRawParams = false) {
     const params = new URLSearchParams();
     params.set("days", appliedDays);
-    if (appliedFilters.companyId) params.set("companyId", appliedFilters.companyId);
+    if (selectedCompanyId) params.set("companyId", selectedCompanyId);
     if (appliedFilters.targetAppId) params.set("targetAppId", appliedFilters.targetAppId);
     if (appliedFilters.sessionId) params.set("sessionId", appliedFilters.sessionId);
     if (appliedFilters.topicId && appliedFilters.topicId !== "all") params.set("topicId", appliedFilters.topicId);
@@ -194,7 +197,7 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
     return () => {
       cancelled = true;
     };
-  }, [appliedDays, appliedFilters.companyId, appliedFilters.targetAppId, appliedFilters.sessionId, appliedFilters.topicId, rawPage, rawPageSize]);
+  }, [appliedDays, appliedFilters.targetAppId, appliedFilters.sessionId, appliedFilters.topicId, rawPage, rawPageSize, selectedCompanyId]);
 
   const summary = data.summary;
 
@@ -232,7 +235,7 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
 
   return (
     <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
-      <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]">
+      <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
         <FilterSelect
           label="Date range"
           onChange={(days) => setDays(days)}
@@ -242,13 +245,6 @@ export function WorkflowAnalyticsDashboard({ companies = [], targetApps = [], re
           <option value="30">Last 30 days</option>
           <option value="90">Last 90 days</option>
           <option value="365">Last 365 days</option>
-        </FilterSelect>
-        <FilterSelect
-          label="Company"
-          onChange={(companyId) => setFilters({ companyId, targetAppId: "", sessionId: "", topicId: "all" })}
-          value={filters.companyId}
-        >
-          {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
         </FilterSelect>
         <FilterSelect
           label="Target app"
