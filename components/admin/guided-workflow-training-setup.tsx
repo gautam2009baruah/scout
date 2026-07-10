@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Clipboard, Download, Edit3, Globe2, Info, Plus, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Clipboard, Download, Edit3, Globe2, Info, Plus, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 import type { CompanyTargetApplication } from "@/lib/admin/administration";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
 
@@ -31,6 +31,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
   const [appliedTopicFilter, setAppliedTopicFilter] = useState("");
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(() => new Set(recordingSessions.map((session) => session.id)));
   const [topicDialog, setTopicDialog] = useState<{ mode: "create" | "edit"; sessionId: string; topic?: GuidedWorkflowTopicRow; title: string } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [pluginHelpOpen, setPluginHelpOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState("");
   const pluginHelpRef = useRef<HTMLDivElement | null>(null);
@@ -236,36 +237,46 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
     showToast(isCreate ? "Topic created." : "Topic updated.", "success");
   }
 
-  async function deleteTopic(topic: GuidedWorkflowTopicRow) {
-    if (!window.confirm("Delete this topic and its guide?")) return;
-    const response = await fetch(`/api/admin/guided-workflow-topics/${topic.id}`, { method: "DELETE" });
-    const body = await response.json().catch(() => null);
+  function requestDeleteTopic(topic: GuidedWorkflowTopicRow) {
+    setConfirmDialog({
+      message: "Delete this topic and its guide?",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const response = await fetch(`/api/admin/guided-workflow-topics/${topic.id}`, { method: "DELETE" });
+        const body = await response.json().catch(() => null);
 
-    if (!response.ok) {
-      showToast(typeof body?.message === "string" ? body.message : "Unable to delete topic.", "error");
-      return;
-    }
+        if (!response.ok) {
+          showToast(typeof body?.message === "string" ? body.message : "Unable to delete topic.", "error");
+          return;
+        }
 
-    setSessions((current) => current.map((session) => session.id === topic.recordingSessionId ? { ...session, topics: session.topics.filter((item) => item.id !== topic.id) } : session));
-    showToast("Topic deleted.", "success");
+        setSessions((current) => current.map((session) => session.id === topic.recordingSessionId ? { ...session, topics: session.topics.filter((item) => item.id !== topic.id) } : session));
+        showToast("Topic deleted.", "success");
+      }
+    });
   }
 
-  async function deleteRecordingSession(sessionId: string) {
-    if (!window.confirm("Delete this recording session and all its topics?")) return;
-    const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionId}`, { method: "DELETE" });
-    const body = await response.json().catch(() => null);
+  function requestDeleteRecordingSession(sessionId: string) {
+    setConfirmDialog({
+      message: "Delete this recording session and all its topics?",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionId}`, { method: "DELETE" });
+        const body = await response.json().catch(() => null);
 
-    if (!response.ok) {
-      showToast(typeof body?.message === "string" ? body.message : "Unable to delete session.", "error");
-      return;
-    }
+        if (!response.ok) {
+          showToast(typeof body?.message === "string" ? body.message : "Unable to delete session.", "error");
+          return;
+        }
 
-    setSessions((current) => current.filter((session) => session.id !== sessionId));
-    if (appliedSessionFilter === sessionId) {
-      setAppliedSessionFilter("");
-      setPendingSessionFilter("");
-    }
-    showToast("Training session deleted.", "success");
+        setSessions((current) => current.filter((session) => session.id !== sessionId));
+        if (appliedSessionFilter === sessionId) {
+          setAppliedSessionFilter("");
+          setPendingSessionFilter("");
+        }
+        showToast("Training session deleted.", "success");
+      }
+    });
   }
 
   async function moveTopic(topic: GuidedWorkflowTopicRow, move: "up" | "down") {
@@ -321,6 +332,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
           <button
             aria-expanded={pluginHelpOpen}
             aria-label="Recorder plugin installation instructions"
+            title="Recorder plugin installation instructions"
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-50 hover:text-slate-950"
             onClick={() => setPluginHelpOpen((open) => !open)}
             type="button"
@@ -337,7 +349,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
                 <p className="text-sm font-semibold text-slate-950">Install recorder extension</p>
                 <p className="mt-1 text-xs leading-5 text-slate-500">Download, unzip, then load the folder as an unpacked browser extension.</p>
               </div>
-              <button aria-label="Close instructions" className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-950" onClick={() => setPluginHelpOpen(false)} type="button">
+              <button aria-label="Close instructions" className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-950" onClick={() => setPluginHelpOpen(false)} title="Close instructions" type="button">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -371,7 +383,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
         </div>
 
         <div className="mt-4 grid gap-3">
-          <div className="grid gap-3 lg:grid-cols-3">
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
             <Field label="Target app">
               <select className="input" onChange={(event) => updateSetup({ targetAppId: event.target.value })} value={setupForm.targetAppId}>
                 <option value="">Select target app</option>
@@ -383,7 +395,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
               <input className="input" placeholder="New training session" onChange={(event) => updateSetup({ sessionTitle: event.target.value })} value={setupForm.sessionTitle} />
               {duplicateSessionTitle ? <p className="mt-1 text-xs text-red-600">This session title already exists for the selected app.</p> : null}
             </Field>
-            <div className="self-end">
+            <div className="md:w-auto md:min-w-[210px]">
               <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={!setupForm.targetAppId || !trimmedSessionTitle || duplicateSessionTitle || state.status === "submitting"} onClick={createRecordingSession} type="button">
                 <Plus className="h-4 w-4" />Create training session
               </button>
@@ -458,8 +470,8 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
                     <td className="px-4 py-4 align-top text-sm text-slate-700">{sessionTopics.length === 0 ? "No topics" : "Topics available"}</td>
                     <td className="px-4 py-4 align-top text-sm text-slate-700">{sessionTopics.length}</td>
                     <td className="px-4 py-4 align-top text-right text-sm font-medium">
-                      <button className="mr-2 inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setTopicDialog({ mode: "create", sessionId: session.id, title: "" })} type="button">Add topic</button>
-                      <button aria-label="Delete session" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={() => deleteRecordingSession(session.id)} type="button"><Trash2 className="h-4 w-4" /></button>
+                      <button className="mr-2 inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setTopicDialog({ mode: "create", sessionId: session.id, title: "" })} title="Add topic" type="button">Add topic</button>
+                      <button aria-label="Delete session" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={() => requestDeleteRecordingSession(session.id)} title="Delete session" type="button"><Trash2 className="h-4 w-4" /></button>
                     </td>
                   </tr>
 
@@ -474,16 +486,16 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
                         <button
                           aria-label={topic.analyticsLoggingEnabled ? "Disable playback logging" : "Enable playback logging"}
                           aria-pressed={topic.analyticsLoggingEnabled}
-                          className={`mr-2 relative inline-flex h-6 w-11 align-middle rounded-full transition focus:outline-none focus:ring-2 focus:ring-slate-900 focus:ring-offset-2 ${topic.analyticsLoggingEnabled ? "bg-emerald-500" : "bg-slate-300"}`}
+                          className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900"
                           onClick={() => toggleTopicAnalytics(topic)}
-                          title="Enable or disable workflow playback analytics logging for this topic."
+                          title={topic.analyticsLoggingEnabled ? "Disable playback logging" : "Enable playback logging"}
                           type="button"
                         >
-                          <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${topic.analyticsLoggingEnabled ? "left-6" : "left-1"}`} />
+                          {topic.analyticsLoggingEnabled ? <ToggleRight className="h-4 w-4 text-emerald-600" /> : <ToggleLeft className="h-4 w-4 text-slate-400" />}
                         </button>
-                        <button aria-label="Recorder config" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setConfigTopicId(topic.id)} type="button"><Clipboard className="h-4 w-4" /></button>
-                      <button aria-label="Edit topic" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setTopicDialog({ mode: "edit", sessionId: session.id, topic, title: topic.title })} type="button"><Edit3 className="h-4 w-4" /></button>
-                        <button aria-label="Delete topic" className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:text-red-800" onClick={() => deleteTopic(topic)} type="button"><Trash2 className="h-4 w-4" /></button>
+                        <button aria-label="Recorder config" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setConfigTopicId(topic.id)} title="Recorder config" type="button"><Clipboard className="h-4 w-4" /></button>
+                      <button aria-label="Edit topic" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setTopicDialog({ mode: "edit", sessionId: session.id, topic, title: topic.title })} title="Edit topic" type="button"><Edit3 className="h-4 w-4" /></button>
+                        <button aria-label="Delete topic" className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:text-red-800" onClick={() => requestDeleteTopic(topic)} title="Delete topic" type="button"><Trash2 className="h-4 w-4" /></button>
                       </td>
                     </tr>
                   ))}
@@ -531,6 +543,30 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
               <button className="inline-flex h-10 items-center justify-center rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" onClick={() => recorderConfigTopic && copyText("recorder-config", JSON.stringify(recorderConfigTopic, null, 2))} type="button">
                 {copiedKey === "recorder-config" ? <Check className="mr-2 h-4 w-4" /> : <Clipboard className="mr-2 h-4 w-4" />}
                 {copiedKey === "recorder-config" ? "Copied" : "Copy config"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDialog ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+            <p className="mb-6 text-sm text-slate-900">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+                onClick={() => setConfirmDialog(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                onClick={confirmDialog.onConfirm}
+                type="button"
+              >
+                Delete
               </button>
             </div>
           </div>

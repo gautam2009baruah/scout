@@ -330,6 +330,7 @@ const recordingSessionSelect = `
   FROM guided_workflow_recording_sessions
   INNER JOIN companies ON companies.id = guided_workflow_recording_sessions.company_id
   LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_recording_sessions.company_target_application_id
+    AND company_target_applications.deleted_at IS NULL
   LEFT JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = guided_workflow_recording_sessions.target_app_id
 `;
 
@@ -430,6 +431,7 @@ export async function listGuidedWorkflows(session: AdminSession) {
       `
         ${guideSelect}
         WHERE companies.deleted_at IS NULL
+          AND (guided_workflow_topics.id IS NULL OR guided_workflow_topics.deleted_at IS NULL)
           ${access}
         ORDER BY guided_workflow_guides.updated_at DESC
       `,
@@ -542,6 +544,7 @@ export async function listGuidedWorkflowRecordingSessions(session: AdminSession)
       `
         ${recordingSessionSelect}
         WHERE companies.deleted_at IS NULL
+          AND guided_workflow_recording_sessions.deleted_at IS NULL
           ${access}
         ORDER BY guided_workflow_recording_sessions.updated_at DESC
       `,
@@ -598,6 +601,8 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
         INNER JOIN companies ON companies.id = guided_workflow_topics.company_id
         LEFT JOIN guided_workflow_guides ON guided_workflow_guides.id = guided_workflow_topics.guide_id
         WHERE companies.deleted_at IS NULL
+          AND guided_workflow_recording_sessions.deleted_at IS NULL
+          AND guided_workflow_topics.deleted_at IS NULL
           ${access}
         ORDER BY guided_workflow_topics.recording_session_id, guided_workflow_topics.sort_order ASC, guided_workflow_topics.created_at ASC
       `,
@@ -727,7 +732,7 @@ export async function updateGuidedWorkflowRecordingSession(id: string, input: {
     fields.push(`title = $${params.length}`);
   }
 
-  await getPool().query(`UPDATE guided_workflow_recording_sessions SET ${fields.join(", ")} WHERE id = $1`, params);
+  await getPool().query(`UPDATE guided_workflow_recording_sessions SET ${fields.join(", ")} WHERE id = $1 AND deleted_at IS NULL`, params);
   return getGuidedWorkflowRecordingSessionById(id, session);
 }
 
@@ -737,8 +742,28 @@ export async function deleteGuidedWorkflowRecordingSession(id: string, session: 
 
   try {
     await client.query("BEGIN");
-    await client.query("DELETE FROM guided_workflow_guides WHERE topic_id IN (SELECT id FROM guided_workflow_topics WHERE recording_session_id = $1)", [id]);
-    await client.query("DELETE FROM guided_workflow_recording_sessions WHERE id = $1", [id]);
+    await client.query(
+      `
+        UPDATE guided_workflow_topics
+        SET deleted_at = now(),
+            updated_by = $2,
+            updated_at = now()
+        WHERE recording_session_id = $1
+          AND deleted_at IS NULL
+      `,
+      [id, session.user.id]
+    );
+    await client.query(
+      `
+        UPDATE guided_workflow_recording_sessions
+        SET deleted_at = now(),
+            updated_by = $2,
+            updated_at = now()
+        WHERE id = $1
+          AND deleted_at IS NULL
+      `,
+      [id, session.user.id]
+    );
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -771,6 +796,7 @@ export async function getGuidedWorkflowRecordingSessionById(id: string, session:
     `
       ${recordingSessionSelect}
       WHERE guided_workflow_recording_sessions.id = $1
+        AND guided_workflow_recording_sessions.deleted_at IS NULL
         ${access}
     `,
     params
@@ -807,7 +833,7 @@ export async function createGuidedWorkflowTopic(input: {
 
   const recorderToken = createRecorderToken();
   const orderResult = await getPool().query<{ next_order: number }>(
-    "SELECT COALESCE(MAX(sort_order) + 1, 0)::int AS next_order FROM guided_workflow_topics WHERE recording_session_id = $1",
+    "SELECT COALESCE(MAX(sort_order) + 1, 0)::int AS next_order FROM guided_workflow_topics WHERE recording_session_id = $1 AND deleted_at IS NULL",
     [recordingSession.id]
   );
   const result = await getPool().query<{ id: string }>(
@@ -860,14 +886,14 @@ export async function updateGuidedWorkflowTopic(id: string, input: {
     const title = input.title.trim();
     if (!title) throw new GuidedWorkflowError("Topic title is required.");
     await getPool().query(
-      "UPDATE guided_workflow_topics SET title = $2, updated_by = $3, updated_at = now() WHERE id = $1",
+      "UPDATE guided_workflow_topics SET title = $2, updated_by = $3, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
       [id, title, session.user.id]
     );
   }
 
   if (typeof input.analyticsLoggingEnabled === "boolean") {
     await getPool().query(
-      "UPDATE guided_workflow_topics SET analytics_logging_enabled = $2, updated_by = $3, updated_at = now() WHERE id = $1",
+      "UPDATE guided_workflow_topics SET analytics_logging_enabled = $2, updated_by = $3, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
       [id, input.analyticsLoggingEnabled, session.user.id]
     );
   }
@@ -892,10 +918,17 @@ export async function deleteGuidedWorkflowTopic(id: string, session: AdminSessio
 
   try {
     await client.query("BEGIN");
-    if (topic.guideId) {
-      await client.query("DELETE FROM guided_workflow_guides WHERE id = $1", [topic.guideId]);
-    }
-    await client.query("DELETE FROM guided_workflow_topics WHERE id = $1", [id]);
+    await client.query(
+      `
+        UPDATE guided_workflow_topics
+        SET deleted_at = now(),
+            updated_by = $2,
+            updated_at = now()
+        WHERE id = $1
+          AND deleted_at IS NULL
+      `,
+      [id, session.user.id]
+    );
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
@@ -978,6 +1011,8 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
         INNER JOIN guided_workflow_recording_sessions ON guided_workflow_recording_sessions.id = guided_workflow_topics.recording_session_id
         LEFT JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = guided_workflow_recording_sessions.target_app_id
         WHERE guided_workflow_topics.recorder_token_hash = $1
+          AND guided_workflow_topics.deleted_at IS NULL
+          AND guided_workflow_recording_sessions.deleted_at IS NULL
         FOR UPDATE OF guided_workflow_topics
       `,
       [tokenHash(token)]
@@ -1127,6 +1162,7 @@ export async function getGuidedWorkflowById(id: string, session: AdminSession) {
     `
       ${guideSelect}
       WHERE guided_workflow_guides.id = $1
+        AND (guided_workflow_topics.id IS NULL OR guided_workflow_topics.deleted_at IS NULL)
         ${access}
     `,
     params
@@ -1506,6 +1542,7 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
       LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
       WHERE guided_workflow_guides.target_app_id = $1
         AND guided_workflow_guides.status = 'published'
+        AND (guided_workflow_topics.id IS NULL OR guided_workflow_topics.deleted_at IS NULL)
       ORDER BY updated_at DESC
     `,
     [input.targetAppId]
@@ -1573,6 +1610,8 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
       WHERE guided_workflow_recording_sessions.target_app_id = $1
         AND guided_workflow_guides.target_app_id = $1
         AND guided_workflow_guides.status = 'published'
+        AND guided_workflow_recording_sessions.deleted_at IS NULL
+        AND guided_workflow_topics.deleted_at IS NULL
       ORDER BY guided_workflow_recording_sessions.updated_at DESC, guided_workflow_topics.sort_order ASC, guided_workflow_topics.created_at ASC
     `,
     [input.targetAppId]

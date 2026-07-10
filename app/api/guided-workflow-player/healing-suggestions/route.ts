@@ -189,8 +189,8 @@ export async function GET(request: NextRequest) {
       JOIN companies c ON s.company_id = c.id
       LEFT JOIN guided_workflow_target_apps ta ON w.target_app_id = ta.id
       LEFT JOIN users u ON s.reviewed_by = u.id
-      LEFT JOIN guided_workflow_topics t ON w.topic_id = t.id
-      LEFT JOIN guided_workflow_recording_sessions rs ON t.recording_session_id = rs.id
+      LEFT JOIN guided_workflow_topics t ON w.topic_id = t.id AND t.deleted_at IS NULL
+      LEFT JOIN guided_workflow_recording_sessions rs ON t.recording_session_id = rs.id AND rs.deleted_at IS NULL
       WHERE s.status = $1
         AND s.deleted_at IS NULL
     `;

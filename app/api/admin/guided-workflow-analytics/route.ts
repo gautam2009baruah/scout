@@ -54,7 +54,7 @@ export async function GET(request: Request) {
   }
   if (sessionId) {
     sqlParams.push(sessionId);
-    filter += ` AND topic.recording_session_id = $${sqlParams.length}`;
+    filter += ` AND topic.recording_session_id = $${sqlParams.length} AND session.deleted_at IS NULL`;
   }
   if (topicId) {
     sqlParams.push(topicId);
@@ -71,7 +71,8 @@ export async function GET(request: Request) {
         SELECT COUNT(*)::int AS total
         FROM step_executions se
         INNER JOIN guided_workflow_guides gw ON gw.id = se.workflow_id
-        LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id
+        LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id AND topic.deleted_at IS NULL
+        LEFT JOIN guided_workflow_recording_sessions session ON session.id = topic.recording_session_id AND session.deleted_at IS NULL
         WHERE ${filter}
       `,
       sqlParams
@@ -105,8 +106,8 @@ export async function GET(request: Request) {
         INNER JOIN guided_workflow_guides gw ON gw.id = se.workflow_id
         INNER JOIN companies company ON company.id = se.company_id
         LEFT JOIN guided_workflow_target_apps target_app ON target_app.id = gw.target_app_id
-        LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id
-        LEFT JOIN guided_workflow_recording_sessions session ON session.id = topic.recording_session_id
+        LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id AND topic.deleted_at IS NULL
+        LEFT JOIN guided_workflow_recording_sessions session ON session.id = topic.recording_session_id AND session.deleted_at IS NULL
         WHERE ${filter}
         ORDER BY se.started_at DESC
         LIMIT $${sqlParams.length + 2}
@@ -183,7 +184,8 @@ export async function GET(request: Request) {
           END AS workflow_status
         FROM step_executions se
         INNER JOIN guided_workflow_guides gw ON gw.id = se.workflow_id
-        LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id
+        LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id AND topic.deleted_at IS NULL
+        LEFT JOIN guided_workflow_recording_sessions session ON session.id = topic.recording_session_id AND session.deleted_at IS NULL
         WHERE ${filter}
         GROUP BY se.workflow_execution_id
       )
@@ -207,7 +209,8 @@ export async function GET(request: Request) {
         COUNT(*) FILTER (WHERE se.status = 'failed' AND NOT se.healing_used)::int AS failed_without_healing
       FROM step_executions se
       INNER JOIN guided_workflow_guides gw ON gw.id = se.workflow_id
-      LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id
+      LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id AND topic.deleted_at IS NULL
+      LEFT JOIN guided_workflow_recording_sessions session ON session.id = topic.recording_session_id AND session.deleted_at IS NULL
       WHERE ${filter}
     `,
     sqlParams
@@ -218,7 +221,8 @@ export async function GET(request: Request) {
       SELECT se.step_id, MAX(se.step_order)::int AS step_order, COUNT(*)::int AS failures
       FROM step_executions se
       INNER JOIN guided_workflow_guides gw ON gw.id = se.workflow_id
-      LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id
+      LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id AND topic.deleted_at IS NULL
+      LEFT JOIN guided_workflow_recording_sessions session ON session.id = topic.recording_session_id AND session.deleted_at IS NULL
       WHERE ${filter} AND se.status = 'failed'
       GROUP BY se.step_id
       ORDER BY failures DESC, step_order ASC
@@ -232,7 +236,8 @@ export async function GET(request: Request) {
       SELECT se.step_id, COUNT(*)::int AS healed_count
       FROM step_executions se
       INNER JOIN guided_workflow_guides gw ON gw.id = se.workflow_id
-      LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id
+      LEFT JOIN guided_workflow_topics topic ON topic.id = gw.topic_id AND topic.deleted_at IS NULL
+      LEFT JOIN guided_workflow_recording_sessions session ON session.id = topic.recording_session_id AND session.deleted_at IS NULL
       WHERE ${filter} AND se.healing_used AND se.status = 'completed'
       GROUP BY se.step_id
       ORDER BY healed_count DESC
