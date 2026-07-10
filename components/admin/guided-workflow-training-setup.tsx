@@ -389,7 +389,6 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
                 <option value="">Select target app</option>
                 {companyApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
               </select>
-              {selectedApp?.baseUrl ? <p className="mt-1 text-xs text-slate-500">{selectedApp.baseUrl}</p> : null}
             </Field>
             <Field label="Training session title">
               <input className="input" placeholder="New training session" onChange={(event) => updateSetup({ sessionTitle: event.target.value })} value={setupForm.sessionTitle} />
@@ -401,6 +400,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
               </button>
             </div>
           </div>
+          {selectedApp?.baseUrl ? <p className="text-xs text-slate-500">Target app URL: {selectedApp.baseUrl}</p> : null}
         </div>
       </section>
 
@@ -491,7 +491,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
                           title={topic.analyticsLoggingEnabled ? "Disable playback logging" : "Enable playback logging"}
                           type="button"
                         >
-                          {topic.analyticsLoggingEnabled ? <ToggleRight className="h-4 w-4 text-emerald-600" /> : <ToggleLeft className="h-4 w-4 text-slate-400" />}
+                          {topic.analyticsLoggingEnabled ? <ToggleRight className="h-5 w-5 text-emerald-600" /> : <ToggleLeft className="h-5 w-5 text-slate-400" />}
                         </button>
                         <button aria-label="Recorder config" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setConfigTopicId(topic.id)} title="Recorder config" type="button"><Clipboard className="h-4 w-4" /></button>
                       <button aria-label="Edit topic" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setTopicDialog({ mode: "edit", sessionId: session.id, topic, title: topic.title })} title="Edit topic" type="button"><Edit3 className="h-4 w-4" /></button>
