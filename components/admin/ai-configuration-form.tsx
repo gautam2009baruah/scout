@@ -345,46 +345,76 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
       {activeTab === "embedding" ? (
         <>
-          <form className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" onSubmit={saveEmbedding}>
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <form className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={saveEmbedding}>
+            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <Bot className="h-4 w-4" />
-              {embeddingDraft.id ? "Edit Embedding" : "Add Embedding"}
+              Embeddings Setup
             </div>
-            <div className="grid gap-3 xl:grid-cols-[160px_1fr_120px_1fr_1fr_auto_auto]">
-              <select
-                className="h-10 rounded-lg border border-slate-200 px-3 text-sm"
-                onChange={(event) => {
-                  const option = embeddingProviderMap.get(event.target.value);
-                  setEmbeddingDraft((prev) => ({
-                    ...prev,
-                    provider: event.target.value,
-                    model: option?.default_model || prev.model,
-                    dimension: option?.default_dimension ? String(option.default_dimension) : prev.dimension
-                  }));
-                }}
-                value={embeddingDraft.provider}
-              >
-                {embeddingProviders.map((provider) => (
-                  <option key={provider.key} value={provider.key}>{provider.name}</option>
-                ))}
-              </select>
-              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, model: event.target.value }))} placeholder="Model" value={embeddingDraft.model} />
-              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" min={1} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, dimension: event.target.value }))} placeholder="Dim" type="number" value={embeddingDraft.dimension} />
-              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="Endpoint" value={embeddingDraft.endpoint} />
-              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, api_key: event.target.value }))} placeholder="API key" value={embeddingDraft.api_key} />
-              <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                <input checked={embeddingDraft.is_active} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
-                Active
-              </label>
-              <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                <input checked={embeddingDraft.is_primary} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
-                Primary
-              </label>
+            <p className="mb-4 text-sm text-slate-500">
+              {embeddingDraft.id ? "Edit an existing embedding configuration." : "Create a new embedding configuration for this company."}
+            </p>
+
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Provider</span>
+                  <select
+                    className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
+                    onChange={(event) => {
+                      const option = embeddingProviderMap.get(event.target.value);
+                      setEmbeddingDraft((prev) => ({
+                        ...prev,
+                        provider: event.target.value,
+                        model: option?.default_model || prev.model,
+                        dimension: option?.default_dimension ? String(option.default_dimension) : prev.dimension
+                      }));
+                    }}
+                    value={embeddingDraft.provider}
+                  >
+                    {embeddingProviders.map((provider) => (
+                      <option key={provider.key} value={provider.key}>{provider.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Model</span>
+                  <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, model: event.target.value }))} placeholder="Model" value={embeddingDraft.model} />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Dimensions</span>
+                  <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" min={1} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, dimension: event.target.value }))} placeholder="Dimensions" type="number" value={embeddingDraft.dimension} />
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Endpoint</span>
+                  <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="Endpoint" value={embeddingDraft.endpoint} />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">API Key</span>
+                  <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, api_key: event.target.value }))} placeholder="API key" value={embeddingDraft.api_key} />
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                  <input checked={embeddingDraft.is_active} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
+                  Mark as active
+                </label>
+                <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                  <input checked={embeddingDraft.is_primary} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
+                  Mark as primary
+                </label>
+              </div>
             </div>
             <div className="mt-3 flex gap-2">
               <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={feedback.status === "submitting"} type="submit">
                 <Plus className="h-4 w-4" />
-                {embeddingDraft.id ? "Update" : "Create"}
+                {embeddingDraft.id ? "Update embedding" : "Create embedding"}
               </button>
               {embeddingDraft.id ? (
                 <button className="inline-flex h-10 items-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={resetEmbeddingDraft} type="button">
@@ -448,44 +478,70 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
       {activeTab === "llm" ? (
         <>
-          <form className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" onSubmit={saveLlm}>
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <form className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={saveLlm}>
+            <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <KeyRound className="h-4 w-4" />
-              {llmDraft.id ? "Edit LLM" : "Add LLM"}
+              LLM Setup
             </div>
-            <div className="grid gap-3 xl:grid-cols-[160px_1fr_1fr_1fr_auto_auto]">
-              <select
-                className="h-10 rounded-lg border border-slate-200 px-3 text-sm"
-                onChange={(event) => {
-                  const option = llmProviderMap.get(event.target.value);
-                  setLlmDraft((prev) => ({
-                    ...prev,
-                    provider: event.target.value,
-                    model: option?.default_model || prev.model
-                  }));
-                }}
-                value={llmDraft.provider}
-              >
-                {llmProviders.map((provider) => (
-                  <option key={provider.key} value={provider.key}>{provider.name}</option>
-                ))}
-              </select>
-              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, model: event.target.value }))} placeholder="Model" value={llmDraft.model} />
-              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="Endpoint" value={llmDraft.endpoint} />
-              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, api_key: event.target.value }))} placeholder="API key" value={llmDraft.api_key} />
-              <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                <input checked={llmDraft.is_active} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
-                Active
-              </label>
-              <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                <input checked={llmDraft.is_primary} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
-                Primary
-              </label>
+            <p className="mb-4 text-sm text-slate-500">
+              {llmDraft.id ? "Edit an existing LLM configuration." : "Create a new LLM configuration for this company."}
+            </p>
+
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Provider</span>
+                  <select
+                    className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
+                    onChange={(event) => {
+                      const option = llmProviderMap.get(event.target.value);
+                      setLlmDraft((prev) => ({
+                        ...prev,
+                        provider: event.target.value,
+                        model: option?.default_model || prev.model
+                      }));
+                    }}
+                    value={llmDraft.provider}
+                  >
+                    {llmProviders.map((provider) => (
+                      <option key={provider.key} value={provider.key}>{provider.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Model</span>
+                  <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, model: event.target.value }))} placeholder="Model" value={llmDraft.model} />
+                </label>
+
+                <label className="block md:col-span-2 xl:col-span-1">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Endpoint</span>
+                  <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="Endpoint" value={llmDraft.endpoint} />
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">API Key</span>
+                  <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, api_key: event.target.value }))} placeholder="API key" value={llmDraft.api_key} />
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                    <input checked={llmDraft.is_active} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
+                    Mark as active
+                  </label>
+                  <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                    <input checked={llmDraft.is_primary} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
+                    Mark as primary
+                  </label>
+                </div>
+              </div>
             </div>
             <div className="mt-3 flex gap-2">
               <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={feedback.status === "submitting"} type="submit">
                 <Plus className="h-4 w-4" />
-                {llmDraft.id ? "Update" : "Create"}
+                {llmDraft.id ? "Update LLM" : "Create LLM"}
               </button>
               {llmDraft.id ? (
                 <button className="inline-flex h-10 items-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={resetLlmDraft} type="button">
