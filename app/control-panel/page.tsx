@@ -10,6 +10,7 @@ import {
   UsersRound,
   Workflow
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { AdminShell } from "@/components/admin";
 import { getUserDashboardSummary } from "@/lib/admin/dashboard";
 import { MODULE_KEYS, hasModuleAccess } from "@/lib/admin/permissions";
@@ -67,7 +68,7 @@ export default async function AdminDashboardPage() {
     } : null
   ].filter(Boolean) as Array<{
     detail: string;
-    icon: typeof Building2;
+    icon: LucideIcon;
     label: string;
     tone: string;
     value: number | string;

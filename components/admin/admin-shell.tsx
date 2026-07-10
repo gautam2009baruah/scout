@@ -1,11 +1,30 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, SlidersHorizontal, Sparkles, TableProperties, UsersRound } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
-import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
 import { ScoutChatbot } from "@/components/scout-chatbot";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
+
+type AdminModuleKey = number;
+
+const MODULE_KEYS = {
+  overview: 1,
+  administration: 2,
+  userManagement: 3,
+  contentStructure: 4,
+  aiConfiguration: 5,
+  guidedWorkflows: 6,
+  workflowTrainingSetup: 7,
+  workflowSelfHealingReview: 8,
+  workflowAnalytics: 9,
+  orchestrationDesigner: 10,
+  emailCredentials: 11,
+  companyRoleSetup: 12,
+  triggersMonitoring: 13
+} as const;
 
 type AdminShellProps = {
   active: AdminModuleKey;
@@ -35,6 +54,24 @@ const CRS_SCOUT_BASE_URL = "http://localhost:3000";
 const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("scout-admin-sidebar-collapsed");
+    if (saved === "true") {
+      setIsSidebarCollapsed(true);
+    }
+  }, []);
+
+  function toggleDesktopSidebar() {
+    setIsSidebarCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem("scout-admin-sidebar-collapsed", String(next));
+      return next;
+    });
+  }
+
   // Get title from database if not explicitly provided
   // If activeHref is specified, find by href; otherwise find by key
   const pageTitle = title || 
@@ -63,62 +100,132 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     return children.some(child => child.key === active);
   };
 
+  const sidebarContent = (collapsed: boolean, closeMobileMenu?: () => void) => (
+    <>
+      <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
+        <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
+            <SlidersHorizontal className="h-5 w-5" />
+          </span>
+          {!collapsed ? <p className="text-base font-semibold text-slate-950">Control Panel</p> : null}
+        </div>
+        {!collapsed && !closeMobileMenu ? (
+          <button
+            aria-label="Collapse sidebar"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+            onClick={toggleDesktopSidebar}
+            title="Collapse sidebar"
+            type="button"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+        ) : null}
+        {closeMobileMenu ? (
+          <button
+            aria-label="Close navigation"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+            onClick={closeMobileMenu}
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : null}
+      </div>
+
+      {collapsed ? (
+        <button
+          aria-label="Expand sidebar"
+          className="mt-4 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+          onClick={toggleDesktopSidebar}
+          title="Expand sidebar"
+          type="button"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+      ) : null}
+
+      <nav className={`${collapsed ? "mt-4 flex flex-col items-center gap-1" : "mt-8 space-y-1"}`}>
+        {topLevelModules.map((module) => {
+          const children = modulesByParent.get(module.key) || [];
+          const hasChildren = children.length > 0;
+          const isActiveTree = isModuleOrChildActive(module.key);
+          const Icon = moduleIcons[module.key as keyof typeof moduleIcons] ?? LayoutDashboard;
+
+          if (collapsed) {
+            if (hasChildren) {
+              return (
+                <button
+                  aria-label={`${module.name}. Expand sidebar to view submenu.`}
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-lg transition ${
+                    isActiveTree
+                      ? "bg-slate-950 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                  }`}
+                  key={module.key}
+                  onClick={toggleDesktopSidebar}
+                  title={module.name}
+                  type="button"
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              );
+            }
+
+            return <NavLink active={active} activeHref={activeHref} collapsed key={module.key} module={module} onNavigate={closeMobileMenu} />;
+          }
+
+          if (hasChildren) {
+            return (
+              <details key={module.key} className="group" open>
+                <summary className={`flex h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-3 text-sm font-medium transition marker:hidden ${
+                  isActiveTree
+                    ? "bg-slate-100 text-slate-950"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                }`}>
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">{module.name}</span>
+                  <ChevronDown className="h-4 w-4 shrink-0 transition group-open:rotate-180" />
+                </summary>
+                <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
+                  {children.sort((a, b) => a.sortOrder - b.sortOrder).map((child) => (
+                    <NavLink active={active} activeHref={activeHref} inset key={child.key} module={child} onNavigate={closeMobileMenu} />
+                  ))}
+                </div>
+              </details>
+            );
+          }
+
+          return <NavLink key={module.key} active={active} activeHref={activeHref} module={module} onNavigate={closeMobileMenu} />;
+        })}
+      </nav>
+    </>
+  );
+
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
       <div className="flex min-h-screen">
-        <aside className="hidden w-72 border-r border-slate-200 bg-white px-4 py-5 lg:block">
-          <div className="flex items-center gap-3 px-2">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
-              <SlidersHorizontal className="h-5 w-5" />
-            </span>
-            <p className="text-base font-semibold text-slate-950">Control Panel</p>
-          </div>
-
-          <nav className="mt-8 space-y-1">
-            {topLevelModules.map((module) => {
-              const children = modulesByParent.get(module.key) || [];
-              const hasChildren = children.length > 0;
-              const isActiveTree = isModuleOrChildActive(module.key);
-
-              if (hasChildren) {
-                // Render as dropdown menu with children
-                return (
-                  <details key={module.key} className="group" open>
-                    <summary className={`flex h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-3 text-sm font-medium transition marker:hidden ${
-                      isActiveTree
-                        ? "bg-slate-100 text-slate-950"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
-                    }`}>
-                      {(() => {
-                        const Icon = moduleIcons[module.key as keyof typeof moduleIcons] ?? LayoutDashboard;
-                        return <Icon className="h-4 w-4" />;
-                      })()}
-                      <span className="flex-1">{module.name}</span>
-                      <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
-                    </summary>
-                    <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
-                      {children.sort((a, b) => a.sortOrder - b.sortOrder).map((child) => (
-                        <NavLink active={active} activeHref={activeHref} inset key={child.key} module={child} />
-                      ))}
-                    </div>
-                  </details>
-                );
-              } else {
-                // Render as regular link
-                return <NavLink key={module.key} active={active} activeHref={activeHref} module={module} />;
-              }
-            })}
-          </nav>
+        <aside className={`sticky top-0 hidden h-screen shrink-0 overflow-y-auto border-r border-slate-200 bg-white py-5 transition-[width] duration-200 lg:block ${isSidebarCollapsed ? "w-20 px-3" : "w-72 px-4"}`}>
+          {sidebarContent(isSidebarCollapsed)}
         </aside>
 
         <section className="flex min-h-screen min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-medium text-teal-700">{session.tenant.name}</p>
-                <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
+              <div className="flex min-w-0 items-start gap-3">
+                <button
+                  aria-label="Open navigation"
+                  className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 lg:hidden"
+                  onClick={() => setIsMobileMenuOpen(true)}
+                  type="button"
+                >
+                  <Menu className="h-5 w-5" />
+                </button>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-teal-700">{session.tenant.name}</p>
+                  <h1 className="truncate text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <CompanyContextSwitcher />
                 <UserMenu name={session.user.name} />
               </div>
@@ -134,6 +241,21 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           </footer>
         </section>
       </div>
+
+      {isMobileMenuOpen ? (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <button
+            aria-label="Close navigation overlay"
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setIsMobileMenuOpen(false)}
+            type="button"
+          />
+          <aside className="relative h-full w-80 max-w-[88vw] overflow-y-auto border-r border-slate-200 bg-white px-4 py-5 shadow-xl">
+            {sidebarContent(false, () => setIsMobileMenuOpen(false))}
+          </aside>
+        </div>
+      ) : null}
+
       <ScoutChatbot
         assistantName="Scout Assistant"
         companyId={session.user.tenantId}
@@ -156,28 +278,34 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 function NavLink({
   active,
   activeHref,
+  collapsed,
   inset,
-  module
+  module,
+  onNavigate
 }: {
   active: AdminModuleKey;
   activeHref?: string;
+  collapsed?: boolean;
   inset?: boolean;
   module: AdminSession["modules"][number];
+  onNavigate?: () => void;
 }) {
   const Icon = moduleIcons[module.key as keyof typeof moduleIcons] ?? LayoutDashboard;
   const isActive = module.key === active && (!activeHref || module.href === activeHref);
 
   return (
     <Link
-      className={`flex h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium transition ${
+      className={`flex h-11 items-center gap-3 rounded-lg text-sm font-medium transition ${collapsed ? "w-10 justify-center px-0" : "px-3"} ${
         isActive
           ? "bg-slate-950 text-white shadow-sm"
           : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
       }`}
       href={module.href}
+      onClick={onNavigate}
+      title={collapsed ? module.name : undefined}
     >
-      <Icon className="h-4 w-4" />
-      {module.name}
+      <Icon className="h-4 w-4 shrink-0" />
+      {collapsed ? <span className="sr-only">{module.name}</span> : <span className="min-w-0 truncate">{module.name}</span>}
     </Link>
   );
 }
