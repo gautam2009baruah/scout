@@ -51,7 +51,6 @@ import { ExecutionMonitor } from "./execution-monitor";
 import { OrchestrationList } from "./orchestration-list";
 import { isNodeCompatibleWithTrigger, getIncompatibilityReason } from "@/lib/orchestrations/node-compatibility";
 
-type CompanyOption = { id: string; name: string };
 type TargetAppOption = { id: string; name: string; companyId: string };
 
 const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: string }> = [
@@ -149,7 +148,7 @@ const nodeTypes: NodeTypes = {
   custom: CustomNode,
 };
 
-export function OrchestrationDesigner({ companies, targetApps }: { companies: CompanyOption[]; targetApps: TargetAppOption[] }) {
+export function OrchestrationDesigner({ selectedCompanyId, selectedCompanyName, targetApps }: { selectedCompanyId: string; selectedCompanyName?: string; targetApps: TargetAppOption[] }) {
   const [orchestration, setOrchestration] = useState<Orchestration | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -1098,7 +1097,8 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
       {/* Create Dialog */}
       {isCreateDialogOpen && (
         <CreateOrchestrationDialog
-          companies={companies}
+          selectedCompanyId={selectedCompanyId}
+          selectedCompanyName={selectedCompanyName}
           targetApps={targetApps}
           onClose={() => setIsCreateDialogOpen(false)}
           onCreate={(newOrchestration) => {
@@ -1193,31 +1193,32 @@ export function OrchestrationDesigner({ companies, targetApps }: { companies: Co
 }
 
 function CreateOrchestrationDialog({
-  companies,
+  selectedCompanyId,
+  selectedCompanyName,
   targetApps,
   onClose,
   onCreate,
 }: {
-  companies: CompanyOption[];
+  selectedCompanyId: string;
+  selectedCompanyName?: string;
   targetApps: TargetAppOption[];
   onClose: () => void;
   onCreate: (orchestration: Orchestration) => void;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [companyId, setCompanyId] = useState(companies[0]?.id || "");
   const [targetAppId, setTargetAppId] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Filter target apps by selected company
-  const companyTargetApps = targetApps.filter(app => app.companyId === companyId);
+  // Filter target apps by selected header company
+  const companyTargetApps = targetApps.filter((app) => app.companyId === selectedCompanyId);
 
-  // Update target app when company changes
-  const handleCompanyChange = (newCompanyId: string) => {
-    setCompanyId(newCompanyId);
-    setTargetAppId(""); // Reset target app when company changes
-  };
+  useEffect(() => {
+    if (!companyTargetApps.some((app) => app.id === targetAppId)) {
+      setTargetAppId("");
+    }
+  }, [companyTargetApps, targetAppId]);
 
   const handleCreate = async () => {
     setCreating(true);
@@ -1226,7 +1227,7 @@ function CreateOrchestrationDialog({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          companyId,
+          companyId: selectedCompanyId,
           targetAppId,
           name,
           description,
@@ -1276,17 +1277,9 @@ function CreateOrchestrationDialog({
           </div>
           <div>
             <label className="block text-sm font-semibold text-slate-600">Company</label>
-            <select
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={companyId}
-              onChange={(e) => handleCompanyChange(e.target.value)}
-            >
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
+            <div className="mt-1 flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+              {selectedCompanyName || "Selected company"}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-semibold text-slate-600">Target App</label>
@@ -1320,7 +1313,7 @@ function CreateOrchestrationDialog({
           </button>
           <button
             className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
-            disabled={!name || !companyId || !targetAppId || creating}
+            disabled={!name || !selectedCompanyId || !targetAppId || creating}
             onClick={handleCreate}
             type="button"
           >

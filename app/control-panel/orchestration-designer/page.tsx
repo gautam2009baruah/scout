@@ -5,7 +5,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin";
 import { OrchestrationDesigner } from "@/components/admin/orchestration-designer";
-import { getMasterData } from "@/lib/admin/administration";
 import { listGuidedWorkflowTargetApps } from "@/lib/admin/guided-workflows";
 import { MODULE_KEYS, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
@@ -28,17 +27,20 @@ export default async function OrchestrationDesignerPage() {
 
   requireModuleAccess(session, MODULE_KEYS.orchestrationDesigner);
 
-  const [{ companies }, targetApps] = await Promise.all([
-    getMasterData(),
-    listGuidedWorkflowTargetApps(session),
-  ]);
+  const selectedCompanyName = session.availableCompanies.find((company) => company.companyId === session.user.tenantId)?.companyName ?? "";
+
+  const targetApps = await listGuidedWorkflowTargetApps(session);
 
   return (
     <AdminShell
       active={MODULE_KEYS.orchestrationDesigner}
       session={session}
     >
-      <OrchestrationDesigner companies={companies} targetApps={targetApps} />
+      <OrchestrationDesigner
+        selectedCompanyId={session.user.tenantId}
+        selectedCompanyName={selectedCompanyName}
+        targetApps={targetApps}
+      />
     </AdminShell>
   );
 }
