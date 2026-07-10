@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Bot, KeyRound, Pencil, Plus, Star, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { Bot, KeyRound, Pencil, Plus, Star, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 
 type AIConfig = {
   active: {
@@ -126,6 +126,8 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
   const [activeTab, setActiveTab] = useState<"llm" | "embedding">("llm");
   const [adminConfig, setAdminConfig] = useState(config);
   const [feedback, setFeedback] = useState<Feedback>(initialFeedback);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [toastTimeout, setToastTimeout] = useState<NodeJS.Timeout | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
 
   const defaultEmbeddingProvider = embeddingProviders[0];
@@ -137,15 +139,13 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
   const embeddingProviderMap = useMemo(() => new Map(embeddingProviders.map((item) => [item.key, item])), [embeddingProviders]);
   const llmProviderMap = useMemo(() => new Map(llmProviders.map((item) => [item.key, item])), [llmProviders]);
 
-  async function refreshConfig() {
-    const response = await fetch("/admin/ai/config", { method: "GET" });
-    if (!response.ok) {
-      setFeedback({ message: await readMessage(response, "Unable to refresh AI configuration."), status: "error" });
-      return;
+  function showToast(message: string, type: "success" | "error" = "success") {
+    setToast({ message, type });
+    if (toastTimeout) {
+      clearTimeout(toastTimeout);
     }
-
-    const body = await response.json();
-    setAdminConfig(body);
+    const timeout = setTimeout(() => setToast(null), 3000);
+    setToastTimeout(timeout);
   }
 
   function resetEmbeddingDraft() {
@@ -160,7 +160,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
     event.preventDefault();
 
     if (!embeddingDraft.provider || !embeddingDraft.model.trim()) {
-      setFeedback({ message: "Provider and model are required.", status: "error" });
+      showToast("Provider and model are required.", "error");
       return;
     }
 
@@ -184,21 +184,23 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
     });
 
     if (!response.ok) {
-      setFeedback({ message: await readMessage(response, "Unable to save embedding configuration."), status: "error" });
+      setFeedback(initialFeedback);
+      showToast(await readMessage(response, "Unable to save embedding configuration."), "error");
       return;
     }
 
     const body = await response.json();
     setAdminConfig(body);
     resetEmbeddingDraft();
-    setFeedback({ message: embeddingDraft.id ? "Embedding configuration updated." : "Embedding configuration created.", status: "success" });
+    setFeedback(initialFeedback);
+    showToast(embeddingDraft.id ? "Embedding configuration updated." : "Embedding configuration created.", "success");
   }
 
   async function saveLlm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!llmDraft.provider || !llmDraft.model.trim()) {
-      setFeedback({ message: "Provider and model are required.", status: "error" });
+      showToast("Provider and model are required.", "error");
       return;
     }
 
@@ -221,14 +223,16 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
     });
 
     if (!response.ok) {
-      setFeedback({ message: await readMessage(response, "Unable to save LLM configuration."), status: "error" });
+      setFeedback(initialFeedback);
+      showToast(await readMessage(response, "Unable to save LLM configuration."), "error");
       return;
     }
 
     const body = await response.json();
     setAdminConfig(body);
     resetLlmDraft();
-    setFeedback({ message: llmDraft.id ? "LLM configuration updated." : "LLM configuration created.", status: "success" });
+    setFeedback(initialFeedback);
+    showToast(llmDraft.id ? "LLM configuration updated." : "LLM configuration created.", "success");
   }
 
   function editEmbedding(configItem: EmbeddingProviderConfig) {
@@ -268,13 +272,15 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
     });
 
     if (!response.ok) {
-      setFeedback({ message: await readMessage(response, "Unable to update configuration state."), status: "error" });
+      setFeedback(initialFeedback);
+      showToast(await readMessage(response, "Unable to update configuration state."), "error");
       return;
     }
 
     const body = await response.json();
     setAdminConfig(body);
-    setFeedback({ message: "Configuration updated.", status: "success" });
+    setFeedback(initialFeedback);
+    showToast("Configuration updated.", "success");
   }
 
   function requestDelete(type: "embedding" | "llm", id: string, label: string) {
@@ -291,35 +297,25 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
         });
 
         if (!response.ok) {
-          setFeedback({ message: await readMessage(response, "Unable to delete configuration."), status: "error" });
+          setFeedback(initialFeedback);
+          showToast(await readMessage(response, "Unable to delete configuration."), "error");
           return;
         }
 
         const body = await response.json();
         setAdminConfig(body);
-        setFeedback({ message: "Configuration deleted.", status: "success" });
+        setFeedback(initialFeedback);
+        showToast("Configuration deleted.", "success");
       }
     });
   }
 
   return (
-    <section className="grid gap-6">
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-950">AI Configuration</h2>
-            <p className="text-sm text-slate-500">Company scope: {companyName}</p>
-          </div>
-          <button
-            className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            onClick={refreshConfig}
-            type="button"
-          >
-            Refresh
-          </button>
-        </div>
+    <section className="grid gap-0">
+      <div className="rounded-t-lg border border-slate-200 border-b-0 bg-white px-4 pt-3">
+        <p className="text-xs font-medium text-slate-500">Company scope: {companyName}</p>
 
-        <div className="mt-4 border-b border-slate-200">
+        <div className="mt-2 border-b border-slate-200">
           <div aria-label="AI configuration sections" className="flex items-end gap-2" role="tablist">
             <button
               aria-controls="llm-panel"
@@ -353,16 +349,10 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
             </button>
           </div>
         </div>
-
-        {feedback.message ? (
-          <div className={`mt-4 rounded-lg px-3 py-2 text-sm ${feedback.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
-            {feedback.message}
-          </div>
-        ) : null}
       </div>
 
       {activeTab === "embedding" ? (
-        <div aria-labelledby="embedding-tab" className="rounded-lg border border-slate-200 bg-white shadow-sm" id="embedding-panel" role="tabpanel">
+        <div aria-labelledby="embedding-tab" className="rounded-b-lg border border-slate-200 border-t-0 bg-white shadow-sm" id="embedding-panel" role="tabpanel">
           <form className="p-5" onSubmit={saveEmbedding}>
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <Bot className="h-4 w-4" />
@@ -498,7 +488,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
       ) : null}
 
       {activeTab === "llm" ? (
-        <div aria-labelledby="llm-tab" className="rounded-lg border border-slate-200 bg-white shadow-sm" id="llm-panel" role="tabpanel">
+        <div aria-labelledby="llm-tab" className="rounded-b-lg border border-slate-200 border-t-0 bg-white shadow-sm" id="llm-panel" role="tabpanel">
           <form className="p-5" onSubmit={saveLlm}>
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <KeyRound className="h-4 w-4" />
@@ -541,22 +531,21 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                 </label>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 md:grid-cols-3">
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-slate-600">API Key</span>
                   <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, api_key: event.target.value }))} placeholder="API key" value={llmDraft.api_key} />
                 </label>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                    <input checked={llmDraft.is_active} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
-                    Mark as active
-                  </label>
-                  <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                    <input checked={llmDraft.is_primary} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
-                    Mark as primary
-                  </label>
-                </div>
+                <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                  <input checked={llmDraft.is_active} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
+                  Mark as active
+                </label>
+
+                <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                  <input checked={llmDraft.is_primary} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
+                  Mark as primary
+                </label>
               </div>
             </div>
             <div className="mt-3 flex gap-2">
@@ -645,6 +634,27 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                 Delete
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toast ? (
+        <div className="fixed right-4 top-20 z-[9999]">
+          <div
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 shadow-lg ${
+              toast.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
+            <span className="text-sm font-medium">{toast.message}</span>
+            <button
+              className="rounded p-0.5 transition-colors hover:bg-black/5"
+              onClick={() => setToast(null)}
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </div>
       ) : null}
