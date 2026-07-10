@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 
-type CompanyOption = { id: string; name: string };
 type TargetAppOption = { id: string; name: string; companyId: string };
 
 // Only automated trigger types are meaningful to monitor here.
@@ -149,10 +148,10 @@ function formatDateTime(dateStr: string | null) {
 }
 
 export function TriggersMonitoringDashboard({
-  companies = [],
+  selectedCompanyId = "",
   targetApps = [],
 }: {
-  companies?: CompanyOption[];
+  selectedCompanyId?: string;
   targetApps?: TargetAppOption[];
 }) {
   const [triggers, setTriggers] = useState<TriggerStatus[]>([]);
@@ -163,7 +162,6 @@ export function TriggersMonitoringDashboard({
     return {
       triggerType: "all",
       status: "all",
-      companyId: "all",
       targetAppId: "all",
       from,
       to,
@@ -187,9 +185,13 @@ export function TriggersMonitoringDashboard({
   const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
 
   const availableTargetApps =
-    filter.companyId === "all"
+    !selectedCompanyId
       ? targetApps
-      : targetApps.filter((app) => app.companyId === filter.companyId);
+      : targetApps.filter((app) => app.companyId === selectedCompanyId);
+
+  useEffect(() => {
+    setFilter((current) => ({ ...current, targetAppId: "all" }));
+  }, [selectedCompanyId]);
 
   const loadTriggers = async () => {
     setLoading(true);
@@ -201,7 +203,7 @@ export function TriggersMonitoringDashboard({
       const params = new URLSearchParams();
       if (filter.triggerType !== "all") params.append("triggerType", filter.triggerType);
       if (filter.status !== "all") params.append("status", filter.status);
-      if (filter.companyId !== "all") params.append("companyId", filter.companyId);
+      if (selectedCompanyId) params.append("companyId", selectedCompanyId);
       if (filter.targetAppId !== "all") params.append("targetAppId", filter.targetAppId);
       const fromIso = localInputToUtcIso(filter.from);
       const toIso = localInputToUtcIso(filter.to);
@@ -399,28 +401,6 @@ export function TriggersMonitoringDashboard({
       <div className="bg-white border border-slate-200 rounded-lg p-4">
         <div className="flex items-end gap-4 flex-wrap">
           <Filter className="h-5 w-5 text-slate-600 mb-2" />
-
-          {companies.length > 0 && (
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Company
-              </label>
-              <select
-                className="rounded border border-slate-300 px-3 py-1.5 text-sm"
-                value={filter.companyId}
-                onChange={(e) =>
-                  setFilter({ ...filter, companyId: e.target.value, targetAppId: "all" })
-                }
-              >
-                <option value="all">All Companies</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
 
           {targetApps.length > 0 && (
             <div>
