@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import {
   Bot,
-  Building2,
   CheckCircle2,
   FileText,
   FolderTree,
@@ -38,13 +37,6 @@ export default async function AdminDashboardPage() {
 
   const summary = await getUserDashboardSummary(session);
   const cards = [
-    summary.administration ? {
-      detail: `${summary.administration.roles} roles configured`,
-      icon: Building2,
-      label: "Companies",
-      tone: "bg-slate-950 text-white",
-      value: summary.administration.activeCompanies
-    } : null,
     summary.userManagement ? {
       detail: `${summary.userManagement.activeUsers} active users`,
       icon: UsersRound,

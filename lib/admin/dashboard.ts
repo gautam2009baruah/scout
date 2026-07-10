@@ -86,6 +86,7 @@ export type UserDashboardSummary = {
 
 export async function getUserDashboardSummary(session: AdminSession): Promise<UserDashboardSummary> {
   const summary: UserDashboardSummary = {};
+  const selectedCompanyId = session.user.tenantId;
 
   if (hasModuleAccess(session, MODULE_KEYS.administration)) {
     const result = await getPool().query<{
@@ -101,7 +102,9 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
           AND roles.deleted_at IS NULL
         WHERE companies.deleted_at IS NULL
           AND companies.status = 'active'
-      `
+          AND companies.id = $1
+      `,
+      [selectedCompanyId]
     );
     const row = result.rows[0];
     summary.administration = {
@@ -119,15 +122,17 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
     }>(
       `
         SELECT
-          COUNT(*) AS total_users,
+          COUNT(DISTINCT users.id) AS total_users,
           COUNT(DISTINCT users.id) FILTER (WHERE user_company_roles.status = 'active' AND users.status <> 'invited') AS active_users,
           COUNT(DISTINCT users.id) FILTER (WHERE users.status = 'invited') AS invited_users,
           COUNT(DISTINCT users.id) FILTER (WHERE user_company_roles.status = 'inactive' AND users.status <> 'invited') AS inactive_users
         FROM users
-        LEFT JOIN user_company_roles ON user_company_roles.user_id = users.id
+        INNER JOIN user_company_roles ON user_company_roles.user_id = users.id
           AND user_company_roles.deleted_at IS NULL
+          AND user_company_roles.company_id = $1
         WHERE users.deleted_at IS NULL
-      `
+      `,
+      [selectedCompanyId]
     );
     const row = result.rows[0];
     summary.userManagement = {
@@ -196,11 +201,12 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
     }>(
       `
         SELECT
-          (SELECT provider FROM ai_llm_provider_configs WHERE is_active = true LIMIT 1) AS llm_provider,
-          (SELECT model FROM ai_llm_provider_configs WHERE is_active = true LIMIT 1) AS llm_model,
-          (SELECT provider FROM ai_embedding_provider_configs WHERE is_active = true LIMIT 1) AS embedding_provider,
-          (SELECT model FROM ai_embedding_provider_configs WHERE is_active = true LIMIT 1) AS embedding_model
-      `
+          (SELECT provider FROM ai_llm_provider_configs WHERE is_active = true AND company_id = $1 LIMIT 1) AS llm_provider,
+          (SELECT model FROM ai_llm_provider_configs WHERE is_active = true AND company_id = $1 LIMIT 1) AS llm_model,
+          (SELECT provider FROM ai_embedding_provider_configs WHERE is_active = true AND company_id = $1 LIMIT 1) AS embedding_provider,
+          (SELECT model FROM ai_embedding_provider_configs WHERE is_active = true AND company_id = $1 LIMIT 1) AS embedding_model
+      `,
+      [selectedCompanyId]
     );
     const row = result.rows[0];
     summary.aiConfiguration = {
@@ -212,9 +218,9 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
   }
 
   if (hasModuleAccess(session, MODULE_KEYS.guidedWorkflows)) {
-    const accessFilter = session.user.isAdminRole ? "" : "AND company_id = $1";
-    const sessionAccessFilter = session.user.isAdminRole ? "" : "AND company_target_applications.company_id = $1";
-    const params = session.user.isAdminRole ? [] : [session.user.tenantId];
+    const accessFilter = "AND company_id = $1";
+    const sessionAccessFilter = "AND company_target_applications.company_id = $1";
+    const params = [selectedCompanyId];
     const result = await getPool().query<{
       target_apps: string;
       training_sessions: string;
