@@ -319,21 +319,39 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
           </button>
         </div>
 
-        <div className="mt-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-          <button
-            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${activeTab === "llm" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
-            onClick={() => setActiveTab("llm")}
-            type="button"
-          >
-            LLM
-          </button>
-          <button
-            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${activeTab === "embedding" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
-            onClick={() => setActiveTab("embedding")}
-            type="button"
-          >
-            Embeddings
-          </button>
+        <div className="mt-4 border-b border-slate-200">
+          <div aria-label="AI configuration sections" className="flex items-end gap-2" role="tablist">
+            <button
+              aria-controls="llm-panel"
+              aria-selected={activeTab === "llm"}
+              className={`rounded-t-lg border border-b-0 px-4 py-2 text-sm font-semibold transition ${
+                activeTab === "llm"
+                  ? "border-slate-300 bg-white text-slate-900"
+                  : "border-transparent bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+              id="llm-tab"
+              onClick={() => setActiveTab("llm")}
+              role="tab"
+              type="button"
+            >
+              LLM
+            </button>
+            <button
+              aria-controls="embedding-panel"
+              aria-selected={activeTab === "embedding"}
+              className={`rounded-t-lg border border-b-0 px-4 py-2 text-sm font-semibold transition ${
+                activeTab === "embedding"
+                  ? "border-slate-300 bg-white text-slate-900"
+                  : "border-transparent bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+              id="embedding-tab"
+              onClick={() => setActiveTab("embedding")}
+              role="tab"
+              type="button"
+            >
+              Embeddings
+            </button>
+          </div>
         </div>
 
         {feedback.message ? (
@@ -345,7 +363,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
       {activeTab === "embedding" ? (
         <>
-          <form className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={saveEmbedding}>
+          <form aria-labelledby="embedding-tab" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" id="embedding-panel" onSubmit={saveEmbedding} role="tabpanel">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <Bot className="h-4 w-4" />
               Embeddings Setup
@@ -478,7 +496,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
       {activeTab === "llm" ? (
         <>
-          <form className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={saveLlm}>
+          <form aria-labelledby="llm-tab" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" id="llm-panel" onSubmit={saveLlm} role="tabpanel">
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <KeyRound className="h-4 w-4" />
               LLM Setup
