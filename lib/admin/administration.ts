@@ -175,8 +175,12 @@ export async function createCompany(input: CreateCompanyInput, session: AdminSes
     throw new MasterDataError("Company name is required.");
   }
 
+  const client = await getPool().connect();
+
   try {
-    const result = await getPool().query<CompanySummary>(
+    await client.query("BEGIN");
+
+    const result = await client.query<CompanySummary>(
       `
         INSERT INTO companies (name, slug, created_by, updated_by)
         VALUES ($1, $2, $3, $3)
@@ -187,11 +191,10 @@ export async function createCompany(input: CreateCompanyInput, session: AdminSes
 
     const company = result.rows[0];
 
-    // Create default Admin role for this company with is_system = true to protect it from app-level deletion
-    const roleResult = await getPool().query<{ id: string }>(
+    const roleResult = await client.query<{ id: string }>(
       `
-        INSERT INTO roles (company_id, name, is_admin_role, is_system, created_by, updated_by)
-        VALUES ($1, 'Admin', true, true, $2, $2)
+        INSERT INTO roles (company_id, name, description, is_admin_role, is_system, created_by, updated_by)
+        VALUES ($1, 'Super Admin', 'Protected company super administrator role.', true, true, $2, $2)
         RETURNING id
       `,
       [company.id, session.user.id]
@@ -200,11 +203,9 @@ export async function createCompany(input: CreateCompanyInput, session: AdminSes
     const roleId = roleResult.rows[0]?.id;
 
     if (roleId) {
-      // Grant default admin modules to this role
-      await grantDefaultAdminModules(roleId);
+      await grantDefaultAdminModules(roleId, client);
 
-      // Assign creator user to this company with Admin role
-      await getPool().query(
+      await client.query(
         `
           INSERT INTO user_company_roles (user_id, company_id, role_id, is_primary, created_by, updated_by)
           VALUES ($1, $2, $3, true, $4, $4)
@@ -214,13 +215,18 @@ export async function createCompany(input: CreateCompanyInput, session: AdminSes
       );
     }
 
+    await client.query("COMMIT");
     return company;
   } catch (error) {
+    await client.query("ROLLBACK");
+
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
       throw new MasterDataError("A company with this slug already exists.");
     }
 
     throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -316,6 +322,10 @@ export async function createRole(input: CreateRoleInput, session: AdminSession) 
     throw new MasterDataError("Company and role name are required.");
   }
 
+  if (name.toLowerCase() === "super admin") {
+    throw new MasterDataError("Super Admin is a protected system role and must be managed by database scripts.");
+  }
+
   try {
     const createdRoles: RoleSummary[] = [];
 
@@ -365,6 +375,10 @@ export async function updateRole(roleId: string, input: UpdateRoleInput, session
 
   if (!roleId || !name) {
     throw new MasterDataError("Role name is required.");
+  }
+
+  if (name.toLowerCase() === "super admin") {
+    throw new MasterDataError("Super Admin is a protected system role and must be managed by database scripts.");
   }
 
   try {

@@ -36,10 +36,12 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
   requireModuleAccess(session, MODULE_KEYS.userManagement);
 
   const params = await searchParams;
+  const currentCompanyId = session.user.tenantId;
+  const accessibleCompanyIds = new Set(session.availableCompanies.map((company) => company.companyId));
   const [{ companies, roles }, userPage, modules] = await Promise.all([
     getMasterData(),
     getEmployeePage({
-      companyId: params.companyId,
+      companyId: currentCompanyId,
       roleId: params.roleId,
       status: params.status,
       search: params.search,
@@ -49,18 +51,29 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
     getAllAdminModules()
   ]);
 
+  const accessibleCompanies = companies.filter((company) => accessibleCompanyIds.has(company.id));
+  const currentCompany = accessibleCompanies.find((c) => c.id === currentCompanyId);
+  const accessibleRoles = roles.filter((r) => r.companyId && accessibleCompanyIds.has(r.companyId) && !r.isSystem);
+  const companyRoles = accessibleRoles.filter((r) => r.companyId === currentCompanyId);
+
   return (
     <AdminShell active={MODULE_KEYS.userManagement} session={session}>
-      <UserRegisterForm companies={companies} modules={modules} roles={roles} />
+      <UserRegisterForm
+        currentCompanyId={currentCompanyId}
+        currentCompanyName={currentCompany?.name || ""}
+        modules={modules}
+        roles={companyRoles}
+      />
       <UserList
-        companies={companies}
+        companies={accessibleCompanies}
+        currentCompanyId={currentCompanyId}
+        currentUserId={session.user.id}
         employees={userPage.employees}
         modules={modules}
         page={userPage.page}
         pageCount={userPage.pageCount}
         pageSize={userPage.pageSize}
-        roles={roles}
-        currentUserId={session.user.id}
+        roles={accessibleRoles}
         total={userPage.total}
       />
     </AdminShell>

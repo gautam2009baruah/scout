@@ -37,7 +37,7 @@ export default async function TopicsPage() {
         canManageAccess={workspace.canManageAccess}
         companies={companies}
         grants={accessData.grants}
-        roles={roles}
+        roles={roles.filter((role) => !role.isSystem)}
         topics={workspace.topics}
         tree={workspace.tree}
         users={accessData.users}

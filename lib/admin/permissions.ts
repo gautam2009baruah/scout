@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { Pool, PoolClient } from "pg";
 import { getPool } from "@/lib/db/pool";
 import type { AdminSession } from "./auth";
 
@@ -88,12 +89,15 @@ export async function getRoleModules(roleId: string): Promise<AdminModule[]> {
   return mapModules(result.rows);
 }
 
-export async function getEffectiveUserModules(userId: string, roleId: string, isAdminRole: boolean): Promise<AdminModule[]> {
-  if (isAdminRole) {
-    return getAllAdminModules();
-  }
-
-  const result = await getPool().query<{
+export async function getEffectiveUserModules(
+  userId: string,
+  roleId: string,
+  isAdminRole: boolean,
+  companyId: string,
+  client?: Pool | PoolClient
+): Promise<AdminModule[]> {
+  const db = client ?? getPool();
+  const result = await db.query<{
     key: number;
     name: string;
     href: string;
@@ -102,14 +106,24 @@ export async function getEffectiveUserModules(userId: string, roleId: string, is
   }>(
     `
       WITH role_modules AS (
+        SELECT modules.key AS module_key, 'allow'::text AS effect
+        FROM modules
+        WHERE $4::boolean = true
+        UNION ALL
         SELECT module_key, 'allow'::text AS effect
         FROM role_module_permissions
-        WHERE role_id = $2 AND deleted_at IS NULL
+        WHERE $4::boolean = false
+          AND role_id = $2
+          AND deleted_at IS NULL
       ),
       merged_permissions AS (
         SELECT module_key, effect FROM role_modules
         UNION ALL
-        SELECT module_key, effect FROM user_module_permissions WHERE user_id = $1 AND deleted_at IS NULL
+        SELECT module_key, effect
+        FROM user_module_permissions
+        WHERE user_id = $1
+          AND company_id = $3
+          AND deleted_at IS NULL
       ),
       effective_permissions AS (
         SELECT DISTINCT ON (module_key) module_key, effect
@@ -122,21 +136,21 @@ export async function getEffectiveUserModules(userId: string, roleId: string, is
       WHERE effective_permissions.effect = 'allow'
       ORDER BY modules.sort_order ASC, modules.name ASC
     `,
-    [userId, roleId]
+    [userId, roleId, companyId, isAdminRole]
   );
 
   return mapModules(result.rows);
 }
 
-export async function getUserModuleOverrides(userId: string) {
+export async function getUserModuleOverrides(userId: string, companyId: string) {
   const result = await getPool().query<{ module_key: number; effect: "allow" | "deny" }>(
     `
       SELECT module_key, effect
       FROM user_module_permissions
-      WHERE user_id = $1 AND deleted_at IS NULL
+      WHERE user_id = $1 AND company_id = $2 AND deleted_at IS NULL
       ORDER BY module_key ASC
     `,
-    [userId]
+    [userId, companyId]
   );
 
   return result.rows;
@@ -144,29 +158,35 @@ export async function getUserModuleOverrides(userId: string) {
 
 export async function replaceUserModuleOverrides(
   userId: string,
+  companyId: string,
   moduleKeys: Array<number | string>,
-  updatedBy: string
+  updatedBy: string,
+  client?: Pool | PoolClient
 ) {
   const keys = normalizeModuleKeys(moduleKeys);
+  const db = client ?? getPool();
 
-  await getPool().query(
-    "UPDATE user_module_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE user_id = $1 AND deleted_at IS NULL",
-    [userId, updatedBy]
+  await db.query(
+    "UPDATE user_module_permissions SET deleted_at = now(), updated_by = $3, updated_at = now() WHERE user_id = $1 AND company_id = $2 AND deleted_at IS NULL",
+    [userId, companyId, updatedBy]
   );
 
-  if (keys.length === 0) {
-    return;
-  }
-
-  await getPool().query(
+  await db.query(
     `
-      INSERT INTO user_module_permissions (user_id, module_key, effect, created_by, updated_by)
-      SELECT $1, module_key, 'allow', $3, $3
-      FROM unnest($2::integer[]) AS module_key
-      ON CONFLICT (user_id, module_key)
-      DO UPDATE SET effect = 'allow', deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
+      INSERT INTO user_module_permissions (user_id, company_id, module_key, effect, created_by, updated_by)
+      SELECT
+        $1,
+        $2,
+        modules.key,
+        CASE WHEN modules.key = ANY($3::integer[]) THEN 'allow' ELSE 'deny' END,
+        $4,
+        $4
+      FROM modules
+      WHERE modules.href <> '#'
+      ON CONFLICT (user_id, company_id, module_key)
+      DO UPDATE SET effect = EXCLUDED.effect, deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
     `,
-    [userId, keys, updatedBy]
+    [userId, companyId, keys, updatedBy]
   );
 }
 
@@ -175,8 +195,9 @@ export async function roleHasControlPanelAccess(roleId: string) {
   return modules.length > 0;
 }
 
-export async function grantDefaultAdminModules(roleId: string) {
-  await getPool().query(
+export async function grantDefaultAdminModules(roleId: string, client?: Pool | PoolClient) {
+  const db = client ?? getPool();
+  await db.query(
     `
       INSERT INTO role_module_permissions (role_id, module_key)
       SELECT $1, modules.key

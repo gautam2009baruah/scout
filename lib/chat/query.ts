@@ -57,18 +57,13 @@ async function validateUserForCompany(companyId: string, userId: string): Promis
     `
       SELECT users.id, users.status, users.email
       FROM users
+      INNER JOIN user_company_roles
+        ON user_company_roles.user_id = users.id
+       AND user_company_roles.company_id = $2
+       AND user_company_roles.deleted_at IS NULL
+       AND user_company_roles.status = 'active'
       WHERE users.id = $1
         AND users.deleted_at IS NULL
-        AND (
-          users.company_id = $2
-          OR EXISTS (
-            SELECT 1
-            FROM user_company_roles
-            WHERE user_company_roles.user_id = users.id
-              AND user_company_roles.company_id = $2
-              AND user_company_roles.deleted_at IS NULL
-          )
-        )
       LIMIT 1
     `,
     [userId, companyId]

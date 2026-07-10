@@ -31,19 +31,12 @@ async function getUserRoleIds(companyId: string, userId: string) {
   const result = await getPool().query<{ role_id: string; is_admin_role: boolean }>(
     `
       SELECT roles.id AS role_id, roles.is_admin_role
-      FROM users
-      INNER JOIN roles ON roles.id = users.role_id
-      WHERE users.id = $1
-        AND users.company_id = $2
-        AND users.deleted_at IS NULL
-        AND roles.deleted_at IS NULL
-      UNION
-      SELECT roles.id AS role_id, roles.is_admin_role
       FROM user_company_roles
       INNER JOIN roles ON roles.id = user_company_roles.role_id
       WHERE user_company_roles.user_id = $1
         AND user_company_roles.company_id = $2
         AND user_company_roles.deleted_at IS NULL
+        AND user_company_roles.status = 'active'
         AND roles.deleted_at IS NULL
     `,
     [userId, companyId]

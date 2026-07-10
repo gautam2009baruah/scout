@@ -33,6 +33,7 @@ export async function GET() {
        INNER JOIN user_company_roles ucr ON c.id = ucr.company_id
        WHERE ucr.user_id = $1
          AND ucr.deleted_at IS NULL
+         AND ucr.status = 'active'
          AND c.deleted_at IS NULL
        ORDER BY c.name ASC`,
       [userId]

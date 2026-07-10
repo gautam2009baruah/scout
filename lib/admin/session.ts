@@ -54,6 +54,7 @@ async function getUserCompanyAccess(userId: string): Promise<UserCompanyAccess[]
       INNER JOIN roles r ON r.id = ucr.role_id
       WHERE ucr.user_id = $1
         AND ucr.deleted_at IS NULL
+        AND ucr.status = 'active'
         AND c.deleted_at IS NULL
         AND r.deleted_at IS NULL
       ORDER BY ucr.is_primary DESC, ucr.created_at ASC
@@ -82,7 +83,7 @@ async function toAdminSession(
   row: SessionRow,
   availableCompanies: UserCompanyAccess[]
 ): Promise<AdminSession> {
-  const modules = await getEffectiveUserModules(row.user_id, row.current_role_id, row.is_admin_role);
+  const modules = await getEffectiveUserModules(row.user_id, row.current_role_id, row.is_admin_role, row.current_company_id);
 
   return {
     user: {
@@ -155,7 +156,7 @@ export async function createAdminSession(credentials: AdminLoginCredentials) {
   }
 
   // Verify modules exist for this role
-  const modules = await getEffectiveUserModules(user.user_id, primaryCompany.roleId, primaryCompany.isPrimary);
+  const modules = await getEffectiveUserModules(user.user_id, primaryCompany.roleId, primaryCompany.isPrimary, primaryCompany.companyId);
   if (modules.length === 0) {
     return null;
   }
@@ -236,7 +237,7 @@ export async function getCurrentAdminSession(): Promise<AdminSession | null> {
       FROM user_sessions
       INNER JOIN users ON users.id = user_sessions.user_id
       INNER JOIN companies c ON c.id = user_sessions.company_id
-      LEFT JOIN user_company_roles ucr ON ucr.user_id = users.id AND ucr.company_id = user_sessions.company_id AND ucr.deleted_at IS NULL
+      INNER JOIN user_company_roles ucr ON ucr.user_id = users.id AND ucr.company_id = user_sessions.company_id AND ucr.deleted_at IS NULL AND ucr.status = 'active'
       LEFT JOIN roles r ON r.id = ucr.role_id
       WHERE user_sessions.token_hash = $1
         AND user_sessions.revoked_at IS NULL
@@ -286,7 +287,7 @@ export async function switchCompanyContext(userId: string, newCompanyId: string)
   const accessCheck = await getPool().query(
     `
       SELECT 1 FROM user_company_roles
-      WHERE user_id = $1 AND company_id = $2 AND deleted_at IS NULL
+      WHERE user_id = $1 AND company_id = $2 AND deleted_at IS NULL AND status = 'active'
     `,
     [userId, newCompanyId]
   );

@@ -28,10 +28,14 @@ export function HierarchicalModuleSelector({
   const [open, setOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const selectedSet = new Set(selectedValues);
   const lockedSet = new Set(lockedValues);
+  const selectableValueSet = new Set(modules.filter(isSelectableModule).map((module) => String(module.key)));
 
   // Group modules by parentKey
   const topLevelModules = modules.filter((m) => m.parentKey === null);
@@ -46,12 +50,13 @@ export function HierarchicalModuleSelector({
   });
 
   function setValues(values: string[]) {
-    onChange(Array.from(new Set([...lockedValues, ...values])));
+    onChange(Array.from(new Set([...lockedValues, ...values])).filter((value) => selectableValueSet.has(value)));
   }
 
   function toggle(value: string, checked: boolean) {
     if (lockedSet.has(value)) return;
-    setValues(checked ? [...selectedValues, value] : selectedValues.filter((item) => item !== value));
+    const selectableSelectedValues = selectedValues.filter((item) => selectableValueSet.has(item));
+    setValues(checked ? [...selectableSelectedValues, value] : selectableSelectedValues.filter((item) => item !== value));
   }
 
   function toggleGroup(parentKey: number) {
@@ -73,18 +78,59 @@ export function HierarchicalModuleSelector({
 
     if (open && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
+      const dropdownHeight = 320; // max-height
+      const windowHeight = window.innerHeight;
+      const spaceBelow = windowHeight - rect.bottom;
+      
+      // Check if dropdown would overflow bottom
+      let topPos = rect.bottom + 4;
+      if (spaceBelow < dropdownHeight + 20) {
+        // Not enough space below, try to position above
+        topPos = rect.top - dropdownHeight - 4;
+      }
+      
       setDropdownPos({
-        top: rect.top - 320 - 8, // Position above with 8px gap, 320px is max-height
+        top: topPos,
         left: rect.left,
         width: rect.width
       });
+      setDragOffset({ x: 0, y: 0 });
     }
 
     document.addEventListener("mousedown", closeOnOutsideClick);
     return () => document.removeEventListener("mousedown", closeOnOutsideClick);
   }, [open]);
 
-  const selectedCount = Array.from(selectedSet).filter((v) => !lockedSet.has(v)).length;
+  function handleMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+    // Only allow dragging from header area (first 40px)
+    if ((event.target as HTMLElement).closest(".dropdown-header")) {
+      setIsDragging(true);
+    }
+  }
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    function handleMouseMove(event: MouseEvent) {
+      setDragOffset((prev) => ({
+        x: prev.x + event.movementX,
+        y: prev.y + event.movementY
+      }));
+    }
+
+    function handleMouseUp() {
+      setIsDragging(false);
+    }
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging]);
+
+  const selectedCount = Array.from(selectedSet).filter((value) => selectableValueSet.has(value) && !lockedSet.has(value)).length;
   const displayText = selectedCount > 0 ? `${selectedCount} modules selected` : "Select modules";
 
   return (
@@ -101,17 +147,24 @@ export function HierarchicalModuleSelector({
         <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
       </button>
       {open && !disabled ? (
-        <div className="fixed z-50 rounded-lg border border-slate-200 bg-white p-3 shadow-xl max-h-80 flex flex-col" style={{
-          top: `${dropdownPos.top}px`,
-          left: `${dropdownPos.left}px`,
-          width: `${dropdownPos.width}px`,
-          maxHeight: '320px'
-        }}>
-          <div className="mb-3 flex gap-2 flex-shrink-0">
+        <div 
+          ref={dropdownRef}
+          className="fixed z-50 rounded-lg border border-slate-200 bg-white p-3 shadow-xl max-h-80 flex flex-col select-none" 
+          style={{
+            top: `${dropdownPos.top + dragOffset.y}px`,
+            left: `${dropdownPos.left + dragOffset.x}px`,
+            width: `${dropdownPos.width}px`,
+            maxHeight: '320px',
+            cursor: isDragging ? 'grabbing' : 'grab'
+          }}
+          onMouseDown={handleMouseDown}
+        >
+          <div className="dropdown-header mb-3 flex gap-2 flex-shrink-0 cursor-grab active:cursor-grabbing pb-2 border-b border-slate-200">
             <button
               className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
               onClick={() => setValues(modules.filter(isSelectableModule).map((m) => String(m.key)))}
               type="button"
+              onMouseDown={(e) => e.stopPropagation()}
             >
               Select all
             </button>
@@ -119,11 +172,12 @@ export function HierarchicalModuleSelector({
               className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
               onClick={() => setValues([])}
               type="button"
+              onMouseDown={(e) => e.stopPropagation()}
             >
               Unselect all
             </button>
           </div>
-          <div className="space-y-1 overflow-auto pr-1 flex-1">
+          <div className="space-y-1 overflow-auto flex-1 pr-1" style={{scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent'}}>
             {topLevelModules.map((parentModule) => {
               const children = modulesByParent.get(parentModule.key) || [];
               const isSelectable = isSelectableModule(parentModule);

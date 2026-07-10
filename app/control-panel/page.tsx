@@ -113,7 +113,7 @@ export default async function AdminDashboardPage() {
             <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <Metric label="Active" value={summary.userManagement.activeUsers} />
               <Metric label="Invited" value={summary.userManagement.invitedUsers} />
-              <Metric label="Disabled" value={summary.userManagement.disabledUsers} />
+              <Metric label="Inactive" value={summary.userManagement.inactiveUsers} />
             </div>
           </article>
         ) : null}

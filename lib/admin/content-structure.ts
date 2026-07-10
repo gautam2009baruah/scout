@@ -226,9 +226,10 @@ async function getUserIdsForCompany(companyId: string) {
       LEFT JOIN user_company_roles ON user_company_roles.user_id = users.id
         AND user_company_roles.company_id = $1
         AND user_company_roles.deleted_at IS NULL
+        AND user_company_roles.status = 'active'
       WHERE users.deleted_at IS NULL
         AND users.status = 'active'
-        AND (users.company_id = $1 OR user_company_roles.user_id IS NOT NULL)
+        AND user_company_roles.user_id IS NOT NULL
     `,
     [companyId]
   );
@@ -391,17 +392,16 @@ export async function getTopicAccessAdminData(session: AdminSession) {
           users.name,
           users.email,
           array_agg(DISTINCT member_companies.id) AS company_ids,
-          companies.name AS company_name
+          min(member_companies.name) AS company_name
         FROM users
-        INNER JOIN companies ON companies.id = users.company_id
-        LEFT JOIN user_company_roles ON user_company_roles.user_id = users.id
+        INNER JOIN user_company_roles ON user_company_roles.user_id = users.id
           AND user_company_roles.deleted_at IS NULL
-        LEFT JOIN companies member_companies ON member_companies.id = COALESCE(user_company_roles.company_id, users.company_id)
+          AND user_company_roles.status = 'active'
+        INNER JOIN companies member_companies ON member_companies.id = user_company_roles.company_id
           AND member_companies.deleted_at IS NULL
         WHERE users.deleted_at IS NULL
           AND users.status = 'active'
-          AND companies.deleted_at IS NULL
-        GROUP BY users.id, companies.name
+        GROUP BY users.id
         ORDER BY users.name ASC
       `
     )

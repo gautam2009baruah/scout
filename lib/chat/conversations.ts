@@ -91,20 +91,15 @@ async function assertCompanyAndUser(companyId: string, userId: string) {
       SELECT users.id, users.status
       FROM users
       INNER JOIN companies ON companies.id = $2
+      INNER JOIN user_company_roles
+        ON user_company_roles.user_id = users.id
+       AND user_company_roles.company_id = companies.id
+       AND user_company_roles.deleted_at IS NULL
+       AND user_company_roles.status = 'active'
       WHERE users.id = $1
         AND companies.deleted_at IS NULL
         AND companies.status = 'active'
         AND users.deleted_at IS NULL
-        AND (
-          users.company_id = companies.id
-          OR EXISTS (
-            SELECT 1
-            FROM user_company_roles
-            WHERE user_company_roles.user_id = users.id
-              AND user_company_roles.company_id = companies.id
-              AND user_company_roles.deleted_at IS NULL
-          )
-        )
       LIMIT 1
     `,
     [userId, companyId]

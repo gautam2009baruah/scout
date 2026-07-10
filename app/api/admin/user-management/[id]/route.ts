@@ -37,7 +37,8 @@ export async function PUT(request: Request, context: RouteContext) {
         name: body.name,
         email: body.email,
         employeeCode: typeof body.employeeCode === "string" ? body.employeeCode : undefined,
-        status: body.status === "disabled" || body.status === "active" ? body.status : "invited",
+        status: body.status === "inactive" || body.status === "disabled" || body.status === "active" ? body.status : "invited",
+        statusReason: typeof body.statusReason === "string" ? body.statusReason : undefined,
         moduleKeys: Array.isArray(body.moduleKeys)
           ? body.moduleKeys.filter((value: unknown): value is string => typeof value === "string")
           : []
@@ -51,11 +52,13 @@ export async function PUT(request: Request, context: RouteContext) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
 
-    throw error;
+    console.error("Error updating employee:", error);
+    const message = error instanceof Error ? error.message : "Unable to update user.";
+    return NextResponse.json({ message }, { status: 500 });
   }
 }
 
-export async function DELETE(_request: Request, context: RouteContext) {
+export async function DELETE(request: Request, context: RouteContext) {
   const session = await getCurrentAdminSession();
 
   if (!session) {
@@ -64,7 +67,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    await deleteEmployee(id, session);
+    const body = await request.json().catch(() => null);
+    await deleteEmployee(id, typeof body?.reason === "string" ? body.reason : undefined, session);
 
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -72,6 +76,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
 
-    throw error;
+    console.error("Error deleting employee:", error);
+    const message = error instanceof Error ? error.message : "Unable to delete user.";
+    return NextResponse.json({ message }, { status: 500 });
   }
 }

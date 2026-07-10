@@ -5,7 +5,16 @@ import { sendEmail } from "./email";
 import { hashPassword } from "./password";
 import { MODULE_KEYS, getEffectiveUserModules, hasModuleAccess, replaceUserModuleOverrides } from "./permissions";
 
-export type EmployeeStatus = "active" | "invited" | "disabled";
+export type EmployeeStatus = "active" | "invited" | "inactive" | "disabled" | "deleted";
+
+export type EmployeeMembership = {
+  companyId: string;
+  roleId: string;
+  roleName: string;
+  status: "active" | "inactive";
+  moduleKeys: number[];
+  isPrimary: boolean;
+};
 
 export type EmployeeRow = {
   id: string;
@@ -15,9 +24,11 @@ export type EmployeeRow = {
   companyNames: string[];
   roleId: string;
   roleName: string;
+  memberships: EmployeeMembership[];
   name: string;
   email: string;
   employeeCode: string | null;
+  hasSystemRole: boolean;
   status: EmployeeStatus;
   canViewChatbot: boolean;
   moduleKeys: number[];
@@ -47,6 +58,7 @@ export type RegisterEmployeeInput = {
 
 export type UpdateEmployeeInput = RegisterEmployeeInput & {
   status: EmployeeStatus;
+  statusReason?: string;
 };
 
 export class EmployeeError extends Error {
@@ -62,6 +74,26 @@ function assertCanManageUsers(session: AdminSession) {
   }
 }
 
+function normalizeEmployeeStatus(status: EmployeeStatus): Exclude<EmployeeStatus, "disabled"> {
+  return status === "disabled" ? "inactive" : status;
+}
+
+function assertCanAccessCompany(companyId: string, session: AdminSession) {
+  if (!session.availableCompanies.some((company) => company.companyId === companyId)) {
+    throw new EmployeeError("You do not have access to this company.");
+  }
+}
+
+function requireReason(reason: string | undefined, action: string) {
+  const trimmed = reason?.trim() ?? "";
+
+  if (!trimmed) {
+    throw new EmployeeError(`Reason is required when ${action}.`);
+  }
+
+  return trimmed;
+}
+
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -74,9 +106,11 @@ function mapEmployee(row: {
   company_names: string[] | null;
   role_id: string;
   role_name: string;
+  memberships: EmployeeMembership[] | null;
   name: string;
   email: string;
   employee_code: string | null;
+  has_system_role: boolean;
   status: EmployeeStatus;
   can_view_chatbot: boolean;
   module_keys: number[] | null;
@@ -92,9 +126,11 @@ function mapEmployee(row: {
     companyNames: row.company_names?.length ? row.company_names : [row.company_name],
     roleId: row.role_id,
     roleName: row.role_name,
+    memberships: row.memberships ?? [],
     name: row.name,
     email: row.email,
     employeeCode: row.employee_code,
+    hasSystemRole: row.has_system_role,
     status: row.status,
     canViewChatbot: row.can_view_chatbot,
     moduleKeys: row.module_keys ?? [],
@@ -105,8 +141,8 @@ function mapEmployee(row: {
 }
 
 async function getRoleTemplate(roleId: string) {
-  const result = await getPool().query<{ name: string; is_admin_role: boolean }>(
-    "SELECT name, is_admin_role FROM roles WHERE id = $1 AND deleted_at IS NULL",
+  const result = await getPool().query<{ name: string; is_admin_role: boolean; is_system: boolean }>(
+    "SELECT name, is_admin_role, is_system FROM roles WHERE id = $1 AND deleted_at IS NULL",
     [roleId]
   );
   return result.rows[0] ?? null;
@@ -123,6 +159,7 @@ async function getCompanyRoleIds(companyIds: string[], roleName: string) {
       FROM roles
       WHERE company_id = ANY($1::uuid[])
         AND lower(name) = lower($2)
+        AND is_system = false
         AND deleted_at IS NULL
     `,
     [companyIds, roleName]
@@ -135,6 +172,27 @@ async function getCompanyRoleIds(companyIds: string[], roleName: string) {
   }
 
   return companyIds.map((companyId) => roleByCompany.get(companyId)).filter((row): row is { company_id: string; role_id: string } => Boolean(row));
+}
+
+async function assertUserIsEditable(userId: string) {
+  const result = await getPool().query<{ has_system_role: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM user_company_roles
+        INNER JOIN roles ON roles.id = user_company_roles.role_id
+        WHERE user_company_roles.user_id = $1
+          AND user_company_roles.deleted_at IS NULL
+          AND roles.deleted_at IS NULL
+          AND roles.is_system = true
+      ) AS has_system_role
+    `,
+    [userId]
+  );
+
+  if (result.rows[0]?.has_system_role) {
+    throw new EmployeeError("Users assigned to system roles cannot be edited or deleted.");
+  }
 }
 
 export async function getEmployeePage(filters: EmployeeFilters) {
@@ -159,7 +217,13 @@ export async function getEmployeePage(filters: EmployeeFilters) {
     AND roles.deleted_at IS NULL
     AND user_company_roles.company_id = $1::uuid
     AND ($2::uuid IS NULL OR user_company_roles.role_id = $2)
-    AND ($3::text IS NULL OR users.status = $3)
+    AND (
+      $3::text IS NULL
+      OR CASE
+        WHEN users.status = 'invited' THEN 'invited'
+        ELSE user_company_roles.status
+      END = CASE WHEN $3 = 'disabled' THEN 'inactive' ELSE $3 END
+    )
     AND (
       $4::text IS NULL
       OR lower(users.name) LIKE $4
@@ -177,9 +241,11 @@ export async function getEmployeePage(filters: EmployeeFilters) {
       company_names: string[] | null;
       role_id: string;
       role_name: string;
+      memberships: EmployeeMembership[] | null;
       name: string;
       email: string;
       employee_code: string | null;
+      has_system_role: boolean;
       status: EmployeeStatus;
       can_view_chatbot: boolean;
   module_keys: number[] | null;
@@ -196,15 +262,17 @@ export async function getEmployeePage(filters: EmployeeFilters) {
           COALESCE(company_memberships.company_names, ARRAY[companies.name]) AS company_names,
           user_company_roles.role_id,
           roles.name AS role_name,
+          COALESCE(membership_details.memberships, '[]'::jsonb) AS memberships,
           users.name,
           users.email,
           users.employee_code,
-          users.status,
-          users.can_view_chatbot,
+          COALESCE(system_role_access.has_system_role, false) AS has_system_role,
           CASE
-            WHEN roles.is_admin_role = true THEN all_modules.module_keys
-            ELSE COALESCE(module_access.module_keys, ARRAY[]::integer[])
-          END AS module_keys,
+            WHEN users.status = 'invited' THEN 'invited'
+            ELSE user_company_roles.status
+          END AS status,
+          users.can_view_chatbot,
+          COALESCE(module_access.module_keys, ARRAY[]::integer[]) AS module_keys,
           users.activated_at,
           users.invited_at,
           users.created_at
@@ -222,15 +290,84 @@ export async function getEmployeePage(filters: EmployeeFilters) {
             AND user_company_roles.deleted_at IS NULL
             AND member_companies.deleted_at IS NULL
         ) company_memberships ON true
-        CROSS JOIN (
-          SELECT array_agg(key ORDER BY sort_order, name) AS module_keys
-          FROM modules
-        ) all_modules
+        LEFT JOIN LATERAL (
+          SELECT bool_or(member_roles.is_system) AS has_system_role
+          FROM user_company_roles member_ucr
+          INNER JOIN roles member_roles ON member_roles.id = member_ucr.role_id
+          WHERE member_ucr.user_id = users.id
+            AND member_ucr.deleted_at IS NULL
+            AND member_roles.deleted_at IS NULL
+        ) system_role_access ON true
+        LEFT JOIN LATERAL (
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'companyId', member_roles.company_id,
+              'roleId', member_roles.role_id,
+              'roleName', member_roles.name,
+              'status', member_roles.status,
+              'moduleKeys', COALESCE(member_module_access.module_keys, ARRAY[]::integer[]),
+              'isPrimary', member_roles.is_primary
+            )
+            ORDER BY member_roles.company_name
+          ) AS memberships
+          FROM (
+            SELECT
+              member_ucr.company_id,
+              member_ucr.role_id,
+              member_ucr.status,
+              member_ucr.is_primary,
+              member_roles.name,
+              member_roles.is_admin_role,
+              member_companies.name AS company_name
+            FROM user_company_roles member_ucr
+            INNER JOIN companies member_companies ON member_companies.id = member_ucr.company_id
+            INNER JOIN roles member_roles ON member_roles.id = member_ucr.role_id
+            WHERE member_ucr.user_id = users.id
+              AND member_ucr.deleted_at IS NULL
+              AND member_companies.deleted_at IS NULL
+              AND member_roles.deleted_at IS NULL
+          ) member_roles
+          LEFT JOIN LATERAL (
+            WITH role_modules AS (
+              SELECT modules.key AS module_key, 'allow'::text AS effect
+              FROM modules
+              WHERE member_roles.is_admin_role = true
+              UNION ALL
+              SELECT module_key, 'allow'::text AS effect
+              FROM role_module_permissions
+              WHERE member_roles.is_admin_role = false
+                AND role_id = member_roles.role_id
+                AND deleted_at IS NULL
+            ),
+            merged_permissions AS (
+              SELECT module_key, effect FROM role_modules
+              UNION ALL
+              SELECT module_key, effect
+              FROM user_module_permissions
+              WHERE user_id = users.id
+                AND company_id = member_roles.company_id
+                AND deleted_at IS NULL
+            ),
+            effective_permissions AS (
+              SELECT DISTINCT ON (module_key) module_key, effect
+              FROM merged_permissions
+              ORDER BY module_key, CASE WHEN effect = 'deny' THEN 2 ELSE 1 END DESC
+            )
+            SELECT array_agg(modules.key ORDER BY modules.sort_order, modules.name) FILTER (WHERE effective_permissions.effect = 'allow') AS module_keys
+            FROM effective_permissions
+            INNER JOIN modules ON modules.key = effective_permissions.module_key
+          ) member_module_access ON true
+        ) membership_details ON true
         LEFT JOIN LATERAL (
           WITH role_modules AS (
+            SELECT modules.key AS module_key, 'allow'::text AS effect
+            FROM modules
+            WHERE roles.is_admin_role = true
+            UNION ALL
             SELECT module_key, 'allow'::text AS effect
             FROM role_module_permissions
-            WHERE role_id = user_company_roles.role_id
+            WHERE roles.is_admin_role = false
+              AND role_id = user_company_roles.role_id
               AND deleted_at IS NULL
           ),
           merged_permissions AS (
@@ -238,7 +375,9 @@ export async function getEmployeePage(filters: EmployeeFilters) {
             UNION ALL
             SELECT module_key, effect
             FROM user_module_permissions
-            WHERE user_id = users.id AND deleted_at IS NULL
+            WHERE user_id = users.id
+              AND company_id = user_company_roles.company_id
+              AND deleted_at IS NULL
           ),
           effective_permissions AS (
             SELECT DISTINCT ON (module_key) module_key, effect
@@ -293,6 +432,9 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
   }
 
   const roleTemplate = await getRoleTemplate(input.roleId);
+  if (roleTemplate?.is_system) {
+    throw new EmployeeError("System roles cannot be assigned from User Management.");
+  }
   const companyRoles = await getCompanyRoleIds(companyIds, roleTemplate?.name ?? "");
   const primaryCompanyId = companyRoles[0]?.company_id;
   const primaryRoleId = companyRoles[0]?.role_id;
@@ -301,12 +443,50 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
     throw new EmployeeError("Company, role, name, and email are required.");
   }
 
+  // Check for duplicate email within the company (per-company validation)
+  const duplicateCheck = await getPool().query<{ user_id: string }>(
+    `
+      SELECT users.id AS user_id
+      FROM users
+      INNER JOIN user_company_roles ON user_company_roles.user_id = users.id
+      WHERE lower(users.email) = lower($1)
+        AND user_company_roles.company_id = $2::uuid
+        AND user_company_roles.deleted_at IS NULL
+        AND users.deleted_at IS NULL
+      LIMIT 1
+    `,
+    [email, primaryCompanyId]
+  );
+
+  if (duplicateCheck.rows.length > 0) {
+    throw new EmployeeError("A user with this email already exists in this company. If they resigned, please deactivate their previous record first.");
+  }
+
+  // Check for duplicate employee code within the company (if provided)
+  if (employeeCode) {
+    const codeCheck = await getPool().query<{ user_id: string }>(
+      `
+        SELECT users.id AS user_id
+        FROM users
+        INNER JOIN user_company_roles ON user_company_roles.user_id = users.id
+        WHERE lower(users.employee_code) = lower($1)
+          AND user_company_roles.company_id = $2::uuid
+          AND user_company_roles.deleted_at IS NULL
+          AND users.deleted_at IS NULL
+        LIMIT 1
+      `,
+      [employeeCode, primaryCompanyId]
+    );
+
+    if (codeCheck.rows.length > 0) {
+      throw new EmployeeError("A user with this employee code already exists in this company.");
+    }
+  }
+
   try {
     const userResult = await getPool().query<{ id: string }>(
       `
         INSERT INTO users (
-          company_id,
-          role_id,
           name,
           email,
           employee_code,
@@ -319,12 +499,10 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
           created_by,
           updated_by
         )
-        VALUES ($1, $2, $3, lower($4), $5, $6, 'active', true, now(), now(), $7, $8, $8)
+        VALUES ($1, lower($2), $3, $4, 'active', true, now(), now(), $5, $6, $6)
         RETURNING id
       `,
       [
-        primaryCompanyId,
-        primaryRoleId,
         name,
         email,
         employeeCode,
@@ -336,17 +514,21 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
 
     await getPool().query(
       `
-        INSERT INTO user_company_roles (user_id, company_id, role_id, created_by, updated_by)
-        SELECT $1, company_id, role_id, $2, $2
-        FROM jsonb_to_recordset($3::jsonb) AS membership(company_id uuid, role_id uuid)
+        INSERT INTO user_company_roles (user_id, company_id, role_id, status, is_primary, created_by, updated_by)
+        SELECT $1::uuid, (membership.company_id::text)::uuid, (membership.role_id::text)::uuid, 'active', ROW_NUMBER() OVER (PARTITION BY $1 ORDER BY membership.company_id) = 1 AS is_primary, $2::uuid, $2::uuid
+        FROM jsonb_to_recordset($3::jsonb) AS membership(company_id text, role_id text)
         ON CONFLICT (user_id, company_id)
-        DO UPDATE SET role_id = EXCLUDED.role_id, deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
+        DO UPDATE SET role_id = EXCLUDED.role_id, status = EXCLUDED.status, deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
       `,
       [userResult.rows[0].id, session.user.id, JSON.stringify(companyRoles)]
     );
 
-    await replaceUserModuleOverrides(userResult.rows[0].id, input.moduleKeys ?? [], session.user.id);
-    const modules = await getEffectiveUserModules(userResult.rows[0].id, primaryRoleId, roleTemplate?.is_admin_role === true);
+    await Promise.all(
+      companyRoles.map((companyRole) =>
+        replaceUserModuleOverrides(userResult.rows[0].id, companyRole.company_id, input.moduleKeys ?? [], session.user.id)
+      )
+    );
+    const modules = await getEffectiveUserModules(userResult.rows[0].id, primaryRoleId, roleTemplate?.is_admin_role === true, primaryCompanyId);
     const hasControlPanelAccess = modules.length > 0;
 
     if (hasControlPanelAccess) {
@@ -386,19 +568,25 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
 
 export async function updateEmployee(employeeId: string, input: UpdateEmployeeInput, session: AdminSession) {
   assertCanManageUsers(session);
+  await assertUserIsEditable(employeeId);
 
   const name = input.name.trim();
-  const email = input.email.trim().toLowerCase();
   const employeeCode = input.employeeCode?.trim() || null;
   const temporaryPassword = "test123";
-  const companyIds = input.companyIds?.length ? input.companyIds : input.companyId ? [input.companyId] : [];
+  const companyId = input.companyId || input.companyIds?.[0] || "";
+  const nextStatus = normalizeEmployeeStatus(input.status);
 
-  if (!employeeId || companyIds.length === 0 || !input.roleId || !name || !email) {
-    throw new EmployeeError("Company, role, name, and email are required.");
+  if (!employeeId || !companyId || !input.roleId || !name) {
+    throw new EmployeeError("Company, role, and name are required.");
   }
 
+  assertCanAccessCompany(companyId, session);
+
   const roleTemplate = await getRoleTemplate(input.roleId);
-  const companyRoles = await getCompanyRoleIds(companyIds, roleTemplate?.name ?? "");
+  if (roleTemplate?.is_system) {
+    throw new EmployeeError("System roles cannot be assigned from User Management.");
+  }
+  const companyRoles = await getCompanyRoleIds([companyId], roleTemplate?.name ?? "");
   const primaryCompanyId = companyRoles[0]?.company_id;
   const primaryRoleId = companyRoles[0]?.role_id;
 
@@ -406,10 +594,27 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
     throw new EmployeeError("Company, role, name, and email are required.");
   }
 
+  const client = await getPool().connect();
+
   try {
-    const existingResult = await getPool().query<{
+    await client.query("BEGIN");
+
+    const existingResult = await client.query<{
       password_hash: string | null;
-    }>("SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL", [employeeId]);
+      status: EmployeeStatus;
+      email: string;
+      membership_status: "active" | "inactive" | null;
+    }>(
+      `SELECT users.password_hash, users.status, users.email, user_company_roles.status AS membership_status
+       FROM users
+       LEFT JOIN user_company_roles
+         ON user_company_roles.user_id = users.id
+        AND user_company_roles.company_id = $2
+        AND user_company_roles.deleted_at IS NULL
+       WHERE users.id = $1 AND users.deleted_at IS NULL
+       FOR UPDATE OF users`,
+      [employeeId, primaryCompanyId]
+    );
 
     const existing = existingResult.rows[0];
 
@@ -417,39 +622,40 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
       throw new EmployeeError("User was not found.");
     }
 
-    await replaceUserModuleOverrides(employeeId, input.moduleKeys ?? [], session.user.id);
-    const modules = await getEffectiveUserModules(employeeId, primaryRoleId, roleTemplate?.is_admin_role === true);
+    if (existing.status === "invited" && nextStatus !== "invited") {
+      throw new EmployeeError("Invited users cannot be activated or inactivated until they accept the invitation.");
+    }
+
+    if (nextStatus === "inactive" && existing.membership_status !== "inactive") {
+      requireReason(input.statusReason, "inactivating a user");
+    }
+
+    await replaceUserModuleOverrides(employeeId, primaryCompanyId, input.moduleKeys ?? [], session.user.id, client);
+    const modules = await getEffectiveUserModules(employeeId, primaryRoleId, roleTemplate?.is_admin_role === true, primaryCompanyId, client);
     const hasControlPanelAccess = modules.length > 0;
     const shouldSendPanelPassword = hasControlPanelAccess && !existing.password_hash;
-    const result = await getPool().query(
+    const result = await client.query(
       `
         UPDATE users
         SET
-          company_id = $2,
-          role_id = $3,
-          name = $4,
-          email = lower($5),
-          employee_code = $6,
-          password_hash = CASE WHEN $10::boolean = true THEN $11 ELSE password_hash END,
-          status = $7,
+          name = $2,
+          employee_code = $3,
+          password_hash = CASE WHEN $6::boolean = true THEN $7 ELSE password_hash END,
+          status = CASE WHEN status = 'invited' THEN status ELSE 'active' END,
           can_view_chatbot = true,
           must_change_password = CASE
-            WHEN $8 = false THEN false
-            WHEN $10::boolean = true THEN true
+            WHEN $4 = false THEN false
+            WHEN $6::boolean = true THEN true
             ELSE must_change_password
           END,
-          updated_by = $9,
+          updated_by = $5,
           updated_at = now()
         WHERE id = $1 AND deleted_at IS NULL
       `,
       [
         employeeId,
-        primaryCompanyId,
-        primaryRoleId,
         name,
-        email,
         employeeCode,
-        input.status,
         hasControlPanelAccess,
         session.user.id,
         shouldSendPanelPassword,
@@ -461,44 +667,63 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
       throw new EmployeeError("User was not found.");
     }
 
-    await getPool().query(
+    await client.query(
       `
-        UPDATE user_company_roles
-        SET deleted_at = now(), updated_by = $2, updated_at = now()
-        WHERE user_id = $1 AND deleted_at IS NULL
+        INSERT INTO user_company_roles (user_id, company_id, role_id, status, is_primary, created_by, updated_by)
+        VALUES (
+          $1::uuid,
+          $2::uuid,
+          $3::uuid,
+          $5::text,
+          NOT EXISTS (
+            SELECT 1 FROM user_company_roles
+            WHERE user_id = $1::uuid AND deleted_at IS NULL
+          ),
+          $4::uuid,
+          $4::uuid
+        )
+        ON CONFLICT (user_id, company_id)
+        DO UPDATE SET role_id = EXCLUDED.role_id, status = EXCLUDED.status, deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
       `,
-      [employeeId, session.user.id]
+      [employeeId, primaryCompanyId, primaryRoleId, session.user.id, nextStatus === "invited" ? "active" : nextStatus]
     );
 
-    await getPool().query(
-      `
-        INSERT INTO user_company_roles (user_id, company_id, role_id, created_by, updated_by)
-        SELECT $1, company_id, role_id, $2, $2
-        FROM jsonb_to_recordset($3::jsonb) AS membership(company_id uuid, role_id uuid)
-        ON CONFLICT (user_id, company_id)
-        DO UPDATE SET role_id = EXCLUDED.role_id, deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
-      `,
-      [employeeId, session.user.id, JSON.stringify(companyRoles)]
-    );
+    if (nextStatus === "inactive" && existing.membership_status !== "inactive") {
+      await client.query(
+        `
+          INSERT INTO user_lifecycle_events
+            (user_id, company_id, action, from_status, to_status, reason, performed_by)
+          VALUES ($1, $2, 'inactivated', $3, 'inactive', $4, $5)
+        `,
+        [employeeId, primaryCompanyId, existing.membership_status ?? "active", requireReason(input.statusReason, "inactivating a user"), session.user.id]
+      );
+    }
+
+    await client.query("COMMIT");
 
     if (shouldSendPanelPassword) {
       await sendEmail({
-        to: email,
+        to: existing.email,
         subject: "Your Scout Control Panel access",
-        body: `Hello ${name},\n\nYou can now access the Scout chatbot and Control Panel.\n\nLogin URL: ${process.env.APP_BASE_URL || "http://localhost:3000"}/control-panel/login\nLogin ID: ${email}\nTemporary password: ${temporaryPassword}\n\nYou will be asked to change this password after your first login.`
+        body: `Hello ${name},\n\nYou can now access the Scout chatbot and Control Panel.\n\nLogin URL: ${process.env.APP_BASE_URL || "http://localhost:3000"}/control-panel/login\nLogin ID: ${existing.email}\nTemporary password: ${temporaryPassword}\n\nYou will be asked to change this password after your first login.`
       });
     }
   } catch (error) {
+    await client.query("ROLLBACK");
+
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
       throw new EmployeeError("A user with this email or user code already exists for the company.");
     }
 
     throw error;
+  } finally {
+    client.release();
   }
 }
 
-export async function deleteEmployee(employeeId: string, session: AdminSession) {
+export async function deleteEmployee(employeeId: string, reason: string | undefined, session: AdminSession) {
   assertCanManageUsers(session);
+  await assertUserIsEditable(employeeId);
 
   if (!employeeId) {
     throw new EmployeeError("User is required.");
@@ -508,27 +733,60 @@ export async function deleteEmployee(employeeId: string, session: AdminSession) 
     throw new EmployeeError("You cannot delete your own account.");
   }
 
-  const result = await getPool().query(
-    `
-      UPDATE users
-      SET status = 'disabled', deleted_at = now(), updated_by = $2, updated_at = now()
-      WHERE id = $1 AND deleted_at IS NULL
-    `,
-    [employeeId, session.user.id]
-  );
+  const deletionReason = requireReason(reason, "deleting a user");
+  const client = await getPool().connect();
 
-  if (result.rowCount !== 1) {
-    throw new EmployeeError("User was not found.");
+  try {
+    await client.query("BEGIN");
+
+    const existingResult = await client.query<{ status: EmployeeStatus }>(
+      "SELECT status FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+      [employeeId]
+    );
+    const existing = existingResult.rows[0];
+
+    if (!existing) {
+      throw new EmployeeError("User was not found.");
+    }
+
+    const result = await client.query(
+      `
+        UPDATE users
+        SET status = 'deleted', deleted_at = now(), updated_by = $2, updated_at = now()
+        WHERE id = $1 AND deleted_at IS NULL
+      `,
+      [employeeId, session.user.id]
+    );
+
+    if (result.rowCount !== 1) {
+      throw new EmployeeError("User was not found.");
+    }
+
+    await client.query(
+      `
+        UPDATE user_company_roles
+        SET deleted_at = now(), updated_by = $2, updated_at = now()
+        WHERE user_id = $1 AND deleted_at IS NULL
+      `,
+      [employeeId, session.user.id]
+    );
+
+    await client.query(
+      `
+        INSERT INTO user_lifecycle_events
+          (user_id, company_id, action, from_status, to_status, reason, performed_by)
+        VALUES ($1, NULL, 'deleted', $2, 'deleted', $3, $4)
+      `,
+      [employeeId, existing.status, deletionReason, session.user.id]
+    );
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  await getPool().query(
-    `
-      UPDATE user_company_roles
-      SET deleted_at = now(), updated_by = $2, updated_at = now()
-      WHERE user_id = $1 AND deleted_at IS NULL
-    `,
-    [employeeId, session.user.id]
-  );
 }
 
 export async function activateEmployeeAccount(token: string, password: string) {
@@ -572,6 +830,15 @@ export async function activateEmployeeAccount(token: string, password: string) {
         WHERE id = $1 AND deleted_at IS NULL
       `,
       [activation.user_id, hashPassword(password)]
+    );
+
+    await client.query(
+      `
+        UPDATE user_company_roles
+        SET status = 'active', updated_by = $1, updated_at = now()
+        WHERE user_id = $1 AND deleted_at IS NULL
+      `,
+      [activation.user_id]
     );
 
     await client.query("UPDATE employee_activation_tokens SET used_at = now() WHERE id = $1", [activation.id]);

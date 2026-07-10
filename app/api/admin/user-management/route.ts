@@ -41,6 +41,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
 
-    throw error;
+    console.error("Error registering employee:", error);
+    const message = error instanceof Error ? error.message : "Unable to register user.";
+    return NextResponse.json({ message }, { status: 500 });
   }
 }

@@ -26,7 +26,15 @@ export async function getDashboardMetrics(): Promise<DashboardMetrics> {
         (SELECT COUNT(*) FROM companies WHERE deleted_at IS NULL AND status = 'active') AS active_companies,
         (SELECT COUNT(*) FROM users WHERE deleted_at IS NULL) AS registered_users,
         (SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND status = 'invited') AS invited_users,
-        (SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND status = 'active') AS active_users,
+        (
+          SELECT COUNT(DISTINCT user_company_roles.user_id)
+          FROM user_company_roles
+          INNER JOIN users ON users.id = user_company_roles.user_id
+          WHERE users.deleted_at IS NULL
+            AND users.status <> 'invited'
+            AND user_company_roles.deleted_at IS NULL
+            AND user_company_roles.status = 'active'
+        ) AS active_users,
         (SELECT COUNT(*) FROM roles WHERE deleted_at IS NULL AND company_id IS NOT NULL) AS roles,
         (SELECT COUNT(*) FROM email_outbox WHERE status = 'queued') AS queued_emails
     `
@@ -53,7 +61,7 @@ export type UserDashboardSummary = {
     totalUsers: number;
     activeUsers: number;
     invitedUsers: number;
-    disabledUsers: number;
+    inactiveUsers: number;
   };
   contentStructure?: {
     folders: number;
@@ -107,16 +115,18 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
       total_users: string;
       active_users: string;
       invited_users: string;
-      disabled_users: string;
+      inactive_users: string;
     }>(
       `
         SELECT
           COUNT(*) AS total_users,
-          COUNT(*) FILTER (WHERE status = 'active') AS active_users,
-          COUNT(*) FILTER (WHERE status = 'invited') AS invited_users,
-          COUNT(*) FILTER (WHERE status = 'disabled') AS disabled_users
+          COUNT(DISTINCT users.id) FILTER (WHERE user_company_roles.status = 'active' AND users.status <> 'invited') AS active_users,
+          COUNT(DISTINCT users.id) FILTER (WHERE users.status = 'invited') AS invited_users,
+          COUNT(DISTINCT users.id) FILTER (WHERE user_company_roles.status = 'inactive' AND users.status <> 'invited') AS inactive_users
         FROM users
-        WHERE deleted_at IS NULL
+        LEFT JOIN user_company_roles ON user_company_roles.user_id = users.id
+          AND user_company_roles.deleted_at IS NULL
+        WHERE users.deleted_at IS NULL
       `
     );
     const row = result.rows[0];
@@ -124,7 +134,7 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
       totalUsers: Number(row?.total_users ?? 0),
       activeUsers: Number(row?.active_users ?? 0),
       invitedUsers: Number(row?.invited_users ?? 0),
-      disabledUsers: Number(row?.disabled_users ?? 0)
+      inactiveUsers: Number(row?.inactive_users ?? 0)
     };
   }
 
