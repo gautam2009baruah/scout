@@ -24,6 +24,16 @@ export type RoleSummary = {
   createdAt: Date;
 };
 
+export type CompanyTargetApplication = {
+  id: string;
+  companyId: string;
+  companyName: string;
+  name: string;
+  baseUrl: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type CreateCompanyInput = {
   name: string;
   slug?: string;
@@ -60,6 +70,14 @@ function normalizeKey(value: string) {
 function assertCanManageMasterData(session: AdminSession) {
   if (!hasModuleAccess(session, MODULE_KEYS.administration)) {
     throw new MasterDataError("You do not have permission to manage master data.");
+  }
+}
+
+function assertCanAccessCompany(session: AdminSession, companyId: string) {
+  const hasAccess = session.availableCompanies.some((company) => company.companyId === companyId);
+
+  if (!hasAccess) {
+    throw new MasterDataError("You do not have access to this company.");
   }
 }
 
@@ -465,5 +483,188 @@ export async function deleteRole(roleId: string, session: AdminSession) {
   await getPool().query(
     "DELETE FROM roles WHERE id = $1 AND is_system = false AND deleted_at IS NULL",
     [roleId]
+  );
+}
+
+export async function listCompanyTargetApplications(session: AdminSession): Promise<CompanyTargetApplication[]> {
+  assertCanManageMasterData(session);
+
+  const companyIds = Array.from(new Set(session.availableCompanies.map((company) => company.companyId)));
+
+  if (companyIds.length === 0) {
+    return [];
+  }
+
+  const result = await getPool().query<{
+    id: string;
+    company_id: string;
+    company_name: string;
+    name: string;
+    base_url: string;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `
+      SELECT
+        company_target_applications.id,
+        company_target_applications.company_id,
+        companies.name AS company_name,
+        company_target_applications.name,
+        company_target_applications.base_url,
+        company_target_applications.created_at,
+        company_target_applications.updated_at
+      FROM company_target_applications
+      INNER JOIN companies ON companies.id = company_target_applications.company_id
+      WHERE company_target_applications.deleted_at IS NULL
+        AND companies.deleted_at IS NULL
+        AND company_target_applications.company_id = ANY($1::uuid[])
+      ORDER BY companies.name ASC, company_target_applications.name ASC
+    `,
+    [companyIds]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    companyId: row.company_id,
+    companyName: row.company_name,
+    name: row.name,
+    baseUrl: row.base_url,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }));
+}
+
+export async function createCompanyTargetApplication(
+  input: { companyId: string; name: string; baseUrl?: string },
+  session: AdminSession
+): Promise<CompanyTargetApplication> {
+  assertCanManageMasterData(session);
+  assertCanAccessCompany(session, input.companyId);
+
+  const name = input.name.trim();
+
+  if (!name) {
+    throw new MasterDataError("Target application name is required.");
+  }
+
+  try {
+    const result = await getPool().query<{ id: string }>(
+      `
+        INSERT INTO company_target_applications (company_id, name, base_url, created_by, updated_by)
+        VALUES ($1, $2, $3, $4, $4)
+        RETURNING id
+      `,
+      [input.companyId, name, input.baseUrl?.trim() ?? "", session.user.id]
+    );
+
+    const apps = await listCompanyTargetApplications(session);
+    const created = apps.find((app) => app.id === result.rows[0]?.id);
+
+    if (!created) {
+      throw new MasterDataError("Unable to create target application.");
+    }
+
+    return created;
+  } catch (error) {
+    if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+      throw new MasterDataError("A target application with this name already exists for the selected company.");
+    }
+
+    throw error;
+  }
+}
+
+export async function updateCompanyTargetApplication(
+  id: string,
+  input: { name: string; baseUrl?: string },
+  session: AdminSession
+): Promise<CompanyTargetApplication> {
+  assertCanManageMasterData(session);
+
+  const name = input.name.trim();
+
+  if (!id || !name) {
+    throw new MasterDataError("Target application id and name are required.");
+  }
+
+  const existing = await getPool().query<{ company_id: string }>(
+    `
+      SELECT company_id
+      FROM company_target_applications
+      WHERE id = $1 AND deleted_at IS NULL
+    `,
+    [id]
+  );
+
+  const companyId = existing.rows[0]?.company_id;
+
+  if (!companyId) {
+    throw new MasterDataError("Target application was not found.");
+  }
+
+  assertCanAccessCompany(session, companyId);
+
+  try {
+    const result = await getPool().query(
+      `
+        UPDATE company_target_applications
+        SET name = $2, base_url = $3, updated_by = $4, updated_at = now()
+        WHERE id = $1 AND deleted_at IS NULL
+      `,
+      [id, name, input.baseUrl?.trim() ?? "", session.user.id]
+    );
+
+    if (result.rowCount !== 1) {
+      throw new MasterDataError("Target application was not found.");
+    }
+
+    const apps = await listCompanyTargetApplications(session);
+    const updated = apps.find((app) => app.id === id);
+
+    if (!updated) {
+      throw new MasterDataError("Unable to update target application.");
+    }
+
+    return updated;
+  } catch (error) {
+    if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+      throw new MasterDataError("A target application with this name already exists for the selected company.");
+    }
+
+    throw error;
+  }
+}
+
+export async function deleteCompanyTargetApplication(id: string, session: AdminSession) {
+  assertCanManageMasterData(session);
+
+  if (!id) {
+    throw new MasterDataError("Target application id is required.");
+  }
+
+  const existing = await getPool().query<{ company_id: string }>(
+    `
+      SELECT company_id
+      FROM company_target_applications
+      WHERE id = $1 AND deleted_at IS NULL
+    `,
+    [id]
+  );
+
+  const companyId = existing.rows[0]?.company_id;
+
+  if (!companyId) {
+    throw new MasterDataError("Target application was not found.");
+  }
+
+  assertCanAccessCompany(session, companyId);
+
+  await getPool().query(
+    `
+      UPDATE company_target_applications
+      SET deleted_at = now(), updated_by = $2, updated_at = now()
+      WHERE id = $1 AND deleted_at IS NULL
+    `,
+    [id, session.user.id]
   );
 }
