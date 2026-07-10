@@ -26,6 +26,11 @@ type CompanyTargetApplication = {
   baseUrl: string;
 };
 
+type ConfirmDialog = {
+  message: string;
+  onConfirm: () => void;
+} | null;
+
 const initialState: FormState = {
   message: "",
   status: "idle"
@@ -49,10 +54,10 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
   const [targetAppTimeout, setTargetAppTimeout] = useState<NodeJS.Timeout | null>(null);
   const [targetApps, setTargetApps] = useState<CompanyTargetApplication[]>([]);
   const [loadingTargetApps, setLoadingTargetApps] = useState(false);
-  const [targetAppCompanyId, setTargetAppCompanyId] = useState(currentCompanyId);
   const [targetAppName, setTargetAppName] = useState("");
   const [targetAppBaseUrl, setTargetAppBaseUrl] = useState("");
   const [editingTargetAppId, setEditingTargetAppId] = useState<string | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
   const allModuleKeys = modules.map((module) => String(module.key));
 
   function updateAdminRole(checked: boolean) {
@@ -86,7 +91,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
 
     const body = await response.json().catch(() => null);
     const apps = Array.isArray(body?.apps) ? body.apps : [];
-    setTargetApps(apps);
+    setTargetApps(apps.filter((app: CompanyTargetApplication) => app.companyId === currentCompanyId));
     setLoadingTargetApps(false);
   }
 
@@ -107,7 +112,6 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
 
   function beginEditTargetApp(app: CompanyTargetApplication) {
     setEditingTargetAppId(app.id);
-    setTargetAppCompanyId(app.companyId);
     setTargetAppName(app.name);
     setTargetAppBaseUrl(app.baseUrl || "");
   }
@@ -115,8 +119,8 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
   async function saveTargetApp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!targetAppCompanyId || !targetAppName.trim()) {
-      setTargetAppFeedback("Company and target application name are required.", "error");
+    if (!targetAppName.trim()) {
+      setTargetAppFeedback("Target application name is required.", "error");
       return;
     }
 
@@ -131,7 +135,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
         method: isEditing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          companyId: targetAppCompanyId,
+          companyId: currentCompanyId,
           name: targetAppName,
           baseUrl: targetAppBaseUrl
         })
@@ -154,25 +158,32 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
   }
 
   async function removeTargetApp(id: string) {
-    setTargetAppState({ message: "", status: "submitting" });
+    const app = targetApps.find((item) => item.id === id);
+    setConfirmDialog({
+      message: `Are you sure you want to delete "${app?.name ?? "this target app"}"? This cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setTargetAppState({ message: "", status: "submitting" });
 
-    const response = await fetch(`/api/admin/administration/company-target-applications/${id}`, {
-      method: "DELETE"
+        const response = await fetch(`/api/admin/administration/company-target-applications/${id}`, {
+          method: "DELETE"
+        });
+
+        if (!response.ok) {
+          setTargetAppFeedback(await readMessage(response, "Unable to delete target application."), "error");
+          return;
+        }
+
+        if (editingTargetAppId === id) {
+          setEditingTargetAppId(null);
+          setTargetAppName("");
+          setTargetAppBaseUrl("");
+        }
+
+        await loadTargetApps();
+        setTargetAppFeedback("Target application deleted.", "success");
+      }
     });
-
-    if (!response.ok) {
-      setTargetAppFeedback(await readMessage(response, "Unable to delete target application."), "error");
-      return;
-    }
-
-    if (editingTargetAppId === id) {
-      setEditingTargetAppId(null);
-      setTargetAppName("");
-      setTargetAppBaseUrl("");
-    }
-
-    await loadTargetApps();
-    setTargetAppFeedback("Target application deleted.", "success");
   }
 
   async function createCompany(event: FormEvent<HTMLFormElement>) {
@@ -424,47 +435,23 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
 
             <div className="space-y-4 px-5 py-4">
               <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={saveTargetApp}>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Company</span>
-                    <select
-                      className="mt-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
-                      onChange={(event) => setTargetAppCompanyId(event.target.value)}
-                      value={targetAppCompanyId}
-                    >
-                      {companies.map((company) => (
-                        <option key={company.id} value={company.id}>
-                          {company.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="block">
-                    <span className="text-sm font-medium text-slate-700">Target app name</span>
-                    <input
-                      className="mt-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
-                      onChange={(event) => setTargetAppName(event.target.value)}
-                      placeholder="Support Portal"
-                      required
-                      type="text"
-                      value={targetAppName}
-                    />
-                  </label>
-                </div>
-
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">Base URL (optional)</span>
+                <p className="text-sm text-slate-500">Managing apps for selected company: <span className="font-medium text-slate-700">{companies.find((company) => company.id === currentCompanyId)?.name ?? "Current company"}</span></p>
+                <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto_auto]">
                   <input
-                    className="mt-2 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+                    onChange={(event) => setTargetAppName(event.target.value)}
+                    placeholder="Target app name"
+                    required
+                    type="text"
+                    value={targetAppName}
+                  />
+                  <input
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
                     onChange={(event) => setTargetAppBaseUrl(event.target.value)}
                     placeholder="https://app.example.com"
                     type="text"
                     value={targetAppBaseUrl}
                   />
-                </label>
-
-                <div className="flex gap-2">
                   <button
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
                     disabled={targetAppState.status === "submitting"}
@@ -485,7 +472,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
                     >
                       Cancel edit
                     </button>
-                  ) : null}
+                  ) : <span />}
                 </div>
               </form>
 
@@ -499,7 +486,6 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-700">Company</th>
                       <th className="px-3 py-2 text-left font-semibold text-slate-700">Name</th>
                       <th className="px-3 py-2 text-left font-semibold text-slate-700">Base URL</th>
                       <th className="px-3 py-2 text-right font-semibold text-slate-700">Actions</th>
@@ -508,16 +494,15 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
                   <tbody className="divide-y divide-slate-200 bg-white">
                     {loadingTargetApps ? (
                       <tr>
-                        <td className="px-3 py-4 text-slate-500" colSpan={4}>Loading target applications...</td>
+                        <td className="px-3 py-4 text-slate-500" colSpan={3}>Loading target applications...</td>
                       </tr>
                     ) : targetApps.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-4 text-slate-500" colSpan={4}>No target applications found.</td>
+                        <td className="px-3 py-4 text-slate-500" colSpan={3}>No target applications found.</td>
                       </tr>
                     ) : (
                       targetApps.map((app) => (
                         <tr key={app.id}>
-                          <td className="px-3 py-3 text-slate-700">{app.companyName}</td>
                           <td className="px-3 py-3 text-slate-900">{app.name}</td>
                           <td className="px-3 py-3 text-slate-600">{app.baseUrl || "-"}</td>
                           <td className="px-3 py-3">
@@ -546,6 +531,30 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDialog ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmDialog(null)}
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                type="button"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
