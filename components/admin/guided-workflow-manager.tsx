@@ -11,8 +11,9 @@ type CompanyOption = {
 };
 
 type GuidedWorkflowManagerProps = {
-  companies: CompanyOption[];
   guides: GuidedWorkflowRow[];
+  selectedCompanyId: string;
+  selectedCompanyName?: string;
 };
 
 type EditorState = {
@@ -22,13 +23,16 @@ type EditorState = {
   steps: GuideStep[];
 };
 
-export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManagerProps) {
+export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompanyName }: GuidedWorkflowManagerProps) {
   const [items, setItems] = useState(guides);
-  const [selectedId, setSelectedId] = useState(guides[0]?.id ?? "");
-  const selected = useMemo(() => items.find((guide) => guide.id === selectedId) ?? items[0] ?? null, [items, selectedId]);
+  const companyItems = useMemo(
+    () => items.filter((guide) => !selectedCompanyId || guide.companyId === selectedCompanyId),
+    [items, selectedCompanyId]
+  );
+  const [selectedId, setSelectedId] = useState(companyItems[0]?.id ?? "");
+  const selected = useMemo(() => companyItems.find((guide) => guide.id === selectedId) ?? companyItems[0] ?? null, [companyItems, selectedId]);
   const [editor, setEditor] = useState<EditorState>(() => editorFromGuide(selected));
   const [newGuide, setNewGuide] = useState({
-    companyId: companies[0]?.id ?? "",
     title: "New guided workflow",
     description: "",
     recordingJson: "[]"
@@ -62,7 +66,7 @@ export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManag
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        companyId: newGuide.companyId,
+        companyId: selectedCompanyId,
         title: newGuide.title,
         description: newGuide.description,
         recordedActions
@@ -79,6 +83,10 @@ export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManag
     setSelectedId(body.guide.id);
     setEditor(editorFromGuide(body.guide));
     setState({ status: "success", message: "Guide draft created." });
+  }
+
+  function companyLabelText() {
+    return selectedCompanyName || selected?.companyName || "Selected company";
   }
 
   async function saveGuide(nextStatus?: GuideStatus) {
@@ -186,9 +194,7 @@ export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManag
           </div>
           <div className="mt-4 grid gap-3">
             <Field label="Company">
-              <select className="input" onChange={(event) => setNewGuide({ ...newGuide, companyId: event.target.value })} value={newGuide.companyId}>
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-              </select>
+              <div className="input flex h-10 items-center bg-slate-50 text-slate-600">{companyLabelText()}</div>
             </Field>
             <Field label="Title">
               <input className="input" onChange={(event) => setNewGuide({ ...newGuide, title: event.target.value })} value={newGuide.title} />
@@ -196,7 +202,7 @@ export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManag
             <Field label="Recording JSON">
               <textarea className="input min-h-32 py-2 font-mono" onChange={(event) => setNewGuide({ ...newGuide, recordingJson: event.target.value })} value={newGuide.recordingJson} />
             </Field>
-            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={!newGuide.companyId || state.status === "submitting"} onClick={createGuide} type="button">
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={!selectedCompanyId || state.status === "submitting"} onClick={createGuide} type="button">
               <FileJson className="h-4 w-4" />
               Generate draft
             </button>
@@ -204,9 +210,9 @@ export function GuidedWorkflowManager({ companies, guides }: GuidedWorkflowManag
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
-          {items.length === 0 ? (
+          {companyItems.length === 0 ? (
             <p className="p-3 text-sm text-slate-500">No guided workflows yet.</p>
-          ) : items.map((guide) => (
+          ) : companyItems.map((guide) => (
             <button
               className={`block w-full rounded-md px-3 py-3 text-left text-sm transition ${selected?.id === guide.id ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"}`}
               key={guide.id}

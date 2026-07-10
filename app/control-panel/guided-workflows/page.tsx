@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AdminShell, GuidedWorkflowManager } from "@/components/admin";
-import { getMasterData } from "@/lib/admin/administration";
 import { listGuidedWorkflowRecordingSessions, listGuidedWorkflows, listGuidedWorkflowTargetApps } from "@/lib/admin/guided-workflows";
 import { MODULE_KEYS, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
@@ -24,21 +23,17 @@ export default async function GuidedWorkflowsPage() {
 
   requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
-  const [masterDataResult, guidesResult, targetAppsResult, recordingSessionsResult] = await Promise.allSettled([
-    getMasterData(),
+  const selectedCompanyName = session.availableCompanies.find((company) => company.companyId === session.user.tenantId)?.companyName ?? "";
+
+  const [guidesResult, targetAppsResult, recordingSessionsResult] = await Promise.allSettled([
     listGuidedWorkflows(session),
     listGuidedWorkflowTargetApps(session),
     listGuidedWorkflowRecordingSessions(session)
   ]);
 
-  const companies = masterDataResult.status === "fulfilled" ? masterDataResult.value.companies : [];
   const guides = guidesResult.status === "fulfilled" ? guidesResult.value : [];
   const targetApps = targetAppsResult.status === "fulfilled" ? targetAppsResult.value : [];
   const recordingSessions = recordingSessionsResult.status === "fulfilled" ? recordingSessionsResult.value : [];
-
-  if (masterDataResult.status === "rejected") {
-    console.error("Failed to load guided workflows master data", masterDataResult.reason);
-  }
 
   if (guidesResult.status === "rejected") {
     console.error("Failed to load guided workflows", guidesResult.reason);
@@ -54,7 +49,13 @@ export default async function GuidedWorkflowsPage() {
 
   return (
     <AdminShell active={MODULE_KEYS.guidedWorkflows} session={session}>
-      <GuidedWorkflowManager companies={companies} guides={guides} recordingSessions={recordingSessions} targetApps={targetApps} />
+      <GuidedWorkflowManager
+        guides={guides}
+        selectedCompanyId={session.user.tenantId}
+        selectedCompanyName={selectedCompanyName}
+        recordingSessions={recordingSessions}
+        targetApps={targetApps}
+      />
     </AdminShell>
   );
 }
