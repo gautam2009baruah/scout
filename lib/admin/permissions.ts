@@ -92,11 +92,30 @@ export async function getRoleModules(roleId: string): Promise<AdminModule[]> {
 export async function getEffectiveUserModules(
   userId: string,
   roleId: string,
-  isAdminRole: boolean,
+  isSystemRole: boolean,
   companyId: string,
   client?: Pool | PoolClient
 ): Promise<AdminModule[]> {
   const db = client ?? getPool();
+
+  if (isSystemRole) {
+    const allModulesResult = await db.query<{
+      key: number;
+      name: string;
+      href: string;
+      sort_order: number;
+      parent_key: number | null;
+    }>(
+      `
+        SELECT key, name, href, sort_order, parent_key
+        FROM modules
+        ORDER BY sort_order ASC, name ASC
+      `
+    );
+
+    return mapModules(allModulesResult.rows);
+  }
+
   const result = await db.query<{
     key: number;
     name: string;
@@ -106,14 +125,9 @@ export async function getEffectiveUserModules(
   }>(
     `
       WITH role_modules AS (
-        SELECT modules.key AS module_key, 'allow'::text AS effect
-        FROM modules
-        WHERE $4::boolean = true
-        UNION ALL
         SELECT module_key, 'allow'::text AS effect
         FROM role_module_permissions
-        WHERE $4::boolean = false
-          AND role_id = $2
+        WHERE role_id = $2
           AND deleted_at IS NULL
       ),
       merged_permissions AS (
@@ -136,7 +150,7 @@ export async function getEffectiveUserModules(
       WHERE effective_permissions.effect = 'allow'
       ORDER BY modules.sort_order ASC, modules.name ASC
     `,
-    [userId, roleId, companyId, isAdminRole]
+    [userId, roleId, companyId]
   );
 
   return mapModules(result.rows);

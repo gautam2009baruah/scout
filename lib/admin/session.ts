@@ -17,6 +17,7 @@ type SessionRow = {
   email: string;
   status: string;
   current_role_id: string;
+  is_system: boolean;
   is_admin_role: boolean;
   must_change_password: boolean;
   company_slug: string;
@@ -37,6 +38,7 @@ async function getUserCompanyAccess(userId: string): Promise<UserCompanyAccess[]
     company_slug: string;
     role_id: string;
     role_name: string;
+    is_system: boolean;
     is_admin_role: boolean;
     is_primary: boolean;
   }>(
@@ -47,6 +49,7 @@ async function getUserCompanyAccess(userId: string): Promise<UserCompanyAccess[]
         c.slug AS company_slug,
         ucr.role_id,
         r.name AS role_name,
+        r.is_system,
         r.is_admin_role,
         ucr.is_primary
       FROM user_company_roles ucr
@@ -83,7 +86,7 @@ async function toAdminSession(
   row: SessionRow,
   availableCompanies: UserCompanyAccess[]
 ): Promise<AdminSession> {
-  const modules = await getEffectiveUserModules(row.user_id, row.current_role_id, row.is_admin_role, row.current_company_id);
+  const modules = await getEffectiveUserModules(row.user_id, row.current_role_id, row.is_system, row.current_company_id);
 
   return {
     user: {
@@ -155,8 +158,20 @@ export async function createAdminSession(credentials: AdminLoginCredentials) {
     return null;
   }
 
+  // Get role flags from role table
+  const roleResult = await getPool().query<{ is_admin_role: boolean; is_system: boolean }>(
+    `SELECT is_admin_role, is_system FROM roles WHERE id = $1`,
+    [primaryCompany.roleId]
+  );
+
+  if (roleResult.rowCount === 0) {
+    return null;
+  }
+
+  const roleFlags = roleResult.rows[0];
+
   // Verify modules exist for this role
-  const modules = await getEffectiveUserModules(user.user_id, primaryCompany.roleId, primaryCompany.isPrimary, primaryCompany.companyId);
+  const modules = await getEffectiveUserModules(user.user_id, primaryCompany.roleId, roleFlags.is_system, primaryCompany.companyId);
   if (modules.length === 0) {
     return null;
   }
@@ -187,23 +202,12 @@ export async function createAdminSession(credentials: AdminLoginCredentials) {
     email: user.email,
     status: user.status,
     current_role_id: primaryCompany.roleId,
-    is_admin_role: primaryCompany.isPrimary, // This is boolean, using isPrimary as placeholder - will be corrected by role lookup
+    is_system: roleFlags.is_system,
+    is_admin_role: roleFlags.is_admin_role,
     must_change_password: false,
     company_slug: primaryCompany.companySlug,
     company_name: primaryCompany.companyName
   };
-
-  // Get is_admin_role from role table
-  const roleResult = await getPool().query<{ is_admin_role: boolean }>(
-    `SELECT is_admin_role FROM roles WHERE id = $1`,
-    [primaryCompany.roleId]
-  );
-  
-  if (roleResult.rowCount === 0) {
-    return null;
-  }
-
-  sessionRow.is_admin_role = roleResult.rows[0].is_admin_role;
 
   return {
     token,
@@ -230,6 +234,7 @@ export async function getCurrentAdminSession(): Promise<AdminSession | null> {
         users.email,
         users.status,
         ucr.role_id AS current_role_id,
+        r.is_system,
         r.is_admin_role,
         users.must_change_password,
         c.slug AS company_slug,

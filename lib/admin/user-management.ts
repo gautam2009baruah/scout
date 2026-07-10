@@ -331,11 +331,11 @@ export async function getEmployeePage(filters: EmployeeFilters) {
             WITH role_modules AS (
               SELECT modules.key AS module_key, 'allow'::text AS effect
               FROM modules
-              WHERE member_roles.is_admin_role = true
+              WHERE member_roles.is_system = true
               UNION ALL
               SELECT module_key, 'allow'::text AS effect
               FROM role_module_permissions
-              WHERE member_roles.is_admin_role = false
+              WHERE member_roles.is_system = false
                 AND role_id = member_roles.role_id
                 AND deleted_at IS NULL
             ),
@@ -362,11 +362,11 @@ export async function getEmployeePage(filters: EmployeeFilters) {
           WITH role_modules AS (
             SELECT modules.key AS module_key, 'allow'::text AS effect
             FROM modules
-            WHERE roles.is_admin_role = true
+            WHERE roles.is_system = true
             UNION ALL
             SELECT module_key, 'allow'::text AS effect
             FROM role_module_permissions
-            WHERE roles.is_admin_role = false
+            WHERE roles.is_system = false
               AND role_id = user_company_roles.role_id
               AND deleted_at IS NULL
           ),
@@ -528,7 +528,7 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
         replaceUserModuleOverrides(userResult.rows[0].id, companyRole.company_id, input.moduleKeys ?? [], session.user.id)
       )
     );
-    const modules = await getEffectiveUserModules(userResult.rows[0].id, primaryRoleId, roleTemplate?.is_admin_role === true, primaryCompanyId);
+    const modules = await getEffectiveUserModules(userResult.rows[0].id, primaryRoleId, roleTemplate?.is_system === true, primaryCompanyId);
     const hasControlPanelAccess = modules.length > 0;
 
     if (hasControlPanelAccess) {
@@ -631,7 +631,7 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
     }
 
     await replaceUserModuleOverrides(employeeId, primaryCompanyId, input.moduleKeys ?? [], session.user.id, client);
-    const modules = await getEffectiveUserModules(employeeId, primaryRoleId, roleTemplate?.is_admin_role === true, primaryCompanyId, client);
+    const modules = await getEffectiveUserModules(employeeId, primaryRoleId, roleTemplate?.is_system === true, primaryCompanyId, client);
     const hasControlPanelAccess = modules.length > 0;
     const shouldSendPanelPassword = hasControlPanelAccess && !existing.password_hash;
     const result = await client.query(

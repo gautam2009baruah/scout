@@ -118,7 +118,7 @@ export async function getMasterData() {
           roles.is_system,
           roles.is_admin_role,
           CASE
-            WHEN roles.is_admin_role = true THEN all_modules.module_keys
+            WHEN roles.is_system = true THEN all_modules.module_keys
             ELSE COALESCE(module_access.module_keys, ARRAY[]::integer[])
           END AS module_keys,
           roles.created_at
