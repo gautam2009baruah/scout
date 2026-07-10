@@ -5,8 +5,6 @@ import { Check, ChevronDown, ChevronRight, ListFilter, Pencil, Trash2, X } from 
 import type { SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
 
-type CompanyOption = { id: string; name: string };
-
 type ElementIdentity = {
   tagName?: string;
   role?: string;
@@ -75,7 +73,7 @@ type EditModalData = {
 export type HealingSuggestionReviewerPanelProps = {
   embedded?: boolean;
   displayMode?: "cards" | "table";
-  companies?: CompanyOption[];
+  selectedCompanyId?: string;
   targetApps?: GuidedWorkflowTargetAppRow[];
   recordingSessions?: GuidedWorkflowRecordingSessionRow[];
   workflowId?: string;
@@ -83,7 +81,7 @@ export type HealingSuggestionReviewerPanelProps = {
   onClose?: () => void;
 };
 
-export function HealingSuggestionReviewerPanel({ companies = [], displayMode = "cards", embedded = false, recordingSessions = [], targetApps = [], workflowId, stepId, onClose }: HealingSuggestionReviewerPanelProps) {
+export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded = false, recordingSessions = [], selectedCompanyId = "", targetApps = [], workflowId, stepId, onClose }: HealingSuggestionReviewerPanelProps) {
   const [suggestions, setSuggestions] = useState<HealingSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +89,7 @@ export function HealingSuggestionReviewerPanel({ companies = [], displayMode = "
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected">("pending");
   const [filters, setFilters] = useState({
-    companyId: companies[0]?.id ?? "",
+    companyId: selectedCompanyId,
     targetAppId: "",
     recordingSessionId: "",
     topicId: "all"
@@ -103,16 +101,16 @@ export function HealingSuggestionReviewerPanel({ companies = [], displayMode = "
 
   const showFilters = displayMode === "table";
   const filteredTargetApps = useMemo(
-    () => targetApps.filter((app) => !filters.companyId || app.companyId === filters.companyId),
-    [filters.companyId, targetApps]
+    () => targetApps.filter((app) => !selectedCompanyId || app.companyId === selectedCompanyId),
+    [selectedCompanyId, targetApps]
   );
   const filteredRecordingSessions = useMemo(
     () => recordingSessions.filter((session) => {
-      const matchesCompany = !filters.companyId || session.companyId === filters.companyId;
+      const matchesCompany = !selectedCompanyId || session.companyId === selectedCompanyId;
       const matchesTargetApp = !filters.targetAppId || session.targetAppId === filters.targetAppId;
       return matchesCompany && matchesTargetApp;
     }),
-    [filters.companyId, filters.targetAppId, recordingSessions]
+    [selectedCompanyId, filters.targetAppId, recordingSessions]
   );
   const filteredTopics = useMemo(
     () => filteredRecordingSessions
@@ -131,6 +129,12 @@ export function HealingSuggestionReviewerPanel({ companies = [], displayMode = "
       return { ...current, targetAppId: nextTargetAppId, recordingSessionId: nextSessionId, topicId: nextTopicId };
     });
   }, [filteredRecordingSessions, filteredTargetApps, filteredTopics, showFilters]);
+
+  useEffect(() => {
+    setFilters((current) => ({ ...current, companyId: selectedCompanyId, targetAppId: "", recordingSessionId: "", topicId: "all" }));
+    setAppliedFilters((current) => ({ ...current, companyId: selectedCompanyId, targetAppId: "", recordingSessionId: "", topicId: "all" }));
+    setPage(1);
+  }, [selectedCompanyId]);
 
   const loadSuggestions = useCallback(async () => {
     try {
@@ -247,7 +251,6 @@ export function HealingSuggestionReviewerPanel({ companies = [], displayMode = "
 
       {showFilters ? (
         <HealingFilters
-          companies={companies}
           filters={filters}
           onApply={() => {
             setAppliedFilters(filters);
@@ -326,7 +329,6 @@ export function HealingSuggestionReviewerPanel({ companies = [], displayMode = "
 export default HealingSuggestionReviewerPanel;
 
 function HealingFilters({
-  companies,
   filters,
   onApply,
   onChange,
@@ -334,7 +336,6 @@ function HealingFilters({
   targetApps,
   topics
 }: {
-  companies: CompanyOption[];
   filters: { companyId: string; targetAppId: string; recordingSessionId: string; topicId: string };
   onApply(): void;
   onChange(patch: Partial<{ companyId: string; targetAppId: string; recordingSessionId: string; topicId: string }>): void;
@@ -343,14 +344,7 @@ function HealingFilters({
   topics: Array<GuidedWorkflowRecordingSessionRow["topics"][number] & { sessionId: string }>;
 }) {
   return (
-    <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
-      <FilterSelect
-        label="Company"
-        onChange={(companyId) => onChange({ companyId, targetAppId: "", recordingSessionId: "", topicId: "all" })}
-        value={filters.companyId}
-      >
-        {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-      </FilterSelect>
+    <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
       <FilterSelect
         label="Target app"
         onChange={(targetAppId) => onChange({ targetAppId, recordingSessionId: "", topicId: "all" })}
