@@ -537,15 +537,21 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                   <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, api_key: event.target.value }))} placeholder="API key" value={llmDraft.api_key} />
                 </label>
 
-                <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                  <input checked={llmDraft.is_active} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
-                  Mark as active
-                </label>
+                <div className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Status</span>
+                  <label className="inline-flex h-10 w-full items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                    <input checked={llmDraft.is_active} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
+                    Mark as active
+                  </label>
+                </div>
 
-                <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
-                  <input checked={llmDraft.is_primary} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
-                  Mark as primary
-                </label>
+                <div className="block">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">Primary</span>
+                  <label className="inline-flex h-10 w-full items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                    <input checked={llmDraft.is_primary} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
+                    Mark as primary
+                  </label>
+                </div>
               </div>
             </div>
             <div className="mt-3 flex gap-2">
@@ -639,9 +645,9 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
       ) : null}
 
       {toast ? (
-        <div className="fixed right-4 top-20 z-[9999]">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 pointer-events-none">
           <div
-            className={`flex items-center gap-2 rounded-lg border px-3 py-2 shadow-lg ${
+            className={`pointer-events-auto flex items-center gap-2 rounded-lg border px-3 py-2 shadow-lg ${
               toast.type === "success"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                 : "border-red-200 bg-red-50 text-red-700"
