@@ -134,13 +134,14 @@ export async function enqueueProcessingJob(input: {
   return result.rows[0].id;
 }
 
-export async function enqueueDocumentReembeddingJobs() {
+export async function enqueueDocumentReembeddingJobs(companyId: string) {
   const result = await getPool().query<{ document_count: string; job_count: string }>(
     `
       WITH target_documents AS (
         SELECT documents.id, documents.company_id
         FROM documents
         WHERE documents.status <> 'deleted'
+          AND documents.company_id = $1
           AND EXISTS (
             SELECT 1
             FROM document_chunks
@@ -205,7 +206,8 @@ export async function enqueueDocumentReembeddingJobs() {
       SELECT
         (SELECT COUNT(*) FROM updated_documents) AS document_count,
         (SELECT COUNT(*) FROM queued_jobs) AS job_count
-    `
+    `,
+    [companyId]
   );
   const row = result.rows[0];
 

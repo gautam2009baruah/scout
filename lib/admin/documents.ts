@@ -104,6 +104,12 @@ export type UploadDocumentFile = {
   arrayBuffer(): Promise<ArrayBuffer>;
 };
 
+export type ExternalFolderEntry = {
+  externalSourceUrl: string;
+  originalFilename: string;
+  fileType: string;
+};
+
 function isDocumentStatus(value: string): value is DocumentStatus {
   return DOCUMENT_STATUSES.includes(value as DocumentStatus);
 }
@@ -160,6 +166,76 @@ function filenameFromExternalReference(reference: string) {
   } catch {
     return reference.split(/[\\/]/).filter(Boolean).pop() || "external-document";
   }
+}
+
+export async function discoverExternalFolder(folderReference: string): Promise<ExternalFolderEntry[]> {
+  let root: URL;
+
+  try {
+    root = new URL(folderReference);
+  } catch {
+    throw new DocumentError("External folder must be a valid HTTP or HTTPS URL.");
+  }
+
+  if (!['http:', 'https:'].includes(root.protocol)) {
+    throw new DocumentError("Only HTTP and HTTPS external folders are supported.");
+  }
+
+  if (!root.pathname.endsWith('/')) root.pathname += '/';
+  const pending = [root];
+  const visited = new Set<string>();
+  const files = new Map<string, ExternalFolderEntry>();
+  const maximumEntries = 500;
+
+  while (pending.length > 0) {
+    const directory = pending.shift()!;
+    if (visited.has(directory.href)) continue;
+    visited.add(directory.href);
+
+    const response = await fetch(directory, { headers: { Accept: "text/html" }, redirect: "follow" });
+    if (!response.ok) throw new DocumentError(`Unable to read external folder. HTTP ${response.status}.`, 400);
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("text/html")) {
+      throw new DocumentError("The folder URL must expose an HTML directory listing containing links to its files.");
+    }
+
+    const html = await response.text();
+    const hrefPattern = /href\s*=\s*["']([^"'#?]+)["']/gi;
+    let match: RegExpExecArray | null;
+
+    while ((match = hrefPattern.exec(html))) {
+      let candidate: URL;
+      try {
+        candidate = new URL(match[1], directory);
+      } catch {
+        continue;
+      }
+
+      if (candidate.origin !== root.origin || !candidate.pathname.startsWith(root.pathname)) continue;
+      candidate.hash = "";
+      candidate.search = "";
+      if (candidate.pathname.endsWith('/')) {
+        if (!visited.has(candidate.href)) pending.push(candidate);
+        continue;
+      }
+
+      const originalFilename = decodeURIComponent(candidate.pathname.split('/').pop() ?? '');
+      const fileType = originalFilename.split('.').pop()?.toLowerCase() ?? '';
+      if (!isSupportedFileType(fileType)) continue;
+      files.set(candidate.href, { externalSourceUrl: candidate.href, originalFilename, fileType });
+
+      if (files.size > maximumEntries) {
+        throw new DocumentError(`External folders may contain at most ${maximumEntries} supported files.`);
+      }
+    }
+  }
+
+  if (files.size === 0) {
+    throw new DocumentError("No supported documents were found in the external folder.");
+  }
+
+  return Array.from(files.values());
 }
 
 async function assertFolderAccess(companyId: string, folderId: string, session: AdminSession) {
@@ -424,9 +500,8 @@ export async function uploadDocuments(input: { companyId: string; folderId: stri
   }
 
   const storage = getStorageProvider();
-  const uploaded: DocumentRow[] = [];
 
-  for (const file of input.files) {
+  return Promise.all(input.files.map(async (file) => {
     const buffer = Buffer.from(await file.arrayBuffer());
     const checksum = checksumBuffer(buffer);
     const document = await createDocument(
@@ -461,7 +536,7 @@ export async function uploadDocuments(input: { companyId: string; folderId: stri
         jobType: "parse_document",
         maxAttempts: 3
       });
-      uploaded.push(uploadedDocument);
+      return uploadedDocument;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to save file to storage.";
       try {
@@ -481,15 +556,12 @@ export async function uploadDocuments(input: { companyId: string; folderId: stri
       );
       throw new DocumentError(`Unable to store "${file.name}": ${message}`, 500);
     }
-  }
-
-  return uploaded;
+  }));
 }
 
 export async function listDocuments(filters: DocumentFilters, session: AdminSession) {
-  const page = Math.max(1, Number(filters.page) || 1);
+  const requestedPage = Math.max(1, Number(filters.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 20));
-  const offset = (page - 1) * pageSize;
   const conditions = ["documents.status <> 'deleted'"];
   const params: unknown[] = [];
   const accessibleTopicIds = await getAccessibleTopicIds(session);
@@ -530,6 +602,14 @@ export async function listDocuments(filters: DocumentFilters, session: AdminSess
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const countResult = await getPool().query<{ total: string }>(
+    `SELECT COUNT(*) AS total FROM documents ${whereClause}`,
+    params
+  );
+  const total = Number(countResult.rows[0]?.total ?? 0);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, pageCount);
+  const offset = (page - 1) * pageSize;
   const dataParams = [...params, pageSize, offset];
   const documentsResult = await getPool().query(
     `
@@ -541,16 +621,10 @@ export async function listDocuments(filters: DocumentFilters, session: AdminSess
     `,
     dataParams
   );
-  const countResult = await getPool().query<{ total: string }>(
-    `SELECT COUNT(*) AS total FROM documents ${whereClause}`,
-    params
-  );
-  const total = Number(countResult.rows[0]?.total ?? 0);
-
   return {
     documents: documentsResult.rows.map((row) => mapDocument(row, session)),
     page,
-    pageCount: Math.max(1, Math.ceil(total / pageSize)),
+    pageCount,
     pageSize,
     total
   };

@@ -38,6 +38,8 @@ function shouldClearConfig(responseStatus: number, message: string) {
   return [401, 404, 409].includes(responseStatus)
     || normalized.includes("recording session was not found")
     || normalized.includes("recording session is closed")
+    || normalized.includes("no longer accepting recordings")
+    || normalized.includes("contact your administrator")
     || normalized.includes("session token");
 }
 
@@ -68,8 +70,8 @@ async function postAction(action: RecordedAction, configOverride?: RecorderConfi
         await browserApi.setStorage({ recorderConfig: undefined });
         await setRecorderStatus({
           configured: false,
-          lastPostStatus: "Recorder config expired",
-          lastError: "Recorder config expired or is no longer valid. Paste a fresh config."
+          lastPostStatus: "Training recording halted",
+          lastError: message || "This training is no longer accepting recordings. Contact your administrator for a new recorder config."
         });
       }
       throw new Error(message);

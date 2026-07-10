@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Bot, KeyRound, Pencil, Plus, Star, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
+import { Bot, KeyRound, Pencil, Plus, RefreshCw, Star, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 
 type AIConfig = {
   active: {
@@ -17,6 +17,7 @@ type AIConfig = {
   };
   embedding_configs: EmbeddingProviderConfig[];
   llm_configs: LLMProviderConfig[];
+  reembedding?: { documentCount: number; jobCount: number } | null;
 };
 
 type EmbeddingProviderConfig = {
@@ -129,6 +130,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [toastTimeout, setToastTimeout] = useState<NodeJS.Timeout | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
+  const [reembedDocuments, setReembedDocuments] = useState(false);
 
   const defaultEmbeddingProvider = embeddingProviders[0];
   const defaultLlmProvider = llmProviders[0];
@@ -150,6 +152,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
   function resetEmbeddingDraft() {
     setEmbeddingDraft(buildEmbeddingDraft(defaultEmbeddingProvider));
+    setReembedDocuments(false);
   }
 
   function resetLlmDraft() {
@@ -179,7 +182,8 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
         endpoint: embeddingDraft.endpoint,
         api_key: embeddingDraft.api_key,
         is_active: embeddingDraft.is_active,
-        is_primary: embeddingDraft.is_primary
+        is_primary: embeddingDraft.is_primary,
+        reembed_documents: reembedDocuments
       })
     });
 
@@ -192,8 +196,10 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
     const body = await response.json();
     setAdminConfig(body);
     resetEmbeddingDraft();
+    setReembedDocuments(false);
     setFeedback(initialFeedback);
-    showToast(embeddingDraft.id ? "Embedding configuration updated." : "Embedding configuration created.", "success");
+    const queued = body.reembedding ? ` ${body.reembedding.jobCount} re-embedding job(s) queued for ${body.reembedding.documentCount} document(s).` : "";
+    showToast(`${embeddingDraft.id ? "Embedding configuration updated." : "Embedding configuration created."}${queued}`, "success");
   }
 
   async function saveLlm(event: FormEvent<HTMLFormElement>) {
@@ -418,6 +424,15 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                   Mark as primary
                 </label>
               </div>
+
+              <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-slate-700">
+                <input checked={reembedDocuments} className="mt-1 h-4 w-4" disabled={!embeddingDraft.is_active || !embeddingDraft.is_primary} onChange={(event) => setReembedDocuments(event.target.checked)} type="checkbox" />
+                <span>
+                  <span className="inline-flex items-center gap-2 font-semibold text-slate-900"><RefreshCw className="h-4 w-4" />Re-embed existing documents after saving</span>
+                  <span className="mt-1 block text-xs text-slate-600">Use this when changing the primary embedding provider, model, or dimensions. Existing chunks are retained and their vectors are regenerated.</span>
+                  {!embeddingDraft.is_primary ? <span className="mt-1 block text-xs text-amber-700">Mark this configuration as primary to enable re-embedding.</span> : null}
+                </span>
+              </label>
             </div>
             <div className="mt-3 flex gap-2">
               <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={feedback.status === "submitting"} type="submit">

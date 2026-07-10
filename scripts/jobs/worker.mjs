@@ -896,8 +896,34 @@ async function embedDocument(job) {
   }
 }
 
-async function indexDocument(_job) {
-  // Placeholder for future indexing integration.
+async function indexDocument(job) {
+  // Embeddings are already stored in the searchable chunk_embeddings table.
+  // This final step publishes the document as fully retrieval-ready.
+  await client.query(
+    "UPDATE documents SET status = 'indexed', error_message = NULL, updated_at = now() WHERE id = $1 AND status <> 'deleted'",
+    [job.document_id]
+  );
+}
+
+async function reconcileCompletedIndexJobs() {
+  const result = await client.query(
+    `
+      UPDATE documents
+      SET status = 'indexed', error_message = NULL, updated_at = now()
+      WHERE documents.status = 'embedded'
+        AND EXISTS (
+          SELECT 1
+          FROM processing_jobs
+          WHERE processing_jobs.document_id = documents.id
+            AND processing_jobs.job_type = 'index_document'
+            AND processing_jobs.status = 'completed'
+        )
+    `
+  );
+
+  if (result.rowCount > 0) {
+    console.log(`Reconciled ${result.rowCount} previously completed index job(s).`);
+  }
 }
 
 async function executeJob(job) {
@@ -939,6 +965,7 @@ async function processOneJob() {
 }
 
 await client.connect();
+await reconcileCompletedIndexJobs();
 console.log(`Processing worker started. Poll interval: ${pollMs}ms.`);
 
 try {

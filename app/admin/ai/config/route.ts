@@ -3,6 +3,7 @@ import { getCurrentAdminSession } from "@/lib/admin/session";
 import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import { adminAIProviderConfig, getAdminAIProviderConfig } from "@/lib/ai/config";
 import { getPool } from "@/lib/db/pool";
+import { enqueueDocumentReembeddingJobs } from "@/lib/admin/processing-jobs";
 
 export const runtime = "nodejs";
 
@@ -207,7 +208,10 @@ export async function POST(request: Request) {
       await ensurePrimaryConfig("llm", companyId);
     }
 
-    return NextResponse.json(await readConfig(companyId));
+    const reembedding = type === "embedding" && body.reembed_documents === true
+      ? await enqueueDocumentReembeddingJobs(companyId)
+      : null;
+    return NextResponse.json({ ...(await readConfig(companyId)), reembedding });
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
       return NextResponse.json({ message: "A configuration with the same provider and model already exists for this company." }, { status: 400 });
@@ -353,7 +357,10 @@ export async function PUT(request: Request) {
       await ensurePrimaryConfig("llm", companyId);
     }
 
-    return NextResponse.json(await readConfig(companyId));
+    const reembedding = type === "embedding" && body.reembed_documents === true
+      ? await enqueueDocumentReembeddingJobs(companyId)
+      : null;
+    return NextResponse.json({ ...(await readConfig(companyId)), reembedding });
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
       return NextResponse.json({ message: "A configuration with the same provider and model already exists for this company." }, { status: 400 });

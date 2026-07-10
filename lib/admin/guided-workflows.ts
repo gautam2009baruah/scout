@@ -47,6 +47,7 @@ export type GuidedWorkflowTopicRow = {
   recordingSessionId: string;
   guideId: string | null;
   recorderConfig: { recorderToken?: string; topicId?: string } | null;
+  recordingEnabled: boolean;
   title: string;
   analyticsLoggingEnabled: boolean;
   status: GuideStatus;
@@ -405,6 +406,7 @@ function mapTopic(row: {
   recording_session_id: string;
   guide_id: string | null;
   recorder_config_json: { recorderToken?: string; topicId?: string } | null;
+  recording_enabled: boolean;
   title: string;
   status: GuideStatus | null;
   analytics_logging_enabled: boolean;
@@ -418,7 +420,8 @@ function mapTopic(row: {
     companyId: row.company_id,
     recordingSessionId: row.recording_session_id,
     guideId: row.guide_id,
-    recorderConfig: row.recorder_config_json ?? null,
+    recorderConfig: row.recording_enabled ? row.recorder_config_json ?? null : null,
+    recordingEnabled: row.recording_enabled !== false,
     title: row.title,
     analyticsLoggingEnabled: row.analytics_logging_enabled !== false,
     status: row.status ?? "draft",
@@ -596,6 +599,7 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
           guided_workflow_topics.recording_session_id,
           guided_workflow_topics.guide_id,
           guided_workflow_topics.recorder_config_json,
+          guided_workflow_topics.recording_enabled,
           guided_workflow_topics.title,
           guided_workflow_topics.analytics_logging_enabled,
           guided_workflow_guides.status,
@@ -918,6 +922,59 @@ export async function updateGuidedWorkflowTopic(id: string, input: {
   return getGuidedWorkflowTopicById(id, session);
 }
 
+export async function setGuidedWorkflowTopicRecording(id: string, enabled: boolean, session: AdminSession) {
+  const topic = await getGuidedWorkflowTopicById(id, session);
+  const client = await getPool().connect();
+
+  try {
+    await client.query("BEGIN");
+    const current = await client.query<{ recorder_token_hash: string }>(
+      "SELECT recorder_token_hash FROM guided_workflow_topics WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+      [topic.id]
+    );
+    if (!current.rows[0]) throw new GuidedWorkflowError("Training topic was not found.", 404);
+
+    await client.query(
+      `INSERT INTO guided_workflow_revoked_recorder_tokens (token_hash, topic_id, revoked_by)
+       VALUES ($1, $2, $3) ON CONFLICT (token_hash) DO NOTHING`,
+      [current.rows[0].recorder_token_hash, topic.id, session.user.id]
+    );
+
+    if (enabled) {
+      const recorderToken = createRecorderToken();
+      await client.query(
+        `UPDATE guided_workflow_topics
+         SET recorder_token_hash = $2,
+             recorder_config_json = $3::jsonb,
+             recording_enabled = true,
+             updated_by = $4,
+             updated_at = now()
+         WHERE id = $1`,
+        [topic.id, tokenHash(recorderToken), JSON.stringify({ recorderToken, topicId: topic.id }), session.user.id]
+      );
+    } else {
+      await client.query(
+        `UPDATE guided_workflow_topics
+         SET recorder_config_json = '{}'::jsonb,
+             recording_enabled = false,
+             updated_by = $2,
+             updated_at = now()
+         WHERE id = $1`,
+        [topic.id, session.user.id]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  return getGuidedWorkflowTopicById(id, session);
+}
+
 export async function deleteGuidedWorkflowTopic(id: string, session: AdminSession) {
   const topic = await getGuidedWorkflowTopicById(id, session);
   const client = await getPool().connect();
@@ -993,6 +1050,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
       actions_count: number;
       next_action_index: number;
       allowed_origins_json: string[] | null;
+      recording_enabled: boolean;
     }>(
       `
         SELECT
@@ -1001,6 +1059,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
           guided_workflow_topics.recording_session_id,
           target_app_map.id AS target_app_id,
           guided_workflow_topics.guide_id,
+          guided_workflow_topics.recording_enabled,
           guided_workflow_topics.title,
           (
             SELECT COUNT(*)::int
@@ -1034,7 +1093,18 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
     const topic = topicResult.rows[0];
 
     if (!topic) {
-      throw new GuidedWorkflowError("Training topic was not found.", 404);
+      const revoked = await client.query(
+        "SELECT 1 FROM guided_workflow_revoked_recorder_tokens WHERE token_hash = $1",
+        [tokenHash(token)]
+      );
+      if (revoked.rowCount) {
+        throw new GuidedWorkflowError("This recorder configuration is no longer valid because recording was halted or restarted by an administrator. Contact your administrator for a new recorder config.", 409);
+      }
+      throw new GuidedWorkflowError("Recorder configuration is invalid. Contact your administrator for a new recorder config.", 401);
+    }
+
+    if (!topic.recording_enabled) {
+      throw new GuidedWorkflowError("This training topic is no longer accepting recordings. Contact your administrator to restart training and provide a new recorder config.", 409);
     }
 
     const allowedOrigins = topic.allowed_origins_json ?? [];

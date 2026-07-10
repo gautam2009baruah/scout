@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createDocument, DocumentError, listDocuments, registerExternalDocument, uploadDocuments } from "@/lib/admin/documents";
+import { createDocument, discoverExternalFolder, DocumentError, listDocuments, registerExternalDocument, uploadDocuments } from "@/lib/admin/documents";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export const runtime = "nodejs";
@@ -57,9 +57,24 @@ export async function POST(request: Request) {
   }
 
   try {
-    const registered = [];
+    const expandedDocuments = (await Promise.all(documents.map(async (document: Record<string, unknown>) => {
+      const sourceKind = document.externalSourceKind ?? document.external_source_kind;
+      if (sourceKind !== "folder") return [document];
 
-    for (const document of documents) {
+      const folderUrl = String(document.externalSourceUrl ?? document.external_source_url ?? "");
+      const entries = await discoverExternalFolder(folderUrl);
+      return entries.map((entry) => ({
+        ...document,
+        ...entry,
+        externalSourceReference: entry.externalSourceUrl,
+        sourceMetadata: {
+          ...(typeof document.sourceMetadata === "object" && document.sourceMetadata ? document.sourceMetadata : {}),
+          source_folder_url: folderUrl
+        }
+      }));
+    }))).flat();
+
+    const registered = await Promise.all(expandedDocuments.map(async (document) => {
       const storageMode = typeof document.storageMode === "string" ? document.storageMode : typeof document.storage_mode === "string" ? document.storage_mode : "managed_upload";
       const createInput = {
         companyId: String(document.companyId ?? document.company_id ?? ""),
@@ -78,13 +93,13 @@ export async function POST(request: Request) {
         version: typeof document.version === "number" ? document.version : undefined
       };
 
-      registered.push(await (storageMode === "managed_upload" ? createDocument : registerExternalDocument)(
+      return (storageMode === "managed_upload" ? createDocument : registerExternalDocument)(
         {
           ...createInput
         },
         auth.session
-      ));
-    }
+      );
+    }));
 
     return NextResponse.json({ documents: registered }, { status: 201 });
   } catch (error) {

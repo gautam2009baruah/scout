@@ -39,6 +39,13 @@ type SessionDetailsState = {
   }>;
 };
 
+type ConfirmDialog = {
+  message: string;
+  confirmLabel: string;
+  confirmClassName: string;
+  onConfirm: () => void;
+} | null;
+
 type HealingSuggestionSummary = {
   id: string;
   step_id: string;
@@ -73,6 +80,7 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(recordingSessions[0]?.topics[0]?.id ?? null);
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(() => new Set(recordingSessions.map((session) => session.id)));
   const [sessionDetails, setSessionDetails] = useState<SessionDetailsState>({ session: null, actions: [] });
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
   const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>({ status: "idle", message: "" });
   const firstTargetAppId = apps.find((app) => app.companyId === selectedCompanyId)?.id ?? "";
   const [draftFilters, setDraftFilters] = useState({ targetAppId: firstTargetAppId, title: "" });
@@ -318,6 +326,43 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
       setSelectedSessionId(nextSelection);
     }
     setState({ status: "success", message: "Recording session deleted." });
+  }
+
+  async function applyTopicRecording(topic: GuidedWorkflowTopicRow, action: "halt" | "restart") {
+    setState({ status: "submitting", message: "" });
+    const response = await fetch(`/api/admin/guided-workflow-topics/${topic.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recordingAction: action })
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to change the training recording state." });
+      return;
+    }
+
+    setSessions((current) => current.map((session) => session.id === body.topic.recordingSessionId
+      ? { ...session, topics: session.topics.map((item) => item.id === body.topic.id ? body.topic : item) }
+      : session));
+    setState({ status: "success", message: action === "halt" ? "Training halted. The previous recorder config is now invalid." : "Training restarted with a new recorder token." });
+  }
+
+  function setTopicRecording(topic: GuidedWorkflowTopicRow, action: "halt" | "restart") {
+    const message = action === "halt"
+      ? "Halt training for this topic? The current recorder token will stop working immediately. Existing recorded steps will be kept."
+      : "Restart training for this topic? A new recorder token will be generated and all previous recorder configs will remain invalid.";
+
+    setConfirmDialog({
+      message,
+      confirmLabel: action === "halt" ? "Halt training" : "Restart training",
+      confirmClassName: action === "halt"
+        ? "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+        : "rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800",
+      onConfirm: () => {
+        setConfirmDialog(null);
+        void applyTopicRecording(topic, action);
+      }
+    });
   }
 
   async function convertTopic(topicId: string) {
@@ -609,6 +654,7 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
           moveStep={moveStep}
           publishTopicGuide={publishTopicGuide}
           recorderConfig={selectedRecorderConfig}
+          setTopicRecording={setTopicRecording}
           selectedSession={selectedSession}
           selectedTopic={selectedTopic}
           sessionDetails={sessionDetails}
@@ -617,11 +663,35 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
           updateStep={updateStep}
         />
       </section>
+
+      {confirmDialog ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+            <p className="mb-6 text-sm text-slate-900">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+                onClick={() => setConfirmDialog(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className={confirmDialog.confirmClassName}
+                onClick={confirmDialog.onConfirm}
+                type="button"
+              >
+                {confirmDialog.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, guides, moveStep, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
+function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, guides, moveStep, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
   convertTopic(topicId: string): void;
   deleteSession(sessionId: string): void;
   deleteStep(index: number): void;
@@ -630,6 +700,7 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
   moveStep(index: number, direction: -1 | 1): void;
   publishTopicGuide(topic: GuidedWorkflowTopicRow): void;
   recorderConfig: { scoutBaseUrl: string; recorderToken: string; sessionTitle: string; recordingSessionId: string; topicId: string; ingestPath: string } | null;
+  setTopicRecording(topic: GuidedWorkflowTopicRow, action: "halt" | "restart"): void;
   selectedSession: GuidedWorkflowRecordingSessionRow | null;
   selectedTopic: GuidedWorkflowTopicRow | null;
   sessionDetails: SessionDetailsState;
@@ -766,10 +837,29 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
               <button className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${configTab === "recorder" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100"}`} onClick={() => setConfigTab("recorder")} type="button"><Clipboard className="h-3.5 w-3.5" />Recorder config</button>
               <button className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${configTab === "snippet" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100"} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!guidePublished} onClick={() => setConfigTab("snippet")} type="button"><Copy className="h-3.5 w-3.5" />Install snippet</button>
             </div>
-            {configTab === "recorder" && recorderConfig ? (
-              <button className="button-secondary h-8 gap-2 px-3 text-xs" onClick={() => copyText("recorder-config", JSON.stringify(recorderConfig, null, 2))} type="button">
-                {copiedKey === "recorder-config" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copiedKey === "recorder-config" ? "Copied" : "Copy config"}
-              </button>
+            {configTab === "recorder" && selectedTopic ? (
+              <div className="flex flex-wrap gap-2">
+                {recorderConfig ? <button className="button-secondary h-8 gap-2 px-3 text-xs" onClick={() => copyText("recorder-config", JSON.stringify(recorderConfig, null, 2))} type="button">
+                  {copiedKey === "recorder-config" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copiedKey === "recorder-config" ? "Copied" : "Copy config"}
+                </button> : null}
+                {selectedTopic.recordingEnabled ? (
+                  <button
+                    className="button-secondary h-8 gap-2 px-3 text-xs !border-red-200 !text-red-700 hover:!bg-red-50"
+                    onClick={() => setTopicRecording(selectedTopic, "halt")}
+                    type="button"
+                  >
+                    Halt training
+                  </button>
+                ) : (
+                  <button
+                    className="h-8 rounded-lg px-3 text-xs font-semibold bg-emerald-700 text-white hover:bg-emerald-800"
+                    onClick={() => setTopicRecording(selectedTopic, "restart")}
+                    type="button"
+                  >
+                    Restart training
+                  </button>
+                )}
+              </div>
             ) : configTab === "snippet" && guidePublished ? (
               <button className="button-secondary h-8 gap-2 px-3 text-xs" onClick={() => copyText("install-snippet", installSnippet(selectedSession.targetAppId ?? ""))} type="button">
                 {copiedKey === "install-snippet" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copiedKey === "install-snippet" ? "Copied" : "Copy snippet"}
@@ -783,7 +873,10 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
                 <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-white">{JSON.stringify(recorderConfig, null, 2)}</pre>
               </div>
             ) : (
-              <p className="mt-3 text-sm text-slate-500">Create a new training session to generate a fresh recorder token.</p>
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm font-semibold text-amber-900">Training is not accepting new recordings.</p>
+                <p className="mt-1 text-xs text-amber-800">The recorder config was removed and its token is invalid. Restart training to generate a new recorder config and token.</p>
+              </div>
             )
           ) : guidePublished ? (
             <div>

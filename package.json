@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "db:migrate": "node scripts/db/migrate.mjs",
     "db:seed:first-admin": "node scripts/db/seed-first-admin.mjs",
-    "jobs:worker": "node scripts/jobs/worker.mjs",
+    "jobs:documents": "node scripts/jobs/worker.mjs",
+    "jobs:worker": "npm run jobs:documents",
     "extension:build": "node scripts/build-extension.mjs",
     "triggers:schedule": "node scripts/schedule-trigger-worker.mjs",
     "triggers:email": "tsx scripts/email-trigger-poller.mjs"

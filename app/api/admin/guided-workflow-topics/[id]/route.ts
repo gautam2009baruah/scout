@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteGuidedWorkflowTopic, getGuidedWorkflowTopicById, GuidedWorkflowError, listRecordedActionsForTopic, updateGuidedWorkflowTopic } from "@/lib/admin/guided-workflows";
+import { deleteGuidedWorkflowTopic, getGuidedWorkflowTopicById, GuidedWorkflowError, listRecordedActionsForTopic, setGuidedWorkflowTopicRecording, updateGuidedWorkflowTopic } from "@/lib/admin/guided-workflows";
 import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
@@ -51,6 +51,11 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
+    if (body?.recordingAction === "halt" || body?.recordingAction === "restart") {
+      return NextResponse.json({
+        topic: await setGuidedWorkflowTopicRecording(id, body.recordingAction === "restart", auth.session)
+      });
+    }
     return NextResponse.json({
       topic: await updateGuidedWorkflowTopic(
         id,

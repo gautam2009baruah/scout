@@ -54,6 +54,7 @@ type DocumentStorageMode = "managed_upload" | "external_reference" | "strict_ext
 
 type ExternalReferenceRow = {
   id: string;
+  sourceKind: "file" | "folder";
   externalSourceUrl: string;
   originalFilename: string;
   fileType: string;
@@ -124,6 +125,7 @@ async function readMessage(response: Response, fallback: string) {
 function createExternalReferenceRow(): ExternalReferenceRow {
   return {
     id: globalThis.crypto?.randomUUID?.() ?? `external-${Date.now()}-${Math.random()}`,
+    sourceKind: "file",
     externalSourceUrl: "",
     originalFilename: "",
     fileType: "pdf",
@@ -203,7 +205,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [documentStorageMode, setDocumentStorageMode] = useState<DocumentStorageMode>("managed_upload");
   const [externalRows, setExternalRows] = useState<ExternalReferenceRow[]>([createExternalReferenceRow()]);
   const [documentProgressRows, setDocumentProgressRows] = useState<DocumentProgressRow[]>([]);
-  const [documentGrid, setDocumentGrid] = useState<DocumentGridState>({ documents: [], page: 1, pageCount: 1, pageSize: 8, total: 0 });
+  const [documentGrid, setDocumentGrid] = useState<DocumentGridState>({ documents: [], page: 1, pageCount: 1, pageSize: 25, total: 0 });
   const [documentFilters, setDocumentFilters] = useState({ fileType: "", search: "", status: "" });
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
   const [accessUserIds, setAccessUserIds] = useState<string[]>([]);
@@ -343,7 +345,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setExternalRows((rows) => rows.length === 1 ? rows : rows.filter((row) => row.id !== id));
   }
 
-  async function loadDocuments(target: TopicActionTarget, page = 1, filters = documentFilters) {
+  async function loadDocuments(target: TopicActionTarget, page = 1, filters = documentFilters, pageSize = documentGrid.pageSize) {
     if (!target.topicId) {
       return;
     }
@@ -351,7 +353,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     const params = new URLSearchParams({
       folderId: target.topicId,
       page: String(page),
-      pageSize: String(documentGrid.pageSize)
+      pageSize: String(pageSize)
     });
 
     if (filters.fileType) params.set("fileType", filters.fileType);
@@ -616,7 +618,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     router.refresh();
   }
 
-  function uploadWithProgress(form: FormData) {
+  function uploadWithProgress(form: FormData, rowId: string) {
     return new Promise<{ documents?: Array<{ id: string; originalFilename?: string; name?: string; status?: string; errorMessage?: string | null }> }>((resolve, reject) => {
       const request = new XMLHttpRequest();
 
@@ -627,9 +629,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         }
 
         const progress = Math.min(90, Math.round((event.loaded / event.total) * 90));
-        setUploadProgress(progress);
-        setUploadProgressLabel(`Uploading files ${progress}%`);
-        setDocumentProgressRows((rows) => rows.map((row) => ({ ...row, progress, status: "Uploading" })));
+        setUploadProgressLabel("Uploading files in parallel...");
+        setDocumentProgressRows((rows) => rows.map((row) => row.id === rowId ? { ...row, progress, status: "Uploading" } : row));
       };
 
       request.onload = () => {
@@ -642,8 +643,6 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         })() : null;
 
         if (request.status >= 200 && request.status < 300) {
-          setUploadProgress(100);
-          setUploadProgressLabel("Upload complete");
           resolve(body ?? {});
           return;
         }
@@ -664,7 +663,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       return;
     }
 
-    const finalStatuses = new Set(["embedded", "indexed", "failed", "deleted"]);
+    const finalStatuses = new Set(["indexed", "failed", "deleted"]);
 
     for (let attempt = 0; attempt < 8; attempt += 1) {
       await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 350 : 1800));
@@ -732,6 +731,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setUploadProgressLabel(documentStorageMode === "managed_upload" ? "Preparing upload..." : "Registering references...");
 
     let createdDocuments: Array<{ id: string; originalFilename?: string; name?: string; status?: string; errorMessage?: string | null }> = [];
+    let uploadFailureCount = 0;
 
     if (documentStorageMode === "managed_upload") {
       setDocumentProgressRows(uploadFiles.map((file) => ({
@@ -741,21 +741,30 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         status: "Preparing"
       })));
 
-      const form = new FormData();
-      form.set("companyId", uploadTarget.companyId);
-      form.set("folderId", uploadTarget.topicId);
-      uploadFiles.forEach((file) => form.append("files", file));
+      const results = await Promise.all(uploadFiles.map(async (file) => {
+        const rowId = `${file.name}-${file.lastModified}`;
+        const form = new FormData();
+        form.set("companyId", uploadTarget.companyId);
+        form.set("folderId", uploadTarget.topicId!);
+        form.append("files", file);
+        try {
+          const body = await uploadWithProgress(form, rowId);
+          return { documents: body.documents ?? [] };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to upload file.";
+          setDocumentProgressRows((rows) => rows.map((row) => row.id === rowId ? { ...row, status: "Failed", progress: 100, error: message } : row));
+          return { documents: [], error: message };
+        }
+      }));
 
-      try {
-        const body = await uploadWithProgress(form);
-        createdDocuments = body.documents ?? [];
-      } catch (error) {
-        setTopicState({ message: error instanceof Error ? error.message : "Unable to upload files.", status: "error" });
-        setUploadProgress(0);
-        setUploadProgressLabel("");
-        setDocumentProgressRows((rows) => rows.map((row) => ({ ...row, status: "Failed", progress: 100, error: error instanceof Error ? error.message : "Unable to upload files." })));
+      createdDocuments = results.flatMap((result) => result.documents);
+      const failedCount = results.filter((result) => result.error).length;
+      uploadFailureCount = failedCount;
+      if (createdDocuments.length === 0) {
+        setTopicState({ message: "None of the selected files could be uploaded.", status: "error" });
         return;
       }
+      if (failedCount) setTopicState({ message: `${createdDocuments.length} file(s) queued; ${failedCount} failed to upload.`, status: "error" });
     } else {
       const activeRows = externalRows
         .map((row) => ({ ...row, externalSourceUrl: row.externalSourceUrl.trim(), originalFilename: row.originalFilename.trim(), sourceMetadata: row.sourceMetadata.trim() }))
@@ -784,9 +793,10 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
           companyId: uploadTarget.companyId,
           folderId: uploadTarget.topicId,
           storageMode: documentStorageMode,
+          externalSourceKind: row.sourceKind,
           externalSourceUrl: row.externalSourceUrl || undefined,
           externalSourceReference: row.externalSourceUrl || row.originalFilename,
-          originalFilename: row.originalFilename || inferNameFromReference(row.externalSourceUrl),
+          originalFilename: row.sourceKind === "folder" ? "external-folder" : row.originalFilename || inferNameFromReference(row.externalSourceUrl),
           fileType: row.fileType,
           fileSize: 0,
           sourceMetadata
@@ -814,6 +824,14 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         }
 
         createdDocuments = body?.documents ?? [];
+        setDocumentProgressRows(createdDocuments.map((document) => ({
+          id: document.id,
+          documentId: document.id,
+          label: document.originalFilename ?? document.name ?? document.id,
+          progress: progressForDocumentStatus(document.status ?? "queued"),
+          status: document.status ?? "queued",
+          error: document.errorMessage ?? undefined
+        })));
         setUploadProgress(38);
         setUploadProgressLabel("References queued");
       } catch (error) {
@@ -843,7 +861,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       return nextRows;
     });
 
-    setTopicState({ message: "Documents queued for processing. You can close this window while processing continues.", status: "success" });
+    setTopicState(uploadFailureCount > 0
+      ? { message: `${createdDocuments.length} file(s) queued; ${uploadFailureCount} failed to upload.`, status: "error" }
+      : { message: `${createdDocuments.length} document(s) queued for processing. You can close this window while processing continues.`, status: "success" });
     await pollRegisteredDocuments(createdDocuments.map((document) => document.id));
     router.refresh();
   }
@@ -932,9 +952,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       ) : null}
 
       {documentsTarget ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={closeDocumentsModal}>
-          <div className="flex max-h-[86vh] w-full max-w-6xl flex-col rounded-lg border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-2 sm:px-4 sm:py-6" onClick={closeDocumentsModal}>
+          <div className="flex max-h-[calc(100vh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl sm:max-h-[86vh]" onClick={(event) => event.stopPropagation()}>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4">
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
                   <FileText className="h-5 w-5" />
@@ -949,7 +969,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               </button>
             </div>
 
-            <form className="grid gap-2 border-b border-slate-200 px-5 py-3 md:grid-cols-[minmax(180px,1fr)_130px_150px_auto]" onSubmit={applyDocumentFilters}>
+            <form className="grid gap-2 border-b border-slate-200 px-3 py-3 sm:px-5 md:grid-cols-[minmax(180px,1fr)_130px_150px_auto]" onSubmit={applyDocumentFilters}>
               <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900" defaultValue={documentFilters.search} name="search" placeholder="Search name or filename" />
               <select className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" defaultValue={documentFilters.fileType} name="fileType">
                 <option value="">All types</option>
@@ -968,7 +988,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               </p>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+            <div className="min-h-0 flex-1 overflow-auto px-2 py-3 sm:px-5 sm:py-4">
               <table className="w-full min-w-[920px] border-collapse text-left text-sm">
                 <thead className="sticky top-0 bg-slate-950 text-white">
                   <tr>
@@ -1033,10 +1053,32 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               </table>
             </div>
 
-            <div className="flex items-center justify-between border-t border-slate-200 px-5 py-3">
-              <p className="text-sm text-slate-500">Page {documentGrid.page} of {documentGrid.pageCount}</p>
-              <div className="flex gap-2">
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-3 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+                <span>Page <strong className="text-slate-900">{documentGrid.page}</strong> of <strong className="text-slate-900">{documentGrid.pageCount}</strong></span>
+                <span>Total: <strong className="text-slate-900">{documentGrid.total}</strong> documents</span>
+                <label className="inline-flex items-center gap-2">
+                  <span>Page size</span>
+                  <select
+                    aria-label="Documents per page"
+                    className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+                    onChange={(event) => loadDocuments(documentsTarget, 1, documentFilters, Number(event.target.value))}
+                    value={documentGrid.pageSize}
+                  >
+                    {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-40" disabled={documentGrid.page <= 1} onClick={() => loadDocuments(documentsTarget, Math.max(1, documentGrid.page - 1))} type="button">Previous</button>
+                {Array.from({ length: documentGrid.pageCount }, (_, index) => index + 1)
+                  .filter((page) => page === 1 || page === documentGrid.pageCount || Math.abs(page - documentGrid.page) <= 1)
+                  .map((page, index, pages) => (
+                    <span className="contents" key={page}>
+                      {index > 0 && page - pages[index - 1] > 1 ? <span className="px-1 text-slate-400">…</span> : null}
+                      <button className={`h-9 min-w-9 rounded-lg border px-2 text-sm font-semibold ${page === documentGrid.page ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`} onClick={() => loadDocuments(documentsTarget, page)} type="button">{page}</button>
+                    </span>
+                  ))}
                 <button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-40" disabled={documentGrid.page >= documentGrid.pageCount} onClick={() => loadDocuments(documentsTarget, Math.min(documentGrid.pageCount, documentGrid.page + 1))} type="button">Next</button>
               </div>
             </div>
@@ -1204,7 +1246,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-slate-800">External references</div>
-                    <div className="text-xs text-slate-500">Add one row per source. Scout will process the reference and keep metadata for citation.</div>
+                    <div className="text-xs text-slate-500">Add a file URL or an HTML directory URL. Folder contents are discovered and processed in parallel.</div>
                   </div>
                   <button className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60" disabled={topicState.status === "submitting"} onClick={addExternalReferenceRow} type="button">
                     <Plus className="h-3.5 w-3.5" />
@@ -1215,21 +1257,28 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 <div className="space-y-2">
                   {externalRows.map((row, index) => (
                     <div className="rounded-lg border border-slate-200 bg-white p-3" key={row.id}>
-                      <div className="grid gap-2 md:grid-cols-[1.4fr_1fr_120px_36px]">
+                      <div className="grid gap-2 md:grid-cols-[110px_1.4fr_1fr_110px_36px]">
                         <label className="block">
-                          <span className="text-xs font-semibold text-slate-600">Source link/reference</span>
+                          <span className="text-xs font-semibold text-slate-600">Source</span>
+                          <select className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { sourceKind: event.target.value as "file" | "folder" })} value={row.sourceKind}>
+                            <option value="file">File</option>
+                            <option value="folder">Folder</option>
+                          </select>
+                        </label>
+                        <label className="block">
+                          <span className="text-xs font-semibold text-slate-600">File or folder URL</span>
                           <div className="mt-1 flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 focus-within:border-slate-900 focus-within:ring-4 focus-within:ring-slate-900/10">
                             <Link2 className="h-4 w-4 text-slate-400" />
-                            <input className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { externalSourceUrl: event.target.value })} placeholder="https://source.example/file.pdf" value={row.externalSourceUrl} />
+                            <input className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { externalSourceUrl: event.target.value })} placeholder={row.sourceKind === "folder" ? "https://source.example/folder/" : "https://source.example/file.pdf"} value={row.externalSourceUrl} />
                           </div>
                         </label>
                         <label className="block">
                           <span className="text-xs font-semibold text-slate-600">Display filename</span>
-                          <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { originalFilename: event.target.value })} placeholder={`Reference ${index + 1}`} value={row.originalFilename} />
+                          <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10 disabled:bg-slate-50" disabled={topicState.status === "submitting" || row.sourceKind === "folder"} onChange={(event) => updateExternalRow(row.id, { originalFilename: event.target.value })} placeholder={row.sourceKind === "folder" ? "Discovered automatically" : `Reference ${index + 1}`} value={row.originalFilename} />
                         </label>
                         <label className="block">
                           <span className="text-xs font-semibold text-slate-600">Type</span>
-                          <select className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { fileType: event.target.value })} value={row.fileType}>
+                          <select className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10 disabled:bg-slate-50" disabled={topicState.status === "submitting" || row.sourceKind === "folder"} onChange={(event) => updateExternalRow(row.id, { fileType: event.target.value })} value={row.fileType}>
                             {supportedFileTypes.map((fileType) => (
                               <option key={fileType} value={fileType}>{fileType.toUpperCase()}</option>
                             ))}
