@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AdminShell, GuidedWorkflowTrainingSetup } from "@/components/admin";
-import { getMasterData } from "@/lib/admin/administration";
-import { listGuidedWorkflowRecordingSessions, listGuidedWorkflowTargetApps } from "@/lib/admin/guided-workflows";
+import { getMasterData, listCompanyTargetApplications } from "@/lib/admin/administration";
+import { listGuidedWorkflowRecordingSessions } from "@/lib/admin/guided-workflows";
 import { MODULE_KEYS, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
@@ -24,15 +24,20 @@ export default async function TrainingSetupPage() {
 
   requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
-  const [{ companies }, targetApps, recordingSessions] = await Promise.all([
+  const [{ companies }, companyTargetApplications, recordingSessions] = await Promise.all([
     getMasterData(),
-    listGuidedWorkflowTargetApps(session),
+    listCompanyTargetApplications(session),
     listGuidedWorkflowRecordingSessions(session)
   ]);
 
   return (
     <AdminShell active={MODULE_KEYS.workflowTrainingSetup} session={session}>
-      <GuidedWorkflowTrainingSetup companies={companies} recordingSessions={recordingSessions} targetApps={targetApps} />
+      <GuidedWorkflowTrainingSetup
+        companies={companies}
+        recordingSessions={recordingSessions}
+        selectedCompanyId={session.user.tenantId}
+        targetApps={companyTargetApplications}
+      />
     </AdminShell>
   );
 }

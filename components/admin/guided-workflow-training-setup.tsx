@@ -2,9 +2,11 @@
 
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Clipboard, Download, Edit3, Globe2, Info, Plus, Trash2, X } from "lucide-react";
-import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
+import type { CompanyTargetApplication } from "@/lib/admin/administration";
+import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
 
 type CompanyOption = { id: string; name: string };
+const initialState = { status: "idle", message: "" } as const;
 
 function getScoutBaseUrl() {
   if (typeof window !== "undefined") {
@@ -14,22 +16,17 @@ function getScoutBaseUrl() {
   return "http://localhost:3000";
 }
 
-export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targetApps }: {
+export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, selectedCompanyId, targetApps }: {
   companies: CompanyOption[];
   recordingSessions: GuidedWorkflowRecordingSessionRow[];
-  targetApps: GuidedWorkflowTargetAppRow[];
+  selectedCompanyId: string;
+  targetApps: CompanyTargetApplication[];
 }) {
-  const [apps, setApps] = useState(targetApps);
   const [sessions, setSessions] = useState(recordingSessions);
-  const [pendingCompanyFilter, setPendingCompanyFilter] = useState(companies[0]?.id ?? "");
-  const [pendingAppFilter, setPendingAppFilter] = useState(() => {
-    const firstCompanyId = companies[0]?.id ?? "";
-    return targetApps.find((app) => app.companyId === firstCompanyId)?.id ?? "";
-  });
+  const [pendingTargetAppFilter, setPendingTargetAppFilter] = useState("");
   const [pendingSessionFilter, setPendingSessionFilter] = useState("");
   const [pendingTopicFilter, setPendingTopicFilter] = useState("");
-  const [appliedCompanyFilter, setAppliedCompanyFilter] = useState("");
-  const [appliedAppFilter, setAppliedAppFilter] = useState("");
+  const [appliedTargetAppFilter, setAppliedTargetAppFilter] = useState("");
   const [appliedSessionFilter, setAppliedSessionFilter] = useState("");
   const [appliedTopicFilter, setAppliedTopicFilter] = useState("");
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(() => new Set(recordingSessions.map((session) => session.id)));
@@ -37,32 +34,28 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
   const [pluginHelpOpen, setPluginHelpOpen] = useState(false);
   const [copiedKey, setCopiedKey] = useState("");
   const pluginHelpRef = useRef<HTMLDivElement | null>(null);
-  const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>({ status: "idle", message: "" });
+  const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>(initialState);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [toastTimeout, setToastTimeout] = useState<NodeJS.Timeout | null>(null);
   const [setupForm, setSetupForm] = useState({
-    companyId: companies[0]?.id ?? "",
-    targetAppMode: "new",
     targetAppId: "",
-    appName: "",
-    baseUrl: "",
-    allowedOrigins: "",
     sessionTitle: ""
   });
 
-  const companyApps = apps.filter((app) => app.companyId === setupForm.companyId);
-  const selectedApp = apps.find((app) => app.id === setupForm.targetAppId) ?? null;
+  const companyApps = targetApps.filter((app) => app.companyId === selectedCompanyId);
+  const selectedApp = companyApps.find((app) => app.id === setupForm.targetAppId) ?? null;
   const trimmedSessionTitle = setupForm.sessionTitle.trim();
-  const duplicateAppName = setupForm.targetAppMode === "new" && setupForm.appName.trim().length > 0 && companyApps.some((app) => app.name.trim().toLowerCase() === setupForm.appName.trim().toLowerCase());
-  const duplicateSessionTitle = setupForm.targetAppMode === "existing" && setupForm.targetAppId
-    ? sessions.some((session) => session.targetAppId === setupForm.targetAppId && session.title.trim().toLowerCase() === trimmedSessionTitle.toLowerCase())
+  const duplicateSessionTitle = setupForm.targetAppId
+    ? sessions.some((session) => session.companyTargetApplicationId === setupForm.targetAppId && session.title.trim().toLowerCase() === trimmedSessionTitle.toLowerCase())
     : false;
-  const filterCompanyApps = apps.filter((app) => app.companyId === pendingCompanyFilter);
+  const filterCompanyApps = targetApps.filter((app) => app.companyId === selectedCompanyId);
   const filterCompanySessions = sessions.filter((session) =>
-    (!pendingCompanyFilter || session.companyId === pendingCompanyFilter) &&
-    (!pendingAppFilter || session.targetAppId === pendingAppFilter)
+    session.companyId === selectedCompanyId &&
+    (!pendingTargetAppFilter || session.companyTargetApplicationId === pendingTargetAppFilter)
   );
   const filteredSessions = sessions
-    .filter((session) => !appliedCompanyFilter || session.companyId === appliedCompanyFilter)
-    .filter((session) => !appliedAppFilter || session.targetAppId === appliedAppFilter)
+    .filter((session) => session.companyId === selectedCompanyId)
+    .filter((session) => !appliedTargetAppFilter || session.companyTargetApplicationId === appliedTargetAppFilter)
     .filter((session) => !appliedSessionFilter || session.id === appliedSessionFilter);
   const [configTopicId, setConfigTopicId] = useState<string | null>(null);
   const configTopic = configTopicId ? sessions.flatMap((session) => session.topics.map((topic) => ({ session, topic }))).find(({ topic }) => topic.id === configTopicId) : null;
@@ -73,27 +66,54 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
     : false;
 
   useEffect(() => {
+    setSetupForm((current) => {
+      if (current.targetAppId && companyApps.some((app) => app.id === current.targetAppId)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        targetAppId: companyApps[0]?.id ?? ""
+      };
+    });
+  }, [companyApps]);
+
+  useEffect(() => {
+    if (pendingTargetAppFilter && !filterCompanyApps.some((app) => app.id === pendingTargetAppFilter)) {
+      setPendingTargetAppFilter("");
+    }
+    if (appliedTargetAppFilter && !filterCompanyApps.some((app) => app.id === appliedTargetAppFilter)) {
+      setAppliedTargetAppFilter("");
+    }
+  }, [filterCompanyApps, pendingTargetAppFilter, appliedTargetAppFilter]);
+
+  useEffect(() => {
     if (appliedSessionFilter && !sessions.some((session) => session.id === appliedSessionFilter)) {
       setAppliedSessionFilter("");
       setPendingSessionFilter("");
     }
   }, [sessions, appliedSessionFilter]);
 
+  function showToast(message: string, type: "success" | "error" = "success") {
+    setToast({ message, type });
+    if (toastTimeout) {
+      clearTimeout(toastTimeout);
+    }
+    const timeout = setTimeout(() => setToast(null), 3000);
+    setToastTimeout(timeout);
+  }
+
   function applyFilters() {
-    setAppliedCompanyFilter(pendingCompanyFilter);
-    setAppliedAppFilter(pendingAppFilter);
+    setAppliedTargetAppFilter(pendingTargetAppFilter);
     setAppliedSessionFilter(pendingSessionFilter);
     setAppliedTopicFilter(pendingTopicFilter);
   }
 
   function clearFilters() {
-    const firstCompanyId = companies[0]?.id ?? "";
-    setPendingCompanyFilter(firstCompanyId);
-    setPendingAppFilter(apps.find((app) => app.companyId === firstCompanyId)?.id ?? "");
+    setPendingTargetAppFilter("");
     setPendingSessionFilter("");
     setPendingTopicFilter("");
-    setAppliedCompanyFilter("");
-    setAppliedAppFilter("");
+    setAppliedTargetAppFilter("");
     setAppliedSessionFilter("");
     setAppliedTopicFilter("");
   }
@@ -115,73 +135,24 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
     setSetupForm((current) => ({ ...current, ...next }));
   }
 
-  function chooseExistingTargetApp(targetAppId: string) {
-    const app = apps.find((item) => item.id === targetAppId);
-    setSetupForm((current) => ({
-      ...current,
-      targetAppId,
-      appName: app?.name ?? "",
-      baseUrl: app?.baseUrl ?? "",
-      allowedOrigins: app?.allowedOrigins.join("\n") ?? ""
-    }));
-  }
-
-  async function createTargetAppFromSetup() {
-    if (duplicateAppName) {
-      setState({ status: "error", message: "A target app with this name already exists for the selected company." });
-      return undefined;
-    }
-
-    const response = await fetch("/api/admin/guided-workflow-target-apps", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        companyId: setupForm.companyId,
-        name: setupForm.appName,
-        baseUrl: setupForm.baseUrl,
-        allowedOrigins: splitLines(setupForm.allowedOrigins)
-      })
-    });
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to create target app." });
-      return;
-    }
-
-    setApps((current) => [...current, body.targetApp]);
-    setSetupForm((current) => ({
-      ...current,
-      targetAppMode: "existing",
-      companyId: body.targetApp.companyId,
-      targetAppId: body.targetApp.id,
-      appName: body.targetApp.name,
-      baseUrl: body.targetApp.baseUrl,
-      allowedOrigins: body.targetApp.allowedOrigins.join("\n")
-    }));
-    return body.targetApp.id as string;
-  }
-
   async function createRecordingSession() {
     setState({ status: "submitting", message: "" });
-    let targetAppId: string | undefined = setupForm.targetAppMode === "existing" ? setupForm.targetAppId : "";
 
-    if (setupForm.targetAppMode === "new") {
-      targetAppId = await createTargetAppFromSetup();
-    }
-
-    if (!targetAppId) {
-      setState({ status: "error", message: "Select or create a target app before creating a training session." });
+    if (!setupForm.targetAppId) {
+      setState(initialState);
+      showToast("Select a target app before creating a training session.", "error");
       return;
     }
 
     if (!trimmedSessionTitle) {
-      setState({ status: "error", message: "Training session title is required." });
+      setState(initialState);
+      showToast("Training session title is required.", "error");
       return;
     }
 
-    if (sessions.some((session) => session.targetAppId === targetAppId && session.title.trim().toLowerCase() === trimmedSessionTitle.toLowerCase())) {
-      setState({ status: "error", message: "A training session with this title already exists for the selected app." });
+    if (sessions.some((session) => session.companyTargetApplicationId === setupForm.targetAppId && session.title.trim().toLowerCase() === trimmedSessionTitle.toLowerCase())) {
+      setState(initialState);
+      showToast("A training session with this title already exists for the selected app.", "error");
       return;
     }
 
@@ -189,15 +160,16 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        companyId: setupForm.companyId,
-        targetAppId,
+        companyId: selectedCompanyId,
+        companyTargetApplicationId: setupForm.targetAppId,
         title: setupForm.sessionTitle
       })
     });
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to create training session." });
+      setState(initialState);
+      showToast(typeof body?.message === "string" ? body.message : "Unable to create training session.", "error");
       return;
     }
 
@@ -208,28 +180,24 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
       return next;
     });
     setSetupForm({
-      companyId: companies[0]?.id ?? "",
-      targetAppMode: "new",
-      targetAppId: "",
-      appName: "",
-      baseUrl: "",
-      allowedOrigins: "",
+      targetAppId: setupForm.targetAppId,
       sessionTitle: ""
     });
-    setState({ status: "success", message: "Training session created. Add a topic before recording." });
+    setState(initialState);
+    showToast("Training session created. Add a topic before recording.", "success");
   }
 
   async function saveTopic() {
     if (!topicDialog) return;
     const trimmedTopicTitle = topicDialog.title.trim();
     if (!trimmedTopicTitle) {
-      setState({ status: "error", message: "Topic title is required." });
+      showToast("Topic title is required.", "error");
       return;
     }
     const session = sessions.find((session) => session.id === topicDialog.sessionId);
     const isDuplicateTopic = session?.topics.some((topic) => topic.id !== topicDialog.topic?.id && topic.title.trim().toLowerCase() === trimmedTopicTitle.toLowerCase());
     if (isDuplicateTopic) {
-      setState({ status: "error", message: "A topic with this name already exists in this training session." });
+      showToast("A topic with this name already exists in this training session.", "error");
       return;
     }
     setState({ status: "submitting", message: "" });
@@ -245,7 +213,8 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to save topic." });
+      setState(initialState);
+      showToast(typeof body?.message === "string" ? body.message : "Unable to save topic.", "error");
       return;
     }
 
@@ -263,7 +232,8 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
       return next;
     });
     setTopicDialog(null);
-    setState({ status: "success", message: isCreate ? "Topic created." : "Topic updated." });
+    setState(initialState);
+    showToast(isCreate ? "Topic created." : "Topic updated.", "success");
   }
 
   async function deleteTopic(topic: GuidedWorkflowTopicRow) {
@@ -272,12 +242,12 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to delete topic." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to delete topic.", "error");
       return;
     }
 
     setSessions((current) => current.map((session) => session.id === topic.recordingSessionId ? { ...session, topics: session.topics.filter((item) => item.id !== topic.id) } : session));
-    setState({ status: "success", message: "Topic deleted." });
+    showToast("Topic deleted.", "success");
   }
 
   async function deleteRecordingSession(sessionId: string) {
@@ -286,7 +256,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to delete session." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to delete session.", "error");
       return;
     }
 
@@ -295,7 +265,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
       setAppliedSessionFilter("");
       setPendingSessionFilter("");
     }
-    setState({ status: "success", message: "Training session deleted." });
+    showToast("Training session deleted.", "success");
   }
 
   async function moveTopic(topic: GuidedWorkflowTopicRow, move: "up" | "down") {
@@ -307,7 +277,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to move topic." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to move topic.", "error");
       return;
     }
 
@@ -325,14 +295,14 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to update logging." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to update logging.", "error");
       return;
     }
 
     setSessions((current) => current.map((session) => session.id === body.topic.recordingSessionId
       ? { ...session, topics: session.topics.map((item) => item.id === body.topic.id ? body.topic : item) }
       : session));
-    setState({ status: "success", message: body.topic.analyticsLoggingEnabled ? "Playback logging enabled." : "Playback logging disabled." });
+    showToast(body.topic.analyticsLoggingEnabled ? "Playback logging enabled." : "Playback logging disabled.", "success");
   }
 
   async function copyText(key: string, value: string) {
@@ -391,81 +361,44 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
         ) : null}
       </div>
 
-      {state.message ? (
-        <p className={`rounded-lg px-3 py-2 text-sm ${state.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{state.message}</p>
-      ) : null}
-
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-sm font-semibold text-slate-950"><Globe2 className="h-4 w-4" />Training setup</div>
-            <p className="mt-1 text-sm text-slate-500">Create target app profiles, training sessions, and recorder config for trainers.</p>
+            <p className="mt-1 text-sm text-slate-500">Create training sessions and recorder config for trainers.</p>
           </div>
           {selectedApp ? <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{selectedApp.name}</span> : null}
         </div>
 
         <div className="mt-4 grid gap-3">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Company">
-              <select className="input" onChange={(event) => updateSetup({ companyId: event.target.value, targetAppMode: "new", targetAppId: "", appName: "", baseUrl: "", allowedOrigins: "" })} value={setupForm.companyId}>
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-              </select>
-            </Field>
+          <div className="grid gap-3 lg:grid-cols-3">
             <Field label="Target app">
-              <select
-                className="input"
-                onChange={(event) => {
-                  if (event.target.value === "__new") {
-                    updateSetup({ targetAppMode: "new", targetAppId: "", appName: "", baseUrl: "", allowedOrigins: "" });
-                    return;
-                  }
-                  updateSetup({ targetAppMode: "existing" });
-                  chooseExistingTargetApp(event.target.value);
-                }}
-                value={setupForm.targetAppMode === "new" ? "__new" : setupForm.targetAppId}
-              >
-                <option value="__new">Create new target app</option>
+              <select className="input" onChange={(event) => updateSetup({ targetAppId: event.target.value })} value={setupForm.targetAppId}>
+                <option value="">Select target app</option>
                 {companyApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
               </select>
+              {selectedApp?.baseUrl ? <p className="mt-1 text-xs text-slate-500">{selectedApp.baseUrl}</p> : null}
             </Field>
             <Field label="Training session title">
               <input className="input" placeholder="New training session" onChange={(event) => updateSetup({ sessionTitle: event.target.value })} value={setupForm.sessionTitle} />
               {duplicateSessionTitle ? <p className="mt-1 text-xs text-red-600">This session title already exists for the selected app.</p> : null}
             </Field>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <Field label="Target app name">
-              <input className="input" disabled={setupForm.targetAppMode === "existing"} onChange={(event) => updateSetup({ appName: event.target.value })} placeholder="CRM Production" value={setupForm.appName} />
-              {duplicateAppName ? <p className="mt-1 text-xs text-red-600">A target app with this name already exists for the selected company.</p> : null}
-            </Field>
-            <Field label="Target app URL"><input className="input" disabled={setupForm.targetAppMode === "existing"} onChange={(event) => updateSetup({ baseUrl: event.target.value })} placeholder="https://app.example.com" value={setupForm.baseUrl} /></Field>
-            <Field label="Allowed origins"><input className="input" disabled={setupForm.targetAppMode === "existing"} onChange={(event) => updateSetup({ allowedOrigins: event.target.value })} placeholder="https://app.example.com" value={setupForm.allowedOrigins} /></Field>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 justify-end">
-            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={!setupForm.companyId || !trimmedSessionTitle || duplicateAppName || duplicateSessionTitle || (setupForm.targetAppMode === "new" && !setupForm.appName) || (setupForm.targetAppMode === "existing" && !setupForm.targetAppId) || state.status === "submitting"} onClick={createRecordingSession} type="button">
-              <Plus className="h-4 w-4" />Create training session
-            </button>
+            <div className="self-end">
+              <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={!setupForm.targetAppId || !trimmedSessionTitle || duplicateSessionTitle || state.status === "submitting"} onClick={createRecordingSession} type="button">
+                <Plus className="h-4 w-4" />Create training session
+              </button>
+            </div>
           </div>
         </div>
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] items-end">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Company">
-              <select className="input" value={pendingCompanyFilter} onChange={(event) => {
-                const companyId = event.target.value;
-                setPendingCompanyFilter(companyId);
-                setPendingAppFilter(apps.find((app) => app.companyId === companyId)?.id ?? "");
-              }}>
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-              </select>
-            </Field>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Target app">
-              <select className="input" value={pendingAppFilter} onChange={(event) => setPendingAppFilter(event.target.value)}>
-                {filterCompanyApps.length === 0 ? <option value="">No apps available</option> : filterCompanyApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
+              <select className="input" value={pendingTargetAppFilter} onChange={(event) => setPendingTargetAppFilter(event.target.value)}>
+                <option value="">All target apps</option>
+                {filterCompanyApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
               </select>
             </Field>
             <Field label="Training session">
@@ -518,7 +451,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
                         {session.title}
                       </button>
                         <p className="text-xs text-slate-500">
-                          {companies.find((company) => company.id === session.companyId)?.name ?? "Unknown company"} · {apps.find((app) => app.id === session.targetAppId)?.name ?? "Unknown app"}
+                          {companies.find((company) => company.id === session.companyId)?.name ?? "Unknown company"} · {session.companyTargetApplicationName ?? session.targetAppName ?? "Unknown app"}
                         </p>
                       </div>
                     </td>
@@ -604,6 +537,27 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, targ
         </div>
       ) : null}
 
+      {toast ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 pointer-events-none">
+          <div
+            className={`pointer-events-auto flex items-center gap-2 rounded-lg border px-3 py-2 shadow-lg ${
+              toast.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-red-200 bg-red-50 text-red-700"
+            }`}
+          >
+            <span className="text-sm font-medium">{toast.message}</span>
+            <button
+              className="rounded p-0.5 transition-colors hover:bg-black/5"
+              onClick={() => setToast(null)}
+              type="button"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
     </div>
   );
 }
@@ -620,10 +574,6 @@ function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWo
     topicId: topic.id,
     ingestPath: "/api/guided-workflow-recorder/actions"
   };
-}
-
-function splitLines(value: string) {
-  return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
 }
 
 function Field({ children, label }: { children: React.ReactNode; label: string }) {

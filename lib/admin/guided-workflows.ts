@@ -31,6 +31,8 @@ export type GuidedWorkflowRecordingSessionRow = {
   id: string;
   companyId: string;
   companyName: string;
+  companyTargetApplicationId: string | null;
+  companyTargetApplicationName: string | null;
   targetAppId: string | null;
   targetAppName: string | null;
   title: string;
@@ -318,6 +320,8 @@ const recordingSessionSelect = `
     guided_workflow_recording_sessions.id,
     guided_workflow_recording_sessions.company_id,
     companies.name AS company_name,
+    guided_workflow_recording_sessions.company_target_application_id,
+    company_target_applications.name AS company_target_application_name,
     guided_workflow_recording_sessions.target_app_id,
     guided_workflow_target_apps.name AS target_app_name,
     guided_workflow_recording_sessions.title,
@@ -325,6 +329,7 @@ const recordingSessionSelect = `
     guided_workflow_recording_sessions.updated_at
   FROM guided_workflow_recording_sessions
   INNER JOIN companies ON companies.id = guided_workflow_recording_sessions.company_id
+  LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_recording_sessions.company_target_application_id
   LEFT JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = guided_workflow_recording_sessions.target_app_id
 `;
 
@@ -364,6 +369,8 @@ function mapRecordingSession(row: {
   id: string;
   company_id: string;
   company_name: string;
+  company_target_application_id: string | null;
+  company_target_application_name: string | null;
   target_app_id: string | null;
   target_app_name: string | null;
   title: string;
@@ -374,6 +381,8 @@ function mapRecordingSession(row: {
     id: row.id,
     companyId: row.company_id,
     companyName: row.company_name,
+    companyTargetApplicationId: row.company_target_application_id,
+    companyTargetApplicationName: row.company_target_application_name,
     targetAppId: row.target_app_id,
     targetAppName: row.target_app_name,
     title: row.title,
@@ -601,7 +610,7 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
 
 export async function createGuidedWorkflowRecordingSession(input: {
   companyId: string;
-  targetAppId?: string;
+  companyTargetApplicationId?: string;
   title: string;
 }, session: AdminSession) {
   await assertCompanyAccess(input.companyId, session);
@@ -611,34 +620,94 @@ export async function createGuidedWorkflowRecordingSession(input: {
     throw new GuidedWorkflowError("Recording session title is required.");
   }
 
-  if (input.targetAppId) {
-    const apps = await listGuidedWorkflowTargetApps(session);
-    const app = apps.find((item) => item.id === input.targetAppId);
-
-    if (!app || app.companyId !== input.companyId) {
-      throw new GuidedWorkflowError("Target app was not found for this company.", 404);
-    }
+  if (!input.companyTargetApplicationId) {
+    throw new GuidedWorkflowError("Target application is required.");
   }
+
+  const companyTargetApplicationResult = await getPool().query<{
+    id: string;
+    company_id: string;
+    name: string;
+    base_url: string;
+  }>(
+    `
+      SELECT id, company_id, name, base_url
+      FROM company_target_applications
+      WHERE id = $1
+        AND deleted_at IS NULL
+    `,
+    [input.companyTargetApplicationId]
+  );
+  const companyTargetApplication = companyTargetApplicationResult.rows[0];
+
+  if (!companyTargetApplication || companyTargetApplication.company_id !== input.companyId) {
+    throw new GuidedWorkflowError("Target application was not found for this company.", 404);
+  }
+
+  const guidedTargetAppId = await ensureGuidedWorkflowTargetApp(
+    companyTargetApplication.company_id,
+    companyTargetApplication.name,
+    companyTargetApplication.base_url,
+    session.user.id
+  );
 
   const result = await getPool().query<{ id: string }>(
     `
       INSERT INTO guided_workflow_recording_sessions (
         company_id,
+        company_target_application_id,
         target_app_id,
         title,
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $4)
+      VALUES ($1, $2, $3, $4, $5, $5)
       RETURNING id
     `,
-    [input.companyId, input.targetAppId || null, title, session.user.id]
+    [input.companyId, input.companyTargetApplicationId, guidedTargetAppId, title, session.user.id]
   );
   const sessions = await listGuidedWorkflowRecordingSessions(session);
 
   return {
     session: sessions.find((item) => item.id === result.rows[0].id)!
   };
+}
+
+async function ensureGuidedWorkflowTargetApp(companyId: string, name: string, baseUrl: string, userId: string) {
+  const existing = await getPool().query<{ id: string }>(
+    `
+      SELECT id
+      FROM guided_workflow_target_apps
+      WHERE company_id = $1
+        AND lower(name) = lower($2)
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [companyId, name]
+  );
+
+  if (existing.rows[0]?.id) {
+    return existing.rows[0].id;
+  }
+
+  const created = await getPool().query<{ id: string }>(
+    `
+      INSERT INTO guided_workflow_target_apps (
+        company_id,
+        name,
+        base_url,
+        allowed_origins_json,
+        player_config_json,
+        created_by,
+        updated_by
+      )
+      VALUES ($1, $2, $3, '[]'::jsonb, '{}'::jsonb, $4, $4)
+      RETURNING id
+    `,
+    [companyId, name.trim(), baseUrl.trim(), userId]
+  );
+
+  return created.rows[0].id;
 }
 
 export async function updateGuidedWorkflowRecordingSession(id: string, input: {

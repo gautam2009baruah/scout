@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     const result = await createGuidedWorkflowRecordingSession(
       {
         companyId: String(body.companyId ?? ""),
-        targetAppId: typeof body.targetAppId === "string" ? body.targetAppId : undefined,
+        companyTargetApplicationId: typeof body.companyTargetApplicationId === "string" ? body.companyTargetApplicationId : undefined,
         title: String(body.title ?? "")
       },
       auth.session
