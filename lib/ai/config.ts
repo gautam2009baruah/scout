@@ -16,20 +16,26 @@ export type AIProviderConfig = {
 };
 
 export type EmbeddingProviderConfigRow = {
+  id: string;
+  company_id: string;
   provider: EmbeddingProviderName;
   model: string;
   dimension: number | null;
   endpoint: string;
   api_key: string;
   is_active: boolean;
+  is_primary: boolean;
 };
 
 export type LLMProviderConfigRow = {
+  id: string;
+  company_id: string;
   provider: LLMProviderName;
   model: string;
   endpoint: string;
   api_key: string;
   is_active: boolean;
+  is_primary: boolean;
 };
 
 export type AdminAIProviderConfig = {
@@ -76,22 +82,69 @@ function envConfig(): AIProviderConfig {
   };
 }
 
-export async function getAIProviderConfig(): Promise<AIProviderConfig> {
+export async function getAIProviderConfig(companyId?: string): Promise<AIProviderConfig> {
   try {
+    if (companyId) {
+      const [companyEmbeddingResult, companyLlmResult] = await Promise.all([
+        getPool().query<EmbeddingProviderConfigRow>(
+          `
+            SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary
+            FROM ai_embedding_provider_configs
+            WHERE company_id = $1
+              AND deleted_at IS NULL
+            ORDER BY is_primary DESC, is_active DESC, updated_at DESC
+            LIMIT 1
+          `,
+          [companyId]
+        ),
+        getPool().query<LLMProviderConfigRow>(
+          `
+            SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary
+            FROM ai_llm_provider_configs
+            WHERE company_id = $1
+              AND deleted_at IS NULL
+            ORDER BY is_primary DESC, is_active DESC, updated_at DESC
+            LIMIT 1
+          `,
+          [companyId]
+        )
+      ]);
+
+      const companyEmbedding = companyEmbeddingResult.rows[0];
+      const companyLlm = companyLlmResult.rows[0];
+
+      if (companyEmbedding && companyLlm) {
+        const env = envConfig();
+        return {
+          embedding_provider: companyEmbedding.provider,
+          embedding_model: normalizeEmbeddingModel(companyEmbedding.provider, companyEmbedding.model || env.embedding_model),
+          embedding_dimension: Number(companyEmbedding.dimension || env.embedding_dimension),
+          embedding_endpoint: companyEmbedding.endpoint || env.embedding_endpoint,
+          embedding_api_key: companyEmbedding.api_key || env.embedding_api_key,
+          llm_provider: companyLlm.provider,
+          llm_model: companyLlm.model || env.llm_model,
+          llm_endpoint: companyLlm.endpoint || env.llm_endpoint,
+          llm_api_key: companyLlm.api_key || env.llm_api_key
+        };
+      }
+    }
+
     const [embeddingResult, llmResult] = await Promise.all([
       getPool().query<EmbeddingProviderConfigRow>(
         `
-          SELECT provider, model, dimension, endpoint, api_key, is_active
+          SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary
           FROM ai_embedding_provider_configs
           WHERE is_active = true
+            AND deleted_at IS NULL
           LIMIT 1
         `
       ),
       getPool().query<LLMProviderConfigRow>(
         `
-          SELECT provider, model, endpoint, api_key, is_active
+          SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary
           FROM ai_llm_provider_configs
           WHERE is_active = true
+            AND deleted_at IS NULL
           LIMIT 1
         `
       )
@@ -303,26 +356,51 @@ export async function updateAIProviderConfig(
   return getAIProviderConfig();
 }
 
-export async function getAdminAIProviderConfig(): Promise<AdminAIProviderConfig> {
-  const active = await getAIProviderConfig();
+export async function getAdminAIProviderConfig(companyId?: string): Promise<AdminAIProviderConfig> {
+  const active = await getAIProviderConfig(companyId);
 
   try {
-    const [embeddingResult, llmResult] = await Promise.all([
-      getPool().query<EmbeddingProviderConfigRow>(
-        `
-          SELECT provider, model, dimension, endpoint, api_key, is_active
-          FROM ai_embedding_provider_configs
-          ORDER BY provider ASC
-        `
-      ),
-      getPool().query<LLMProviderConfigRow>(
-        `
-          SELECT provider, model, endpoint, api_key, is_active
-          FROM ai_llm_provider_configs
-          ORDER BY provider ASC
-        `
-      )
-    ]);
+    const [embeddingResult, llmResult] = companyId
+      ? await Promise.all([
+        getPool().query<EmbeddingProviderConfigRow>(
+          `
+            SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary
+            FROM ai_embedding_provider_configs
+            WHERE company_id = $1
+              AND deleted_at IS NULL
+            ORDER BY is_primary DESC, provider ASC, model ASC, created_at ASC
+          `,
+          [companyId]
+        ),
+        getPool().query<LLMProviderConfigRow>(
+          `
+            SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary
+            FROM ai_llm_provider_configs
+            WHERE company_id = $1
+              AND deleted_at IS NULL
+            ORDER BY is_primary DESC, provider ASC, model ASC, created_at ASC
+          `,
+          [companyId]
+        )
+      ])
+      : await Promise.all([
+        getPool().query<EmbeddingProviderConfigRow>(
+          `
+            SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary
+            FROM ai_embedding_provider_configs
+            WHERE deleted_at IS NULL
+            ORDER BY provider ASC, model ASC, created_at ASC
+          `
+        ),
+        getPool().query<LLMProviderConfigRow>(
+          `
+            SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary
+            FROM ai_llm_provider_configs
+            WHERE deleted_at IS NULL
+            ORDER BY provider ASC, model ASC, created_at ASC
+          `
+        )
+      ]);
 
     return {
       active,
@@ -333,19 +411,25 @@ export async function getAdminAIProviderConfig(): Promise<AdminAIProviderConfig>
     return {
       active,
       embedding_configs: [{
+        id: "",
+        company_id: companyId || "",
         provider: active.embedding_provider,
         model: active.embedding_model,
         dimension: active.embedding_dimension,
         endpoint: active.embedding_endpoint,
         api_key: active.embedding_api_key,
-        is_active: true
+        is_active: true,
+        is_primary: true
       }],
       llm_configs: [{
+        id: "",
+        company_id: companyId || "",
         provider: active.llm_provider,
         model: active.llm_model,
         endpoint: active.llm_endpoint,
         api_key: active.llm_api_key,
-        is_active: true
+        is_active: true,
+        is_primary: true
       }]
     };
   }

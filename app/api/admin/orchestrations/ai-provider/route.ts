@@ -22,7 +22,7 @@ export async function GET() {
   }
 
   try {
-    const config = await getAIProviderConfig();
+    const config = await getAIProviderConfig(session.user.tenantId);
     return NextResponse.json({
       success: true,
       provider: config.llm_provider,

@@ -35,11 +35,16 @@ export default async function AIConfigurationPage() {
 
   requireModuleAccess(session, MODULE_KEYS.aiConfiguration);
 
-  const config = adminAIProviderConfig(await getAdminAIProviderConfig());
+  const config = adminAIProviderConfig(await getAdminAIProviderConfig(session.user.tenantId));
 
   return (
     <AdminShell active={MODULE_KEYS.aiConfiguration} session={session}>
-      <AIConfigurationForm config={config} embeddingProviders={embeddingProviders} llmProviders={llmProviders} />
+      <AIConfigurationForm
+        companyName={session.tenant.name}
+        config={config}
+        embeddingProviders={embeddingProviders}
+        llmProviders={llmProviders}
+      />
     </AdminShell>
   );
 }

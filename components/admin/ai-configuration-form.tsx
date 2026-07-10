@@ -1,8 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import { Bot, KeyRound, RefreshCw, Save } from "lucide-react";
+import { FormEvent, useMemo, useState } from "react";
+import { Bot, KeyRound, Pencil, Plus, Star, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 
 type AIConfig = {
   active: {
@@ -18,44 +17,29 @@ type AIConfig = {
   };
   embedding_configs: EmbeddingProviderConfig[];
   llm_configs: LLMProviderConfig[];
-  reembedding?: {
-    documentCount: number;
-    jobCount: number;
-  } | null;
 };
 
 type EmbeddingProviderConfig = {
+  id: string;
+  company_id: string;
   provider: string;
-  embedding_provider?: string;
   model: string;
   dimension: number | null;
   endpoint: string;
   api_key: string;
   is_active: boolean;
+  is_primary: boolean;
 };
 
 type LLMProviderConfig = {
+  id: string;
+  company_id: string;
   provider: string;
-  llm_provider?: string;
   model: string;
   endpoint: string;
   api_key: string;
   is_active: boolean;
-};
-
-type EmbeddingFormState = {
-  provider: string;
-  model: string;
-  dimension: string;
-  endpoint: string;
-  apiKey: string;
-};
-
-type LLMFormState = {
-  provider: string;
-  model: string;
-  endpoint: string;
-  apiKey: string;
+  is_primary: boolean;
 };
 
 type ProviderOption = {
@@ -67,223 +51,523 @@ type ProviderOption = {
 };
 
 type AIConfigurationFormProps = {
+  companyName: string;
   config: AIConfig;
   embeddingProviders: ProviderOption[];
   llmProviders: ProviderOption[];
 };
 
-export function AIConfigurationForm({ config, embeddingProviders, llmProviders }: AIConfigurationFormProps) {
+type Feedback = {
+  message: string;
+  status: "idle" | "submitting" | "success" | "error";
+};
+
+type ConfirmDialog = {
+  message: string;
+  onConfirm: () => void;
+} | null;
+
+type EmbeddingDraft = {
+  id: string | null;
+  provider: string;
+  model: string;
+  dimension: string;
+  endpoint: string;
+  api_key: string;
+  is_active: boolean;
+  is_primary: boolean;
+};
+
+type LLMDraft = {
+  id: string | null;
+  provider: string;
+  model: string;
+  endpoint: string;
+  api_key: string;
+  is_active: boolean;
+  is_primary: boolean;
+};
+
+const initialFeedback: Feedback = {
+  message: "",
+  status: "idle"
+};
+
+function readMessage(response: Response, fallback: string) {
+  return response.json().then((body) => (typeof body?.message === "string" ? body.message : fallback)).catch(() => fallback);
+}
+
+function buildEmbeddingDraft(option: ProviderOption): EmbeddingDraft {
+  return {
+    id: null,
+    provider: option.key,
+    model: option.default_model || "",
+    dimension: String(option.default_dimension || ""),
+    endpoint: "",
+    api_key: "",
+    is_active: true,
+    is_primary: false
+  };
+}
+
+function buildLlmDraft(option: ProviderOption): LLMDraft {
+  return {
+    id: null,
+    provider: option.key,
+    model: option.default_model || "",
+    endpoint: "",
+    api_key: "",
+    is_active: true,
+    is_primary: false
+  };
+}
+
+export function AIConfigurationForm({ companyName, config, embeddingProviders, llmProviders }: AIConfigurationFormProps) {
+  const [activeTab, setActiveTab] = useState<"llm" | "embedding">("llm");
   const [adminConfig, setAdminConfig] = useState(config);
-  const [state, setState] = useState<{ message: string; status: "idle" | "submitting" | "success" | "error" }>({ message: "", status: "idle" });
-  const [embeddingForm, setEmbeddingForm] = useState<EmbeddingFormState>(() => embeddingStateFromConfig(adminConfig.active.embedding_provider, adminConfig));
-  const [llmForm, setLLMForm] = useState<LLMFormState>(() => llmStateFromConfig(adminConfig.active.llm_provider, adminConfig));
-  const [reembedDocuments, setReembedDocuments] = useState(false);
-  const embeddingConfigByProvider = useMemo(() => providerMap(adminConfig.embedding_configs), [adminConfig.embedding_configs]);
-  const llmConfigByProvider = useMemo(() => providerMap(adminConfig.llm_configs), [adminConfig.llm_configs]);
-  const embeddingChanged = useMemo(() => {
-    return embeddingForm.provider !== adminConfig.active.embedding_provider
-      || embeddingForm.model.trim() !== adminConfig.active.embedding_model
-      || Number(embeddingForm.dimension || 0) !== Number(adminConfig.active.embedding_dimension);
-  }, [adminConfig.active.embedding_dimension, adminConfig.active.embedding_model, adminConfig.active.embedding_provider, embeddingForm.dimension, embeddingForm.model, embeddingForm.provider]);
+  const [feedback, setFeedback] = useState<Feedback>(initialFeedback);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
 
-  useEffect(() => {
-    setReembedDocuments(embeddingChanged);
-  }, [embeddingChanged]);
+  const defaultEmbeddingProvider = embeddingProviders[0];
+  const defaultLlmProvider = llmProviders[0];
 
-  async function saveConfig(event: FormEvent<HTMLFormElement>) {
+  const [embeddingDraft, setEmbeddingDraft] = useState<EmbeddingDraft>(buildEmbeddingDraft(defaultEmbeddingProvider));
+  const [llmDraft, setLlmDraft] = useState<LLMDraft>(buildLlmDraft(defaultLlmProvider));
+
+  const embeddingProviderMap = useMemo(() => new Map(embeddingProviders.map((item) => [item.key, item])), [embeddingProviders]);
+  const llmProviderMap = useMemo(() => new Map(llmProviders.map((item) => [item.key, item])), [llmProviders]);
+
+  async function refreshConfig() {
+    const response = await fetch("/admin/ai/config", { method: "GET" });
+    if (!response.ok) {
+      setFeedback({ message: await readMessage(response, "Unable to refresh AI configuration."), status: "error" });
+      return;
+    }
+
+    const body = await response.json();
+    setAdminConfig(body);
+  }
+
+  function resetEmbeddingDraft() {
+    setEmbeddingDraft(buildEmbeddingDraft(defaultEmbeddingProvider));
+  }
+
+  function resetLlmDraft() {
+    setLlmDraft(buildLlmDraft(defaultLlmProvider));
+  }
+
+  async function saveEmbedding(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setState({ message: "", status: "submitting" });
+
+    if (!embeddingDraft.provider || !embeddingDraft.model.trim()) {
+      setFeedback({ message: "Provider and model are required.", status: "error" });
+      return;
+    }
+
+    setFeedback({ message: "", status: "submitting" });
+
+    const method = embeddingDraft.id ? "PUT" : "POST";
+    const response = await fetch("/admin/ai/config", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "embedding",
+        id: embeddingDraft.id,
+        provider: embeddingDraft.provider,
+        model: embeddingDraft.model,
+        dimension: embeddingDraft.dimension ? Number(embeddingDraft.dimension) : null,
+        endpoint: embeddingDraft.endpoint,
+        api_key: embeddingDraft.api_key,
+        is_active: embeddingDraft.is_active,
+        is_primary: embeddingDraft.is_primary
+      })
+    });
+
+    if (!response.ok) {
+      setFeedback({ message: await readMessage(response, "Unable to save embedding configuration."), status: "error" });
+      return;
+    }
+
+    const body = await response.json();
+    setAdminConfig(body);
+    resetEmbeddingDraft();
+    setFeedback({ message: embeddingDraft.id ? "Embedding configuration updated." : "Embedding configuration created.", status: "success" });
+  }
+
+  async function saveLlm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!llmDraft.provider || !llmDraft.model.trim()) {
+      setFeedback({ message: "Provider and model are required.", status: "error" });
+      return;
+    }
+
+    setFeedback({ message: "", status: "submitting" });
+
+    const method = llmDraft.id ? "PUT" : "POST";
+    const response = await fetch("/admin/ai/config", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "llm",
+        id: llmDraft.id,
+        provider: llmDraft.provider,
+        model: llmDraft.model,
+        endpoint: llmDraft.endpoint,
+        api_key: llmDraft.api_key,
+        is_active: llmDraft.is_active,
+        is_primary: llmDraft.is_primary
+      })
+    });
+
+    if (!response.ok) {
+      setFeedback({ message: await readMessage(response, "Unable to save LLM configuration."), status: "error" });
+      return;
+    }
+
+    const body = await response.json();
+    setAdminConfig(body);
+    resetLlmDraft();
+    setFeedback({ message: llmDraft.id ? "LLM configuration updated." : "LLM configuration created.", status: "success" });
+  }
+
+  function editEmbedding(configItem: EmbeddingProviderConfig) {
+    setEmbeddingDraft({
+      id: configItem.id,
+      provider: configItem.provider,
+      model: configItem.model,
+      dimension: configItem.dimension ? String(configItem.dimension) : "",
+      endpoint: configItem.endpoint,
+      api_key: configItem.api_key,
+      is_active: configItem.is_active,
+      is_primary: configItem.is_primary
+    });
+    setActiveTab("embedding");
+  }
+
+  function editLlm(configItem: LLMProviderConfig) {
+    setLlmDraft({
+      id: configItem.id,
+      provider: configItem.provider,
+      model: configItem.model,
+      endpoint: configItem.endpoint,
+      api_key: configItem.api_key,
+      is_active: configItem.is_active,
+      is_primary: configItem.is_primary
+    });
+    setActiveTab("llm");
+  }
+
+  async function patchConfig(type: "embedding" | "llm", id: string, action: "toggle_active" | "set_primary", value: boolean) {
+    setFeedback({ message: "", status: "submitting" });
 
     const response = await fetch("/admin/ai/config", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        embedding_provider: embeddingForm.provider,
-        embedding_model: embeddingForm.model,
-        embedding_dimension: Number(embeddingForm.dimension || 0),
-        embedding_endpoint: embeddingForm.endpoint,
-        embedding_api_key: embeddingForm.apiKey,
-        llm_provider: llmForm.provider,
-        llm_model: llmForm.model,
-        llm_endpoint: llmForm.endpoint,
-        llm_api_key: llmForm.apiKey,
-        reembed_documents: reembedDocuments
-      })
+      body: JSON.stringify({ type, id, action, value })
     });
-    const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ message: typeof body?.message === "string" ? body.message : "Unable to save AI configuration.", status: "error" });
+      setFeedback({ message: await readMessage(response, "Unable to update configuration state."), status: "error" });
       return;
     }
 
+    const body = await response.json();
     setAdminConfig(body);
-    setEmbeddingForm(embeddingStateFromConfig(body.active.embedding_provider, body));
-    setLLMForm(llmStateFromConfig(body.active.llm_provider, body));
-    setReembedDocuments(false);
-    const reembeddingMessage = body.reembedding
-      ? ` ${body.reembedding.jobCount} re-embedding job${body.reembedding.jobCount === 1 ? "" : "s"} queued for ${body.reembedding.documentCount} document${body.reembedding.documentCount === 1 ? "" : "s"}.`
-      : "";
-    setState({ message: `AI configuration saved.${reembeddingMessage}`, status: "success" });
+    setFeedback({ message: "Configuration updated.", status: "success" });
+  }
+
+  function requestDelete(type: "embedding" | "llm", id: string, label: string) {
+    setConfirmDialog({
+      message: `Are you sure you want to delete "${label}"? This cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setFeedback({ message: "", status: "submitting" });
+
+        const response = await fetch("/admin/ai/config", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type, id })
+        });
+
+        if (!response.ok) {
+          setFeedback({ message: await readMessage(response, "Unable to delete configuration."), status: "error" });
+          return;
+        }
+
+        const body = await response.json();
+        setAdminConfig(body);
+        setFeedback({ message: "Configuration deleted.", status: "success" });
+      }
+    });
   }
 
   return (
-    <form className="grid gap-6" onSubmit={saveConfig}>
-      <section className="grid gap-6 xl:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
-              <Bot className="h-5 w-5" />
-            </span>
-            <div>
-              <h2 className="text-lg font-semibold tracking-normal text-slate-950">Embeddings</h2>
-              <p className="text-sm text-slate-500">Used for indexing document chunks and retrieval.</p>
-            </div>
+    <section className="grid gap-6">
+      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-950">AI Configuration</h2>
+            <p className="text-sm text-slate-500">Company scope: {companyName}</p>
           </div>
-          <div className="mt-5 grid gap-4">
-            <Field label="Provider">
-              <select
-                className="input"
-                name="embedding_provider"
-                onChange={(event) => setEmbeddingForm(embeddingStateFromConfig(event.target.value, adminConfig))}
-                value={embeddingForm.provider}
-              >
-                {embeddingProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Model">
-              <input className="input" name="embedding_model" onChange={(event) => setEmbeddingForm({ ...embeddingForm, model: event.target.value })} value={embeddingForm.model} />
-            </Field>
-            <Field label="Dimensions">
-              <input className="input" min={1} name="embedding_dimension" onChange={(event) => setEmbeddingForm({ ...embeddingForm, dimension: event.target.value })} type="number" value={embeddingForm.dimension} />
-            </Field>
-            <Field label="Endpoint">
-              <input className="input" name="embedding_endpoint" onChange={(event) => setEmbeddingForm({ ...embeddingForm, endpoint: event.target.value })} placeholder="http://localhost:11434/api/embed" value={embeddingForm.endpoint} />
-            </Field>
-            <Field label="API key">
-              <input className="input font-mono" name="embedding_api_key" onChange={(event) => setEmbeddingForm({ ...embeddingForm, apiKey: event.target.value })} placeholder="Optional for local providers" type="text" value={embeddingForm.apiKey} />
-            </Field>
-            <ProviderStatus config={embeddingConfigByProvider.get(embeddingForm.provider)} />
-          </div>
+          <button
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            onClick={refreshConfig}
+            type="button"
+          >
+            Refresh
+          </button>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-teal-600 text-white">
-              <KeyRound className="h-5 w-5" />
-            </span>
-            <div>
-              <h2 className="text-lg font-semibold tracking-normal text-slate-950">LLM</h2>
-              <p className="text-sm text-slate-500">Used to generate final answers from retrieved context.</p>
-            </div>
-          </div>
-          <div className="mt-5 grid gap-4">
-            <Field label="Provider">
-              <select
-                className="input"
-                name="llm_provider"
-                onChange={(event) => setLLMForm(llmStateFromConfig(event.target.value, adminConfig))}
-                value={llmForm.provider}
-              >
-                {llmProviders.map((provider) => <option key={provider.key} value={provider.key}>{provider.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Model">
-              <input className="input" name="llm_model" onChange={(event) => setLLMForm({ ...llmForm, model: event.target.value })} value={llmForm.model} />
-            </Field>
-            <Field label="Endpoint">
-              <input className="input" name="llm_endpoint" onChange={(event) => setLLMForm({ ...llmForm, endpoint: event.target.value })} placeholder="http://localhost:11434" value={llmForm.endpoint} />
-            </Field>
-            <Field label="API key">
-              <input className="input font-mono" name="llm_api_key" onChange={(event) => setLLMForm({ ...llmForm, apiKey: event.target.value })} placeholder="Optional for local providers" type="text" value={llmForm.apiKey} />
-            </Field>
-            <ProviderStatus config={llmConfigByProvider.get(llmForm.provider)} />
-          </div>
+        <div className="mt-4 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+          <button
+            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${activeTab === "llm" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
+            onClick={() => setActiveTab("llm")}
+            type="button"
+          >
+            LLM
+          </button>
+          <button
+            className={`rounded-md px-3 py-1.5 text-sm font-semibold ${activeTab === "embedding" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
+            onClick={() => setActiveTab("embedding")}
+            type="button"
+          >
+            Embeddings
+          </button>
         </div>
-      </section>
 
-      <label className="flex items-start gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <input
-          checked={reembedDocuments}
-          className="mt-1 h-4 w-4 rounded border-slate-300 text-slate-950"
-          disabled={state.status === "submitting"}
-          onChange={(event) => setReembedDocuments(event.target.checked)}
-          type="checkbox"
-        />
-        <span className="grid gap-1">
-          <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <RefreshCw className="h-4 w-4" />
-            Re-embed existing documents after saving
-          </span>
-          <span className="text-sm text-slate-500">
-            Queues fresh embedding jobs for documents that already have chunks. Older vectors are deleted when each job runs.
-          </span>
-        </span>
-      </label>
+        {feedback.message ? (
+          <div className={`mt-4 rounded-lg px-3 py-2 text-sm ${feedback.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
+            {feedback.message}
+          </div>
+        ) : null}
+      </div>
 
-      {state.message ? (
-        <p className={`rounded-lg px-3 py-2 text-sm ${state.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
-          {state.message}
-        </p>
+      {activeTab === "embedding" ? (
+        <>
+          <form className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" onSubmit={saveEmbedding}>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <Bot className="h-4 w-4" />
+              {embeddingDraft.id ? "Edit Embedding" : "Add Embedding"}
+            </div>
+            <div className="grid gap-3 xl:grid-cols-[160px_1fr_120px_1fr_1fr_auto_auto]">
+              <select
+                className="h-10 rounded-lg border border-slate-200 px-3 text-sm"
+                onChange={(event) => {
+                  const option = embeddingProviderMap.get(event.target.value);
+                  setEmbeddingDraft((prev) => ({
+                    ...prev,
+                    provider: event.target.value,
+                    model: option?.default_model || prev.model,
+                    dimension: option?.default_dimension ? String(option.default_dimension) : prev.dimension
+                  }));
+                }}
+                value={embeddingDraft.provider}
+              >
+                {embeddingProviders.map((provider) => (
+                  <option key={provider.key} value={provider.key}>{provider.name}</option>
+                ))}
+              </select>
+              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, model: event.target.value }))} placeholder="Model" value={embeddingDraft.model} />
+              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" min={1} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, dimension: event.target.value }))} placeholder="Dim" type="number" value={embeddingDraft.dimension} />
+              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="Endpoint" value={embeddingDraft.endpoint} />
+              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, api_key: event.target.value }))} placeholder="API key" value={embeddingDraft.api_key} />
+              <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                <input checked={embeddingDraft.is_active} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
+                Active
+              </label>
+              <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                <input checked={embeddingDraft.is_primary} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
+                Primary
+              </label>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={feedback.status === "submitting"} type="submit">
+                <Plus className="h-4 w-4" />
+                {embeddingDraft.id ? "Update" : "Create"}
+              </button>
+              {embeddingDraft.id ? (
+                <button className="inline-flex h-10 items-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={resetEmbeddingDraft} type="button">
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+          </form>
+
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Provider</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Model</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Dim</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Endpoint</th>
+                  <th className="px-3 py-2 text-center font-semibold text-slate-700">Active</th>
+                  <th className="px-3 py-2 text-center font-semibold text-slate-700">Primary</th>
+                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {adminConfig.embedding_configs.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-4 text-slate-500" colSpan={7}>No embedding configurations saved.</td>
+                  </tr>
+                ) : adminConfig.embedding_configs.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-3 py-3 text-slate-700">{item.provider}</td>
+                    <td className="px-3 py-3 text-slate-900">{item.model}</td>
+                    <td className="px-3 py-3 text-slate-700">{item.dimension || "-"}</td>
+                    <td className="px-3 py-3 text-slate-700">{item.endpoint || "-"}</td>
+                    <td className="px-3 py-3 text-center">
+                      <button className="inline-flex items-center justify-center" onClick={() => patchConfig("embedding", item.id, "toggle_active", !item.is_active)} type="button">
+                        {item.is_active ? <ToggleRight className="h-5 w-5 text-emerald-600" /> : <ToggleLeft className="h-5 w-5 text-slate-400" />}
+                      </button>
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      <button className="inline-flex items-center justify-center" onClick={() => patchConfig("embedding", item.id, "set_primary", true)} type="button">
+                        <Star className={`h-4 w-4 ${item.is_primary ? "fill-amber-400 text-amber-500" : "text-slate-300"}`} />
+                      </button>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50" onClick={() => editEmbedding(item)} type="button">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-300 text-red-700 hover:bg-red-50" onClick={() => requestDelete("embedding", item.id, `${item.provider} / ${item.model}`)} type="button">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : null}
 
-      <div>
-        <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={state.status === "submitting"} type="submit">
-          <Save className="h-4 w-4" />
-          Save configuration
-        </button>
-      </div>
-    </form>
-  );
-}
+      {activeTab === "llm" ? (
+        <>
+          <form className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" onSubmit={saveLlm}>
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <KeyRound className="h-4 w-4" />
+              {llmDraft.id ? "Edit LLM" : "Add LLM"}
+            </div>
+            <div className="grid gap-3 xl:grid-cols-[160px_1fr_1fr_1fr_auto_auto]">
+              <select
+                className="h-10 rounded-lg border border-slate-200 px-3 text-sm"
+                onChange={(event) => {
+                  const option = llmProviderMap.get(event.target.value);
+                  setLlmDraft((prev) => ({
+                    ...prev,
+                    provider: event.target.value,
+                    model: option?.default_model || prev.model
+                  }));
+                }}
+                value={llmDraft.provider}
+              >
+                {llmProviders.map((provider) => (
+                  <option key={provider.key} value={provider.key}>{provider.name}</option>
+                ))}
+              </select>
+              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, model: event.target.value }))} placeholder="Model" value={llmDraft.model} />
+              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="Endpoint" value={llmDraft.endpoint} />
+              <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, api_key: event.target.value }))} placeholder="API key" value={llmDraft.api_key} />
+              <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                <input checked={llmDraft.is_active} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
+                Active
+              </label>
+              <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
+                <input checked={llmDraft.is_primary} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
+                Primary
+              </label>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={feedback.status === "submitting"} type="submit">
+                <Plus className="h-4 w-4" />
+                {llmDraft.id ? "Update" : "Create"}
+              </button>
+              {llmDraft.id ? (
+                <button className="inline-flex h-10 items-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={resetLlmDraft} type="button">
+                  Cancel
+                </button>
+              ) : null}
+            </div>
+          </form>
 
-function providerKey(config: EmbeddingProviderConfig | LLMProviderConfig) {
-  return config.provider;
-}
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Provider</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Model</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Endpoint</th>
+                  <th className="px-3 py-2 text-center font-semibold text-slate-700">Active</th>
+                  <th className="px-3 py-2 text-center font-semibold text-slate-700">Primary</th>
+                  <th className="px-3 py-2 text-right font-semibold text-slate-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {adminConfig.llm_configs.length === 0 ? (
+                  <tr>
+                    <td className="px-3 py-4 text-slate-500" colSpan={6}>No LLM configurations saved.</td>
+                  </tr>
+                ) : adminConfig.llm_configs.map((item) => (
+                  <tr key={item.id}>
+                    <td className="px-3 py-3 text-slate-700">{item.provider}</td>
+                    <td className="px-3 py-3 text-slate-900">{item.model}</td>
+                    <td className="px-3 py-3 text-slate-700">{item.endpoint || "-"}</td>
+                    <td className="px-3 py-3 text-center">
+                      <button className="inline-flex items-center justify-center" onClick={() => patchConfig("llm", item.id, "toggle_active", !item.is_active)} type="button">
+                        {item.is_active ? <ToggleRight className="h-5 w-5 text-emerald-600" /> : <ToggleLeft className="h-5 w-5 text-slate-400" />}
+                      </button>
+                    </td>
+                    <td className="px-3 py-3 text-center">
+                      <button className="inline-flex items-center justify-center" onClick={() => patchConfig("llm", item.id, "set_primary", true)} type="button">
+                        <Star className={`h-4 w-4 ${item.is_primary ? "fill-amber-400 text-amber-500" : "text-slate-300"}`} />
+                      </button>
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50" onClick={() => editLlm(item)} type="button">
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-300 text-red-700 hover:bg-red-50" onClick={() => requestDelete("llm", item.id, `${item.provider} / ${item.model}`)} type="button">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
 
-function providerMap<T extends EmbeddingProviderConfig | LLMProviderConfig>(configs: T[]) {
-  return new Map(configs.map((config) => [providerKey(config), config]));
-}
-
-function embeddingStateFromConfig(provider: string, config: AIConfig): EmbeddingFormState {
-  const saved = providerMap(config.embedding_configs).get(provider);
-  const activeDimension = config.active.embedding_provider === provider ? config.active.embedding_dimension : null;
-
-  return {
-    provider,
-    model: saved?.model ?? "",
-    dimension: saved?.dimension ? String(saved.dimension) : activeDimension ? String(activeDimension) : "",
-    endpoint: saved?.endpoint ?? "",
-    apiKey: saved?.api_key ?? ""
-  };
-}
-
-function llmStateFromConfig(provider: string, config: AIConfig): LLMFormState {
-  const saved = providerMap(config.llm_configs).get(provider);
-
-  return {
-    provider,
-    model: saved?.model ?? "",
-    endpoint: saved?.endpoint ?? "",
-    apiKey: saved?.api_key ?? ""
-  };
-}
-
-function ProviderStatus({ config }: { config?: { is_active: boolean } }) {
-  return (
-    <p className={`rounded-lg px-3 py-2 text-xs font-semibold ${config?.is_active ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
-      {config ? (config.is_active ? "This provider is currently active." : "Saved provider details found. Saving will make it active.") : "No saved details for this provider yet."}
-    </p>
-  );
-}
-
-function Field({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
-      <div className="mt-2 [&_.input]:h-11 [&_.input]:w-full [&_.input]:rounded-lg [&_.input]:border [&_.input]:border-slate-200 [&_.input]:bg-white [&_.input]:px-3 [&_.input]:text-sm [&_.input]:outline-none [&_.input:focus]:border-slate-900">
-        {children}
-      </div>
-    </label>
+      {confirmDialog ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+            <p className="mb-6 text-sm text-slate-900">{confirmDialog.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+                onClick={() => setConfirmDialog(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                onClick={confirmDialog.onConfirm}
+                type="button"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
