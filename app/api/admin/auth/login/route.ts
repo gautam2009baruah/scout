@@ -40,5 +40,15 @@ export async function POST(request: Request) {
     maxAge: 15 * 60
   });
 
+  response.cookies.set({
+    name: "scout_logout_lock",
+    value: "",
+    httpOnly: false,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0
+  });
+
   return response;
 }
