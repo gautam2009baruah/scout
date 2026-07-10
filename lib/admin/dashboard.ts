@@ -213,6 +213,7 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
 
   if (hasModuleAccess(session, MODULE_KEYS.guidedWorkflows)) {
     const accessFilter = session.user.isAdminRole ? "" : "AND company_id = $1";
+    const sessionAccessFilter = session.user.isAdminRole ? "" : "AND company_target_applications.company_id = $1";
     const params = session.user.isAdminRole ? [] : [session.user.tenantId];
     const result = await getPool().query<{
       target_apps: string;
@@ -223,7 +224,15 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
       `
         SELECT
           (SELECT COUNT(*) FROM guided_workflow_target_apps WHERE 1 = 1 ${accessFilter}) AS target_apps,
-          (SELECT COUNT(*) FROM guided_workflow_recording_sessions WHERE 1 = 1 ${accessFilter}) AS training_sessions,
+          (
+            SELECT COUNT(*)
+            FROM guided_workflow_recording_sessions
+            INNER JOIN company_target_applications
+              ON company_target_applications.id = guided_workflow_recording_sessions.company_target_application_id
+            WHERE guided_workflow_recording_sessions.deleted_at IS NULL
+              AND company_target_applications.deleted_at IS NULL
+              ${sessionAccessFilter}
+          ) AS training_sessions,
           (SELECT COUNT(*) FROM guided_workflow_guides WHERE status = 'draft' ${accessFilter}) AS draft_guides,
           (SELECT COUNT(*) FROM guided_workflow_guides WHERE status = 'published' ${accessFilter}) AS published_guides
       `,
