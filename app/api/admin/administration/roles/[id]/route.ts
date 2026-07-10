@@ -30,7 +30,8 @@ export async function PUT(request: Request, context: RouteContext) {
       {
         name: body.name,
         isAdminRole: body.isAdminRole === true,
-        description: typeof body.description === "string" ? body.description : undefined
+        description: typeof body.description === "string" ? body.description : undefined,
+        moduleKeys: Array.isArray(body.moduleKeys) ? body.moduleKeys.map((k: unknown) => String(k)) : undefined
       },
       session
     );

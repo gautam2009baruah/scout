@@ -1,13 +1,22 @@
 import type { TenantContext } from "./database";
 import type { AdminModule } from "./permissions";
 
+export type UserCompanyAccess = {
+  companyId: string;
+  companyName: string;
+  companySlug: string;
+  roleId: string;
+  roleName: string;
+  isPrimary: boolean;
+};
+
 export type AdminUser = {
   id: string;
-  tenantId: string;
+  tenantId: string; // Current company context
   name: string;
   email: string;
-  roleId: string;
-  isAdminRole: boolean;
+  roleId: string; // Role in current company
+  isAdminRole: boolean; // Admin in current company
   isActive: boolean;
   mustChangePassword: boolean;
 };
@@ -16,6 +25,7 @@ export type AdminSession = {
   user: AdminUser;
   tenant: TenantContext;
   modules: AdminModule[];
+  availableCompanies: UserCompanyAccess[]; // All companies user has access to
   expiresAt: Date;
 };
 

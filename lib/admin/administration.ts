@@ -87,19 +87,10 @@ export async function getMasterData() {
         FROM companies
         LEFT JOIN roles ON roles.company_id = companies.id AND roles.deleted_at IS NULL
         LEFT JOIN LATERAL (
-          SELECT COUNT(DISTINCT users.id) AS user_count
-          FROM users
-          WHERE users.deleted_at IS NULL
-            AND (
-              users.company_id = companies.id
-              OR EXISTS (
-                SELECT 1
-                FROM user_company_roles
-                WHERE user_company_roles.user_id = users.id
-                  AND user_company_roles.company_id = companies.id
-                  AND user_company_roles.deleted_at IS NULL
-              )
-            )
+          SELECT COUNT(DISTINCT user_company_roles.user_id) AS user_count
+          FROM user_company_roles
+          WHERE user_company_roles.company_id = companies.id
+            AND user_company_roles.deleted_at IS NULL
         ) company_users ON true
         WHERE companies.deleted_at IS NULL
         GROUP BY companies.id, company_users.user_count
@@ -194,7 +185,36 @@ export async function createCompany(input: CreateCompanyInput, session: AdminSes
       [name, slug, session.user.id]
     );
 
-    return result.rows[0];
+    const company = result.rows[0];
+
+    // Create default Admin role for this company with is_system = true to protect it from app-level deletion
+    const roleResult = await getPool().query<{ id: string }>(
+      `
+        INSERT INTO roles (company_id, name, is_admin_role, is_system, created_by, updated_by)
+        VALUES ($1, 'Admin', true, true, $2, $2)
+        RETURNING id
+      `,
+      [company.id, session.user.id]
+    );
+
+    const roleId = roleResult.rows[0]?.id;
+
+    if (roleId) {
+      // Grant default admin modules to this role
+      await grantDefaultAdminModules(roleId);
+
+      // Assign creator user to this company with Admin role
+      await getPool().query(
+        `
+          INSERT INTO user_company_roles (user_id, company_id, role_id, is_primary, created_by, updated_by)
+          VALUES ($1, $2, $3, true, $4, $4)
+          ON CONFLICT (user_id, company_id) DO NOTHING
+        `,
+        [session.user.id, company.id, roleId, session.user.id]
+      );
+    }
+
+    return company;
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
       throw new MasterDataError("A company with this slug already exists.");
@@ -248,15 +268,13 @@ export async function deleteCompany(companyId: string, session: AdminSession) {
 
   const usageResult = await getPool().query<{
     user_count: string;
-    role_count: string;
   }>(
     `
       SELECT
-        COUNT(DISTINCT users.id) AS user_count,
-        COUNT(DISTINCT roles.id) FILTER (WHERE roles.company_id IS NOT NULL) AS role_count
+        COUNT(DISTINCT user_company_roles.user_id) AS user_count
       FROM companies
-      LEFT JOIN users ON users.company_id = companies.id AND users.deleted_at IS NULL
-      LEFT JOIN roles ON roles.company_id = companies.id AND roles.deleted_at IS NULL
+      LEFT JOIN user_company_roles ON user_company_roles.company_id = companies.id
+        AND user_company_roles.deleted_at IS NULL
       WHERE companies.id = $1 AND companies.deleted_at IS NULL
       GROUP BY companies.id
     `,
@@ -270,8 +288,14 @@ export async function deleteCompany(companyId: string, session: AdminSession) {
   }
 
   if (Number(usage.user_count) > 0) {
-    throw new MasterDataError("Delete users for this company before deleting the company.");
+    throw new MasterDataError("Remove all users from this company before deleting it.");
   }
+
+  // Soft-delete all non-system roles belonging to this company first
+  await getPool().query(
+    "UPDATE roles SET deleted_at = now(), updated_at = now() WHERE company_id = $1 AND is_system = false AND deleted_at IS NULL",
+    [companyId]
+  );
 
   await getPool().query(
     "UPDATE companies SET status = 'archived', deleted_at = now(), updated_by = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
@@ -352,10 +376,12 @@ export async function updateRole(roleId: string, input: UpdateRoleInput, session
         RETURNING
           id,
           company_id AS "companyId",
+          null AS "companyName",
           name,
           description,
           is_system AS "isSystem",
           is_admin_role AS "isAdminRole",
+          ARRAY[]::integer[] AS "moduleKeys",
           created_at AS "createdAt"
       `,
       [roleId, name, description, isAdminRole, session.user.id]
@@ -396,25 +422,14 @@ export async function deleteRole(roleId: string, session: AdminSession) {
     `
       SELECT
         roles.is_system,
-        (
-          SELECT COUNT(DISTINCT assigned_users.user_id)
-          FROM (
-            SELECT users.id AS user_id
-            FROM users
-            WHERE users.role_id = roles.id
-              AND users.deleted_at IS NULL
-            UNION
-            SELECT user_company_roles.user_id
-            FROM user_company_roles
-            INNER JOIN users ON users.id = user_company_roles.user_id
-            WHERE user_company_roles.role_id = roles.id
-              AND user_company_roles.deleted_at IS NULL
-              AND users.deleted_at IS NULL
-          ) assigned_users
-        ) AS user_count
+        COALESCE((
+          SELECT COUNT(DISTINCT user_company_roles.user_id)
+          FROM user_company_roles
+          WHERE user_company_roles.role_id = roles.id
+            AND user_company_roles.deleted_at IS NULL
+        ), 0) AS user_count
       FROM roles
       WHERE roles.id = $1 AND roles.deleted_at IS NULL
-      GROUP BY roles.id
     `,
     [roleId]
   );
@@ -434,7 +449,7 @@ export async function deleteRole(roleId: string, session: AdminSession) {
   }
 
   await getPool().query(
-    "UPDATE roles SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
-    [roleId, session.user.id]
+    "DELETE FROM roles WHERE id = $1 AND is_system = false AND deleted_at IS NULL",
+    [roleId]
   );
 }

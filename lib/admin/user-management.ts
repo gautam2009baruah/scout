@@ -154,20 +154,11 @@ export async function getEmployeePage(filters: EmployeeFilters) {
 
   const where = `
     users.deleted_at IS NULL
+    AND user_company_roles.deleted_at IS NULL
     AND companies.deleted_at IS NULL
     AND roles.deleted_at IS NULL
-    AND (
-      $1::uuid IS NULL
-      OR users.company_id = $1
-      OR EXISTS (
-        SELECT 1
-        FROM user_company_roles
-        WHERE user_company_roles.user_id = users.id
-          AND user_company_roles.company_id = $1
-          AND user_company_roles.deleted_at IS NULL
-      )
-    )
-    AND ($2::uuid IS NULL OR users.role_id = $2)
+    AND user_company_roles.company_id = $1::uuid
+    AND ($2::uuid IS NULL OR user_company_roles.role_id = $2)
     AND ($3::text IS NULL OR users.status = $3)
     AND (
       $4::text IS NULL
@@ -199,11 +190,11 @@ export async function getEmployeePage(filters: EmployeeFilters) {
       `
         SELECT
           users.id,
-          users.company_id,
-          COALESCE(company_memberships.company_ids, ARRAY[users.company_id]) AS company_ids,
+          user_company_roles.company_id,
+          COALESCE(company_memberships.company_ids, ARRAY[user_company_roles.company_id]) AS company_ids,
           companies.name AS company_name,
           COALESCE(company_memberships.company_names, ARRAY[companies.name]) AS company_names,
-          users.role_id,
+          user_company_roles.role_id,
           roles.name AS role_name,
           users.name,
           users.email,
@@ -218,8 +209,9 @@ export async function getEmployeePage(filters: EmployeeFilters) {
           users.invited_at,
           users.created_at
         FROM users
-        INNER JOIN companies ON companies.id = users.company_id
-        INNER JOIN roles ON roles.id = users.role_id
+        INNER JOIN user_company_roles ON user_company_roles.user_id = users.id
+        INNER JOIN companies ON companies.id = user_company_roles.company_id
+        INNER JOIN roles ON roles.id = user_company_roles.role_id
         LEFT JOIN LATERAL (
           SELECT
             array_agg(member_companies.id ORDER BY member_companies.name) AS company_ids,
@@ -238,7 +230,7 @@ export async function getEmployeePage(filters: EmployeeFilters) {
           WITH role_modules AS (
             SELECT module_key, 'allow'::text AS effect
             FROM role_module_permissions
-            WHERE role_id = users.role_id
+            WHERE role_id = user_company_roles.role_id
               AND deleted_at IS NULL
           ),
           merged_permissions AS (
@@ -267,8 +259,9 @@ export async function getEmployeePage(filters: EmployeeFilters) {
       `
         SELECT COUNT(*) AS total
         FROM users
-        INNER JOIN companies ON companies.id = users.company_id
-        INNER JOIN roles ON roles.id = users.role_id
+        INNER JOIN user_company_roles ON user_company_roles.user_id = users.id
+        INNER JOIN companies ON companies.id = user_company_roles.company_id
+        INNER JOIN roles ON roles.id = user_company_roles.role_id
         WHERE ${where}
       `,
       params.slice(0, 4)

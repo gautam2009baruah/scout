@@ -5,6 +5,7 @@ import type { AdminSession } from "@/lib/admin/auth";
 import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
 import { ScoutChatbot } from "@/components/scout-chatbot";
 import { UserMenu } from "./user-menu";
+import { CompanyContextSwitcher } from "./company-context-switcher";
 
 type AdminShellProps = {
   active: AdminModuleKey;
@@ -118,6 +119,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                 <h1 className="text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
               </div>
               <div className="flex items-center gap-2">
+                <CompanyContextSwitcher />
                 <button aria-label="Notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:bg-slate-100 hover:text-slate-950">
                   <Bell className="h-4 w-4" />
                 </button>

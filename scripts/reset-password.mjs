@@ -1,6 +1,7 @@
 // Script to reset a user's password
 // Run with: node scripts/reset-password.mjs [email] [new-password]
 
+import "./db/load-env.mjs";
 import pg from "pg";
 import { randomBytes, scryptSync } from "crypto";
 

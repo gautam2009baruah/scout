@@ -25,6 +25,7 @@ const fallbackSession: AdminSession = {
     name: "System",
   },
   modules: [],
+  availableCompanies: [],
   expiresAt: new Date(Date.now() + 60_000),
 };
 

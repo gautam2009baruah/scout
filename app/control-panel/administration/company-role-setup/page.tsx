@@ -27,8 +27,8 @@ export default async function MasterDataPage() {
 
   return (
     <AdminShell active={MODULE_KEYS.companyRoleSetup} session={session}>
-      <MasterDataForms companies={companies} modules={modules} />
-      <MasterDataSummary companies={companies} roles={roles} />
+      <MasterDataForms companies={companies} modules={modules} currentCompanyId={session.user.tenantId} />
+      <MasterDataSummary modules={modules} roles={roles.filter(r => r.companyId === session.user.tenantId)} />
     </AdminShell>
   );
 }

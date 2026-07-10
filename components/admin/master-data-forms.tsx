@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, Loader2, Plus, ShieldCheck } from "lucide-react";
-import { MultiSelectDropdown } from "./multi-select-dropdown";
+import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import type { AdminModule } from "@/lib/admin/permissions";
 import type { CompanySummary } from "@/lib/admin/administration";
 
@@ -15,6 +15,7 @@ type FormState = {
 type MasterDataFormsProps = {
   companies: CompanySummary[];
   modules: AdminModule[];
+  currentCompanyId: string;
 };
 
 const initialState: FormState = {
@@ -27,13 +28,14 @@ async function readMessage(response: Response, fallback: string) {
   return typeof body?.message === "string" ? body.message : fallback;
 }
 
-export function MasterDataForms({ companies, modules }: MasterDataFormsProps) {
+export function MasterDataForms({ companies, modules, currentCompanyId }: MasterDataFormsProps) {
   const router = useRouter();
   const [companyState, setCompanyState] = useState<FormState>(initialState);
   const [roleState, setRoleState] = useState<FormState>(initialState);
-  const [selectedRoleCompanyIds, setSelectedRoleCompanyIds] = useState<string[]>([]);
   const [selectedRoleModuleKeys, setSelectedRoleModuleKeys] = useState<string[]>([]);
   const [isAdminRole, setIsAdminRole] = useState(false);
+  const [companyTimeout, setCompanyTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [roleTimeout, setRoleTimeout] = useState<NodeJS.Timeout | null>(null);
   const allModuleKeys = modules.map((module) => String(module.key));
 
   function updateAdminRole(checked: boolean) {
@@ -62,11 +64,17 @@ export function MasterDataForms({ companies, modules }: MasterDataFormsProps) {
 
     if (!response.ok) {
       setCompanyState({ message: await readMessage(response, "Unable to create company."), status: "error" });
+      if (companyTimeout) clearTimeout(companyTimeout);
+      const timeout = setTimeout(() => setCompanyState(initialState), 4000);
+      setCompanyTimeout(timeout);
       return;
     }
 
     formElement.reset();
     setCompanyState({ message: "Company created.", status: "success" });
+    if (companyTimeout) clearTimeout(companyTimeout);
+    const timeout = setTimeout(() => setCompanyState(initialState), 4000);
+    setCompanyTimeout(timeout);
     router.refresh();
   }
 
@@ -76,11 +84,17 @@ export function MasterDataForms({ companies, modules }: MasterDataFormsProps) {
     setRoleState({ message: "", status: "submitting" });
 
     const form = new FormData(formElement);
-    const companyIds = selectedRoleCompanyIds.length ? selectedRoleCompanyIds : form.getAll("companyIds").map(String);
     const name = String(form.get("name") ?? "");
+    const companyIds = [currentCompanyId];
+    const moduleKeys = isAdminRole ? allModuleKeys : selectedRoleModuleKeys;
 
-    if (companyIds.length === 0 || !name.trim()) {
-      setRoleState({ message: "Company and role name are required.", status: "error" });
+    if (!name.trim()) {
+      setRoleState({ message: "Role name is required.", status: "error" });
+      return;
+    }
+
+    if (!isAdminRole && moduleKeys.length === 0) {
+      setRoleState({ message: "At least one module must be selected.", status: "error" });
       return;
     }
 
@@ -92,20 +106,25 @@ export function MasterDataForms({ companies, modules }: MasterDataFormsProps) {
         name,
         isAdminRole,
         description: String(form.get("description") ?? ""),
-        moduleKeys: isAdminRole ? allModuleKeys : selectedRoleModuleKeys.length ? selectedRoleModuleKeys : form.getAll("moduleKeys").map(String)
+        moduleKeys
       })
     });
 
     if (!response.ok) {
       setRoleState({ message: await readMessage(response, "Unable to create role."), status: "error" });
+      if (roleTimeout) clearTimeout(roleTimeout);
+      const timeout = setTimeout(() => setRoleState(initialState), 4000);
+      setRoleTimeout(timeout);
       return;
     }
 
     formElement.reset();
-    setSelectedRoleCompanyIds([]);
     setSelectedRoleModuleKeys([]);
     setIsAdminRole(false);
     setRoleState({ message: "Role created.", status: "success" });
+    if (roleTimeout) clearTimeout(roleTimeout);
+    const timeout = setTimeout(() => setRoleState(initialState), 4000);
+    setRoleTimeout(timeout);
     router.refresh();
   }
 
@@ -146,11 +165,18 @@ export function MasterDataForms({ companies, modules }: MasterDataFormsProps) {
         </div>
 
         {companyState.message ? (
-          <p className={`mt-4 rounded-lg px-3 py-2 text-sm ${
+          <div className={`mt-4 rounded-lg px-3 py-2 text-sm flex items-center justify-between ${
             companyState.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
           }`}>
-            {companyState.message}
-          </p>
+            <span>{companyState.message}</span>
+            <button
+              onClick={() => setCompanyState(initialState)}
+              className="ml-2 text-xs font-semibold opacity-70 hover:opacity-100"
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
         ) : null}
 
         <button
@@ -175,15 +201,6 @@ export function MasterDataForms({ companies, modules }: MasterDataFormsProps) {
         </div>
 
         <div className="mt-5 grid gap-4">
-          <MultiSelectDropdown
-            emptyLabel="Select companies"
-            label="Companies"
-            name="companyIds"
-            onChange={setSelectedRoleCompanyIds}
-            options={companies.map((company) => ({ label: company.name, value: company.id }))}
-            selectedValues={selectedRoleCompanyIds}
-          />
-
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Role name</span>
@@ -220,23 +237,29 @@ export function MasterDataForms({ companies, modules }: MasterDataFormsProps) {
             />
           </label>
 
-          <MultiSelectDropdown
-            emptyLabel="Select modules"
-            label="Role module defaults"
+          <HierarchicalModuleSelector
+            disabled={isAdminRole}
+            label="Select Modules"
             lockedValues={isAdminRole ? allModuleKeys : []}
-            name="moduleKeys"
+            modules={modules}
             onChange={setSelectedRoleModuleKeys}
-            options={modules.map((module) => ({ disabled: isAdminRole, label: module.name, value: String(module.key) }))}
             selectedValues={isAdminRole ? allModuleKeys : selectedRoleModuleKeys}
           />
         </div>
 
         {roleState.message ? (
-          <p className={`mt-4 rounded-lg px-3 py-2 text-sm ${
+          <div className={`mt-4 rounded-lg px-3 py-2 text-sm flex items-center justify-between ${
             roleState.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
           }`}>
-            {roleState.message}
-          </p>
+            <span>{roleState.message}</span>
+            <button
+              onClick={() => setRoleState(initialState)}
+              className="ml-2 text-xs font-semibold opacity-70 hover:opacity-100"
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
         ) : null}
 
         <button

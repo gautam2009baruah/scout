@@ -86,6 +86,7 @@ SELECT migrate_email_audit_column('public.api_clients', 'created_by_email', 'cre
 SELECT migrate_email_audit_column('public.email_credential_target_apps', 'created_by_email', 'created_by');
 SELECT migrate_email_audit_column('public.email_credentials', 'created_by_email', 'created_by');
 SELECT migrate_email_audit_column('public.email_credentials', 'updated_by_email', 'updated_by');
+SELECT migrate_email_audit_column('public.orchestration_approvals', 'responded_by_email', 'responded_by');
 SELECT migrate_email_audit_column('public.orchestration_triggers', 'created_by_email', 'created_by');
 SELECT migrate_email_audit_column('public.orchestration_triggers', 'updated_by_email', 'updated_by');
 SELECT migrate_email_audit_column('public.orchestration_versions', 'created_by_email', 'created_by');
