@@ -317,6 +317,7 @@ export async function getEmployeePage(filters: EmployeeFilters) {
               member_ucr.status,
               member_ucr.is_primary,
               member_roles.name,
+              member_roles.is_system,
               member_roles.is_admin_role,
               member_companies.name AS company_name
             FROM user_company_roles member_ucr
