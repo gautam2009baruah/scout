@@ -304,7 +304,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
   return (
     <section className="grid gap-6">
-      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">AI Configuration</h2>
@@ -362,8 +362,8 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
       </div>
 
       {activeTab === "embedding" ? (
-        <>
-          <form aria-labelledby="embedding-tab" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" id="embedding-panel" onSubmit={saveEmbedding} role="tabpanel">
+        <div aria-labelledby="embedding-tab" className="rounded-lg border border-slate-200 bg-white shadow-sm" id="embedding-panel" role="tabpanel">
+          <form className="p-5" onSubmit={saveEmbedding}>
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <Bot className="h-4 w-4" />
               Embeddings Setup
@@ -442,8 +442,10 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
             </div>
           </form>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <div className="border-t border-slate-200 px-5 py-4">
+            <h3 className="mb-3 text-sm font-semibold text-slate-900">Saved Embedding Configurations</h3>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Provider</th>
@@ -490,13 +492,14 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
-        </>
+        </div>
       ) : null}
 
       {activeTab === "llm" ? (
-        <>
-          <form aria-labelledby="llm-tab" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" id="llm-panel" onSubmit={saveLlm} role="tabpanel">
+        <div aria-labelledby="llm-tab" className="rounded-lg border border-slate-200 bg-white shadow-sm" id="llm-panel" role="tabpanel">
+          <form className="p-5" onSubmit={saveLlm}>
             <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <KeyRound className="h-4 w-4" />
               LLM Setup
@@ -569,8 +572,10 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
             </div>
           </form>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <div className="border-t border-slate-200 px-5 py-4">
+            <h3 className="mb-3 text-sm font-semibold text-slate-900">Saved LLM Configurations</h3>
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Provider</th>
@@ -615,8 +620,9 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
-        </>
+        </div>
       ) : null}
 
       {confirmDialog ? (
