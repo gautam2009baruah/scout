@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Activity, AlertTriangle, Bot, ChevronLeft, ChevronRight, Clock, Download, HeartPulse, ListFilter, RotateCcw, TimerReset, TrendingUp } from "lucide-react";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
 
@@ -235,44 +235,48 @@ export function WorkflowAnalyticsDashboard({ selectedCompanyId = "", targetApps 
 
   return (
     <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
-      <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]">
+      <div className="grid grid-cols-1 items-end gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-2 xl:grid-cols-[repeat(4,minmax(180px,1fr))_auto]">
         <FilterSelect
           label="Date range"
           onChange={(days) => setDays(days)}
+          options={[
+            { label: "Last 7 days", value: "7" },
+            { label: "Last 30 days", value: "30" },
+            { label: "Last 90 days", value: "90" },
+            { label: "Last 365 days", value: "365" }
+          ]}
           value={days}
-        >
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="365">Last 365 days</option>
-        </FilterSelect>
+        />
         <FilterSelect
           label="Target app"
           onChange={(targetAppId) => setFilters((current) => ({ ...current, targetAppId, sessionId: "", topicId: "all" }))}
+          options={[
+            { label: "All target apps", value: "" },
+            ...filteredTargetApps.map((app) => ({ label: app.name, value: app.id }))
+          ]}
           value={filters.targetAppId}
-        >
-          <option value="">All target apps</option>
-          {filteredTargetApps.map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
-        </FilterSelect>
+        />
         <FilterSelect
           label="Training session"
           onChange={(sessionId) => setFilters((current) => ({ ...current, sessionId, topicId: "all" }))}
+          options={[
+            { label: "All training sessions", value: "" },
+            ...filteredRecordingSessions.map((session) => ({ label: session.title, value: session.id }))
+          ]}
           value={filters.sessionId}
-        >
-          <option value="">All training sessions</option>
-          {filteredRecordingSessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
-        </FilterSelect>
+        />
         <FilterSelect
           label="Topic"
           onChange={(topicId) => setFilters((current) => ({ ...current, topicId }))}
+          options={[
+            { label: "All topics", value: "all" },
+            ...filteredTopics.map((topic) => ({ label: topic.title, value: topic.id }))
+          ]}
           value={filters.topicId}
-        >
-          <option value="all">All topics</option>
-          {filteredTopics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}
-        </FilterSelect>
-        <div className="flex items-end">
+        />
+        <div className="flex min-w-0 items-end sm:col-span-2 xl:col-span-1">
           <button
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 xl:w-auto"
             onClick={applyFilters}
             type="button"
           >
@@ -398,17 +402,67 @@ export function WorkflowAnalyticsDashboard({ selectedCompanyId = "", targetApps 
   );
 }
 
-function FilterSelect({ children, label, onChange, value }: { children: React.ReactNode; label: string; onChange(value: string): void; value: string }) {
+function FilterSelect({
+  label,
+  onChange,
+  options,
+  value
+}: {
+  label: string;
+  onChange(value: string): void;
+  options: Array<{ label: string; value: string }>;
+  value: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLLabelElement>(null);
+  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+
+  useEffect(() => {
+    if (!open) return;
+
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [open]);
+
   return (
-    <label className="grid gap-1 text-xs font-semibold text-slate-600">
-      {label}
-      <select
-        className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
-        onChange={(event) => onChange(event.target.value)}
-        value={value}
+    <label className="relative grid min-w-0 gap-1 text-xs font-semibold text-slate-600" ref={rootRef}>
+      <span>{label}</span>
+      <button
+        aria-expanded={open}
+        className="flex min-h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+        onClick={() => setOpen((current) => !current)}
+        type="button"
       >
-        {children}
-      </select>
+        <span className="min-w-0 truncate">{selectedOption?.label ?? "Select"}</span>
+        <ChevronRight className={`h-4 w-4 shrink-0 text-slate-400 transition ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open ? (
+        <div className="absolute left-0 right-0 top-full z-40 mt-1 max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl">
+          {options.map((option) => (
+            <button
+              className={`block w-full rounded-md px-3 py-2 text-left text-sm font-normal leading-snug whitespace-normal break-words transition ${
+                option.value === value
+                  ? "bg-slate-950 text-white"
+                  : "text-slate-700 hover:bg-slate-100 hover:text-slate-950"
+              }`}
+              key={`${label}-${option.value}`}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+              type="button"
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </label>
   );
 }
