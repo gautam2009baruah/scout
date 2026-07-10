@@ -774,6 +774,15 @@ export async function deleteEmployee(employeeId: string, reason: string | undefi
 
     await client.query(
       `
+        UPDATE user_module_permissions
+        SET deleted_at = now(), updated_by = $2, updated_at = now()
+        WHERE user_id = $1 AND deleted_at IS NULL
+      `,
+      [employeeId, session.user.id]
+    );
+
+    await client.query(
+      `
         INSERT INTO user_lifecycle_events
           (user_id, company_id, action, from_status, to_status, reason, performed_by)
         VALUES ($1, NULL, 'deleted', $2, 'deleted', $3, $4)
