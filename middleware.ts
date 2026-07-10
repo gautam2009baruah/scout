@@ -21,8 +21,21 @@ export function middleware(request: NextRequest) {
   const isAuthenticated = hasSessionCookie(request);
   const lockedOut = hasLogoutLock(request);
 
-  if (lockedOut && !isLoginPath) {
-    return NextResponse.redirect(new URL(LOGIN_PATH, request.url));
+  if (lockedOut) {
+    // Always allow login page when lock is set to prevent login<->dashboard loops.
+    if (isLoginPath) {
+      return NextResponse.next();
+    }
+
+    const response = NextResponse.redirect(new URL(LOGIN_PATH, request.url));
+    // Clear auth cookie server-side while locked out.
+    response.cookies.set({
+      name: ADMIN_SESSION_COOKIE,
+      value: "",
+      path: "/",
+      maxAge: 0
+    });
+    return response;
   }
 
   // Unauthenticated users can only access the login page in control-panel.

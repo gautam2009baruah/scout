@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail } from "lucide-react";
 
@@ -10,6 +10,14 @@ export function AdminLoginForm() {
   const router = useRouter();
   const [status, setStatus] = useState<LoginStatus>("idle");
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    document.cookie = "scout_logout_lock=; Path=/; Max-Age=0; SameSite=Lax";
+    window.sessionStorage?.removeItem("scout_logout_lock");
+    window.localStorage?.removeItem("scout_logout_lock");
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
