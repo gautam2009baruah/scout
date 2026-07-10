@@ -168,49 +168,7 @@ export async function getAIProviderConfig(companyId?: string): Promise<AIProvide
       };
     }
 
-    const result = await getPool().query<{
-      embedding_provider: EmbeddingProviderName;
-      embedding_model: string;
-      embedding_dimension: number;
-      embedding_endpoint: string | null;
-      embedding_api_key: string | null;
-      llm_provider: LLMProviderName;
-      llm_model: string;
-      llm_endpoint: string | null;
-      llm_api_key: string | null;
-    }>(
-      `
-        SELECT
-          embedding_provider,
-          embedding_model,
-          embedding_dimension,
-          embedding_endpoint,
-          embedding_api_key,
-          llm_provider,
-          llm_model,
-          llm_endpoint,
-          llm_api_key
-        FROM ai_provider_config
-        WHERE id = 1
-      `
-    );
-    const row = result.rows[0];
-
-    if (!row) {
-      return envConfig();
-    }
-
-    return {
-      embedding_provider: row.embedding_provider,
-      embedding_model: normalizeEmbeddingModel(row.embedding_provider, row.embedding_model),
-      embedding_dimension: Number(row.embedding_dimension),
-      embedding_endpoint: row.embedding_endpoint || envConfig().embedding_endpoint,
-      embedding_api_key: row.embedding_api_key || envConfig().embedding_api_key,
-      llm_provider: row.llm_provider,
-      llm_model: row.llm_model,
-      llm_endpoint: row.llm_endpoint || envConfig().llm_endpoint,
-      llm_api_key: row.llm_api_key || envConfig().llm_api_key
-    };
+    return envConfig();
   } catch {
     return envConfig();
   }
@@ -308,50 +266,6 @@ export async function updateAIProviderConfig(
   } finally {
     client.release();
   }
-
-  await getPool().query(
-    `
-      INSERT INTO ai_provider_config (
-        id,
-        embedding_provider,
-        embedding_model,
-        embedding_dimension,
-        embedding_endpoint,
-        embedding_api_key,
-        llm_provider,
-        llm_model,
-        llm_endpoint,
-        llm_api_key,
-        created_by,
-        updated_by
-      )
-      VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
-      ON CONFLICT (id) DO UPDATE
-      SET embedding_provider = EXCLUDED.embedding_provider,
-          embedding_model = EXCLUDED.embedding_model,
-          embedding_dimension = EXCLUDED.embedding_dimension,
-          embedding_endpoint = EXCLUDED.embedding_endpoint,
-          embedding_api_key = EXCLUDED.embedding_api_key,
-          llm_provider = EXCLUDED.llm_provider,
-          llm_model = EXCLUDED.llm_model,
-          llm_endpoint = EXCLUDED.llm_endpoint,
-          llm_api_key = EXCLUDED.llm_api_key,
-          updated_by = EXCLUDED.updated_by,
-          updated_at = now()
-    `,
-    [
-      next.embedding_provider,
-      next.embedding_model,
-      next.embedding_dimension,
-      next.embedding_endpoint || null,
-      next.embedding_api_key || null,
-      next.llm_provider,
-      next.llm_model,
-      next.llm_endpoint || null,
-      next.llm_api_key || null,
-      updatedBy || null
-    ]
-  );
 
   return getAIProviderConfig();
 }

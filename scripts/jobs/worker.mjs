@@ -316,24 +316,27 @@ async function getEmbeddingConfig() {
     const result = await client.query(
       `
         SELECT
-          embedding_provider,
-          embedding_model,
-          embedding_dimension,
-          embedding_endpoint,
-          embedding_api_key
-        FROM ai_provider_config
-        WHERE id = 1
+          provider,
+          model,
+          dimension,
+          endpoint,
+          api_key
+        FROM ai_embedding_provider_configs
+        WHERE is_active = true
+          AND deleted_at IS NULL
+        ORDER BY is_primary DESC, updated_at DESC
+        LIMIT 1
       `
     );
     const row = result.rows[0];
 
     if (row) {
       return {
-        provider: row.embedding_provider,
-        model: normalizeEmbeddingModel(row.embedding_provider, row.embedding_model),
-        dimension: Number(row.embedding_dimension),
-        endpoint: row.embedding_endpoint || defaultEmbeddingConfig.endpoint,
-        apiKey: row.embedding_api_key || defaultEmbeddingConfig.apiKey
+        provider: row.provider,
+        model: normalizeEmbeddingModel(row.provider, row.model),
+        dimension: Number(row.dimension),
+        endpoint: row.endpoint || defaultEmbeddingConfig.endpoint,
+        apiKey: row.api_key || defaultEmbeddingConfig.apiKey
       };
     }
   } catch {
