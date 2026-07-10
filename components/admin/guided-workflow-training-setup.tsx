@@ -7,6 +7,7 @@ import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTopicRow } from "
 
 type CompanyOption = { id: string; name: string };
 const initialState = { status: "idle", message: "" } as const;
+const pluginBrowsers = ["Brave", "Chrome", "Edge", "Firefox", "Opera", "Safari"];
 
 function getScoutBaseUrl() {
   if (typeof window !== "undefined") {
@@ -33,6 +34,8 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
   const [topicDialog, setTopicDialog] = useState<{ mode: "create" | "edit"; sessionId: string; topic?: GuidedWorkflowTopicRow; title: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [pluginHelpOpen, setPluginHelpOpen] = useState(false);
+  const [pluginMenuOpen, setPluginMenuOpen] = useState(false);
+  const [downloadingBrowser, setDownloadingBrowser] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState("");
   const pluginHelpRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>(initialState);
@@ -120,17 +123,51 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
   }
 
   useEffect(() => {
-    if (!pluginHelpOpen) return;
+    if (!pluginHelpOpen && !pluginMenuOpen) return;
 
     function closeOnOutsideClick(event: MouseEvent) {
       if (pluginHelpRef.current && !pluginHelpRef.current.contains(event.target as Node)) {
         setPluginHelpOpen(false);
+        setPluginMenuOpen(false);
       }
     }
 
     document.addEventListener("mousedown", closeOnOutsideClick);
     return () => document.removeEventListener("mousedown", closeOnOutsideClick);
-  }, [pluginHelpOpen]);
+  }, [pluginHelpOpen, pluginMenuOpen]);
+
+  async function downloadPlugin(browser: string) {
+    setPluginMenuOpen(false);
+    setDownloadingBrowser(browser);
+
+    try {
+      const response = await fetch(`/api/admin/guided-workflow-recorder-plugin/download?browser=${encodeURIComponent(browser.toLowerCase())}`);
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        showToast(typeof body?.message === "string" ? body.message : `Unable to download ${browser} plugin.`, "error");
+        return;
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const filenameMatch = disposition.match(/filename=\"([^\"]+)\"/i);
+      const filename = filenameMatch?.[1] || `scout-recorder-plugin-${browser.toLowerCase()}.zip`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast(`${browser} plugin download started.`, "success");
+    } catch {
+      showToast(`Unable to download ${browser} plugin right now.`, "error");
+    } finally {
+      setDownloadingBrowser(null);
+    }
+  }
 
   function updateSetup(next: Partial<typeof setupForm>) {
     setSetupForm((current) => ({ ...current, ...next }));
@@ -326,9 +363,41 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
     <div className="grid gap-6">
       <div className="relative flex justify-end" ref={pluginHelpRef}>
         <div className="flex items-center gap-2">
-          <a className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" href="/api/admin/guided-workflow-recorder-plugin/download">
-            <Download className="h-4 w-4" />Download plugin
-          </a>
+          <div className="relative">
+            <button
+              aria-expanded={pluginMenuOpen}
+              aria-haspopup="menu"
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60"
+              disabled={downloadingBrowser !== null}
+              onClick={() => {
+                setPluginHelpOpen(false);
+                setPluginMenuOpen((open) => !open);
+              }}
+              type="button"
+            >
+              <Download className="h-4 w-4" />
+              {downloadingBrowser ? `Downloading ${downloadingBrowser}...` : "Download plugin"}
+              <ChevronDown className={`h-4 w-4 transition ${pluginMenuOpen ? "rotate-180" : ""}`} />
+            </button>
+
+            {pluginMenuOpen ? (
+              <div className="absolute right-0 top-12 z-30 min-w-[210px] rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl" role="menu">
+                {pluginBrowsers.map((browser) => (
+                  <button
+                    className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+                    disabled={downloadingBrowser !== null}
+                    key={browser}
+                    onClick={() => void downloadPlugin(browser)}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <span>{browser}</span>
+                    <Download className="h-3.5 w-3.5 text-slate-500" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <button
             aria-expanded={pluginHelpOpen}
             aria-label="Recorder plugin installation instructions"
@@ -356,8 +425,8 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
 
             <ol className="relative mt-4 grid gap-3">
               {[
-                "Click Download plugin and unzip the downloaded file.",
-                "Open Chrome or Edge and go to chrome://extensions or edge://extensions.",
+                "Click Download plugin, choose your browser, and unzip the downloaded file.",
+                "Open your browser extensions page.",
                 "Turn on Developer mode.",
                 "Click Load unpacked.",
                 "Select the unzipped plugin folder.",

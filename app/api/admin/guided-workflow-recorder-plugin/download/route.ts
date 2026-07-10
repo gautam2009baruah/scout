@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
@@ -114,7 +114,15 @@ async function createZip(root: string) {
   return Buffer.concat([...chunks, ...centralDirectory, end]);
 }
 
-export async function GET() {
+function parseBrowser(input: string | null) {
+  const raw = (input ?? "edge").trim().toLowerCase();
+  if (!/^[a-z]+$/.test(raw)) {
+    return null;
+  }
+  return raw;
+}
+
+export async function GET(request: NextRequest) {
   const session = await getCurrentAdminSession();
 
   if (!session) {
@@ -125,23 +133,29 @@ export async function GET() {
     return NextResponse.json({ message: "You do not have permission to download the recorder plugin." }, { status: 403 });
   }
 
+  const browser = parseBrowser(request.nextUrl.searchParams.get("browser"));
+  if (!browser) {
+    return NextResponse.json({ message: "Invalid browser option." }, { status: 400 });
+  }
+
   const distRoot = path.join(process.cwd(), "extension", "dist");
   const entries = await readdir(distRoot, { withFileTypes: true }).catch(() => []);
-  const latestEdge = entries
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith("edge-"))
+  const latestBuild = entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(`${browser}-`))
     .map((entry) => entry.name)
     .sort()
     .at(-1);
 
-  if (!latestEdge) {
-    return NextResponse.json({ message: "No Edge extension build was found. Run npm run extension:build first." }, { status: 404 });
+  if (!latestBuild) {
+    const label = browser.charAt(0).toUpperCase() + browser.slice(1);
+    return NextResponse.json({ message: `No ${label} plugin build was found. Please build that browser plugin first.` }, { status: 404 });
   }
 
-  const zip = await createZip(path.join(distRoot, latestEdge));
+  const zip = await createZip(path.join(distRoot, latestBuild));
   return new NextResponse(zip, {
     headers: {
       "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="scout-recorder-plugin-${latestEdge}.zip"`
+      "Content-Disposition": `attachment; filename="scout-recorder-plugin-${latestBuild}.zip"`
     }
   });
 }
