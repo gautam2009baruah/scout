@@ -12,7 +12,6 @@ import { Building2, Check, ChevronDown } from "lucide-react";
  */
 export function CompanyContextSwitcher() {
   const { currentCompanyId, availableCompanies, loading, switchCompany } = useCompanyContext();
-  const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -20,10 +19,6 @@ export function CompanyContextSwitcher() {
     () => availableCompanies.find((company) => company.id === currentCompanyId),
     [availableCompanies, currentCompanyId]
   );
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -49,7 +44,7 @@ export function CompanyContextSwitcher() {
     };
   }, [open]);
 
-  if (!mounted || loading || !currentCompanyId) {
+  if (loading || !currentCompanyId) {
     return (
       <div className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500 shadow-sm">
         <Building2 className="h-4 w-4" />

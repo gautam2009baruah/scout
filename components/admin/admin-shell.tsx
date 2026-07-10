@@ -6,7 +6,6 @@ import { MODULE_KEYS, type AdminModuleKey } from "@/lib/admin/permissions";
 import { ScoutChatbot } from "@/components/scout-chatbot";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
-import { SessionBackGuard } from "./session-back-guard";
 
 type AdminShellProps = {
   active: AdminModuleKey;
@@ -66,7 +65,6 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
-      <SessionBackGuard />
       <div className="flex min-h-screen">
         <aside className="hidden w-72 border-r border-slate-200 bg-white px-4 py-5 lg:block">
           <div className="flex items-center gap-3 px-2">

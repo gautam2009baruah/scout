@@ -10,7 +10,6 @@ export { GuidedWorkflowTrainingSetup } from "./guided-workflow-training-setup";
 export { default as HealingSuggestionReviewer } from "./healing-suggestion-reviewer-panel";
 export { OrchestrationDesigner } from "./orchestration-designer";
 export { OrchestrationList } from "./orchestration-list";
-export { SessionBackGuard } from "./session-back-guard";
 export { UserList } from "./employee-list";
 export { UserRegisterForm } from "./employee-register-form";
 export { MasterDataForms } from "./master-data-forms";
