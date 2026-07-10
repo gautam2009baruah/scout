@@ -22,15 +22,5 @@ export async function POST() {
     maxAge: 0
   });
 
-  response.cookies.set({
-    name: "scout_logout_lock",
-    value: "1",
-    httpOnly: false,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 120
-  });
-
   return response;
 }

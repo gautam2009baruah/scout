@@ -36,14 +36,6 @@ export function UserMenu({ name }: { name: string }) {
 
   async function logout() {
     setLoggingOut(true);
-
-    // Set immediate logout lock so fast back navigation cannot re-open protected pages.
-    if (typeof window !== "undefined") {
-      document.cookie = "scout_logout_lock=1; Path=/; Max-Age=120; SameSite=Lax";
-      window.sessionStorage?.setItem("scout_logout_lock", "1");
-      window.localStorage?.setItem("scout_logout_lock", "1");
-    }
-
     try {
       // Clear chatbot conversation history from sessionStorage
       if (typeof window !== 'undefined' && window.sessionStorage) {

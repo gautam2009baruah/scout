@@ -38,12 +38,6 @@ export function AdminLoginForm() {
 
       const body = await response.json().catch(() => null);
 
-      if (typeof window !== "undefined") {
-        document.cookie = "scout_logout_lock=; Path=/; Max-Age=0; SameSite=Lax";
-        window.sessionStorage?.removeItem("scout_logout_lock");
-        window.localStorage?.removeItem("scout_logout_lock");
-      }
-
       router.push(body?.mustChangePassword ? "/control-panel/change-password" : "/control-panel");
       router.refresh();
     } catch {
