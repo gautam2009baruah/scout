@@ -148,7 +148,7 @@ const nodeTypes: NodeTypes = {
   custom: CustomNode,
 };
 
-export function OrchestrationDesigner({ selectedCompanyId, selectedCompanyName, targetApps }: { selectedCompanyId: string; selectedCompanyName?: string; targetApps: TargetAppOption[] }) {
+export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selectedCompanyId: string; targetApps: TargetAppOption[] }) {
   const [orchestration, setOrchestration] = useState<Orchestration | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -1098,7 +1098,6 @@ export function OrchestrationDesigner({ selectedCompanyId, selectedCompanyName, 
       {isCreateDialogOpen && (
         <CreateOrchestrationDialog
           selectedCompanyId={selectedCompanyId}
-          selectedCompanyName={selectedCompanyName}
           targetApps={targetApps}
           onClose={() => setIsCreateDialogOpen(false)}
           onCreate={(newOrchestration) => {
@@ -1194,13 +1193,11 @@ export function OrchestrationDesigner({ selectedCompanyId, selectedCompanyName, 
 
 function CreateOrchestrationDialog({
   selectedCompanyId,
-  selectedCompanyName,
   targetApps,
   onClose,
   onCreate,
 }: {
   selectedCompanyId: string;
-  selectedCompanyName?: string;
   targetApps: TargetAppOption[];
   onClose: () => void;
   onCreate: (orchestration: Orchestration) => void;
@@ -1274,12 +1271,6 @@ function CreateOrchestrationDialog({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What does this orchestration do?"
             />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-600">Company</label>
-            <div className="mt-1 flex h-10 w-full items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
-              {selectedCompanyName || "Selected company"}
-            </div>
           </div>
           <div>
             <label className="block text-sm font-semibold text-slate-600">Target App</label>

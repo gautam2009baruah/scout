@@ -27,8 +27,6 @@ export default async function OrchestrationDesignerPage() {
 
   requireModuleAccess(session, MODULE_KEYS.orchestrationDesigner);
 
-  const selectedCompanyName = session.availableCompanies.find((company) => company.companyId === session.user.tenantId)?.companyName ?? "";
-
   const targetApps = await listGuidedWorkflowTargetApps(session);
 
   return (
@@ -38,7 +36,6 @@ export default async function OrchestrationDesignerPage() {
     >
       <OrchestrationDesigner
         selectedCompanyId={session.user.tenantId}
-        selectedCompanyName={selectedCompanyName}
         targetApps={targetApps}
       />
     </AdminShell>
