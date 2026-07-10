@@ -19,9 +19,11 @@ export default async function EmailCredentialsPage() {
 
   requireModuleAccess(session, MODULE_KEYS.administration);
 
+  const selectedCompanyName = session.availableCompanies.find((company) => company.companyId === session.user.tenantId)?.companyName ?? "";
+
   return (
     <AdminShell active={MODULE_KEYS.emailCredentials} session={session}>
-      <EmailCredentialsManager />
+      <EmailCredentialsManager selectedCompanyId={session.user.tenantId} selectedCompanyName={selectedCompanyName} />
     </AdminShell>
   );
 }

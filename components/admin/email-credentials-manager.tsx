@@ -2,17 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { X } from "lucide-react";
-import { MultiSelectDropdown, MultiSelectOption } from "./multi-select-dropdown";
+import { MultiSelectDropdown } from "./multi-select-dropdown";
 
 type TargetApp = {
   id: string;
   name: string;
-};
-
-type Company = {
-  id: string;
-  name: string;
-  slug: string;
 };
 
 type EmailCredential = {
@@ -41,15 +35,13 @@ type NewCredential = {
   targetAppIds: string[];
 };
 
-export function EmailCredentialsManager() {
+export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName }: { selectedCompanyId: string; selectedCompanyName?: string }) {
   const [credentials, setCredentials] = useState<EmailCredential[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
   const [targetApps, setTargetApps] = useState<TargetApp[]>([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newCredential, setNewCredential] = useState<NewCredential>({
-    companyId: "",
+    companyId: selectedCompanyId,
     provider: "imap",
     name: "",
     emailAddress: "",
@@ -74,42 +66,11 @@ export function EmailCredentialsManager() {
   };
 
   useEffect(() => {
-    loadCompanies();
     loadCredentials();
-  }, []);
-
-  // Load target apps when company is selected
-  useEffect(() => {
-    if (newCredential.companyId) {
-      loadTargetApps(newCredential.companyId);
-    } else {
-      setTargetApps([]);
-    }
-  }, [newCredential.companyId]);
-
-  // Load target apps for edit form
-  useEffect(() => {
-    if (editForm.companyId) {
-      loadTargetApps(editForm.companyId);
-    } else {
-      setTargetApps([]);
-    }
-  }, [editForm.companyId]);
-
-  async function loadCompanies() {
-    try {
-      const response = await fetch("/api/admin/companies");
-      const data = await response.json();
-      
-      if (data.success) {
-        setCompanies(data.companies);
-      } else {
-        console.error("[Email Credentials] Load companies error:", data.error);
-      }
-    } catch (error: any) {
-      console.error("[Email Credentials] Load companies exception:", error);
-    }
-  }
+    loadTargetApps(selectedCompanyId);
+    setNewCredential((current) => ({ ...current, companyId: selectedCompanyId, targetAppIds: [] }));
+    setEditForm((current) => ({ ...current, companyId: selectedCompanyId, targetAppIds: [] }));
+  }, [selectedCompanyId]);
 
   async function loadTargetApps(companyId: string) {
     try {
@@ -128,7 +89,7 @@ export function EmailCredentialsManager() {
 
   async function loadCredentials() {
     try {
-      const response = await fetch("/api/orchestrations/email-credentials");
+      const response = await fetch(`/api/orchestrations/email-credentials?companyId=${selectedCompanyId}`);
       const data = await response.json();
       
       if (data.success) {
@@ -146,8 +107,8 @@ export function EmailCredentialsManager() {
   }
 
   async function handleAddCredential() {
-    if (!newCredential.companyId) {
-      showToast("Company is required", "error");
+    if (!selectedCompanyId) {
+      showToast("Selected company is required", "error");
       return;
     }
 
@@ -181,7 +142,7 @@ export function EmailCredentialsManager() {
         showToast("Email credential added successfully", "success");
         setShowAddForm(false);
         setNewCredential({
-          companyId: "",
+          companyId: selectedCompanyId,
           provider: "imap",
           name: "",
           emailAddress: "",
@@ -271,7 +232,7 @@ export function EmailCredentialsManager() {
       if (data.success) {
         const fullCred = data.credential;
         setEditForm({
-          companyId: fullCred.company_id,
+          companyId: selectedCompanyId,
           name: fullCred.name,
           emailAddress: fullCred.email_address,
           provider: fullCred.provider,
@@ -370,6 +331,7 @@ export function EmailCredentialsManager() {
           <p className="text-sm text-slate-600">
             Manage email accounts for email trigger monitoring
           </p>
+          {selectedCompanyName ? <p className="mt-1 text-xs text-slate-500">Company scope: {selectedCompanyName}</p> : null}
         </div>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
@@ -386,13 +348,14 @@ export function EmailCredentialsManager() {
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Edit Email Credential</h3>
 
             <div className="space-y-4">
-              {/* Row 1: Company (read-only) */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Company (read-only)</label>
-                <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 h-11 flex items-center text-sm text-slate-600">
-                  {companies.find(c => c.id === editForm.companyId)?.name || "Loading..."}
+              {selectedCompanyName ? (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Company (from header)</label>
+                  <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 h-11 flex items-center text-sm text-slate-600">
+                    {selectedCompanyName}
+                  </div>
                 </div>
-              </div>
+              ) : null}
 
               {/* Row 2: Target Apps */}
               <div>
@@ -522,22 +485,13 @@ export function EmailCredentialsManager() {
         <div className="bg-white border border-slate-200 rounded-lg p-6 space-y-4">
           <h3 className="text-lg font-semibold text-slate-900">Add New Email Credential</h3>
 
-          {/* Row 1: Company + Target Apps */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Row 1 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Company *</label>
-              <select
-                className="w-full rounded border border-slate-300 px-3 py-2 h-11"
-                value={newCredential.companyId}
-                onChange={(e) => setNewCredential({ ...newCredential, companyId: e.target.value, targetAppIds: [] })}
-              >
-                <option value="">Select company</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Company (from header)</label>
+              <div className="w-full rounded border border-slate-200 bg-slate-50 px-3 py-2 h-11 flex items-center text-sm text-slate-600">
+                {selectedCompanyName || "Selected company"}
+              </div>
             </div>
 
             <div>
@@ -549,29 +503,52 @@ export function EmailCredentialsManager() {
                 emptyLabel="Select target applications"
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Provider *</label>
+              <select
+                className="w-full rounded border border-slate-300 px-3 py-2 h-11"
+                value={newCredential.provider}
+                onChange={(e) => setNewCredential({ ...newCredential, provider: e.target.value as any })}
+              >
+                <option value="imap">IMAP</option>
+                <option value="gmail" disabled>Gmail (OAuth)</option>
+                <option value="outlook" disabled>Outlook (OAuth)</option>
+              </select>
+            </div>
           </div>
 
-          {/* Row 2: Provider + IMAP Host + Port + TLS */}
-          {newCredential.provider === "imap" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Provider *</label>
-                <select
-                  className="w-full rounded border border-slate-300 px-3 py-2"
-                  value={newCredential.provider}
-                  onChange={(e) => setNewCredential({ ...newCredential, provider: e.target.value as any })}
-                >
-                  <option value="imap">IMAP</option>
-                  <option value="gmail" disabled>Gmail (OAuth)</option>
-                  <option value="outlook" disabled>Outlook (OAuth)</option>
-                </select>
-              </div>
+          {/* Row 2 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-3 py-2 h-11"
+                placeholder="Support Inbox"
+                value={newCredential.name}
+                onChange={(e) => setNewCredential({ ...newCredential, name: e.target.value })}
+              />
+            </div>
 
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Email Address *</label>
+              <input
+                type="email"
+                className="w-full rounded border border-slate-300 px-3 py-2 h-11"
+                placeholder="support@company.com"
+                value={newCredential.emailAddress}
+                onChange={(e) => setNewCredential({ ...newCredential, emailAddress: e.target.value })}
+              />
+            </div>
+
+          {newCredential.provider === "imap" && (
+            <>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">IMAP Host *</label>
                 <input
                   type="text"
-                  className="w-full rounded border border-slate-300 px-3 py-2"
+                  className="w-full rounded border border-slate-300 px-3 py-2 h-11"
                   placeholder="imap.gmail.com"
                   value={newCredential.imapHost}
                   onChange={(e) => setNewCredential({ ...newCredential, imapHost: e.target.value })}
@@ -582,9 +559,20 @@ export function EmailCredentialsManager() {
                 <label className="block text-sm font-medium text-slate-700 mb-1">Port</label>
                 <input
                   type="number"
-                  className="w-full rounded border border-slate-300 px-3 py-2"
+                  className="w-full rounded border border-slate-300 px-3 py-2 h-11"
                   value={newCredential.imapPort}
                   onChange={(e) => setNewCredential({ ...newCredential, imapPort: parseInt(e.target.value) })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Password *</label>
+                <input
+                  type="password"
+                  className="w-full rounded border border-slate-300 px-3 py-2 h-11"
+                  placeholder="App password"
+                  value={newCredential.imapPassword}
+                  onChange={(e) => setNewCredential({ ...newCredential, imapPassword: e.target.value })}
                 />
               </div>
 
@@ -600,43 +588,8 @@ export function EmailCredentialsManager() {
                   <span className="text-sm text-slate-700">Use TLS/SSL</span>
                 </label>
               </div>
-            </div>
+            </>
           )}
-
-          {/* Row 3: Display Name + Email + Password */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Display Name *</label>
-              <input
-                type="text"
-                className="w-full rounded border border-slate-300 px-3 py-2"
-                placeholder="Support Inbox"
-                value={newCredential.name}
-                onChange={(e) => setNewCredential({ ...newCredential, name: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email Address *</label>
-              <input
-                type="email"
-                className="w-full rounded border border-slate-300 px-3 py-2"
-                placeholder="support@company.com"
-                value={newCredential.emailAddress}
-                onChange={(e) => setNewCredential({ ...newCredential, emailAddress: e.target.value })}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Password *</label>
-              <input
-                type="password"
-                className="w-full rounded border border-slate-300 px-3 py-2"
-                placeholder="App password"
-                value={newCredential.imapPassword}
-                onChange={(e) => setNewCredential({ ...newCredential, imapPassword: e.target.value })}
-              />
-            </div>
           </div>
 
           <div className="flex gap-3">
