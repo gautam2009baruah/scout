@@ -55,7 +55,7 @@ export function AdminLoginForm() {
             autoComplete="email"
             className="min-w-0 flex-1 border-0 bg-transparent text-sm text-slate-950 outline-none placeholder:text-slate-400"
             name="email"
-            placeholder="admin@company.com"
+            placeholder="user@organization.com"
             required
             type="email"
           />
@@ -87,7 +87,7 @@ export function AdminLoginForm() {
 
       {status === "error" ? (
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          Invalid email or password.
+          Invalid credentials. Please try again.
         </p>
       ) : null}
 

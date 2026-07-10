@@ -1,27 +1,27 @@
 import type { Metadata } from "next";
 import { AdminLoginForm } from "@/components/admin";
-import { Database, FileUp, ShieldCheck, UsersRound } from "lucide-react";
+import { Compass, FileUp, ShieldCheck, UsersRound } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Admin Login | Scout",
-  description: "Secure admin sign in for Scout multi-tenant operations."
+  title: "Control Panel Login | Scout",
+  description: "Secure sign in for Scout control panel access."
 };
 
 const foundations = [
   {
-    icon: Database,
-    title: "Database flexible",
-    description: "PostgreSQL-ready contracts with room for client-provided database adapters."
+    icon: Compass,
+    title: "Centralized operations",
+    description: "Monitor activity, review performance, and keep teams aligned from one workspace."
   },
   {
     icon: UsersRound,
-    title: "Tenant aware",
-    description: "Tenant context is part of the admin boundary from the first screen."
+    title: "Organization aware",
+    description: "Everything stays scoped to your selected organization to keep work clear and focused."
   },
   {
     icon: FileUp,
-    title: "Operations ready",
-    description: "Built to grow into file uploads, user registration, audits, and settings."
+    title: "Ready for execution",
+    description: "Manage workflows, documents, users, and approvals with confidence."
   }
 ];
 
@@ -35,16 +35,16 @@ export default function AdminLoginPage() {
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-white text-slate-950">
               <ShieldCheck className="h-5 w-5" />
             </span>
-            <span className="text-lg font-semibold tracking-normal">Scout Admin</span>
+            <span className="text-lg font-semibold tracking-normal">Scout Control Panel</span>
           </div>
 
           <div className="relative max-w-2xl">
-            <p className="text-sm font-medium uppercase tracking-[0.18em] text-teal-200">Multi-tenant control plane</p>
+            <p className="text-sm font-medium uppercase tracking-[0.18em] text-teal-200">Unified operations hub</p>
             <h1 className="mt-5 text-5xl font-semibold leading-tight tracking-normal">
-              Manage customers, files, users, and platform operations from one secure console.
+              Run your daily operations from one secure control panel.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-slate-300">
-              The admin surface is isolated from the chatbot wizard and structured so authentication, tenancy, and persistence can evolve independently.
+              Keep teams productive with a clear workspace for orchestrations, content, users, and approvals.
             </p>
           </div>
 
@@ -65,15 +65,15 @@ export default function AdminLoginPage() {
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
                 <ShieldCheck className="h-5 w-5" />
               </span>
-              <span className="text-lg font-semibold tracking-normal">Scout Admin</span>
+              <span className="text-lg font-semibold tracking-normal">Scout Control Panel</span>
             </div>
 
             <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-soft-xl sm:p-8">
               <div className="mb-7">
                 <p className="text-sm font-medium text-teal-700">Secure access</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-normal text-slate-950">Sign in to admin</h2>
+                <h2 className="mt-2 text-2xl font-semibold tracking-normal text-slate-950">Sign in to control panel</h2>
                 <p className="mt-3 text-sm leading-6 text-slate-600">
-                  Use the first admin account created by your database setup task.
+                  Enter your credentials to continue.
                 </p>
               </div>
               <AdminLoginForm />
