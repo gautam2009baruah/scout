@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
-import type { TopicCompanyOption } from "@/lib/admin/content-structure";
 import type { TopicTreeNode } from "@/lib/admin/content-structure";
 
 type D3TopicNode = {
@@ -35,10 +34,9 @@ export type TopicActionTarget = TopicCreateTarget & {
 
 type TopicTreeProps = {
   canCreateRoot: boolean;
-  companies: TopicCompanyOption[];
   onOpenMenu: (target: TopicActionTarget) => void;
-  onCompanyChange: (companyId: string) => void;
   selectedCompanyId: string;
+  selectedCompanyName?: string;
   tree: TopicTreeNode[];
 };
 
@@ -72,7 +70,7 @@ function toChildNode(node: TopicTreeNode): D3TopicNode {
   };
 }
 
-export function TopicTree({ canCreateRoot, companies, onOpenMenu, onCompanyChange, selectedCompanyId, tree }: TopicTreeProps) {
+export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, selectedCompanyName, tree }: TopicTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -258,10 +256,9 @@ export function TopicTree({ canCreateRoot, companies, onOpenMenu, onCompanyChang
         event.stopPropagation();
 
         if (node.data.id === "root") {
-          const company = companies.find((item) => item.id === selectedCompanyId);
           onOpenMenu({
-            companyId: company?.id ?? "",
-            companyName: company?.name ?? "",
+            companyId: selectedCompanyId,
+            companyName: selectedCompanyName ?? "",
             parentId: null,
             parentName: "Root",
             roleAccessAll: true,
@@ -302,25 +299,15 @@ export function TopicTree({ canCreateRoot, companies, onOpenMenu, onCompanyChang
       .attr("cy", 0)
       .attr("r", 1.35)
       .attr("fill", "#0f172a");
-  }, [canCreateRoot, collapsedIds, companies, onOpenMenu, selectedCompanyId, tree, zoom]);
+  }, [canCreateRoot, collapsedIds, onOpenMenu, selectedCompanyId, selectedCompanyName, tree, zoom]);
 
   return (
     <div className="space-y-3">
       {/* Controls Row */}
       <div className="flex items-center gap-2">
-        {companies.length > 1 ? (
-          <select
-            aria-label="Select company"
-            className="h-8 rounded-full border border-slate-300/30 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none transition hover:border-slate-400/60 hover:bg-white focus:border-slate-700/60"
-            onChange={(event) => onCompanyChange(event.target.value)}
-            value={selectedCompanyId}
-          >
-            <option value="">Select company</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>{company.name}</option>
-            ))}
-          </select>
-        ) : null}
+        <div className="inline-flex h-8 items-center rounded-full border border-slate-300/30 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm">
+          Company: {selectedCompanyName || "Selected company"}
+        </div>
         <div className="inline-flex h-8 items-center overflow-hidden rounded-full border border-slate-300/40 bg-white shadow-sm">
         <button
           aria-label="Zoom out"

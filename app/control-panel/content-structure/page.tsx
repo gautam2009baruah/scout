@@ -4,7 +4,7 @@ import { AdminShell, TopicManager } from "@/components/admin";
 import { getMasterData } from "@/lib/admin/administration";
 import { MODULE_KEYS, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
-import { getTopicAccessAdminData, getTopicCompanyOptions, getTopicWorkspace } from "@/lib/admin/content-structure";
+import { getTopicAccessAdminData, getTopicWorkspace } from "@/lib/admin/content-structure";
 
 export const metadata: Metadata = {
   title: "Content Structure | Scout Admin",
@@ -24,20 +24,22 @@ export default async function TopicsPage() {
 
   requireModuleAccess(session, MODULE_KEYS.contentStructure);
 
-  const [{ roles }, workspace, accessData, companies] = await Promise.all([
+  const selectedCompanyName = session.availableCompanies.find((company) => company.companyId === session.user.tenantId)?.companyName ?? "";
+
+  const [{ roles }, workspace, accessData] = await Promise.all([
     getMasterData(),
     getTopicWorkspace(session),
-    getTopicAccessAdminData(session),
-    getTopicCompanyOptions(session)
+    getTopicAccessAdminData(session)
   ]);
 
   return (
     <AdminShell active={MODULE_KEYS.contentStructure} session={session}>
       <TopicManager
         canManageAccess={workspace.canManageAccess}
-        companies={companies}
         grants={accessData.grants}
         roles={roles.filter((role) => !role.isSystem)}
+        selectedCompanyId={session.user.tenantId}
+        selectedCompanyName={selectedCompanyName}
         topics={workspace.topics}
         tree={workspace.tree}
         users={accessData.users}

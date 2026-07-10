@@ -6,13 +6,14 @@ import { Download, FileText, FileUp, FolderPlus, KeyRound, Link2, Loader2, Penci
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./topic-tree";
 import type { RoleSummary } from "@/lib/admin/administration";
-import type { TopicAccessGrant, TopicCompanyOption, TopicRow, TopicTreeNode, TopicUserOption } from "@/lib/admin/content-structure";
+import type { TopicAccessGrant, TopicRow, TopicTreeNode, TopicUserOption } from "@/lib/admin/content-structure";
 
 type TopicManagerProps = {
   canManageAccess: boolean;
-  companies: TopicCompanyOption[];
   grants: TopicAccessGrant[];
   roles: RoleSummary[];
+  selectedCompanyId: string;
+  selectedCompanyName?: string;
   topics: TopicRow[];
   tree: TopicTreeNode[];
   users: TopicUserOption[];
@@ -186,11 +187,10 @@ function ReadOnlyAccess({ all, label, names }: { all: boolean; label: string; na
   );
 }
 
-export function TopicManager({ canManageAccess, companies, grants, roles, topics, tree, users }: TopicManagerProps) {
+export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId, selectedCompanyName, topics, tree, users }: TopicManagerProps) {
   const router = useRouter();
   const [topicState, setTopicState] = useState<FormState>({ message: "", status: "idle" });
-  const [selectedTreeCompanyId, setSelectedTreeCompanyId] = useState(companies.length === 1 ? companies[0].id : "");
-  const [createCompanyId, setCreateCompanyId] = useState(companies[0]?.id ?? "");
+  const createCompanyId = selectedCompanyId;
   const [createTarget, setCreateTarget] = useState<TopicCreateTarget | null>(null);
   const [editTarget, setEditTarget] = useState<TopicActionTarget | null>(null);
   const [uploadTarget, setUploadTarget] = useState<TopicActionTarget | null>(null);
@@ -240,8 +240,8 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
     [editTarget?.companyId, users]
   );
   const visibleTree = useMemo(
-    () => selectedTreeCompanyId ? filterTreeByCompany(tree, selectedTreeCompanyId) : [],
-    [selectedTreeCompanyId, tree]
+    () => selectedCompanyId ? filterTreeByCompany(tree, selectedCompanyId) : [],
+    [selectedCompanyId, tree]
   );
   const editRoleNames = useMemo(
     () => grants
@@ -272,7 +272,6 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
     setTopicState({ message: "", status: "idle" });
     setActionTarget(null);
     setCreateTarget(target);
-    setCreateCompanyId(target.companyId || companies[0]?.id || "");
     setCreateAllRoles(true);
     setCreateAllUsers(true);
     setCreateRoleIds([]);
@@ -854,10 +853,9 @@ export function TopicManager({ canManageAccess, companies, grants, roles, topics
       <section>
         <TopicTree
           canCreateRoot={canManageAccess}
-          companies={companies}
-          onCompanyChange={setSelectedTreeCompanyId}
           onOpenMenu={openContextMenu}
-          selectedCompanyId={selectedTreeCompanyId}
+          selectedCompanyId={selectedCompanyId}
+          selectedCompanyName={selectedCompanyName}
           tree={visibleTree}
         />
       </section>
