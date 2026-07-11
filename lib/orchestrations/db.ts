@@ -19,7 +19,9 @@ import type {
 } from "@/shared/orchestrationTypes";
 import { createTrigger } from "./triggers";
 import { clearTriggerCache } from "./chatbot-trigger-matcher";
-import type { EmailTriggerConfig } from "@/shared/orchestrationTypes";
+import type { EmailTriggerConfig, ScheduleTriggerConfig } from "@/shared/orchestrationTypes";
+import { calculateNextRunTime } from "./scheduler/cron-utils";
+import { getSchedulerService } from "./scheduler-service";
 
 // ============================================================================
 // Orchestrations
@@ -388,6 +390,108 @@ export async function publishOrchestration(
       }
     } catch (error) {
       console.error('Failed to auto-create/update email trigger:', error);
+      throw error;
+    }
+  }
+
+  if (triggerNodeConfig.triggerType === "schedule") {
+    console.log("Auto-creating/updating schedule trigger record...");
+
+    try {
+      const scheduleTriggerConfig: ScheduleTriggerConfig = {
+        type: "schedule",
+        scheduleType: triggerNodeConfig.scheduleType || "daily",
+        cronExpression: triggerNodeConfig.cronExpression || undefined,
+        specificTimeUtc: triggerNodeConfig.specificTimeUtc || triggerNodeConfig.specificTime || undefined,
+        dayOfWeek:
+          triggerNodeConfig.dayOfWeek === undefined || triggerNodeConfig.dayOfWeek === null
+            ? undefined
+            : Number(triggerNodeConfig.dayOfWeek),
+        dayOfMonth:
+          triggerNodeConfig.dayOfMonth === undefined || triggerNodeConfig.dayOfMonth === null
+            ? undefined
+            : Number(triggerNodeConfig.dayOfMonth),
+        oneTimeDate: triggerNodeConfig.oneTimeDate || undefined,
+        timezone: triggerNodeConfig.timezone || "UTC",
+        startDate: triggerNodeConfig.startDate || undefined,
+        endDate: triggerNodeConfig.endDate || undefined,
+        enabled: triggerNodeConfig.enabled !== false,
+      };
+
+      const nextRunAt = calculateNextRunTime(scheduleTriggerConfig);
+      if (nextRunAt) {
+        scheduleTriggerConfig.nextRunAt = nextRunAt;
+      }
+
+      const existingTriggers = await pool.query(
+        `SELECT id, last_triggered_at FROM orchestration_triggers
+         WHERE orchestration_id = $1 AND trigger_type = 'schedule'`,
+        [id]
+      );
+
+      let scheduleTriggerId: string;
+      const scheduleStatus = scheduleTriggerConfig.enabled ? "active" : "inactive";
+
+      if (existingTriggers.rows.length === 0) {
+        const created = await createTrigger({
+          orchestrationId: id,
+          triggerType: "schedule",
+          name: `${orchestration.name} - Schedule Trigger`,
+          description: `Auto-created schedule trigger for ${orchestration.name}`,
+          config: scheduleTriggerConfig,
+          createdById: publishedById,
+        });
+
+        scheduleTriggerId = created.id;
+        await pool.query(
+          `UPDATE orchestration_triggers
+           SET status = $1, updated_by = $2, updated_at = NOW()
+           WHERE id = $3`,
+          [scheduleStatus, publishedById, scheduleTriggerId]
+        );
+
+        console.log("Schedule trigger created successfully");
+      } else {
+        scheduleTriggerId = existingTriggers.rows[0].id;
+
+        await pool.query(
+          `UPDATE orchestration_triggers
+           SET name = $1,
+               description = $2,
+               config = $3,
+               status = $4,
+               updated_by = $5,
+               updated_at = NOW()
+           WHERE id = $6`,
+          [
+            `${orchestration.name} - Schedule Trigger`,
+            `Auto-created schedule trigger for ${orchestration.name}`,
+            JSON.stringify(scheduleTriggerConfig),
+            scheduleStatus,
+            publishedById,
+            scheduleTriggerId,
+          ]
+        );
+
+        console.log("Schedule trigger updated successfully");
+      }
+
+      const scheduler = getSchedulerService();
+      if (scheduleTriggerConfig.enabled) {
+        await scheduler.registerTrigger({
+          id: scheduleTriggerId,
+          orchestrationId: id,
+          name: `${orchestration.name} - Schedule Trigger`,
+          config: scheduleTriggerConfig,
+          status: "active",
+          lastTriggeredAt: existingTriggers.rows[0]?.last_triggered_at?.toISOString?.() || null,
+          nextRunAt: scheduleTriggerConfig.nextRunAt || null,
+        });
+      } else {
+        await scheduler.disableTrigger(scheduleTriggerId);
+      }
+    } catch (error) {
+      console.error("Failed to auto-create/update schedule trigger:", error);
       throw error;
     }
   }

@@ -74,6 +74,35 @@ export async function GET(request: NextRequest) {
             AND ($1::timestamptz IS NULL OR etm.received_at >= $1::timestamptz)
             AND ($2::timestamptz IS NULL OR etm.received_at <= $2::timestamptz)
         ) as email_last_ran
+        ,
+        (
+          SELECT COUNT(*)::int FROM trigger_execution_logs tel
+          WHERE tel.trigger_id = ot.id
+            AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
+            AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
+        ) as schedule_execution_count,
+        (
+          SELECT COUNT(*)::int FROM trigger_execution_logs tel
+          WHERE tel.trigger_id = ot.id
+            AND tel.status = 'failed'
+            AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
+            AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
+        ) as schedule_error_count,
+        (
+          SELECT MAX(tel.triggered_at) FROM trigger_execution_logs tel
+          WHERE tel.trigger_id = ot.id
+            AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
+            AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
+        ) as schedule_last_run,
+        (
+          SELECT tel.error_message FROM trigger_execution_logs tel
+          WHERE tel.trigger_id = ot.id
+            AND tel.status = 'failed'
+            AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
+            AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
+          ORDER BY tel.triggered_at DESC
+          LIMIT 1
+        ) as schedule_last_error
       FROM orchestration_triggers ot
       INNER JOIN orchestrations o ON ot.orchestration_id = o.id
       LEFT JOIN guided_workflow_target_apps ta ON ta.id = o.target_app_id
@@ -124,11 +153,12 @@ export async function GET(request: NextRequest) {
       createdAt: trigger.created_at,
       updatedAt: trigger.updated_at,
       // Schedule-specific (no dedicated table yet)
-      scheduleNextRun: null,
-      scheduleLastRun: null,
-      scheduleExecutionCount: 0,
-      scheduleErrorCount: 0,
-      scheduleLastError: null,
+      scheduleTimezone: trigger.config?.timezone || "UTC",
+      scheduleNextRun: trigger.config?.nextRunAt || null,
+      scheduleLastRun: trigger.schedule_last_run,
+      scheduleExecutionCount: trigger.schedule_execution_count || 0,
+      scheduleErrorCount: trigger.schedule_error_count || 0,
+      scheduleLastError: trigger.schedule_last_error,
       // Email-specific (respecting the date range)
       emailLastFound: trigger.email_last_found,
       emailLastRan: trigger.email_last_ran,

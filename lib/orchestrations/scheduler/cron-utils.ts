@@ -82,7 +82,7 @@ export function configToCronExpression(config: ScheduleTriggerConfig): string {
   }
 
   // Parse time (default to midnight if not provided)
-  const time = config.specificTime || "00:00";
+  const time = config.specificTimeUtc || config.specificTime || "00:00";
   const [hour, minute] = time.split(":").map(Number);
 
   switch (config.scheduleType) {
@@ -204,17 +204,17 @@ export function isScheduleActive(config: ScheduleTriggerConfig, now: Date = new 
 export function getScheduleDescription(config: ScheduleTriggerConfig): string {
   switch (config.scheduleType) {
     case "daily":
-      return `Daily at ${config.specificTime || "00:00"}`;
+      return `Daily at ${config.specificTimeUtc || config.specificTime || "00:00"} UTC`;
     
     case "weekly":
       const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
       const dayName = days[config.dayOfWeek ?? 0];
-      return `Every ${dayName} at ${config.specificTime || "00:00"}`;
+      return `Every ${dayName} at ${config.specificTimeUtc || config.specificTime || "00:00"} UTC`;
     
     case "monthly":
       const dayOfMonth = config.dayOfMonth ?? 1;
       const suffix = getDaySuffix(dayOfMonth);
-      return `Monthly on ${dayOfMonth}${suffix} at ${config.specificTime || "00:00"}`;
+      return `Monthly on ${dayOfMonth}${suffix} at ${config.specificTimeUtc || config.specificTime || "00:00"} UTC`;
     
     case "one-time":
       if (config.oneTimeDate) {

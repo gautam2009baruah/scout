@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { X, Trash2, Plus, Minus, Move, Maximize2, Save, ChevronDown, ChevronRight } from "lucide-react";
 import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
@@ -14,6 +14,14 @@ import Draggable from "react-draggable";
 import { createPortal } from "react-dom";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { ApiCallConfig } from "./api-call-config";
+import {
+  convertTimeInTimeZoneToUtcTime,
+  convertUtcTimeToTimeZoneDisplay,
+  detectDefaultCuratedTimeZone,
+  formatUtcIsoForTimeZoneInput,
+  getCuratedTimeZoneOptions,
+  parseTimeZoneInputToUtcIso,
+} from "@/lib/orchestrations/timezone-utils";
 
 // Declare global showScoutNotification function
 declare global {
@@ -609,6 +617,8 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
   const [inputFields, setInputFields] = useState<any[]>(config.inputFields || []);
   const [examplePhrases, setExamplePhrases] = useState<string[]>(config.examplePhrases || []);
   const [requiredVariables, setRequiredVariables] = useState<any[]>(config.requiredVariables || []);
+  const scheduleTimezone = config.timezone || detectDefaultCuratedTimeZone();
+  const timezoneOptions = useMemo(() => getCuratedTimeZoneOptions(), []);
   
   // Email credentials for email trigger
   type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean };
@@ -631,6 +641,36 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
       updateConfig({ examplePhrases, requiredVariables });
     }
   }, [examplePhrases, requiredVariables]);
+
+  useEffect(() => {
+    if (triggerType !== "schedule") return;
+
+    const updates: Record<string, unknown> = {};
+
+    if (!config.timezone) {
+      updates.timezone = detectDefaultCuratedTimeZone();
+    }
+
+    if (
+      (config.scheduleType === "daily" || config.scheduleType === "weekly" || config.scheduleType === "monthly") &&
+      !config.specificTimeUtc &&
+      config.specificTime
+    ) {
+      updates.specificTimeUtc = convertTimeInTimeZoneToUtcTime(config.specificTime, scheduleTimezone);
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updateConfig(updates);
+    }
+  }, [
+    triggerType,
+    config.timezone,
+    config.scheduleType,
+    config.specificTime,
+    config.specificTimeUtc,
+    scheduleTimezone,
+    updateConfig,
+  ]);
 
   // Fetch email credentials when companyId and targetAppId are available and trigger type is email
   useEffect(() => {
@@ -830,6 +870,25 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
       {triggerType === "schedule" && (
         <div className="border-l-4 border-purple-500 bg-purple-50 p-4 rounded space-y-3">
           <h4 className="text-sm font-semibold text-slate-700">Schedule Settings</h4>
+
+          <details className="text-xs bg-white border border-purple-200 rounded p-2">
+            <summary className="cursor-pointer font-semibold text-purple-900 hover:text-purple-700">
+              💡 Schedule Timezone Help
+            </summary>
+            <div className="mt-2 space-y-2 text-slate-700">
+              <p>
+                Pick a timezone from the curated list. The form displays local schedule time in that timezone,
+                while the saved value is stored in UTC for consistent processing.
+              </p>
+              <p>
+                Example: selecting <strong>Asia/Kolkata</strong> and entering <strong>09:00</strong> stores
+                <strong>03:30 UTC</strong>. When reopened, it is shown back as 09:00 for Asia/Kolkata.
+              </p>
+              <p>
+                One-time schedules are also stored in UTC and converted back to the selected timezone in this form.
+              </p>
+            </div>
+          </details>
           
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Schedule Type</label>
@@ -852,9 +911,9 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
               <input
                 type="datetime-local"
                 className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                value={config.oneTimeDate ? new Date(config.oneTimeDate).toISOString().slice(0, 16) : ""}
+                value={config.oneTimeDate ? formatUtcIsoForTimeZoneInput(config.oneTimeDate, scheduleTimezone) : ""}
                 onChange={(e) => {
-                  const date = e.target.value ? new Date(e.target.value).toISOString() : "";
+                  const date = e.target.value ? parseTimeZoneInputToUtcIso(e.target.value, scheduleTimezone) : "";
                   updateConfig({ oneTimeDate: date });
                 }}
               />
@@ -937,9 +996,12 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
               <input
                 type="time"
                 className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                value={config.specificTime || "00:00"}
-                onChange={(e) => updateConfig({ specificTime: e.target.value })}
+                value={convertUtcTimeToTimeZoneDisplay(config.specificTimeUtc || config.specificTime || "00:00", scheduleTimezone)}
+                onChange={(e) => {
+                  updateConfig({ specificTimeUtc: convertTimeInTimeZoneToUtcTime(e.target.value, scheduleTimezone) });
+                }}
               />
+              <p className="text-xs text-slate-500 mt-1">Saved internally as UTC</p>
             </div>
           )}
 
@@ -978,14 +1040,18 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Timezone</label>
-            <input
-              type="text"
+            <select
               className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="UTC, America/New_York, Europe/London"
-              value={config.timezone || "UTC"}
+              value={scheduleTimezone}
               onChange={(e) => updateConfig({ timezone: e.target.value })}
-            />
-            <p className="text-xs text-slate-500 mt-1">Common: UTC, America/New_York, America/Los_Angeles, Europe/London</p>
+            >
+              {timezoneOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-1">Curated IANA timezones (stored as timezone IDs)</p>
           </div>
 
           {/* Schedule Preview */}
@@ -997,18 +1063,18 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
                   const timezone = config.timezone || "UTC";
                   switch (config.scheduleType) {
                     case "daily":
-                      return `Every day at ${config.specificTime || "00:00"} ${timezone}`;
+                      return `Every day at ${convertUtcTimeToTimeZoneDisplay(config.specificTimeUtc || config.specificTime || "00:00", timezone)} ${timezone}`;
                     case "weekly":
                       const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-                      return `Every ${days[config.dayOfWeek || 0]} at ${config.specificTime || "00:00"} ${timezone}`;
+                      return `Every ${days[config.dayOfWeek || 0]} at ${convertUtcTimeToTimeZoneDisplay(config.specificTimeUtc || config.specificTime || "00:00", timezone)} ${timezone}`;
                     case "monthly":
                       const day = config.dayOfMonth || 1;
                       const suffix = day === 1 ? "st" : day === 2 ? "nd" : day === 3 ? "rd" : "th";
-                      return `${day}${suffix} of every month at ${config.specificTime || "00:00"} ${timezone}`;
+                      return `${day}${suffix} of every month at ${convertUtcTimeToTimeZoneDisplay(config.specificTimeUtc || config.specificTime || "00:00", timezone)} ${timezone}`;
                     case "one-time":
                       if (config.oneTimeDate) {
                         const date = new Date(config.oneTimeDate);
-                        return `Once on ${date.toLocaleDateString()} at ${date.toLocaleTimeString()} ${timezone}`;
+                        return `Once on ${date.toLocaleString(undefined, { timeZone: timezone })} ${timezone}`;
                       }
                       return "One-time (date not set)";
                     case "cron":

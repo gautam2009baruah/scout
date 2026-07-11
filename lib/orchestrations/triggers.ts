@@ -359,8 +359,37 @@ export function validateTriggerConfig(
     case "schedule":
       if (config.type !== "schedule") {
         errors.push("Invalid schedule trigger config");
-      } else if (!config.cronExpression) {
-        errors.push("Cron expression is required");
+      } else {
+        if (!config.scheduleType) {
+          errors.push("Schedule type is required");
+          break;
+        }
+
+        if (config.scheduleType === "cron" && !config.cronExpression) {
+          errors.push("Cron expression is required for cron schedule type");
+        }
+
+        if (
+          (config.scheduleType === "daily" ||
+            config.scheduleType === "weekly" ||
+            config.scheduleType === "monthly") &&
+          !config.specificTimeUtc &&
+          !config.specificTime
+        ) {
+          errors.push("Specific time is required for daily/weekly/monthly schedules");
+        }
+
+        if (config.scheduleType === "weekly" && (config.dayOfWeek === undefined || config.dayOfWeek === null)) {
+          errors.push("Day of week is required for weekly schedules");
+        }
+
+        if (config.scheduleType === "monthly" && (config.dayOfMonth === undefined || config.dayOfMonth === null)) {
+          errors.push("Day of month is required for monthly schedules");
+        }
+
+        if (config.scheduleType === "one-time" && !config.oneTimeDate) {
+          errors.push("One-time date is required for one-time schedules");
+        }
       }
       break;
 

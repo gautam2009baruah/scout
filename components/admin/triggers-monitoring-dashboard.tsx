@@ -40,6 +40,7 @@ type TriggerStatus = {
   createdAt: string;
   updatedAt: string;
   // Schedule-specific
+  scheduleTimezone: string;
   scheduleNextRun: string | null;
   scheduleLastRun: string | null;
   scheduleExecutionCount: number;
@@ -138,6 +139,11 @@ function defaultDateRange(): { from: string; to: string } {
 function formatDateTime(dateStr: string | null) {
   if (!dateStr) return "Never";
   return new Date(dateStr).toLocaleString();
+}
+
+function formatDateTimeInTimeZone(dateStr: string | null, timeZone: string) {
+  if (!dateStr) return "Never";
+  return `${new Date(dateStr).toLocaleString(undefined, { timeZone })} (${timeZone})`;
 }
 
 export function TriggersMonitoringDashboard({
@@ -539,8 +545,18 @@ export function TriggersMonitoringDashboard({
                 <div className="grid grid-cols-4 gap-4 mb-3">
                   {trigger.triggerType === "schedule" && (
                     <>
-                      <Stat label="Next Run" value={formatDateTime(trigger.scheduleNextRun)} />
-                      <Stat label="Last Run" value={formatDateTime(trigger.scheduleLastRun)} />
+                      <Stat label="Next Run" value={formatDateTimeInTimeZone(trigger.scheduleNextRun, trigger.scheduleTimezone || "UTC")} />
+                      <Stat label="Last Run" value={formatDateTimeInTimeZone(trigger.scheduleLastRun, trigger.scheduleTimezone || "UTC")} />
+                      <Stat
+                        label="Executions"
+                        value={String(trigger.scheduleExecutionCount || 0)}
+                        valueClass="text-blue-700"
+                      />
+                      <Stat
+                        label="Errors"
+                        value={String(trigger.scheduleErrorCount || 0)}
+                        valueClass={(trigger.scheduleErrorCount || 0) > 0 ? "text-red-700" : "text-green-700"}
+                      />
                     </>
                   )}
 

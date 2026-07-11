@@ -492,6 +492,7 @@ export type ScheduleTriggerConfig = {
   scheduleType: "one-time" | "daily" | "weekly" | "monthly" | "cron"; // Schedule frequency
   cronExpression?: string; // Required if scheduleType is "cron"
   specificTime?: string; // e.g., "14:30" for daily/weekly
+  specificTimeUtc?: string; // UTC time-of-day persisted for recurring schedules (HH:mm)
   dayOfWeek?: number; // 0-6 for weekly (0 = Sunday)
   dayOfMonth?: number; // 1-31 for monthly
   oneTimeDate?: string; // ISO date for one-time

@@ -12,7 +12,7 @@
     "jobs:documents": "node scripts/jobs/worker.mjs",
     "jobs:worker": "npm run jobs:documents",
     "extension:build": "node scripts/build-extension.mjs",
-    "triggers:schedule": "node scripts/schedule-trigger-worker.mjs",
+    "triggers:schedule": "tsx scripts/jobs/orchestration-scheduler.ts",
     "triggers:email": "tsx scripts/email-trigger-poller.mjs"
   },
   "dependencies": {
