@@ -7,7 +7,7 @@ import type { OrchestrationTriggerType, NodeType } from "@/shared/orchestrationT
 
 /**
  * Node compatibility rules:
- * - Automated triggers (schedule, email, webhook, api, file_upload) cannot use interactive nodes
+ * - Automated triggers (schedule, email) cannot use interactive nodes
  * - Interactive triggers (manual, chatbot) can use all nodes
  */
 
@@ -22,9 +22,6 @@ const INTERACTIVE_NODES: NodeType[] = [
 const AUTOMATED_TRIGGERS: OrchestrationTriggerType[] = [
   "schedule",
   "email",
-  "webhook",
-  "api",
-  "file_upload",
 ];
 
 // Trigger types that are interactive (human-initiated)
@@ -88,10 +85,7 @@ export function getIncompatibilityReason(
     manual: "Manual",
     chatbot: "Chatbot",
     schedule: "Schedule",
-    webhook: "Webhook",
-    api: "API",
     email: "Email",
-    file_upload: "File Upload",
   };
 
   const nodeLabel = nodeLabels[nodeType];
@@ -128,7 +122,7 @@ export function getAlternativeSuggestions(
   if (nodeType === "data_capture") {
     suggestions.push("Use AI Extraction to extract data from documents or structured text");
     suggestions.push("Use Variable nodes to set values programmatically");
-    suggestions.push("Pass data through the trigger payload (webhook/API)");
+    suggestions.push("Pass data through manual inputs or chatbot-collected variables");
   }
 
   if (nodeType === "human_approval") {

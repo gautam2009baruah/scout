@@ -10,23 +10,17 @@ export type OrchestrationTriggerType =
   | "manual"
   | "chatbot"
   | "schedule"
-  | "webhook"
-  | "api"
-  | "email"
-  | "file_upload";
+  | "email";
 
 /**
  * All available trigger types as a constant array (alphabetically sorted)
  * Use this for dropdowns, filters, and validation
  */
 export const TRIGGER_TYPES: readonly OrchestrationTriggerType[] = [
-  "api",
   "chatbot",
   "email",
-  "file_upload",
   "manual",
   "schedule",
-  "webhook",
 ] as const;
 
 /**
@@ -37,10 +31,7 @@ export const TRIGGER_TYPE_LABELS: Record<OrchestrationTriggerType, string> = {
   manual: "Manual",
   chatbot: "Chatbot",
   schedule: "Schedule",
-  webhook: "Webhook",
-  api: "API",
   email: "Email",
-  file_upload: "File Upload",
 };
 
 /**
@@ -48,8 +39,6 @@ export const TRIGGER_TYPE_LABELS: Record<OrchestrationTriggerType, string> = {
  * These will be shown as disabled/strikethrough in UI
  */
 export const UPCOMING_TRIGGER_TYPES: readonly OrchestrationTriggerType[] = [
-  "api",
-  "file_upload",
 ] as const;
 
 export type Orchestration = {
@@ -122,10 +111,6 @@ export type TriggerNodeConfig = {
   schedule?: {
     cron?: string;
     timezone?: string;
-  };
-  webhook?: {
-    authRequired?: boolean;
-    secretKey?: string;
   };
 };
 
@@ -517,16 +502,6 @@ export type ScheduleTriggerConfig = {
   nextRunAt?: string; // Computed next execution time
 };
 
-export type WebhookTriggerConfig = {
-  type: "webhook";
-  webhookUrl?: string; // Generated after trigger creation
-  secret: string; // Encrypted, validated via X-Scout-Webhook-Secret header
-  allowedMethods: Array<"GET" | "POST" | "PUT">; // Default: ["POST"]
-  allowedIPs?: string[]; // Optional IP allowlist
-  payloadSchema?: Record<string, unknown>; // Optional JSON schema validation
-  enabled: boolean;
-};
-
 export type ChatbotTriggerConfig = {
   type: "chatbot";
   triggerPhrases: string[]; // User phrases that trigger this orchestration
@@ -541,14 +516,6 @@ export type ChatbotTriggerConfig = {
   allowedRoles?: string[]; // Roles that can trigger this (empty = all)
   allowedUsers?: string[]; // Specific user emails (empty = all)
   minConfidence: number; // Minimum confidence threshold (0-1)
-  enabled: boolean;
-};
-
-export type APITriggerConfig = {
-  type: "api";
-  allowedClients?: string[]; // Client IDs that can use this trigger
-  requestSchema?: Record<string, unknown>; // Expected request body schema
-  rateLimit?: number; // Requests per minute, 0 = unlimited
   enabled: boolean;
 };
 
@@ -575,69 +542,11 @@ export type EmailTriggerConfig = {
   enabled: boolean;
 };
 
-export type FileUploadTriggerConfig = {
-  type: "file_upload";
-  allowedFileTypes: string[]; // e.g., [".pdf", ".docx", ".txt"]
-  maxFileSizeMB: number; // Maximum file size in megabytes
-  allowMultipleFiles: boolean; // Allow multiple file uploads
-  requiredMetadata?: Array<{
-    name: string;
-    label: string;
-    type: "text" | "number" | "select";
-    required: boolean;
-    description?: string;
-    options?: Array<{ label: string; value: string }>;
-  }>;
-  virusScanEnabled: boolean; // Enable virus scanning if available
-  storageLocation: string; // Where to store uploaded files
-  aiExtractionCompatible: boolean; // If true, files can be read by AI extraction nodes
-  enabled: boolean;
-};
-
 export type TriggerConfig =
   | ManualTriggerConfig
   | ScheduleTriggerConfig
-  | WebhookTriggerConfig
   | ChatbotTriggerConfig
-  | APITriggerConfig
-  | EmailTriggerConfig
-  | FileUploadTriggerConfig;
-
-// ============================================================================
-// API Client & Key Types (for API Trigger authentication)
-// ============================================================================
-
-export type APIClient = {
-  id: string;
-  name: string;
-  description: string | null;
-  apiKey: string; // Encrypted
-  isActive: boolean;
-  rateLimit: number; // Requests per minute, 0 = unlimited
-  allowedOrchestrations: string[]; // Empty = all orchestrations
-  lastUsedAt: string | null;
-  createdAt: string;
-  createdById?: string | null;
-  createdByEmail: string | null;
-};
-
-export type APIRequestLog = {
-  id: string;
-  clientId: string;
-  orchestrationId: string;
-  triggerId: string | null;
-  executionId: string | null;
-  endpoint: string;
-  method: string;
-  statusCode: number;
-  requestBody: Record<string, unknown> | null;
-  responseBody: Record<string, unknown> | null;
-  errorMessage: string | null;
-  ipAddress: string | null;
-  userAgent: string | null;
-  requestedAt: string;
-  durationMs: number | null;
-};
+  | EmailTriggerConfig;
 
 // Trigger context that gets passed to orchestration
 export type TriggerContext = {

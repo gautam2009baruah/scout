@@ -11,7 +11,6 @@ import {
   Clock,
   Mail,
   Calendar,
-  Zap,
   CheckCircle,
   XCircle,
   Filter,
@@ -24,7 +23,7 @@ import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 type TargetAppOption = { id: string; name: string; companyId: string };
 
 // Only automated trigger types are meaningful to monitor here.
-const MONITORABLE_TRIGGER_TYPES = ["email", "webhook", "schedule"] as const;
+const MONITORABLE_TRIGGER_TYPES = ["email", "schedule"] as const;
 
 type TriggerStatus = {
   id: string;
@@ -50,12 +49,6 @@ type TriggerStatus = {
   emailLastFound: string | null;
   emailLastRan: string | null;
   emailMessageCount: number;
-  // Webhook-specific
-  webhookUrl: string | null;
-  webhookTotalDeliveries: number;
-  webhookSuccessfulDeliveries: number;
-  webhookFailedDeliveries: number;
-  webhookLastTriggered: string | null;
 };
 
 type ExecutionRow = {
@@ -360,8 +353,6 @@ export function TriggersMonitoringDashboard({
         return <Calendar className="h-5 w-5 text-purple-600" />;
       case "email":
         return <Mail className="h-5 w-5 text-pink-600" />;
-      case "webhook":
-        return <Zap className="h-5 w-5 text-blue-600" />;
       default:
         return <Clock className="h-5 w-5 text-slate-600" />;
     }
@@ -564,39 +555,7 @@ export function TriggersMonitoringDashboard({
                     </>
                   )}
 
-                  {trigger.triggerType === "webhook" && (
-                    <>
-                      <Stat
-                        label="Total Deliveries"
-                        value={String(trigger.webhookTotalDeliveries || 0)}
-                      />
-                      <Stat
-                        label="Successful"
-                        value={String(trigger.webhookSuccessfulDeliveries || 0)}
-                        valueClass="text-green-700"
-                      />
-                      <Stat
-                        label="Failed"
-                        value={String(trigger.webhookFailedDeliveries || 0)}
-                        valueClass="text-red-700"
-                      />
-                      <Stat
-                        label="Last Triggered"
-                        value={formatDateTime(trigger.webhookLastTriggered)}
-                      />
-                    </>
-                  )}
                 </div>
-
-                {/* Webhook URL */}
-                {trigger.webhookUrl && (
-                  <div className="mb-3">
-                    <div className="text-xs text-slate-500 mb-1">Webhook URL</div>
-                    <div className="font-mono text-xs bg-slate-50 p-2 rounded border border-slate-200 truncate">
-                      {trigger.webhookUrl}
-                    </div>
-                  </div>
-                )}
 
                 {/* Recent Executions (collapsible + paginated) */}
                 <div className="border-t border-slate-100 pt-3">

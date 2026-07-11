@@ -1037,249 +1037,6 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
         </div>
       )}
 
-      {/* Webhook Trigger Configuration */}
-      {triggerType === "webhook" && (
-        <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded space-y-3">
-          <h4 className="text-sm font-semibold text-slate-700">Webhook Settings</h4>
-          
-          {/* Webhook URL Display */}
-          {config.webhookUrl && (
-            <div className="bg-white border border-blue-200 rounded-lg p-3 space-y-2">
-              <label className="block text-xs font-semibold text-slate-700">Webhook URL</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  className="flex-1 rounded border border-slate-300 px-3 py-2 text-xs font-mono bg-slate-50"
-                  value={config.webhookUrl}
-                  readOnly
-                />
-                <button
-                  type="button"
-                  className="px-3 py-2 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
-                  onClick={() => {
-                    navigator.clipboard.writeText(config.webhookUrl);
-                    alert("Webhook URL copied to clipboard!");
-                  }}
-                >
-                  Copy
-                </button>
-              </div>
-              <p className="text-xs text-blue-700">
-                📌 Use this URL to receive webhooks from external services
-              </p>
-            </div>
-          )}
-
-          {/* Security Section */}
-          <div className="space-y-3">
-            <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Security</h5>
-            
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="requireSignature"
-                checked={config.requireSignature === true}
-                onChange={(e) => updateConfig({ requireSignature: e.target.checked })}
-              />
-              <label htmlFor="requireSignature" className="text-sm text-slate-700">
-                Require HMAC-SHA256 signature validation
-              </label>
-            </div>
-
-            {config.requireSignature && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Secret Key <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
-                  placeholder="Enter a secure secret key"
-                  value={config.secretKey || ""}
-                  onChange={(e) => updateConfig({ secretKey: e.target.value })}
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Share this key with the webhook sender. They'll use it to sign requests.
-                </p>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                IP Allowlist (optional)
-              </label>
-              <input
-                type="text"
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                placeholder="192.168.1.1, 10.0.0.5"
-                value={(config.allowedIps || []).join(", ")}
-                onChange={(e) => {
-                  const ips = e.target.value.split(",").map(ip => ip.trim()).filter(ip => ip);
-                  updateConfig({ allowedIps: ips });
-                }}
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Comma-separated IP addresses. Leave empty to allow all IPs.
-              </p>
-            </div>
-          </div>
-
-          {/* Request Configuration */}
-          <div className="space-y-3">
-            <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Request Configuration</h5>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Expected HTTP Method</label>
-              <select
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                value={config.expectedMethod || "POST"}
-                onChange={(e) => updateConfig({ expectedMethod: e.target.value })}
-              >
-                <option value="POST">POST</option>
-                <option value="GET">GET</option>
-                <option value="PUT">PUT</option>
-                <option value="PATCH">PATCH</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Expected Content-Type</label>
-              <input
-                type="text"
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                placeholder="application/json"
-                value={config.expectedContentType || "application/json"}
-                onChange={(e) => updateConfig({ expectedContentType: e.target.value })}
-              />
-            </div>
-          </div>
-
-          {/* Payload Filtering */}
-          <div className="space-y-3">
-            <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Payload Filtering</h5>
-            <p className="text-xs text-slate-600">
-              Only trigger if the webhook payload matches these filters
-            </p>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Filters (JSON)
-              </label>
-              <textarea
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
-                rows={4}
-                placeholder={'{\n  "event": "user.created",\n  "source": "github"\n}'}
-                value={
-                  config.payloadFilters
-                    ? JSON.stringify(config.payloadFilters, null, 2)
-                    : ""
-                }
-                onChange={(e) => {
-                  try {
-                    const filters = e.target.value ? JSON.parse(e.target.value) : {};
-                    updateConfig({ payloadFilters: filters });
-                  } catch (err) {
-                    // Invalid JSON, don't update
-                  }
-                }}
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Example: {`{"event": "user.created"}`} - only process if event equals "user.created"
-              </p>
-            </div>
-          </div>
-
-          {/* Data Mapping */}
-          <div className="space-y-3">
-            <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Data Extraction</h5>
-            <p className="text-xs text-slate-600">
-              Extract specific fields from webhook payload
-            </p>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Data Mapping (JSON)
-              </label>
-              <textarea
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm font-mono"
-                rows={4}
-                placeholder={'{\n  "userId": "$.user.id",\n  "email": "$.user.email"\n}'}
-                value={
-                  config.dataMapping
-                    ? JSON.stringify(config.dataMapping, null, 2)
-                    : ""
-                }
-                onChange={(e) => {
-                  try {
-                    const mapping = e.target.value ? JSON.parse(e.target.value) : {};
-                    updateConfig({ dataMapping: mapping });
-                  } catch (err) {
-                    // Invalid JSON, don't update
-                  }
-                }}
-              />
-              <p className="text-xs text-slate-500 mt-1">
-                Use JSONPath: {`{"userId": "$.user.id"}`} or dot notation: {`{"userId": "user.id"}`}
-              </p>
-            </div>
-          </div>
-
-          {/* Status */}
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="webhookEnabled"
-              checked={config.enabled !== false}
-              onChange={(e) => updateConfig({ enabled: e.target.checked })}
-            />
-            <label htmlFor="webhookEnabled" className="text-sm text-slate-700">Enabled</label>
-          </div>
-
-          {/* Statistics */}
-          {config.webhookStats && (
-            <div className="bg-white border border-blue-200 rounded-lg p-3 space-y-2">
-              <h6 className="text-xs font-semibold text-slate-700">Webhook Statistics</h6>
-              <div className="grid grid-cols-3 gap-3 text-xs">
-                <div>
-                  <div className="text-slate-500">Total</div>
-                  <div className="text-lg font-semibold">{config.webhookStats.total || 0}</div>
-                </div>
-                <div>
-                  <div className="text-green-600">Success</div>
-                  <div className="text-lg font-semibold text-green-700">{config.webhookStats.success || 0}</div>
-                </div>
-                <div>
-                  <div className="text-red-600">Failed</div>
-                  <div className="text-lg font-semibold text-red-700">{config.webhookStats.failed || 0}</div>
-                </div>
-              </div>
-              {config.webhookStats.lastTriggered && (
-                <p className="text-xs text-slate-600">
-                  Last triggered: {new Date(config.webhookStats.lastTriggered).toLocaleString()}
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs space-y-2">
-            <p className="font-semibold text-blue-900">💡 How Webhook Triggers Work:</p>
-            <div className="space-y-1 text-blue-800">
-              <p><strong>1. External Service:</strong> Sends HTTP POST to your webhook URL</p>
-              <p><strong>2. Validation:</strong> Checks signature (if enabled) and IP allowlist</p>
-              <p><strong>3. Filtering:</strong> Matches payload against filters</p>
-              <p><strong>4. Extraction:</strong> Pulls data using mapping rules</p>
-              <p><strong>5. Execution:</strong> Triggers orchestration with extracted data</p>
-            </div>
-          </div>
-
-          {!config.webhookUrl && (
-            <p className="text-xs text-blue-700">
-              ℹ️ Save the orchestration to generate a webhook URL
-            </p>
-          )}
-        </div>
-      )}
-
       {/* Chatbot Trigger Configuration */}
       {triggerType === "chatbot" && (
         <div className="border-l-4 border-orange-500 bg-orange-50 p-4 rounded space-y-3">
@@ -1344,38 +1101,6 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
             />
             <label htmlFor="chatbotEnabled" className="text-sm text-slate-700">Enabled</label>
           </div>
-        </div>
-      )}
-
-      {/* API Trigger Configuration */}
-      {triggerType === "api" && (
-        <div className="border-l-4 border-indigo-500 bg-indigo-50 p-4 rounded space-y-3">
-          <h4 className="text-sm font-semibold text-slate-700">API Trigger Settings</h4>
-          
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Rate Limit (requests/minute)</label>
-            <input
-              type="number"
-              min="0"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="0 = unlimited"
-              value={config.rateLimit || 60}
-              onChange={(e) => updateConfig({ rateLimit: parseInt(e.target.value) || 0 })}
-            />
-            <p className="text-xs text-slate-500 mt-1">0 means unlimited</p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="apiEnabled"
-              checked={config.enabled !== false}
-              onChange={(e) => updateConfig({ enabled: e.target.checked })}
-            />
-            <label htmlFor="apiEnabled" className="text-sm text-slate-700">Enabled</label>
-          </div>
-
-          <p className="text-xs text-indigo-700">ℹ️ API clients can be managed separately</p>
         </div>
       )}
 
@@ -1492,89 +1217,6 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
         </div>
       )}
 
-      {/* File Upload Trigger Configuration */}
-      {triggerType === "file_upload" && (
-        <div className="border-l-4 border-teal-500 bg-teal-50 p-4 rounded space-y-3">
-          <h4 className="text-sm font-semibold text-slate-700">File Upload Settings</h4>
-          
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Allowed File Types</label>
-            <input
-              type="text"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder=".pdf, .docx, .txt"
-              value={(config.allowedFileTypes || []).join(", ")}
-              onChange={(e) => {
-                const types = e.target.value.split(",").map(t => t.trim()).filter(t => t);
-                updateConfig({ allowedFileTypes: types });
-              }}
-            />
-            <p className="text-xs text-slate-500 mt-1">Comma-separated file extensions</p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Max File Size (MB)</label>
-            <input
-              type="number"
-              min="1"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              value={config.maxFileSizeMB || 10}
-              onChange={(e) => updateConfig({ maxFileSizeMB: parseInt(e.target.value) || 10 })}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Storage Location</label>
-            <input
-              type="text"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="./storage/uploads"
-              value={config.storageLocation || "./storage/uploads"}
-              onChange={(e) => updateConfig({ storageLocation: e.target.value })}
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="allowMultipleFiles"
-              checked={config.allowMultipleFiles !== false}
-              onChange={(e) => updateConfig({ allowMultipleFiles: e.target.checked })}
-            />
-            <label htmlFor="allowMultipleFiles" className="text-sm text-slate-700">Allow multiple files</label>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="virusScanEnabled"
-              checked={config.virusScanEnabled === true}
-              onChange={(e) => updateConfig({ virusScanEnabled: e.target.checked })}
-            />
-            <label htmlFor="virusScanEnabled" className="text-sm text-slate-700">Enable virus scanning</label>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="aiExtractionCompatible"
-              checked={config.aiExtractionCompatible === true}
-              onChange={(e) => updateConfig({ aiExtractionCompatible: e.target.checked })}
-            />
-            <label htmlFor="aiExtractionCompatible" className="text-sm text-slate-700">AI extraction compatible</label>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="fileUploadEnabled"
-              checked={config.enabled !== false}
-              onChange={(e) => updateConfig({ enabled: e.target.checked })}
-            />
-            <label htmlFor="fileUploadEnabled" className="text-sm text-slate-700">Enabled</label>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2696,8 +2338,8 @@ function AIExtractionConfig({ config, updateConfig }: any) {
               <code className="block bg-slate-100 px-1 rounded">{`{{subject}} {{bodyText}}`}</code>
             </li>
             <li>
-              <div className="font-semibold text-slate-700">After a Webhook trigger</div>
-              <code className="block bg-slate-100 px-1 rounded">{`{{payload.message}}`}</code>
+              <div className="font-semibold text-slate-700">After a Manual trigger</div>
+              <code className="block bg-slate-100 px-1 rounded">{`{{trigger.message}}`}</code>
             </li>
             <li>
               <div className="font-semibold text-slate-700">After a Workflow node</div>
@@ -2709,7 +2351,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
             </li>
             <li>
               <div className="font-semibold text-slate-700">Mixing literal text + variables</div>
-              <code className="block bg-slate-100 px-1 rounded">{`Order: {{payload.orderId}} from {{from}}`}</code>
+              <code className="block bg-slate-100 px-1 rounded">{`Order: {{trigger.orderId}} from {{from}}`}</code>
             </li>
           </ul>
         </CollapsibleHelp>
@@ -3053,7 +2695,7 @@ function ConditionConfig({ config, updateConfig }: any) {
                   <span className="font-semibold text-slate-800">Trigger Node</span>
                   <code className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-xs">{"{{trigger.xxx}}"}</code>
                 </div>
-                <p className="text-xs text-slate-600 mb-1">Data passed when orchestration starts (API, manual trigger).</p>
+                <p className="text-xs text-slate-600 mb-1">Data passed when orchestration starts (manual, chatbot, email, schedule).</p>
                 <div className="bg-slate-50 rounded p-1.5 text-xs font-mono">
                   <div className="text-slate-500">Trigger data: orderId, customerId, priority</div>
                   <div className="text-blue-600 mt-1">Use: {"{{trigger.orderId}}"}</div>
@@ -3635,7 +3277,7 @@ function VariableConfig({ config, updateConfig }: any) {
 function EndConfig({ config, updateConfig, supportsMessage }: any) {
   // "Display message" only makes sense for interactive triggers (manual/chatbot)
   // where a user actually sees the completion message via the player. For other
-  // trigger types (email, webhook, schedule, ...) there is no viewer, so hide it.
+  // trigger types (email, schedule) there is no viewer, so hide it.
   if (!supportsMessage) {
     return (
       <div className="space-y-4">

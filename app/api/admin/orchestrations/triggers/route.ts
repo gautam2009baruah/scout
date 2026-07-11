@@ -9,9 +9,8 @@ import {
   updateTrigger,
   deleteTrigger,
   validateTriggerConfig,
-  generateWebhookSecret,
 } from "@/lib/orchestrations/triggers";
-import type { TriggerConfig, OrchestrationTriggerType, TriggerStatus, WebhookTriggerConfig } from "@/shared/orchestrationTypes";
+import type { TriggerConfig, OrchestrationTriggerType, TriggerStatus } from "@/shared/orchestrationTypes";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { clearTriggerCache } from "@/lib/orchestrations/chatbot-trigger-matcher";
 
@@ -73,26 +72,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let finalConfig = config as TriggerConfig;
-
-    // Auto-generate webhook secret if not provided
-    if (triggerType === "webhook") {
-      const webhookConfig = config as WebhookTriggerConfig;
-      if (!webhookConfig.secret) {
-        webhookConfig.secret = generateWebhookSecret();
-        finalConfig = webhookConfig;
-      }
-      // Set default allowedMethods if not provided
-      if (!webhookConfig.allowedMethods || webhookConfig.allowedMethods.length === 0) {
-        webhookConfig.allowedMethods = ["POST"];
-        finalConfig = webhookConfig;
-      }
-      // Set default enabled if not provided
-      if (webhookConfig.enabled === undefined) {
-        webhookConfig.enabled = true;
-        finalConfig = webhookConfig;
-      }
-    }
+    const finalConfig = config as TriggerConfig;
 
     // Validate trigger config
     const validation = validateTriggerConfig(triggerType, finalConfig);
@@ -117,18 +97,7 @@ export async function POST(request: NextRequest) {
       clearTriggerCache();
     }
 
-    // Add webhook URL to response if this is a webhook trigger
-    const response: any = { ...trigger };
-    if (triggerType === "webhook") {
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${request.nextUrl.protocol}//${request.nextUrl.host}`;
-      response.webhookUrl = `${baseUrl}/api/webhooks/trigger/${trigger.id}`;
-      
-      // Return the plain secret ONLY on creation (never shown again)
-      const webhookConfig = finalConfig as WebhookTriggerConfig;
-      response.config = { ...response.config, secret: webhookConfig.secret };
-    }
-
-    return NextResponse.json(response, { status: 201 });
+    return NextResponse.json(trigger, { status: 201 });
   } catch (error) {
     console.error("Error creating trigger:", error);
     return NextResponse.json(

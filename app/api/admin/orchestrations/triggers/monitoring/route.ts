@@ -73,16 +73,9 @@ export async function GET(request: NextRequest) {
           WHERE etm.trigger_id = ot.id
             AND ($1::timestamptz IS NULL OR etm.received_at >= $1::timestamptz)
             AND ($2::timestamptz IS NULL OR etm.received_at <= $2::timestamptz)
-        ) as email_last_ran,
-        -- Webhook-specific fields
-        wt.webhook_url,
-        wt.total_deliveries as webhook_total_deliveries,
-        wt.successful_deliveries as webhook_successful_deliveries,
-        wt.failed_deliveries as webhook_failed_deliveries,
-        wt.last_triggered_at as webhook_last_triggered
+        ) as email_last_ran
       FROM orchestration_triggers ot
       INNER JOIN orchestrations o ON ot.orchestration_id = o.id
-      LEFT JOIN webhook_triggers wt ON ot.id = wt.trigger_id
       LEFT JOIN guided_workflow_target_apps ta ON ta.id = o.target_app_id
       WHERE 1 = 1
     `;
@@ -140,12 +133,6 @@ export async function GET(request: NextRequest) {
       emailLastFound: trigger.email_last_found,
       emailLastRan: trigger.email_last_ran,
       emailMessageCount: trigger.email_message_count,
-      // Webhook-specific
-      webhookUrl: trigger.webhook_url,
-      webhookTotalDeliveries: trigger.webhook_total_deliveries,
-      webhookSuccessfulDeliveries: trigger.webhook_successful_deliveries,
-      webhookFailedDeliveries: trigger.webhook_failed_deliveries,
-      webhookLastTriggered: trigger.webhook_last_triggered,
     }));
 
     return NextResponse.json({
