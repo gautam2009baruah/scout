@@ -208,6 +208,21 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       }
     }
 
+    if (nodeType === "trigger" && localConfig.triggerType === "http_api") {
+      const shortName = String(localConfig.shortName || "").trim();
+      if (!shortName) {
+        return { valid: false, error: "HTTP/API short name is required" };
+      }
+
+      if (!/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/.test(shortName)) {
+        return {
+          valid: false,
+          error: "HTTP/API short name must be URL-safe (lowercase letters, numbers, hyphen)",
+        };
+      }
+
+    }
+
     // Add more validation rules here as needed for other node types
     
     return { valid: true, error: null };
@@ -509,7 +524,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         </div>
 
         {/* Node-specific configuration */}
-        {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} />}
+        {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} orchestrationId={orchestrationId} />}
         {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} />}
         {nodeType === "data_capture" && <DataCaptureConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "ai_extraction" && <AIExtractionConfig config={localConfig} updateConfig={updateLocalConfig} />}
@@ -612,11 +627,12 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
 // Node-specific configuration components
 // ============================================================================
 
-function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
+function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestrationId }: any) {
   const [triggerType, setTriggerType] = useState(config.triggerType || "manual");
   const [inputFields, setInputFields] = useState<any[]>(config.inputFields || []);
   const [examplePhrases, setExamplePhrases] = useState<string[]>(config.examplePhrases || []);
   const [requiredVariables, setRequiredVariables] = useState<any[]>(config.requiredVariables || []);
+  const [shortNameValidation, setShortNameValidation] = useState<{ valid: boolean; message: string } | null>(null);
   const scheduleTimezone = config.timezone || detectDefaultCuratedTimeZone();
   const timezoneOptions = useMemo(() => getCuratedTimeZoneOptions(), []);
   
@@ -671,6 +687,73 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
     scheduleTimezone,
     updateConfig,
   ]);
+
+  useEffect(() => {
+    if (triggerType !== "http_api") return;
+
+    const defaults: Record<string, unknown> = {
+      shortName: config.shortName || "",
+      allowedMethods: Array.isArray(config.allowedMethods) && config.allowedMethods.length > 0
+        ? config.allowedMethods
+        : ["POST"],
+      allowedContentTypes: Array.isArray(config.allowedContentTypes) && config.allowedContentTypes.length > 0
+        ? config.allowedContentTypes
+        : ["application/json"],
+      maxPayloadBytes: Number(config.maxPayloadBytes || 1048576),
+      requireBody: config.requireBody === true,
+      headers: Array.isArray(config.headers) ? config.headers : [],
+      queryParameters: Array.isArray(config.queryParameters) ? config.queryParameters : [],
+      pathParameters: Array.isArray(config.pathParameters) ? config.pathParameters : [],
+      auth: config.auth || { type: "none" },
+      ipAllowlist: Array.isArray(config.ipAllowlist) ? config.ipAllowlist : [],
+      rateLimit: config.rateLimit || { enabled: true, maxRequests: 60, windowSeconds: 60, throttleDelayMs: 0 },
+      replayProtection: config.replayProtection || {
+        enabled: true,
+        timestampHeader: "x-signature-timestamp",
+        nonceHeader: "x-signature-nonce",
+        maxAgeSeconds: 300,
+      },
+      enforceHttps: config.enforceHttps !== false,
+      status: config.status || "active",
+    };
+
+    updateConfig(defaults);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerType]);
+
+  useEffect(() => {
+    if (triggerType !== "http_api") return;
+
+    const shortName = String(config.shortName || "").trim().toLowerCase();
+    if (!shortName) {
+      setShortNameValidation(null);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ shortName });
+        if (orchestrationId) {
+          params.append("orchestrationId", orchestrationId);
+        }
+
+        const response = await fetch(`/api/admin/orchestrations/triggers/http/validate?${params.toString()}`);
+        const data = await response.json();
+        if (data.valid) {
+          setShortNameValidation({ valid: true, message: "Endpoint name is available" });
+        } else {
+          const reason = Array.isArray(data.errors) && data.errors.length > 0
+            ? String(data.errors[0])
+            : "Invalid endpoint short name";
+          setShortNameValidation({ valid: false, message: reason });
+        }
+      } catch {
+        setShortNameValidation({ valid: false, message: "Unable to validate endpoint name" });
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [triggerType, config.shortName, orchestrationId]);
 
   // Fetch email credentials when companyId and targetAppId are available and trigger type is email
   useEffect(() => {
@@ -1279,6 +1362,432 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId }: any) {
               onChange={(e) => updateConfig({ enabled: e.target.checked })}
             />
             <label htmlFor="emailEnabled" className="text-sm text-slate-700">Enabled</label>
+          </div>
+        </div>
+      )}
+
+      {/* HTTP/API Trigger Configuration */}
+      {triggerType === "http_api" && (
+        <div className="border-l-4 border-cyan-500 bg-cyan-50 p-4 rounded space-y-3">
+          <h4 className="text-sm font-semibold text-slate-700">HTTP/API Trigger Settings</h4>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Public Endpoint Short Name *</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              placeholder="e.g. invoice-webhook"
+              value={config.shortName || ""}
+              onChange={(e) => updateConfig({ shortName: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Use lowercase letters, numbers, and hyphens only. Internal IDs are never exposed.
+            </p>
+            {shortNameValidation && (
+              <p className={`mt-1 text-xs ${shortNameValidation.valid ? "text-emerald-700" : "text-red-600"}`}>
+                {shortNameValidation.message}
+              </p>
+            )}
+            <div className="mt-2 rounded border border-cyan-200 bg-white px-3 py-2 text-xs text-cyan-900 font-mono break-all">
+              {(typeof window !== "undefined" ? window.location.origin : "https://<domain>")}/apitrigger/{config.shortName || "<short-name>"}/
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Allowed HTTP Methods</label>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map((method) => {
+                const selected: string[] = Array.isArray(config.allowedMethods) ? config.allowedMethods : ["POST"];
+                const checked = selected.includes(method);
+                return (
+                  <label key={method} className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const next = new Set(selected);
+                        if (e.target.checked) next.add(method);
+                        else next.delete(method);
+                        updateConfig({ allowedMethods: Array.from(next) });
+                      }}
+                    />
+                    <span>{method}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Max Payload (bytes)</label>
+              <input
+                type="number"
+                min="1024"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.maxPayloadBytes || 1048576}
+                onChange={(e) => updateConfig({ maxPayloadBytes: parseInt(e.target.value, 10) || 1048576 })}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Rate Limit (req/window)</label>
+              <input
+                type="number"
+                min="1"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.rateLimit?.maxRequests || 60}
+                onChange={(e) => updateConfig({
+                  rateLimit: {
+                    ...(config.rateLimit || {}),
+                    enabled: config.rateLimit?.enabled !== false,
+                    maxRequests: parseInt(e.target.value, 10) || 60,
+                    windowSeconds: config.rateLimit?.windowSeconds || 60,
+                  },
+                })}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Allowed Content Types (comma separated)</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={Array.isArray(config.allowedContentTypes) ? config.allowedContentTypes.join(", ") : "application/json"}
+              onChange={(e) => updateConfig({
+                allowedContentTypes: e.target.value
+                  .split(",")
+                  .map((v) => v.trim().toLowerCase())
+                  .filter(Boolean),
+              })}
+              placeholder="application/json, multipart/form-data"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Required Header Names (comma separated)</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={Array.isArray(config.headers) ? config.headers.map((h: any) => h.name).join(", ") : ""}
+              onChange={(e) => updateConfig({
+                headers: e.target.value
+                  .split(",")
+                  .map((name) => name.trim())
+                  .filter(Boolean)
+                  .map((name) => ({ name, required: true })),
+              })}
+              placeholder="x-tenant-id, x-event-type"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Required Query Parameters (comma separated)</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={Array.isArray(config.queryParameters) ? config.queryParameters.map((q: any) => q.name).join(", ") : ""}
+              onChange={(e) => updateConfig({
+                queryParameters: e.target.value
+                  .split(",")
+                  .map((name) => name.trim())
+                  .filter(Boolean)
+                  .map((name) => ({ name, required: true })),
+              })}
+              placeholder="source, version"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Path Parameters (ordered, comma separated)</label>
+            <input
+              type="text"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={Array.isArray(config.pathParameters) ? config.pathParameters.map((p: any) => p.name).join(", ") : ""}
+              onChange={(e) => updateConfig({
+                pathParameters: e.target.value
+                  .split(",")
+                  .map((name) => name.trim())
+                  .filter(Boolean)
+                  .map((name) => ({ name, required: true })),
+              })}
+              placeholder="accountId, orderId"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Authentication Mode</label>
+            <select
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.auth?.type || "none"}
+              onChange={(e) => updateConfig({ auth: { ...(config.auth || {}), type: e.target.value } })}
+            >
+              <option value="none">None</option>
+              <option value="api_key">API Key</option>
+              <option value="basic">Basic Auth</option>
+              <option value="oauth2_jwt">OAuth 2.0 / JWT</option>
+              <option value="hmac">HMAC Signature</option>
+              <option value="m_tls">Mutual TLS</option>
+            </select>
+          </div>
+
+          {config.auth?.type === "api_key" && (
+            <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <label className="block text-xs font-semibold text-slate-600">API Key Header</label>
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                value={config.auth?.headerName || "x-api-key"}
+                onChange={(e) => updateConfig({ auth: { ...(config.auth || {}), type: "api_key", headerName: e.target.value } })}
+              />
+              <label className="block text-xs font-semibold text-slate-600">Credentials (id:secret per line)</label>
+              <textarea
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
+                rows={4}
+                value={Array.isArray(config.auth?.credentials)
+                  ? config.auth.credentials.map((c: any) => `${c.id}:${c.secretHash || ""}`).join("\n")
+                  : ""}
+                onChange={(e) => {
+                  const credentials = e.target.value
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .map((line) => {
+                      const [id, ...secretParts] = line.split(":");
+                      return {
+                        id: id.trim(),
+                        label: id.trim(),
+                        secretHash: secretParts.join(":").trim(),
+                        isActive: true,
+                      };
+                    });
+                  updateConfig({ auth: { ...(config.auth || {}), type: "api_key", credentials } });
+                }}
+              />
+              <p className="text-xs text-slate-500">Multiple active credentials enable key rotation without changing URL.</p>
+            </div>
+          )}
+
+          {config.auth?.type === "basic" && (
+            <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <label className="block text-xs font-semibold text-slate-600">Basic Users (username:password per line)</label>
+              <textarea
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
+                rows={4}
+                value={Array.isArray(config.auth?.credentials)
+                  ? config.auth.credentials.map((c: any) => `${c.username}:${c.passwordHash || ""}`).join("\n")
+                  : ""}
+                onChange={(e) => {
+                  const credentials = e.target.value
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .map((line, index) => {
+                      const [username, ...passwordParts] = line.split(":");
+                      return {
+                        id: `basic-${index + 1}`,
+                        username: username.trim(),
+                        passwordHash: passwordParts.join(":").trim(),
+                        isActive: true,
+                      };
+                    });
+                  updateConfig({ auth: { ...(config.auth || {}), type: "basic", credentials } });
+                }}
+              />
+            </div>
+          )}
+
+          {config.auth?.type === "oauth2_jwt" && (
+            <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <label className="block text-xs font-semibold text-slate-600">JWT Issuer</label>
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                value={config.auth?.jwt?.issuer || ""}
+                onChange={(e) => updateConfig({
+                  auth: {
+                    ...(config.auth || {}),
+                    type: "oauth2_jwt",
+                    jwt: { ...(config.auth?.jwt || {}), headerName: config.auth?.jwt?.headerName || "authorization", issuer: e.target.value },
+                  },
+                })}
+              />
+              <label className="block text-xs font-semibold text-slate-600">JWT Audience</label>
+              <input
+                type="text"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                value={config.auth?.jwt?.audience || ""}
+                onChange={(e) => updateConfig({
+                  auth: {
+                    ...(config.auth || {}),
+                    type: "oauth2_jwt",
+                    jwt: { ...(config.auth?.jwt || {}), headerName: config.auth?.jwt?.headerName || "authorization", audience: e.target.value },
+                  },
+                })}
+              />
+              <label className="block text-xs font-semibold text-slate-600">Shared Secret</label>
+              <input
+                type="password"
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                value={config.auth?.jwt?.sharedSecretHash || ""}
+                onChange={(e) => updateConfig({
+                  auth: {
+                    ...(config.auth || {}),
+                    type: "oauth2_jwt",
+                    jwt: { ...(config.auth?.jwt || {}), headerName: config.auth?.jwt?.headerName || "authorization", sharedSecretHash: e.target.value },
+                  },
+                })}
+              />
+            </div>
+          )}
+
+          {config.auth?.type === "hmac" && (
+            <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <label className="block text-xs font-semibold text-slate-600">HMAC Keys (keyId:secret per line)</label>
+              <textarea
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
+                rows={4}
+                value={Array.isArray(config.auth?.hmac?.credentials)
+                  ? config.auth.hmac.credentials.map((c: any) => `${c.keyId}:${c.secretHash || ""}`).join("\n")
+                  : ""}
+                onChange={(e) => {
+                  const credentials = e.target.value
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .map((line) => {
+                      const [keyId, ...secretParts] = line.split(":");
+                      return {
+                        keyId: keyId.trim(),
+                        secretHash: secretParts.join(":").trim(),
+                        isActive: true,
+                      };
+                    });
+
+                  updateConfig({
+                    auth: {
+                      ...(config.auth || {}),
+                      type: "hmac",
+                      hmac: {
+                        ...(config.auth?.hmac || {}),
+                        keyIdHeader: config.auth?.hmac?.keyIdHeader || "x-hmac-key-id",
+                        signatureHeader: config.auth?.hmac?.signatureHeader || "x-hmac-signature",
+                        timestampHeader: config.auth?.hmac?.timestampHeader || "x-signature-timestamp",
+                        nonceHeader: config.auth?.hmac?.nonceHeader || "x-signature-nonce",
+                        algorithm: "sha256",
+                        credentials,
+                      },
+                    },
+                  });
+                }}
+              />
+            </div>
+          )}
+
+          {config.auth?.type === "m_tls" && (
+            <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <label className="block text-xs font-semibold text-slate-600">Allowed Certificate Subjects (one per line)</label>
+              <textarea
+                className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                rows={3}
+                value={Array.isArray(config.auth?.mutualTls?.subjectAllowlist) ? config.auth.mutualTls.subjectAllowlist.join("\n") : ""}
+                onChange={(e) => updateConfig({
+                  auth: {
+                    ...(config.auth || {}),
+                    type: "m_tls",
+                    mutualTls: {
+                      required: true,
+                      subjectAllowlist: e.target.value.split("\n").map((v) => v.trim()).filter(Boolean),
+                    },
+                  },
+                })}
+              />
+            </div>
+          )}
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">IP Allowlist (one IP per line)</label>
+            <textarea
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              rows={3}
+              value={Array.isArray(config.ipAllowlist) ? config.ipAllowlist.join("\n") : ""}
+              onChange={(e) => updateConfig({ ipAllowlist: e.target.value.split("\n").map((v) => v.trim()).filter(Boolean) })}
+              placeholder="203.0.113.10"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Rate Window (seconds)</label>
+              <input
+                type="number"
+                min="1"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.rateLimit?.windowSeconds || 60}
+                onChange={(e) => updateConfig({
+                  rateLimit: {
+                    ...(config.rateLimit || {}),
+                    enabled: config.rateLimit?.enabled !== false,
+                    maxRequests: config.rateLimit?.maxRequests || 60,
+                    windowSeconds: parseInt(e.target.value, 10) || 60,
+                  },
+                })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Replay Max Age (seconds)</label>
+              <input
+                type="number"
+                min="30"
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={config.replayProtection?.maxAgeSeconds || 300}
+                onChange={(e) => updateConfig({
+                  replayProtection: {
+                    ...(config.replayProtection || {}),
+                    enabled: config.replayProtection?.enabled !== false,
+                    timestampHeader: config.replayProtection?.timestampHeader || "x-signature-timestamp",
+                    nonceHeader: config.replayProtection?.nonceHeader || "x-signature-nonce",
+                    maxAgeSeconds: parseInt(e.target.value, 10) || 300,
+                  },
+                })}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={config.enforceHttps !== false}
+                onChange={(e) => updateConfig({ enforceHttps: e.target.checked })}
+              />
+              Enforce HTTPS
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={config.requireBody === true}
+                onChange={(e) => updateConfig({ requireBody: e.target.checked })}
+              />
+              Require Request Body
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Trigger State</label>
+            <select
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.status || "active"}
+              onChange={(e) => updateConfig({ status: e.target.value })}
+            >
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+              <option value="revoked">Revoked</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-500">
+              Suspended endpoints return a non-success status and do not start orchestrations.
+            </p>
           </div>
         </div>
       )}

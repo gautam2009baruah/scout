@@ -100,6 +100,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(trigger, { status: 201 });
   } catch (error) {
     console.error("Error creating trigger:", error);
+
+    const message = error instanceof Error ? error.message : "Failed to create trigger";
+    if (
+      message.toLowerCase().includes("short name already in use") ||
+      message.toLowerCase().includes("duplicate")
+    ) {
+      return NextResponse.json(
+        { error: "Duplicate endpoint name" },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to create trigger" },
       { status: 500 }
@@ -151,6 +163,18 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json(trigger);
   } catch (error) {
     console.error("Error updating trigger:", error);
+
+    const message = error instanceof Error ? error.message : "Failed to update trigger";
+    if (
+      message.toLowerCase().includes("short name already in use") ||
+      message.toLowerCase().includes("duplicate")
+    ) {
+      return NextResponse.json(
+        { error: "Duplicate endpoint name" },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       { error: "Failed to update trigger" },
       { status: 500 }

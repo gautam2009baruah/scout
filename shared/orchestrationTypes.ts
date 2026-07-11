@@ -10,7 +10,8 @@ export type OrchestrationTriggerType =
   | "manual"
   | "chatbot"
   | "schedule"
-  | "email";
+  | "email"
+  | "http_api";
 
 /**
  * All available trigger types as a constant array (alphabetically sorted)
@@ -19,6 +20,7 @@ export type OrchestrationTriggerType =
 export const TRIGGER_TYPES: readonly OrchestrationTriggerType[] = [
   "chatbot",
   "email",
+  "http_api",
   "manual",
   "schedule",
 ] as const;
@@ -32,6 +34,7 @@ export const TRIGGER_TYPE_LABELS: Record<OrchestrationTriggerType, string> = {
   chatbot: "Chatbot",
   schedule: "Schedule",
   email: "Email",
+  http_api: "HTTP/API",
 };
 
 /**
@@ -440,7 +443,12 @@ export type OrchestrationAnalytics = {
 // Trigger Types
 // ============================================================================
 
-export type TriggerStatus = "active" | "inactive" | "error";
+export type TriggerStatus =
+  | "active"
+  | "inactive"
+  | "error"
+  | "suspended"
+  | "revoked";
 
 export type OrchestrationTrigger = {
   id: string;
@@ -543,11 +551,141 @@ export type EmailTriggerConfig = {
   enabled: boolean;
 };
 
+export type HttpMethod =
+  | "GET"
+  | "POST"
+  | "PUT"
+  | "PATCH"
+  | "DELETE"
+  | "HEAD"
+  | "OPTIONS";
+
+export type HttpApiAuthType =
+  | "none"
+  | "api_key"
+  | "basic"
+  | "oauth2_jwt"
+  | "hmac"
+  | "m_tls";
+
+export type HttpApiFieldRule = {
+  name: string;
+  required: boolean;
+  pattern?: string;
+  description?: string;
+};
+
+export type HttpApiRateLimitConfig = {
+  enabled: boolean;
+  maxRequests: number;
+  windowSeconds: number;
+  throttleDelayMs?: number;
+};
+
+export type HttpApiReplayProtectionConfig = {
+  enabled: boolean;
+  timestampHeader: string;
+  nonceHeader: string;
+  maxAgeSeconds: number;
+};
+
+export type HttpApiApiKeyCredential = {
+  id: string;
+  label: string;
+  secretHash: string;
+  isActive: boolean;
+  createdAt?: string;
+};
+
+export type HttpApiBasicCredential = {
+  id: string;
+  username: string;
+  passwordHash: string;
+  isActive: boolean;
+  createdAt?: string;
+};
+
+export type HttpApiJwtConfig = {
+  headerName: string;
+  issuer?: string;
+  audience?: string;
+  sharedSecretHash?: string;
+  sharedSecretEnc?: string;
+  clockSkewSeconds?: number;
+};
+
+export type HttpApiHmacCredential = {
+  keyId: string;
+  secretHash: string;
+  secretEnc?: string;
+  isActive: boolean;
+  createdAt?: string;
+};
+
+export type HttpApiHmacConfig = {
+  keyIdHeader: string;
+  signatureHeader: string;
+  timestampHeader: string;
+  nonceHeader: string;
+  algorithm: "sha256";
+  credentials: HttpApiHmacCredential[];
+};
+
+export type HttpApiMutualTlsConfig = {
+  required: boolean;
+  subjectAllowlist?: string[];
+};
+
+export type HttpApiAuthConfig =
+  | {
+      type: "none";
+    }
+  | {
+      type: "api_key";
+      headerName: string;
+      credentials: HttpApiApiKeyCredential[];
+    }
+  | {
+      type: "basic";
+      credentials: HttpApiBasicCredential[];
+    }
+  | {
+      type: "oauth2_jwt";
+      jwt: HttpApiJwtConfig;
+    }
+  | {
+      type: "hmac";
+      hmac: HttpApiHmacConfig;
+    }
+  | {
+      type: "m_tls";
+      mutualTls: HttpApiMutualTlsConfig;
+    };
+
+export type HttpApiTriggerConfig = {
+  type: "http_api";
+  shortName: string;
+  allowedMethods: HttpMethod[];
+  allowedContentTypes: string[];
+  maxPayloadBytes: number;
+  requireBody: boolean;
+  headers: HttpApiFieldRule[];
+  queryParameters: HttpApiFieldRule[];
+  pathParameters: HttpApiFieldRule[];
+  auth: HttpApiAuthConfig;
+  ipAllowlist: string[];
+  rateLimit: HttpApiRateLimitConfig;
+  replayProtection: HttpApiReplayProtectionConfig;
+  enforceHttps: boolean;
+  status: "active" | "suspended" | "revoked";
+};
+
 export type TriggerConfig =
   | ManualTriggerConfig
   | ScheduleTriggerConfig
   | ChatbotTriggerConfig
-  | EmailTriggerConfig;
+  | EmailTriggerConfig
+  | HttpApiTriggerConfig;
 
 // Trigger context that gets passed to orchestration
 export type TriggerContext = {

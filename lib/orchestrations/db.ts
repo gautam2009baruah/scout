@@ -22,6 +22,7 @@ import { clearTriggerCache } from "./chatbot-trigger-matcher";
 import type { EmailTriggerConfig, ScheduleTriggerConfig } from "@/shared/orchestrationTypes";
 import { calculateNextRunTime } from "./scheduler/cron-utils";
 import { getSchedulerService } from "./scheduler-service";
+import { buildHttpApiTriggerConfig } from "./http-trigger/config";
 
 // ============================================================================
 // Orchestrations
@@ -492,6 +493,76 @@ export async function publishOrchestration(
       }
     } catch (error) {
       console.error("Failed to auto-create/update schedule trigger:", error);
+      throw error;
+    }
+  }
+
+  if (triggerNodeConfig.triggerType === "http_api") {
+    console.log("Auto-creating/updating HTTP/API trigger record...");
+
+    try {
+      const httpTriggerConfig = await buildHttpApiTriggerConfig(triggerNodeConfig, id);
+
+      const existingTriggers = await pool.query(
+        `SELECT id
+         FROM orchestration_triggers
+         WHERE orchestration_id = $1 AND trigger_type = 'http_api'`,
+        [id]
+      );
+
+      if (existingTriggers.rows.length === 0) {
+        const created = await createTrigger({
+          orchestrationId: id,
+          triggerType: "http_api",
+          name: `${orchestration.name} - HTTP/API Trigger`,
+          description: `Auto-created HTTP/API trigger for ${orchestration.name}`,
+          config: httpTriggerConfig,
+          createdById: publishedById,
+        });
+
+        await pool.query(
+          `UPDATE orchestration_triggers
+           SET endpoint_slug = $1,
+               status = $2,
+               updated_by = $3,
+               updated_at = NOW()
+           WHERE id = $4`,
+          [
+            httpTriggerConfig.shortName,
+            httpTriggerConfig.status === "active" ? "active" : httpTriggerConfig.status,
+            publishedById,
+            created.id,
+          ]
+        );
+
+        console.log("HTTP/API trigger created successfully");
+      } else {
+        const triggerId = existingTriggers.rows[0].id;
+        await pool.query(
+          `UPDATE orchestration_triggers
+           SET name = $1,
+               description = $2,
+               config = $3,
+               endpoint_slug = $4,
+               status = $5,
+               updated_by = $6,
+               updated_at = NOW()
+           WHERE id = $7`,
+          [
+            `${orchestration.name} - HTTP/API Trigger`,
+            `Auto-created HTTP/API trigger for ${orchestration.name}`,
+            JSON.stringify(httpTriggerConfig),
+            httpTriggerConfig.shortName,
+            httpTriggerConfig.status === "active" ? "active" : httpTriggerConfig.status,
+            publishedById,
+            triggerId,
+          ]
+        );
+
+        console.log("HTTP/API trigger updated successfully");
+      }
+    } catch (error) {
+      console.error("Failed to auto-create/update HTTP/API trigger:", error);
       throw error;
     }
   }

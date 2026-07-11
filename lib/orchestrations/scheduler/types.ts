@@ -11,7 +11,7 @@ export type ScheduledTrigger = {
   orchestrationId: string;
   name: string;
   config: ScheduleTriggerConfig;
-  status: "active" | "inactive" | "error";
+  status: "active" | "inactive" | "error" | "suspended" | "revoked";
   lastTriggeredAt: string | null;
   nextRunAt: string | null;
 };

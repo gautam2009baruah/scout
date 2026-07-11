@@ -10,6 +10,7 @@ import type {
   TriggerConfig,
   TriggerContext,
 } from "@/shared/orchestrationTypes";
+import { validateShortNameFormat } from "@/lib/orchestrations/http-trigger/endpoint-resolution";
 
 // ============================================================================
 // Database Row Mappers
@@ -95,11 +96,15 @@ export async function createTrigger(data: {
   
   // Encrypt sensitive data in config before storing
   const encryptedConfig = encryptTriggerConfig(data.config);
+  const endpointSlug =
+    data.triggerType === "http_api" && data.config.type === "http_api"
+      ? data.config.shortName
+      : null;
 
   const result = await pool.query<TriggerRow>(
     `INSERT INTO orchestration_triggers 
-     (orchestration_id, trigger_type, name, description, config, created_by, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $6)
+     (orchestration_id, trigger_type, name, description, config, endpoint_slug, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
      RETURNING *`,
     [
       data.orchestrationId,
@@ -107,6 +112,7 @@ export async function createTrigger(data: {
       data.name,
       data.description || null,
       JSON.stringify(encryptedConfig),
+      endpointSlug,
       data.createdById,
     ]
   );
@@ -203,6 +209,13 @@ export async function updateTrigger(
     const encryptedConfig = encryptTriggerConfig(data.config);
     params.push(JSON.stringify(encryptedConfig));
     updates.push(`config = $${paramIndex++}`);
+
+    const endpointSlug =
+      data.config.type === "http_api"
+        ? data.config.shortName
+        : null;
+    params.push(endpointSlug);
+    updates.push(`endpoint_slug = $${paramIndex++}`);
   }
 
   if (data.status !== undefined) {
@@ -402,6 +415,23 @@ export function validateTriggerConfig(
     case "email":
       if (config.type !== "email") {
         errors.push("Invalid email trigger config");
+      }
+      break;
+
+    case "http_api":
+      if (config.type !== "http_api") {
+        errors.push("Invalid HTTP/API trigger config");
+      } else {
+        const shortNameErrors = validateShortNameFormat(config.shortName || "");
+        errors.push(...shortNameErrors);
+
+        if (!config.allowedMethods || config.allowedMethods.length === 0) {
+          errors.push("At least one HTTP method must be configured");
+        }
+
+        if (!config.auth || !config.auth.type) {
+          errors.push("Authentication configuration is required");
+        }
       }
       break;
 

@@ -22,6 +22,7 @@ const INTERACTIVE_NODES: NodeType[] = [
 const AUTOMATED_TRIGGERS: OrchestrationTriggerType[] = [
   "schedule",
   "email",
+  "http_api",
 ];
 
 // Trigger types that are interactive (human-initiated)
@@ -86,6 +87,7 @@ export function getIncompatibilityReason(
     chatbot: "Chatbot",
     schedule: "Schedule",
     email: "Email",
+    http_api: "HTTP/API",
   };
 
   const nodeLabel = nodeLabels[nodeType];
