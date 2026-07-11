@@ -210,17 +210,6 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
             <option value="invited">Invited</option>
           </select>
           <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm flex-1 lg:flex-initial lg:min-w-[200px]" defaultValue={currentSearch} name="search" placeholder="Search name, email, code" type="search" />
-          <select className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm flex-shrink-0 lg:w-auto" defaultValue={pageSize} name="pageSize" onChange={(e) => {
-            const params = new URLSearchParams(searchParams.toString());
-            params.set("pageSize", e.target.value);
-            params.set("page", "1");
-            router.push(`/control-panel/administration/user-management?${params.toString()}`);
-          }}>
-            <option value="10">10 per page</option>
-            <option value="25">25 per page</option>
-            <option value="50">50 per page</option>
-            <option value="100">100 per page</option>
-          </select>
           <button className="h-10 inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white flex-shrink-0 lg:w-auto" type="submit">
             <Search className="h-4 w-4" />
             Filter
@@ -307,10 +296,32 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
         <EditUserModal companies={companyOptions} dialog={editDialog} modules={modules} onChange={setEditDialog} onClose={() => setEditDialog(null)} onCompanyChange={updateDialogCompany} onSubmit={(event) => updateUser(event, editDialog.employee.id)} roles={sortedRoles} />
       ) : null}
 
-      <div className="mt-4 flex items-center justify-between">
-        <p className="text-sm text-slate-500">Page {page} of {pageCount}</p>
-        <div className="flex items-center gap-2">
+      <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+          <span>Page <strong className="text-slate-900">{page}</strong> of <strong className="text-slate-900">{pageCount}</strong></span>
+          <span>Total: <strong className="text-slate-900">{total}</strong> users</span>
+          <label className="inline-flex items-center gap-2">
+            <span>Page size</span>
+            <select aria-label="Users per page" className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={pageSize} onChange={(event) => {
+              const params = new URLSearchParams(searchParams.toString());
+              params.set("pageSize", event.target.value);
+              params.set("page", "1");
+              router.push(`/control-panel/administration/user-management?${params.toString()}`);
+            }}>
+              {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Link className={`rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium ${page <= 1 ? "pointer-events-none opacity-50" : ""}`} href={pageHref(Math.max(page - 1, 1))}>Previous</Link>
+          {Array.from({ length: pageCount }, (_, index) => index + 1)
+            .filter((pageNumber) => pageNumber === 1 || pageNumber === pageCount || Math.abs(pageNumber - page) <= 1)
+            .map((pageNumber, index, pages) => (
+              <span className="contents" key={pageNumber}>
+                {index > 0 && pageNumber - pages[index - 1] > 1 ? <span className="px-1 text-slate-400">…</span> : null}
+                <Link className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-semibold ${pageNumber === page ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`} href={pageHref(pageNumber)}>{pageNumber}</Link>
+              </span>
+            ))}
           <Link className={`rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium ${page >= pageCount ? "pointer-events-none opacity-50" : ""}`} href={pageHref(Math.min(page + 1, pageCount))}>Next</Link>
         </div>
       </div>

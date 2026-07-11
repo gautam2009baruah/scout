@@ -632,11 +632,15 @@ export function TriggersMonitoringDashboard({
                           </div>
 
                           {/* Pagination controls */}
-                          <div className="flex items-center justify-between mt-3 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-500">Rows per page:</span>
+                          <div className="mt-3 flex flex-col gap-3 border-t border-slate-200 pt-3 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+                              <span>Page <strong className="text-slate-900">{execState.page}</strong> of <strong className="text-slate-900">{execState.totalPages}</strong></span>
+                              <span>Total: <strong className="text-slate-900">{execState.total}</strong> executions</span>
+                              <label className="inline-flex items-center gap-2">
+                              <span>Page size</span>
                               <select
-                                className="rounded border border-slate-300 px-2 py-1"
+                                aria-label="Executions per page"
+                                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"
                                 value={execState.pageSize}
                                 onChange={(e) =>
                                   changePageSize(trigger.id, parseInt(e.target.value, 10))
@@ -648,22 +652,28 @@ export function TriggersMonitoringDashboard({
                                   </option>
                                 ))}
                               </select>
+                              </label>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-500">
-                                Page {execState.page} of {execState.totalPages}
-                              </span>
+                            <div className="flex flex-wrap items-center gap-2">
                               <button
                                 onClick={() => changePage(trigger.id, execState.page - 1)}
                                 disabled={execState.page <= 1}
-                                className="px-2 py-1 border border-slate-300 rounded disabled:opacity-40"
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-40"
                               >
-                                Prev
+                                Previous
                               </button>
+                              {Array.from({ length: execState.totalPages }, (_, index) => index + 1)
+                                .filter((pageNumber) => pageNumber === 1 || pageNumber === execState.totalPages || Math.abs(pageNumber - execState.page) <= 1)
+                                .map((pageNumber, index, pages) => (
+                                  <span className="contents" key={pageNumber}>
+                                    {index > 0 && pageNumber - pages[index - 1] > 1 ? <span className="px-1 text-slate-400">…</span> : null}
+                                    <button className={`h-9 min-w-9 rounded-lg border px-2 text-sm font-semibold ${pageNumber === execState.page ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`} onClick={() => changePage(trigger.id, pageNumber)} type="button">{pageNumber}</button>
+                                  </span>
+                                ))}
                               <button
                                 onClick={() => changePage(trigger.id, execState.page + 1)}
                                 disabled={execState.page >= execState.totalPages}
-                                className="px-2 py-1 border border-slate-300 rounded disabled:opacity-40"
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-40"
                               >
                                 Next
                               </button>
