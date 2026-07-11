@@ -76,21 +76,22 @@ export function authenticateHttpTriggerRequest(input: {
     };
   }
 
-  const authType = config.auth?.type || "none";
+  const authConfig = config.auth;
+  const authType = authConfig.type;
 
   if (authType === "none") {
     return { ok: true, status: 200, code: "AUTHENTICATED", principal: null, authType };
   }
 
-  if (authType === "api_key") {
-    const headerName = (config.auth.headerName || "x-api-key").toLowerCase();
+  if (authConfig.type === "api_key") {
+    const headerName = (authConfig.headerName || "x-api-key").toLowerCase();
     const provided = request.headers.get(headerName);
 
     if (!provided) {
       return { ok: false, status: 401, code: "MISSING_API_KEY", message: "API key is required" };
     }
 
-    const credential = (config.auth.credentials || []).find((item) => item.isActive && constantTimeHashCompare(provided, item.secretHash));
+    const credential = (authConfig.credentials || []).find((item) => item.isActive && constantTimeHashCompare(provided, item.secretHash));
 
     if (!credential) {
       return { ok: false, status: 401, code: "INVALID_API_KEY", message: "Invalid API key" };
@@ -105,13 +106,13 @@ export function authenticateHttpTriggerRequest(input: {
     };
   }
 
-  if (authType === "basic") {
+  if (authConfig.type === "basic") {
     const parsed = parseBasicCredentials(request.headers.get("authorization"));
     if (!parsed) {
       return { ok: false, status: 401, code: "MISSING_BASIC_AUTH", message: "Basic auth credentials are required" };
     }
 
-    const credential = (config.auth.credentials || []).find((item) => {
+    const credential = (authConfig.credentials || []).find((item) => {
       if (!item.isActive) return false;
       if (item.username !== parsed.username) return false;
       return constantTimeHashCompare(parsed.password, item.passwordHash);
@@ -130,8 +131,8 @@ export function authenticateHttpTriggerRequest(input: {
     };
   }
 
-  if (authType === "oauth2_jwt") {
-    const jwtConfig = config.auth.jwt;
+  if (authConfig.type === "oauth2_jwt") {
+    const jwtConfig = authConfig.jwt;
     const token = parseBearerToken(request.headers.get(jwtConfig.headerName || "authorization"));
     if (!token) {
       return { ok: false, status: 401, code: "MISSING_BEARER_TOKEN", message: "Bearer token is required" };
@@ -179,8 +180,8 @@ export function authenticateHttpTriggerRequest(input: {
     };
   }
 
-  if (authType === "hmac") {
-    const hmacConfig = config.auth.hmac;
+  if (authConfig.type === "hmac") {
+    const hmacConfig = authConfig.hmac;
     const keyId = request.headers.get(hmacConfig.keyIdHeader.toLowerCase());
     const signature = request.headers.get(hmacConfig.signatureHeader.toLowerCase());
     const timestamp = request.headers.get(hmacConfig.timestampHeader.toLowerCase());
@@ -216,10 +217,10 @@ export function authenticateHttpTriggerRequest(input: {
     };
   }
 
-  if (authType === "m_tls") {
+  if (authConfig.type === "m_tls") {
     const certSubject = request.headers.get("x-client-cert-subject");
-    const required = config.auth.mutualTls.required;
-    const allowlist = config.auth.mutualTls.subjectAllowlist || [];
+    const required = authConfig.mutualTls.required;
+    const allowlist = authConfig.mutualTls.subjectAllowlist || [];
 
     if (required && !certSubject) {
       return { ok: false, status: 401, code: "CLIENT_CERT_REQUIRED", message: "Mutual TLS certificate is required" };

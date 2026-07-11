@@ -56,7 +56,7 @@ export async function isShortNameInUse(shortName: string, excludeOrchestrationId
 
   query += " LIMIT 1";
   const result = await pool.query(query, params);
-  return result.rowCount > 0;
+  return (result.rowCount ?? 0) > 0;
 }
 
 export async function resolveHttpTriggerByShortName(shortName: string): Promise<HttpTriggerResolution | null> {

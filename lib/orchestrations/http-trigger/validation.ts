@@ -21,9 +21,9 @@ export type RequestValidationResult = {
 
 function parseHeaders(request: NextRequest): Record<string, string> {
   const headers: Record<string, string> = {};
-  for (const [key, value] of request.headers.entries()) {
+  request.headers.forEach((value, key) => {
     headers[key.toLowerCase()] = value;
-  }
+  });
   return headers;
 }
 
@@ -31,15 +31,15 @@ function parseQuery(url: URL): Record<string, string | string[]> {
   const query: Record<string, string | string[]> = {};
   const grouped = new Map<string, string[]>();
 
-  for (const [key, value] of url.searchParams.entries()) {
+  url.searchParams.forEach((value, key) => {
     const existing = grouped.get(key) || [];
     existing.push(value);
     grouped.set(key, existing);
-  }
+  });
 
-  for (const [key, values] of grouped.entries()) {
+  grouped.forEach((values, key) => {
     query[key] = values.length === 1 ? values[0] : values;
-  }
+  });
 
   return query;
 }
@@ -80,7 +80,7 @@ async function reserveReplayNonce(input: {
     [input.triggerId, nonceHash, input.maxAgeSeconds]
   );
 
-  return insert.rowCount > 0;
+  return (insert.rowCount ?? 0) > 0;
 }
 
 export async function enforceRateLimit(input: {
