@@ -6,6 +6,8 @@ import { getPool } from "@/lib/db/pool";
 import { createSchedulerEngine } from "./scheduler/factory";
 import type { ScheduledTrigger, ScheduleExecutionResult } from "./scheduler/types";
 import { calculateNextRunTime } from "./scheduler/cron-utils";
+import { createExecution, getConnections, getNodes } from "./db";
+import { OrchestrationEngine } from "./engine";
 
 export class OrchestrationSchedulerService {
   private engine: ReturnType<typeof createSchedulerEngine> | null = null;
@@ -233,15 +235,32 @@ export class OrchestrationSchedulerService {
     try {
       console.log(`[SchedulerService] Executing scheduled orchestration: ${trigger.orchestrationId}`);
 
+      // Atomically claim this occurrence. More than one scheduler process may
+      // be alive during deployments/restarts; only the first process within
+      // the same 30-second firing window is allowed to execute it.
+      const claimResult = await pool.query(
+        `UPDATE orchestration_triggers
+         SET last_triggered_at = NOW(), updated_at = NOW()
+         WHERE id = $1
+           AND status = 'active'
+           AND (last_triggered_at IS NULL OR last_triggered_at < NOW() - INTERVAL '30 seconds')
+         RETURNING id`,
+        [trigger.id]
+      );
+
+      if (claimResult.rowCount === 0) {
+        console.log(`[SchedulerService] Skipping duplicate firing for trigger ${trigger.id}`);
+        return { success: true, triggeredAt };
+      }
+
       // Get orchestration details
       const orchResult = await pool.query<{
         id: string;
         version: number;
-        company_id: string;
         name: string;
         variables: any;
       }>(
-        `SELECT id, version, company_id, name, variables
+        `SELECT id, version, name, variables
          FROM orchestrations
          WHERE id = $1 AND status = 'published'`,
         [trigger.orchestrationId]
@@ -253,31 +272,28 @@ export class OrchestrationSchedulerService {
 
       const orchestration = orchResult.rows[0];
 
-      // Create execution record
-      const execResult = await pool.query<{ id: string }>(
-        `INSERT INTO orchestration_executions
-         (orchestration_id, orchestration_version, company_id, status, context, triggered_by, started_at)
-         VALUES ($1, $2, $3, 'running', $4, $5, NOW())
-         RETURNING id`,
-        [
-          orchestration.id,
-          orchestration.version,
-          orchestration.company_id,
-          JSON.stringify({
-            trigger: {
-              type: "schedule",
-              triggerId: trigger.id,
-              triggerName: trigger.name,
-              scheduledTime: triggeredAt,
-              scheduleType: trigger.config.scheduleType,
-            },
-            variables: {},
-          }),
-          `schedule:${trigger.id}`,
-        ]
-      );
+      const triggeredBy = `schedule:${trigger.id}`;
+      const triggerPayload = {
+        scheduledTime: triggeredAt,
+        scheduleType: trigger.config.scheduleType,
+      };
+      const execution = await createExecution({
+        orchestrationId: orchestration.id,
+        orchestrationVersion: orchestration.version,
+        context: {
+          trigger: {
+            type: "schedule",
+            triggerId: trigger.id,
+            triggerName: trigger.name,
+            ...triggerPayload,
+          },
+          variables: {},
+        },
+        triggerData: triggerPayload,
+        triggeredBy,
+      });
 
-      const executionId = execResult.rows[0].id;
+      const executionId = execution.id;
 
       console.log(`[SchedulerService] ✅ Created execution: ${executionId}`);
 
@@ -290,21 +306,9 @@ export class OrchestrationSchedulerService {
           trigger.id,
           orchestration.id,
           executionId,
-          JSON.stringify({
-            scheduledTime: triggeredAt,
-            scheduleType: trigger.config.scheduleType,
-          }),
-          `schedule:${trigger.id}`,
+          JSON.stringify(triggerPayload),
+          triggeredBy,
         ]
-      );
-
-      // Update trigger last_triggered_at
-      await pool.query(
-        `UPDATE orchestration_triggers
-         SET last_triggered_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $1`,
-        [trigger.id]
       );
 
       // Calculate and update next run time
@@ -316,6 +320,17 @@ export class OrchestrationSchedulerService {
            WHERE id = $2`,
           [JSON.stringify(nextRun), trigger.id]
         );
+      }
+
+      // Run through the normal orchestration engine so every node execution is
+      // recorded and can be displayed in Trigger Monitoring.
+      const nodes = await getNodes(orchestration.id);
+      const connections = await getConnections(orchestration.id);
+      const engine = new OrchestrationEngine(execution, nodes, connections);
+      const result = await engine.execute();
+
+      if (!result.success) {
+        throw new Error(result.error || "Scheduled orchestration execution failed");
       }
 
       return {

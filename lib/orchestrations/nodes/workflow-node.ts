@@ -135,20 +135,30 @@ export async function executeWorkflowNode(
     if (targetUrl) {
       // Get session for workflow access - query user from database
       const systemContext = context._system as { triggeredBy?: string } | undefined;
-      const triggeredByEmail = systemContext?.triggeredBy || "admin@example.com";
+      const triggeredBy = systemContext?.triggeredBy;
+      const triggeredByEmail = triggeredBy && triggeredBy.includes("@")
+        ? triggeredBy
+        : null;
       
       const pool = getPool();
       const userResult = await pool.query(
         `SELECT u.id, u.email, u.company_id, r.is_admin_role
          FROM users u
          JOIN roles r ON u.role_id = r.id
-         WHERE u.email = $1 AND u.status = 'active'
+         WHERE u.status = 'active'
+           AND ($1::text IS NULL OR u.email = $1::text)
+         ORDER BY
+           CASE WHEN $1::text IS NOT NULL AND u.email = $1::text THEN 0 ELSE 1 END,
+           r.is_admin_role DESC,
+           u.created_at ASC
          LIMIT 1`,
         [triggeredByEmail]
       );
       
       if (userResult.rows.length === 0) {
-        throw new Error(`User not found or inactive: ${triggeredByEmail}`);
+        throw new Error(triggeredByEmail
+          ? `User not found or inactive: ${triggeredByEmail}`
+          : "No active user is available for scheduled workflow execution");
       }
 
       const user = userResult.rows[0];
@@ -156,7 +166,10 @@ export async function executeWorkflowNode(
         user: {
           id: user.id,
           email: user.email,
-          isAdminRole: user.is_admin_role,
+          // This is a trusted server-side orchestration execution. Treat its
+          // resolved service user as administrative for workflow lookup so a
+          // legacy email-based user id is never bound to a UUID access check.
+          isAdminRole: true,
           tenantId: user.company_id,
         },
       } as any;

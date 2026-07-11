@@ -138,6 +138,27 @@ async function sendSlackNotification(webhookUrl: string, message: string): Promi
  */
 async function createInternalNotification(userId: string, message: string, title: string): Promise<string> {
   const pool = getPool();
+  let resolvedUserId = userId.trim();
+
+  // The UI commonly identifies notification recipients by email, while the
+  // persisted notification relation uses the user's UUID.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(resolvedUserId)) {
+    const userResult = await pool.query<{ id: string }>(
+      `SELECT id
+       FROM users
+       WHERE lower(email) = lower($1)
+         AND status = 'active'
+       ORDER BY created_at ASC
+       LIMIT 1`,
+      [resolvedUserId]
+    );
+
+    if (userResult.rowCount === 0) {
+      throw new Error(`Active internal-notification user not found: ${resolvedUserId}`);
+    }
+
+    resolvedUserId = userResult.rows[0].id;
+  }
   
   // Check if internal_notifications table exists, create if not
   // For production, this should be in a migration
@@ -157,7 +178,7 @@ async function createInternalNotification(userId: string, message: string, title
     `INSERT INTO internal_notifications (user_id, title, message, type)
      VALUES ($1, $2, $3, 'orchestration')
      RETURNING id`,
-    [userId, title, message]
+    [resolvedUserId, title, message]
   );
 
   return result.rows[0].id;
