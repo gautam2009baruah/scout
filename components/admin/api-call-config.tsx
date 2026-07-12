@@ -971,7 +971,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
           <summary className="cursor-pointer font-semibold text-slate-700">Sample examples</summary>
           <div className="mt-2 space-y-2">
             <p><strong>REST GET:</strong> GET https://api.example.com/customers/{"{customerId}"}</p>
-            <p><strong>POST JSON:</strong> Body: {{"{\"orderId\":\"{{variables.orderId}}\"}"}}</p>
+            <p><strong>POST JSON:</strong> Body: {`{"orderId":"{{variables.orderId}}"}`}</p>
             <p><strong>Response map:</strong> output customerEmail from data.customer.email</p>
           </div>
         </details>
