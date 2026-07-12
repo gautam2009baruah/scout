@@ -1711,14 +1711,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                     <div className="grid grid-cols-2 gap-2">
                       <input
                         type="text"
-                        className="rounded border border-slate-300 px-2 py-1 text-sm"
+                        className="rounded border border-slate-200 bg-slate-100 px-2 py-1 text-sm text-slate-700"
                         placeholder="Key id"
                         value={credential.id || ""}
-                        onChange={(e) => {
-                          const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
-                          current[index] = { ...credential, id: e.target.value, label: credential.label || e.target.value };
-                          upsertApiKeyCredentials(current);
-                        }}
+                        readOnly
                       />
                       <input
                         type="text"
@@ -1813,14 +1809,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                   <div key={`${credential.id || "basic"}-${index}`} className="rounded border border-slate-200 p-2 space-y-2">
                     <input
                       type="text"
-                      className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                      className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1 text-sm text-slate-700"
                       placeholder="Username"
                       value={credential.username || ""}
-                      onChange={(e) => {
-                        const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
-                        current[index] = { ...credential, username: e.target.value };
-                        upsertBasicCredentials(current);
-                      }}
+                      readOnly
                     />
                     <div className="flex items-center justify-between text-xs text-slate-500">
                       <span>{credential.passwordHash ? "Password configured (not shown again). Rotate to issue a new one." : "No password configured"}</span>
@@ -1957,14 +1949,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                   <div key={`${credential.keyId || "hmac"}-${index}`} className="rounded border border-slate-200 p-2 space-y-2">
                     <input
                       type="text"
-                      className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                      className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1 text-sm text-slate-700"
                       placeholder="Key ID"
                       value={credential.keyId || ""}
-                      onChange={(e) => {
-                        const current = Array.isArray(config.auth?.hmac?.credentials) ? [...config.auth.hmac.credentials] : [];
-                        current[index] = { ...credential, keyId: e.target.value };
-                        upsertHmacCredentials(current);
-                      }}
+                      readOnly
                     />
                     <div className="flex items-center justify-between text-xs text-slate-500">
                       <span>{credential.secretHash ? "Secret configured (not shown again). Rotate to issue a new one." : "No secret configured"}</span>
