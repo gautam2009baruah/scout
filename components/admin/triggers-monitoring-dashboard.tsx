@@ -799,6 +799,8 @@ export function TriggersMonitoringDashboard({
                                             </pre>
                                           ) : step.nodeType === "notification" ? (
                                             <NotificationOutputSummary value={step.output} />
+                                          ) : step.nodeType === "api_call" ? (
+                                            <ApiCallOutputSummary value={step.output} />
                                           ) : (
                                             <ReadableValue value={step.output} />
                                           )}
@@ -951,6 +953,71 @@ function NotificationOutputSummary({ value }: { value: unknown }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ApiCallOutputSummary({ value }: { value: unknown }) {
+  const output = value as Record<string, unknown>;
+  const failed = output?.apiCallFailed === true;
+  const requestMethod = String(output?.requestMethod || "").trim();
+  const requestUrl = String(output?.requestUrl || "").trim();
+  const hasRequestSummary = Boolean(requestMethod || requestUrl);
+  const mappedFields =
+    output?.mappedFields && typeof output.mappedFields === "object"
+      ? (output.mappedFields as Record<string, unknown>)
+      : {};
+  const hasMappedFields = Object.keys(mappedFields).length > 0;
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <div className="rounded border border-slate-200 bg-white p-1.5">
+          <span className="font-semibold text-slate-600">Status:</span>{" "}
+          <span className={failed ? "text-red-700" : "text-green-700"}>{failed ? "Failed" : "Success"}</span>
+        </div>
+        <div className="rounded border border-slate-200 bg-white p-1.5">
+          <span className="font-semibold text-slate-600">HTTP:</span>{" "}
+          <span className="text-slate-900">{String(output.httpStatusCode ?? "n/a")}</span>
+        </div>
+        <div className="rounded border border-slate-200 bg-white p-1.5">
+          <span className="font-semibold text-slate-600">Duration:</span>{" "}
+          <span className="text-slate-900">{String(output.executionDurationMs ?? 0)} ms</span>
+        </div>
+        <div className="rounded border border-slate-200 bg-white p-1.5">
+          <span className="font-semibold text-slate-600">Attempts:</span>{" "}
+          <span className="text-slate-900">{String(output.attempts ?? 1)}</span>
+        </div>
+      </div>
+
+      {hasRequestSummary ? (
+        <div className="rounded border border-slate-200 bg-white p-1.5 text-[11px]">
+          <span className="font-semibold text-slate-600">Request:</span>{" "}
+          <span className="text-slate-900 break-all">
+            {(requestMethod || "UNKNOWN")} {requestUrl || "(url unavailable)"}
+          </span>
+        </div>
+      ) : null}
+
+      {output.error ? (
+        <div className="text-[11px] text-red-700 bg-red-50 border border-red-100 rounded p-1.5 whitespace-pre-wrap">
+          {String(output.error)}
+        </div>
+      ) : null}
+
+      {hasMappedFields ? (
+        <div className="rounded border border-slate-200 bg-white p-2">
+          <div className="text-[11px] font-semibold text-slate-700 mb-1">Mapped Fields</div>
+          <ReadableValue value={mappedFields} />
+        </div>
+      ) : null}
+
+      {!hasMappedFields && output.responseBody !== undefined ? (
+        <div className="rounded border border-slate-200 bg-white p-2">
+          <div className="text-[11px] font-semibold text-slate-700 mb-1">Response Body</div>
+          <ReadableValue value={output.responseBody} />
+        </div>
+      ) : null}
     </div>
   );
 }

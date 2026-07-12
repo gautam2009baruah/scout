@@ -74,6 +74,8 @@ export async function executeApiCallNode(
       );
 
       const outputBase: Record<string, unknown> = {
+        requestMethod: prepared.method,
+        requestUrl: prepared.url.toString(),
         httpStatusCode: response.statusCode,
         responseHeaders: response.responseHeaders,
         responseBody: response.responseBody,
@@ -633,7 +635,9 @@ function finalizeFailure(
   config: ApiCallNodeConfig,
   failure: ExecutionResult
 ): { success: boolean; output?: Record<string, unknown>; error?: string } {
+  const priorOutput = failure.output || {};
   const payload = {
+    ...priorOutput,
     apiCallFailed: true,
     error: failure.error || "API call failed",
     errorDetails: failure.errorDetails || null,
