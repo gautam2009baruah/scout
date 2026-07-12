@@ -1602,6 +1602,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: API Key</summary>
                 <p className="mt-2 text-slate-700">Provide the key in the configured header. Example: x-api-key: &lt;key&gt;</p>
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+  -H "${config.auth?.headerName || "x-api-key"}: <key>" \\
+  -H "content-type: application/json" \\
+  -d '{"event":"ping"}'`}</code></pre>
               </details>
               <label className="block text-xs font-semibold text-slate-600">API Key Header</label>
               <input
@@ -1643,6 +1647,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: Basic</summary>
                 <p className="mt-2 text-slate-700">Send standard Basic auth credentials. Example: Authorization: Basic &lt;base64(username:password)&gt;</p>
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+  -u "username:password" \\
+  -H "content-type: application/json" \\
+  -d '{"event":"ping"}'`}</code></pre>
               </details>
               <label className="block text-xs font-semibold text-slate-600">Basic Users (username:password per line)</label>
               <textarea
@@ -1676,6 +1684,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: OAuth 2.0 / JWT</summary>
                 <p className="mt-2 text-slate-700">Provide bearer token in Authorization header. Issuer, audience, and secret are validated.</p>
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+  -H "authorization: Bearer <jwt>" \\
+  -H "content-type: application/json" \\
+  -d '{"event":"ping"}'`}</code></pre>
               </details>
               <label className="block text-xs font-semibold text-slate-600">JWT Issuer</label>
               <input
@@ -1724,6 +1736,13 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: HMAC</summary>
                 <p className="mt-2 text-slate-700">Sign METHOD + PATH + QUERY + TIMESTAMP + NONCE + BODY and send signature headers.</p>
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+  -H "x-hmac-key-id: <key-id>" \\
+  -H "x-signature-timestamp: <epoch-seconds>" \\
+  -H "x-signature-nonce: <nonce>" \\
+  -H "x-hmac-signature: <hex-signature>" \\
+  -H "content-type: application/json" \\
+  -d '{"event":"ping"}'`}</code></pre>
               </details>
               <label className="block text-xs font-semibold text-slate-600">HMAC Keys (keyId:secret per line)</label>
               <textarea
@@ -1771,6 +1790,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: Mutual TLS</summary>
                 <p className="mt-2 text-slate-700">Use when your gateway forwards validated client certificate identity to this endpoint.</p>
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+  --cert client.crt --key client.key \\
+  -H "content-type: application/json" \\
+  -d '{"event":"ping"}'`}</code></pre>
               </details>
               <label className="block text-xs font-semibold text-slate-600">Allowed Certificate Subjects (one per line)</label>
               <textarea
