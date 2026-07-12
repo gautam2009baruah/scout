@@ -635,6 +635,21 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   const [shortNameValidation, setShortNameValidation] = useState<{ valid: boolean; message: string } | null>(null);
   const scheduleTimezone = config.timezone || detectDefaultCuratedTimeZone();
   const timezoneOptions = useMemo(() => getCuratedTimeZoneOptions(), []);
+  const httpMethodOptions = useMemo(
+    () => ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map((value) => ({ label: value, value })),
+    []
+  );
+  const httpContentTypeOptions = useMemo(
+    () => [
+      { label: "application/json", value: "application/json" },
+      { label: "application/x-www-form-urlencoded", value: "application/x-www-form-urlencoded" },
+      { label: "multipart/form-data", value: "multipart/form-data" },
+      { label: "text/plain", value: "text/plain" },
+      { label: "application/xml", value: "application/xml" },
+      { label: "text/xml", value: "text/xml" },
+    ],
+    []
+  );
   
   // Email credentials for email trigger
   type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean };
@@ -1403,20 +1418,13 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Allowed HTTP Methods</label>
-            <select
-              multiple
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm bg-white"
-              value={Array.isArray(config.allowedMethods) ? config.allowedMethods : ["POST"]}
-              onChange={(e) => {
-                const selected = Array.from(e.target.selectedOptions).map((option) => option.value);
-                updateConfig({ allowedMethods: selected.length > 0 ? selected : ["POST"] });
-              }}
-            >
-              {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map((method) => (
-                <option key={method} value={method}>{method}</option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate-500">Hold Ctrl/Cmd to select multiple methods.</p>
+            <MultiSelectDropdown
+              label=""
+              emptyLabel="Select allowed methods"
+              options={httpMethodOptions}
+              selectedValues={Array.isArray(config.allowedMethods) ? config.allowedMethods : ["POST"]}
+              onChange={(values) => updateConfig({ allowedMethods: values.length > 0 ? values : ["POST"] })}
+            />
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Method selection help</summary>
               <div className="mt-2 space-y-1 text-slate-700">
@@ -1470,18 +1478,15 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Allowed Content Types (comma separated)</label>
-            <input
-              type="text"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              value={Array.isArray(config.allowedContentTypes) ? config.allowedContentTypes.join(", ") : "application/json"}
-              onChange={(e) => updateConfig({
-                allowedContentTypes: e.target.value
-                  .split(",")
-                  .map((v) => v.trim().toLowerCase())
-                  .filter(Boolean),
+            <label className="block text-sm font-medium text-slate-700 mb-1">Allowed Content Types</label>
+            <MultiSelectDropdown
+              label=""
+              emptyLabel="Select allowed content types"
+              options={httpContentTypeOptions}
+              selectedValues={Array.isArray(config.allowedContentTypes) ? config.allowedContentTypes : ["application/json"]}
+              onChange={(values) => updateConfig({
+                allowedContentTypes: values.length > 0 ? values : ["application/json"],
               })}
-              placeholder="application/json, multipart/form-data"
             />
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Allowed content types help</summary>
@@ -1536,6 +1541,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <div className="mt-2 space-y-1 text-slate-700">
                 <p>These query parameters are accepted by this endpoint format.</p>
                 <p>They are optional unless your downstream orchestration logic expects them.</p>
+                <p>Example: source=erp&version=v2</p>
               </div>
             </details>
           </div>
@@ -1578,21 +1584,25 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <option value="hmac">HMAC Signature</option>
               <option value="m_tls">Mutual TLS</option>
             </select>
-            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
-              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Authentication help + usage samples</summary>
-              <div className="mt-2 space-y-2 text-slate-700">
-                <p>Choose one auth mode. Each request is validated before orchestration starts.</p>
-                <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`# API Key\ncurl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\\n  -H "x-api-key: <key>" \\\n  -H "content-type: application/json" \\\n  -d '{"event":"ping"}'`}</code></pre>
-                <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`# Basic Auth\ncurl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\\n  -u "username:password" \\\n  -H "content-type: application/json" \\\n  -d '{"event":"ping"}'`}</code></pre>
-                <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`# OAuth2/JWT\ncurl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\\n  -H "authorization: Bearer <jwt>" \\\n  -H "content-type: application/json" \\\n  -d '{"event":"ping"}'`}</code></pre>
-                <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`# HMAC\n# Sign: METHOD + PATH + QUERY + TIMESTAMP + NONCE + BODY\ncurl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\\n  -H "x-hmac-key-id: <key-id>" \\\n  -H "x-signature-timestamp: <epoch-seconds>" \\\n  -H "x-signature-nonce: <nonce>" \\\n  -H "x-hmac-signature: <hex-signature>" \\\n  -H "content-type: application/json" \\\n  -d '{"event":"ping"}'`}</code></pre>
-                <p>mTLS mode expects client certificate identity to be forwarded by your gateway/proxy.</p>
-              </div>
-            </details>
+            {config.auth?.type === "none" && (
+              <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: None</summary>
+                <div className="mt-2 space-y-2 text-slate-700">
+                  <p>No authentication check is performed. Use this only for trusted/internal callers.</p>
+                  <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+  -H "content-type: application/json" \\
+  -d '{"event":"ping"}'`}</code></pre>
+                </div>
+              </details>
+            )}
           </div>
 
           {config.auth?.type === "api_key" && (
             <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: API Key</summary>
+                <p className="mt-2 text-slate-700">Provide the key in the configured header. Example: x-api-key: &lt;key&gt;</p>
+              </details>
               <label className="block text-xs font-semibold text-slate-600">API Key Header</label>
               <input
                 type="text"
@@ -1630,6 +1640,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
 
           {config.auth?.type === "basic" && (
             <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: Basic</summary>
+                <p className="mt-2 text-slate-700">Send standard Basic auth credentials. Example: Authorization: Basic &lt;base64(username:password)&gt;</p>
+              </details>
               <label className="block text-xs font-semibold text-slate-600">Basic Users (username:password per line)</label>
               <textarea
                 className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
@@ -1659,6 +1673,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
 
           {config.auth?.type === "oauth2_jwt" && (
             <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: OAuth 2.0 / JWT</summary>
+                <p className="mt-2 text-slate-700">Provide bearer token in Authorization header. Issuer, audience, and secret are validated.</p>
+              </details>
               <label className="block text-xs font-semibold text-slate-600">JWT Issuer</label>
               <input
                 type="text"
@@ -1703,6 +1721,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
 
           {config.auth?.type === "hmac" && (
             <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: HMAC</summary>
+                <p className="mt-2 text-slate-700">Sign METHOD + PATH + QUERY + TIMESTAMP + NONCE + BODY and send signature headers.</p>
+              </details>
               <label className="block text-xs font-semibold text-slate-600">HMAC Keys (keyId:secret per line)</label>
               <textarea
                 className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
@@ -1746,6 +1768,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
 
           {config.auth?.type === "m_tls" && (
             <div className="space-y-2 rounded border border-cyan-200 bg-white p-3">
+              <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: Mutual TLS</summary>
+                <p className="mt-2 text-slate-700">Use when your gateway forwards validated client certificate identity to this endpoint.</p>
+              </details>
               <label className="block text-xs font-semibold text-slate-600">Allowed Certificate Subjects (one per line)</label>
               <textarea
                 className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
@@ -1878,6 +1904,28 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               </div>
             </details>
           </div>
+
+          <details className="text-xs bg-white border border-cyan-200 rounded p-2">
+            <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">How this node passes data to next nodes</summary>
+            <div className="mt-2 space-y-1 text-slate-700">
+              <p>The full HTTP request context is attached to trigger input for downstream nodes.</p>
+              <p>Common fields: trigger.input.request.method, trigger.input.request.headers, trigger.input.request.query, trigger.input.request.pathParameters, trigger.input.request.body, trigger.input.correlationId.</p>
+            </div>
+            <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`{
+  "trigger": {
+    "input": {
+      "request": {
+        "method": "POST",
+        "headers": { "content-type": "application/json" },
+        "query": { "source": "erp", "version": "v2" },
+        "pathParameters": { "accountId": "acme" },
+        "body": { "invoiceId": "INV-123", "amount": 1200 }
+      },
+      "correlationId": "<generated-id>"
+    }
+  }
+}`}</code></pre>
+          </details>
         </div>
       )}
 
@@ -4022,3 +4070,4 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
     </div>
   );
 }
+
