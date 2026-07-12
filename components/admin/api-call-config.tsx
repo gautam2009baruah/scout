@@ -249,7 +249,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
         </summary>
         <div className="px-4 py-3 space-y-2 text-xs border-t border-slate-200 bg-blue-50 text-blue-800">
           <p>This node can call any external HTTP API and pass response values to the next nodes.</p>
-          <p>Variables supported in all fields: {{"{{variables.orderId}}"}}, {{"{{trigger.timestamp}}"}}, {{"{{workflow.currentNode}}"}}.</p>
+          <p>Variables supported in all fields: {"{{variables.orderId}}"}, {"{{trigger.timestamp}}"}, {"{{workflow.currentNode}}"}.</p>
           <p>Sample GET URL with path variable: https://api.example.com/customers/{"{id}"}</p>
           <p>Sample success status codes: 200-299,304</p>
         </div>
