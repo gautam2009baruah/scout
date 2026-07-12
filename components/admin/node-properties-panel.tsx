@@ -1708,6 +1708,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <div className="space-y-2">
                 {(Array.isArray(config.auth?.credentials) ? config.auth.credentials : []).map((credential: any, index: number) => (
                   <div key={`${credential.id || "api"}-${index}`} className="rounded border border-slate-200 p-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <span>Key ID</span>
+                      <span>Label</span>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <input
                         type="text"
@@ -1807,6 +1811,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <div className="space-y-2">
                 {(Array.isArray(config.auth?.credentials) ? config.auth.credentials : []).map((credential: any, index: number) => (
                   <div key={`${credential.id || "basic"}-${index}`} className="rounded border border-slate-200 p-2 space-y-2">
+                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Username</label>
                     <input
                       type="text"
                       className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1 text-sm text-slate-700"
@@ -1947,6 +1952,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <div className="space-y-2">
                 {(Array.isArray(config.auth?.hmac?.credentials) ? config.auth.hmac.credentials : []).map((credential: any, index: number) => (
                   <div key={`${credential.keyId || "hmac"}-${index}`} className="rounded border border-slate-200 p-2 space-y-2">
+                    <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Key ID</label>
                     <input
                       type="text"
                       className="w-full rounded border border-slate-200 bg-slate-100 px-2 py-1 text-sm text-slate-700"
