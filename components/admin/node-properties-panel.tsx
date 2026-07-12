@@ -655,11 +655,83 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean };
   const [emailCredentials, setEmailCredentials] = useState<EmailCredential[]>([]);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
+  const [generatedCredential, setGeneratedCredential] = useState<{
+    title: string;
+    value: string;
+    copied: boolean;
+  } | null>(null);
+
+  const createRandomSecret = useCallback((length = 40) => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+    const arr = new Uint32Array(length);
+    if (typeof window !== "undefined" && window.crypto?.getRandomValues) {
+      window.crypto.getRandomValues(arr);
+    } else {
+      for (let i = 0; i < length; i += 1) {
+        arr[i] = Math.floor(Math.random() * 100000);
+      }
+    }
+
+    return Array.from(arr, (n) => chars[n % chars.length]).join("");
+  }, []);
+
+  const showGeneratedCredential = useCallback((title: string, value: string) => {
+    setGeneratedCredential({ title, value, copied: false });
+  }, []);
+
+  const copyGeneratedCredential = useCallback(async () => {
+    if (!generatedCredential) return;
+    try {
+      await navigator.clipboard.writeText(generatedCredential.value);
+      setGeneratedCredential({ ...generatedCredential, copied: true });
+    } catch {
+      setGeneratedCredential({ ...generatedCredential, copied: false });
+    }
+  }, [generatedCredential]);
   
   const handleTriggerTypeChange = (newType: string) => {
     setTriggerType(newType);
     updateConfig({ triggerType: newType });
   };
+
+  const upsertApiKeyCredentials = useCallback((nextCredentials: Array<Record<string, unknown>>) => {
+    updateConfig({
+      auth: {
+        ...(config.auth || {}),
+        type: "api_key",
+        headerName: config.auth?.headerName || "x-api-key",
+        credentials: nextCredentials,
+      },
+    });
+  }, [config.auth, updateConfig]);
+
+  const upsertBasicCredentials = useCallback((nextCredentials: Array<Record<string, unknown>>) => {
+    updateConfig({
+      auth: {
+        ...(config.auth || {}),
+        type: "basic",
+        credentials: nextCredentials,
+      },
+    });
+  }, [config.auth, updateConfig]);
+
+  const upsertHmacCredentials = useCallback((nextCredentials: Array<Record<string, unknown>>) => {
+    updateConfig({
+      auth: {
+        ...(config.auth || {}),
+        type: "hmac",
+        hmac: {
+          ...(config.auth?.hmac || {}),
+          keyIdHeader: config.auth?.hmac?.keyIdHeader || "x-hmac-key-id",
+          signatureHeader: config.auth?.hmac?.signatureHeader || "x-hmac-signature",
+          timestampHeader: config.auth?.hmac?.timestampHeader || "x-signature-timestamp",
+          nonceHeader: config.auth?.hmac?.nonceHeader || "x-signature-nonce",
+          algorithm: "sha256",
+          credentials: nextCredentials,
+        },
+      },
+    });
+  }, [config.auth, updateConfig]);
 
   useEffect(() => {
     if (triggerType === "manual") {
@@ -1614,30 +1686,95 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                 value={config.auth?.headerName || "x-api-key"}
                 onChange={(e) => updateConfig({ auth: { ...(config.auth || {}), type: "api_key", headerName: e.target.value } })}
               />
-              <label className="block text-xs font-semibold text-slate-600">Credentials (id:secret per line)</label>
-              <textarea
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
-                rows={4}
-                value={Array.isArray(config.auth?.credentials)
-                  ? config.auth.credentials.map((c: any) => `${c.id}:${c.secretHash || ""}`).join("\n")
-                  : ""}
-                onChange={(e) => {
-                  const credentials = e.target.value
-                    .split("\n")
-                    .map((line) => line.trim())
-                    .filter(Boolean)
-                    .map((line) => {
-                      const [id, ...secretParts] = line.split(":");
-                      return {
-                        id: id.trim(),
-                        label: id.trim(),
-                        secretHash: secretParts.join(":").trim(),
-                        isActive: true,
-                      };
-                    });
-                  updateConfig({ auth: { ...(config.auth || {}), type: "api_key", credentials } });
-                }}
-              />
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-600">API Keys</label>
+                <button
+                  type="button"
+                  className="px-2 py-1 text-xs font-semibold rounded border border-cyan-300 text-cyan-800 hover:bg-cyan-50"
+                  onClick={() => {
+                    const secret = createRandomSecret();
+                    const id = `key_${Date.now().toString(36)}`;
+                    const current = Array.isArray(config.auth?.credentials) ? config.auth.credentials : [];
+                    upsertApiKeyCredentials([
+                      ...current,
+                      { id, label: id, secretHash: secret, isActive: true, createdAt: new Date().toISOString() },
+                    ]);
+                    showGeneratedCredential(`API key generated for ${id}`, secret);
+                  }}
+                >
+                  Generate API Key
+                </button>
+              </div>
+              <div className="space-y-2">
+                {(Array.isArray(config.auth?.credentials) ? config.auth.credentials : []).map((credential: any, index: number) => (
+                  <div key={`${credential.id || "api"}-${index}`} className="rounded border border-slate-200 p-2 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <input
+                        type="text"
+                        className="rounded border border-slate-300 px-2 py-1 text-sm"
+                        placeholder="Key id"
+                        value={credential.id || ""}
+                        onChange={(e) => {
+                          const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
+                          current[index] = { ...credential, id: e.target.value, label: credential.label || e.target.value };
+                          upsertApiKeyCredentials(current);
+                        }}
+                      />
+                      <input
+                        type="text"
+                        className="rounded border border-slate-300 px-2 py-1 text-sm"
+                        placeholder="Label"
+                        value={credential.label || ""}
+                        onChange={(e) => {
+                          const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
+                          current[index] = { ...credential, label: e.target.value };
+                          upsertApiKeyCredentials(current);
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>{credential.secretHash ? "Secret configured (not shown again). Rotate to issue a new one." : "No secret configured"}</span>
+                      <label className="inline-flex items-center gap-1 text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={credential.isActive !== false}
+                          onChange={(e) => {
+                            const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
+                            current[index] = { ...credential, isActive: e.target.checked };
+                            upsertApiKeyCredentials(current);
+                          }}
+                        />
+                        Active
+                      </label>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="px-2 py-1 text-xs font-semibold rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        onClick={() => {
+                          const secret = createRandomSecret();
+                          const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
+                          current[index] = { ...credential, secretHash: secret, isActive: true };
+                          upsertApiKeyCredentials(current);
+                          showGeneratedCredential(`API key rotated for ${credential.id || "credential"}`, secret);
+                        }}
+                      >
+                        Rotate Secret
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-1 text-xs font-semibold rounded border border-rose-300 text-rose-700 hover:bg-rose-50"
+                        onClick={() => {
+                          const current = (Array.isArray(config.auth?.credentials) ? config.auth.credentials : []).filter((_: unknown, i: number) => i !== index);
+                          upsertApiKeyCredentials(current);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
               <p className="text-xs text-slate-500">Multiple active credentials enable key rotation without changing URL.</p>
             </div>
           )}
@@ -1652,30 +1789,82 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   -H "content-type: application/json" \\
   -d '{"event":"ping"}'`}</code></pre>
               </details>
-              <label className="block text-xs font-semibold text-slate-600">Basic Users (username:password per line)</label>
-              <textarea
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
-                rows={4}
-                value={Array.isArray(config.auth?.credentials)
-                  ? config.auth.credentials.map((c: any) => `${c.username}:${c.passwordHash || ""}`).join("\n")
-                  : ""}
-                onChange={(e) => {
-                  const credentials = e.target.value
-                    .split("\n")
-                    .map((line) => line.trim())
-                    .filter(Boolean)
-                    .map((line, index) => {
-                      const [username, ...passwordParts] = line.split(":");
-                      return {
-                        id: `basic-${index + 1}`,
-                        username: username.trim(),
-                        passwordHash: passwordParts.join(":").trim(),
-                        isActive: true,
-                      };
-                    });
-                  updateConfig({ auth: { ...(config.auth || {}), type: "basic", credentials } });
-                }}
-              />
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-600">Basic Users</label>
+                <button
+                  type="button"
+                  className="px-2 py-1 text-xs font-semibold rounded border border-cyan-300 text-cyan-800 hover:bg-cyan-50"
+                  onClick={() => {
+                    const password = createRandomSecret();
+                    const username = `user_${Date.now().toString(36)}`;
+                    const current = Array.isArray(config.auth?.credentials) ? config.auth.credentials : [];
+                    upsertBasicCredentials([
+                      ...current,
+                      { id: `basic-${Date.now()}`, username, passwordHash: password, isActive: true, createdAt: new Date().toISOString() },
+                    ]);
+                    showGeneratedCredential(`Password generated for ${username}`, password);
+                  }}
+                >
+                  Generate User Password
+                </button>
+              </div>
+              <div className="space-y-2">
+                {(Array.isArray(config.auth?.credentials) ? config.auth.credentials : []).map((credential: any, index: number) => (
+                  <div key={`${credential.id || "basic"}-${index}`} className="rounded border border-slate-200 p-2 space-y-2">
+                    <input
+                      type="text"
+                      className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                      placeholder="Username"
+                      value={credential.username || ""}
+                      onChange={(e) => {
+                        const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
+                        current[index] = { ...credential, username: e.target.value };
+                        upsertBasicCredentials(current);
+                      }}
+                    />
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>{credential.passwordHash ? "Password configured (not shown again). Rotate to issue a new one." : "No password configured"}</span>
+                      <label className="inline-flex items-center gap-1 text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={credential.isActive !== false}
+                          onChange={(e) => {
+                            const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
+                            current[index] = { ...credential, isActive: e.target.checked };
+                            upsertBasicCredentials(current);
+                          }}
+                        />
+                        Active
+                      </label>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="px-2 py-1 text-xs font-semibold rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        onClick={() => {
+                          const password = createRandomSecret();
+                          const current = Array.isArray(config.auth?.credentials) ? [...config.auth.credentials] : [];
+                          current[index] = { ...credential, passwordHash: password, isActive: true };
+                          upsertBasicCredentials(current);
+                          showGeneratedCredential(`Password rotated for ${credential.username || "user"}`, password);
+                        }}
+                      >
+                        Rotate Password
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-1 text-xs font-semibold rounded border border-rose-300 text-rose-700 hover:bg-rose-50"
+                        onClick={() => {
+                          const current = (Array.isArray(config.auth?.credentials) ? config.auth.credentials : []).filter((_: unknown, i: number) => i !== index);
+                          upsertBasicCredentials(current);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1744,44 +1933,82 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   -H "content-type: application/json" \\
   -d '{"event":"ping"}'`}</code></pre>
               </details>
-              <label className="block text-xs font-semibold text-slate-600">HMAC Keys (keyId:secret per line)</label>
-              <textarea
-                className="w-full rounded border border-slate-300 px-2 py-1 text-sm font-mono"
-                rows={4}
-                value={Array.isArray(config.auth?.hmac?.credentials)
-                  ? config.auth.hmac.credentials.map((c: any) => `${c.keyId}:${c.secretHash || ""}`).join("\n")
-                  : ""}
-                onChange={(e) => {
-                  const credentials = e.target.value
-                    .split("\n")
-                    .map((line) => line.trim())
-                    .filter(Boolean)
-                    .map((line) => {
-                      const [keyId, ...secretParts] = line.split(":");
-                      return {
-                        keyId: keyId.trim(),
-                        secretHash: secretParts.join(":").trim(),
-                        isActive: true,
-                      };
-                    });
-
-                  updateConfig({
-                    auth: {
-                      ...(config.auth || {}),
-                      type: "hmac",
-                      hmac: {
-                        ...(config.auth?.hmac || {}),
-                        keyIdHeader: config.auth?.hmac?.keyIdHeader || "x-hmac-key-id",
-                        signatureHeader: config.auth?.hmac?.signatureHeader || "x-hmac-signature",
-                        timestampHeader: config.auth?.hmac?.timestampHeader || "x-signature-timestamp",
-                        nonceHeader: config.auth?.hmac?.nonceHeader || "x-signature-nonce",
-                        algorithm: "sha256",
-                        credentials,
-                      },
-                    },
-                  });
-                }}
-              />
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-600">HMAC Keys</label>
+                <button
+                  type="button"
+                  className="px-2 py-1 text-xs font-semibold rounded border border-cyan-300 text-cyan-800 hover:bg-cyan-50"
+                  onClick={() => {
+                    const secret = createRandomSecret();
+                    const keyId = `hmac_${Date.now().toString(36)}`;
+                    const current = Array.isArray(config.auth?.hmac?.credentials) ? config.auth.hmac.credentials : [];
+                    upsertHmacCredentials([
+                      ...current,
+                      { keyId, secretHash: secret, secretEnc: secret, isActive: true, createdAt: new Date().toISOString() },
+                    ]);
+                    showGeneratedCredential(`HMAC secret generated for ${keyId}`, secret);
+                  }}
+                >
+                  Generate HMAC Key
+                </button>
+              </div>
+              <div className="space-y-2">
+                {(Array.isArray(config.auth?.hmac?.credentials) ? config.auth.hmac.credentials : []).map((credential: any, index: number) => (
+                  <div key={`${credential.keyId || "hmac"}-${index}`} className="rounded border border-slate-200 p-2 space-y-2">
+                    <input
+                      type="text"
+                      className="w-full rounded border border-slate-300 px-2 py-1 text-sm"
+                      placeholder="Key ID"
+                      value={credential.keyId || ""}
+                      onChange={(e) => {
+                        const current = Array.isArray(config.auth?.hmac?.credentials) ? [...config.auth.hmac.credentials] : [];
+                        current[index] = { ...credential, keyId: e.target.value };
+                        upsertHmacCredentials(current);
+                      }}
+                    />
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <span>{credential.secretHash ? "Secret configured (not shown again). Rotate to issue a new one." : "No secret configured"}</span>
+                      <label className="inline-flex items-center gap-1 text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={credential.isActive !== false}
+                          onChange={(e) => {
+                            const current = Array.isArray(config.auth?.hmac?.credentials) ? [...config.auth.hmac.credentials] : [];
+                            current[index] = { ...credential, isActive: e.target.checked };
+                            upsertHmacCredentials(current);
+                          }}
+                        />
+                        Active
+                      </label>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="px-2 py-1 text-xs font-semibold rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        onClick={() => {
+                          const secret = createRandomSecret();
+                          const current = Array.isArray(config.auth?.hmac?.credentials) ? [...config.auth.hmac.credentials] : [];
+                          current[index] = { ...credential, secretHash: secret, secretEnc: secret, isActive: true };
+                          upsertHmacCredentials(current);
+                          showGeneratedCredential(`HMAC secret rotated for ${credential.keyId || "key"}`, secret);
+                        }}
+                      >
+                        Rotate Secret
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 py-1 text-xs font-semibold rounded border border-rose-300 text-rose-700 hover:bg-rose-50"
+                        onClick={() => {
+                          const current = (Array.isArray(config.auth?.hmac?.credentials) ? config.auth.hmac.credentials : []).filter((_: unknown, i: number) => i !== index);
+                          upsertHmacCredentials(current);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -1949,6 +2176,36 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   }
 }`}</code></pre>
           </details>
+        </div>
+      )}
+
+      {generatedCredential && (
+        <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-4 shadow-xl">
+            <h5 className="text-sm font-semibold text-slate-900">{generatedCredential.title}</h5>
+            <p className="mt-1 text-xs text-slate-600">Copy and share this secret now over a secure channel. It will not be shown again in this screen.</p>
+            <textarea
+              readOnly
+              className="mt-3 h-24 w-full rounded border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-mono text-slate-800"
+              value={generatedCredential.value}
+            />
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                className="px-3 py-1.5 text-xs font-semibold rounded border border-slate-300 text-slate-700 hover:bg-slate-50"
+                onClick={copyGeneratedCredential}
+              >
+                {generatedCredential.copied ? "Copied" : "Copy Secret"}
+              </button>
+              <button
+                type="button"
+                className="px-3 py-1.5 text-xs font-semibold rounded bg-slate-900 text-white hover:bg-slate-800"
+                onClick={() => setGeneratedCredential(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
