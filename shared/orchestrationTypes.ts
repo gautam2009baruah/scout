@@ -384,22 +384,104 @@ export type VariableNodeConfig = {
 };
 
 export type ApiCallAuthConfig = {
-  type: "none" | "api_key" | "bearer" | "basic";
-  headerName?: string; // For API Key: e.g., "X-API-Key"
-  value?: string; // Auth value (for api_key)
-  username?: string; // For Basic Auth
-  password?: string; // For Basic Auth
-  token?: string; // For Bearer
+  type: "none" | "api_key" | "bearer" | "basic" | "oauth2" | "custom_headers";
+  // Legacy flat fields (backward compatibility)
+  headerName?: string;
+  value?: string;
+  username?: string;
+  password?: string;
+  token?: string;
+  // Preferred structured auth config
+  apiKey?: {
+    location: "header" | "query";
+    name: string;
+    value: string;
+  };
+  bearerToken?: string;
+  basic?: {
+    username: string;
+    password: string;
+  };
+  oauth2?: {
+    accessToken?: string;
+    tokenUrl?: string;
+    clientId?: string;
+    clientSecret?: string;
+    scope?: string;
+    audience?: string;
+    grantType?: "client_credentials" | "password";
+    username?: string;
+    password?: string;
+    authStyle?: "basic" | "body";
+  };
+  customHeaders?: Array<{
+    key: string;
+    value: string;
+    secret?: boolean;
+  }>;
+  mtls?: {
+    enabled?: boolean;
+    certPath?: string;
+    keyPath?: string;
+    caPath?: string;
+    passphrase?: string;
+  };
 };
 
 export type ApiCallNodeConfig = {
   type: "api_call";
   apiUrl: string; // Can be expression like {{workflowId}}
-  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
-  headers?: Record<string, string>; // Custom headers, values can be expressions
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+  pathVariables?: Array<{
+    name: string;
+    value: string;
+  }>;
+  queryParameters?: Array<{
+    key: string;
+    value: string;
+    enabled?: boolean;
+  }>;
+  headers?:
+    | Record<string, string>
+    | Array<{
+        key: string;
+        value: string;
+        enabled?: boolean;
+        secret?: boolean;
+      }>;
   auth: ApiCallAuthConfig;
-  requestBodyTemplate?: string; // JSON template, supports {{variable}} syntax
+  bodyFormat?: "none" | "json" | "form_data" | "url_encoded" | "raw_text" | "xml" | "binary";
+  requestBodyTemplate?: string;
+  formDataFields?: Array<{
+    key: string;
+    value?: string;
+    isFile?: boolean;
+    filePath?: string;
+    fileName?: string;
+    contentType?: string;
+    enabled?: boolean;
+  }>;
+  urlEncodedFields?: Array<{
+    key: string;
+    value: string;
+    enabled?: boolean;
+  }>;
+  binaryBodyBase64?: string;
+  fileUploads?: Array<{
+    fieldName: string;
+    filePath: string;
+    fileName?: string;
+    contentType?: string;
+    enabled?: boolean;
+  }>;
   responseMapping?: Record<string, string>; // Map response fields to output (JSONPath)
+  responseFieldMappings?: Array<{
+    outputKey: string;
+    jsonPath: string;
+  }>;
+  outputVariableName?: string;
+  successStatusCodes?: string;
+  includeRawResponse?: boolean;
   timeout: number; // milliseconds
   retryAttempts: number;
   retryDelayMs: number;

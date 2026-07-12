@@ -304,6 +304,76 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       }
     }
 
+    if (nodeType === "api_call") {
+      const apiUrl = String(localConfig.apiUrl || "").trim();
+      const outputVariableName = String(localConfig.outputVariableName || "").trim();
+
+      if (!apiUrl) {
+        return { valid: false, error: "API URL is required" };
+      }
+
+      if (!/^https?:\/\//i.test(apiUrl)) {
+        return { valid: false, error: "API URL must start with http:// or https://" };
+      }
+
+      if (!outputVariableName) {
+        return { valid: false, error: "Output variable name is required" };
+      }
+
+      if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(outputVariableName)) {
+        return { valid: false, error: "Output variable name must be a valid identifier" };
+      }
+
+      const authType = localConfig.auth?.type;
+      if (authType === "api_key") {
+        if (!String(localConfig.auth?.apiKey?.name || "").trim()) {
+          return { valid: false, error: "API key authentication requires key name" };
+        }
+        if (!String(localConfig.auth?.apiKey?.value || "").trim()) {
+          return { valid: false, error: "API key authentication requires key value" };
+        }
+      }
+
+      if (authType === "bearer" && !String(localConfig.auth?.bearerToken || "").trim()) {
+        return { valid: false, error: "Bearer authentication requires token" };
+      }
+
+      if (authType === "basic" && !String(localConfig.auth?.basic?.username || "").trim()) {
+        return { valid: false, error: "Basic authentication requires username" };
+      }
+
+      if (authType === "oauth2") {
+        const hasAccessToken = String(localConfig.auth?.oauth2?.accessToken || "").trim();
+        const hasTokenFlow =
+          String(localConfig.auth?.oauth2?.tokenUrl || "").trim() &&
+          String(localConfig.auth?.oauth2?.clientId || "").trim() &&
+          String(localConfig.auth?.oauth2?.clientSecret || "").trim();
+
+        if (!hasAccessToken && !hasTokenFlow) {
+          return {
+            valid: false,
+            error: "OAuth2 requires either access token or token URL + client credentials",
+          };
+        }
+      }
+
+      if (localConfig.auth?.mtls?.enabled) {
+        if (!String(localConfig.auth?.mtls?.certPath || "").trim()) {
+          return { valid: false, error: "mTLS requires certificate path" };
+        }
+        if (!String(localConfig.auth?.mtls?.keyPath || "").trim()) {
+          return { valid: false, error: "mTLS requires key path" };
+        }
+      }
+
+      if (
+        localConfig.bodyFormat === "binary" &&
+        !String(localConfig.binaryBodyBase64 || localConfig.requestBodyTemplate || "").trim()
+      ) {
+        return { valid: false, error: "Binary body format requires base64 payload" };
+      }
+    }
+
     // Add more validation rules here as needed for other node types
     
     return { valid: true, error: null };
