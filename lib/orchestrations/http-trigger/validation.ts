@@ -148,22 +148,6 @@ export async function validateHttpRequest(
 
   for (const rule of config.headers || []) {
     const current = headers[rule.name.toLowerCase()];
-    if (rule.required && !current) {
-      return {
-        valid: false,
-        status: 400,
-        code: "MISSING_HEADER",
-        message: `Missing required header: ${rule.name}`,
-        headers,
-        query,
-        contentType: null,
-        bodyText: "",
-        bodyJson: null,
-        payloadSize: 0,
-        pathParameters,
-      };
-    }
-
     if (rule.pattern && current) {
       try {
         const regex = new RegExp(rule.pattern);
@@ -202,40 +186,83 @@ export async function validateHttpRequest(
 
   for (const rule of config.queryParameters || []) {
     const current = query[rule.name];
-    if (rule.required && (current === undefined || current === "")) {
-      return {
-        valid: false,
-        status: 400,
-        code: "MISSING_QUERY_PARAMETER",
-        message: `Missing required query parameter: ${rule.name}`,
-        headers,
-        query,
-        contentType: null,
-        bodyText: "",
-        bodyJson: null,
-        payloadSize: 0,
-        pathParameters,
-      };
+    if (current === undefined || current === "") continue;
+
+    if (rule.pattern) {
+      try {
+        const regex = new RegExp(rule.pattern);
+        const text = Array.isArray(current) ? current.join(",") : String(current);
+        if (!regex.test(text)) {
+          return {
+            valid: false,
+            status: 400,
+            code: "QUERY_PATTERN_MISMATCH",
+            message: `Query parameter ${rule.name} has an invalid value`,
+            headers,
+            query,
+            contentType: null,
+            bodyText: "",
+            bodyJson: null,
+            payloadSize: 0,
+            pathParameters,
+          };
+        }
+      } catch {
+        return {
+          valid: false,
+          status: 400,
+          code: "INVALID_QUERY_PATTERN",
+          message: `Query rule for ${rule.name} has an invalid regex`,
+          headers,
+          query,
+          contentType: null,
+          bodyText: "",
+          bodyJson: null,
+          payloadSize: 0,
+          pathParameters,
+        };
+      }
     }
   }
 
   for (let i = 0; i < (config.pathParameters || []).length; i += 1) {
     const rule = config.pathParameters[i];
     const current = pathParameters[rule.name];
-    if (rule.required && !current) {
-      return {
-        valid: false,
-        status: 400,
-        code: "MISSING_PATH_PARAMETER",
-        message: `Missing required path parameter: ${rule.name}`,
-        headers,
-        query,
-        contentType: null,
-        bodyText: "",
-        bodyJson: null,
-        payloadSize: 0,
-        pathParameters,
-      };
+    if (!current) continue;
+
+    if (rule.pattern) {
+      try {
+        const regex = new RegExp(rule.pattern);
+        if (!regex.test(current)) {
+          return {
+            valid: false,
+            status: 400,
+            code: "PATH_PATTERN_MISMATCH",
+            message: `Path parameter ${rule.name} has an invalid value`,
+            headers,
+            query,
+            contentType: null,
+            bodyText: "",
+            bodyJson: null,
+            payloadSize: 0,
+            pathParameters,
+          };
+        }
+      } catch {
+        return {
+          valid: false,
+          status: 400,
+          code: "INVALID_PATH_PATTERN",
+          message: `Path rule for ${rule.name} has an invalid regex`,
+          headers,
+          query,
+          contentType: null,
+          bodyText: "",
+          bodyJson: null,
+          payloadSize: 0,
+          pathParameters,
+        };
+      }
     }
   }
 
@@ -279,7 +306,8 @@ export async function validateHttpRequest(
     };
   }
 
-  if (config.requireBody && !bodyText) {
+  const methodsThatTypicallyUseBody = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+  if (config.requireBody && methodsThatTypicallyUseBody.has(method) && !bodyText) {
     return {
       valid: false,
       status: 400,

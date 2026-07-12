@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = request.nextUrl;
     const triggerType = searchParams.get("triggerType") || undefined;
-    const status = searchParams.get("status") || undefined; // "active" or "inactive"
+    const status = searchParams.get("status") || undefined; // "active" or non-active
     const companyId = searchParams.get("companyId") || undefined;
     const targetAppId = searchParams.get("targetAppId") || undefined;
     const from = searchParams.get("from") || null; // ISO datetime (UTC)
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     // Build query with filters.
     // Note: orchestration_triggers uses a `status` text column ('active' |
-    // 'inactive' | 'error'), not an is_active boolean. Email stats are derived
+    // 'inactive' | 'error' | 'suspended' | 'revoked'), not an is_active boolean. Email stats are derived
     // from email_trigger_messages within the same date range as the executions
     // panel so the numbers agree.
     let query = `

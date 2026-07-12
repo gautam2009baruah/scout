@@ -23,7 +23,7 @@ import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 type TargetAppOption = { id: string; name: string; companyId: string };
 
 // Only automated trigger types are meaningful to monitor here.
-const MONITORABLE_TRIGGER_TYPES = ["email", "schedule"] as const;
+const MONITORABLE_TRIGGER_TYPES = ["email", "schedule", "http_api"] as const;
 
 type TriggerStatus = {
   id: string;
@@ -359,6 +359,8 @@ export function TriggersMonitoringDashboard({
         return <Calendar className="h-5 w-5 text-purple-600" />;
       case "email":
         return <Mail className="h-5 w-5 text-pink-600" />;
+      case "http_api":
+        return <Clock className="h-5 w-5 text-cyan-600" />;
       default:
         return <Clock className="h-5 w-5 text-slate-600" />;
     }

@@ -1391,62 +1391,82 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <div className="mt-2 rounded border border-cyan-200 bg-white px-3 py-2 text-xs text-cyan-900 font-mono break-all">
               {(typeof window !== "undefined" ? window.location.origin : "https://<domain>")}/apitrigger/{config.shortName || "<short-name>"}/
             </div>
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">What happens after endpoint creation?</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p>Endpoint names are checked for duplicate conflicts and reserved words before publish.</p>
+                <p>This endpoint is hosted by the Scout server deployment. You share this URL with consumers.</p>
+                <p>One-click external hosting to a separate server is not available in this screen yet.</p>
+              </div>
+            </details>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Allowed HTTP Methods</label>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map((method) => {
-                const selected: string[] = Array.isArray(config.allowedMethods) ? config.allowedMethods : ["POST"];
-                const checked = selected.includes(method);
-                return (
-                  <label key={method} className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        const next = new Set(selected);
-                        if (e.target.checked) next.add(method);
-                        else next.delete(method);
-                        updateConfig({ allowedMethods: Array.from(next) });
-                      }}
-                    />
-                    <span>{method}</span>
-                  </label>
-                );
-              })}
-            </div>
+            <select
+              multiple
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm bg-white"
+              value={Array.isArray(config.allowedMethods) ? config.allowedMethods : ["POST"]}
+              onChange={(e) => {
+                const selected = Array.from(e.target.selectedOptions).map((option) => option.value);
+                updateConfig({ allowedMethods: selected.length > 0 ? selected : ["POST"] });
+              }}
+            >
+              {["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].map((method) => (
+                <option key={method} value={method}>{method}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-500">Hold Ctrl/Cmd to select multiple methods.</p>
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Method selection help</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p>Requests using methods outside this list are rejected.</p>
+                <p>If "Require Request Body" is enabled, it applies only to methods that typically carry body payloads (POST/PUT/PATCH/DELETE).</p>
+              </div>
+            </details>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Max Payload (bytes)</label>
-              <input
-                type="number"
-                min="1024"
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                value={config.maxPayloadBytes || 1048576}
-                onChange={(e) => updateConfig({ maxPayloadBytes: parseInt(e.target.value, 10) || 1048576 })}
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Max Payload (bytes)</label>
+            <input
+              type="number"
+              min="1024"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.maxPayloadBytes || 1048576}
+              onChange={(e) => updateConfig({ maxPayloadBytes: parseInt(e.target.value, 10) || 1048576 })}
+            />
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Max payload help</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p>Requests larger than this size are rejected with an invalid input response.</p>
+                <p>Example: 1048576 bytes is roughly 1 MB.</p>
+              </div>
+            </details>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Rate Limit (req/window)</label>
-              <input
-                type="number"
-                min="1"
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                value={config.rateLimit?.maxRequests || 60}
-                onChange={(e) => updateConfig({
-                  rateLimit: {
-                    ...(config.rateLimit || {}),
-                    enabled: config.rateLimit?.enabled !== false,
-                    maxRequests: parseInt(e.target.value, 10) || 60,
-                    windowSeconds: config.rateLimit?.windowSeconds || 60,
-                  },
-                })}
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Rate Limit (req/window)</label>
+            <input
+              type="number"
+              min="1"
+              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={config.rateLimit?.maxRequests || 60}
+              onChange={(e) => updateConfig({
+                rateLimit: {
+                  ...(config.rateLimit || {}),
+                  enabled: config.rateLimit?.enabled !== false,
+                  maxRequests: parseInt(e.target.value, 10) || 60,
+                  windowSeconds: config.rateLimit?.windowSeconds || 60,
+                },
+              })}
+            />
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Rate limit help</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p>Defines how many requests are allowed within one rate window.</p>
+                <p>Example: 60 requests with a 60-second window means at most 60 requests per minute.</p>
+              </div>
+            </details>
           </div>
 
           <div>
@@ -1463,10 +1483,17 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               })}
               placeholder="application/json, multipart/form-data"
             />
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Allowed content types help</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p>Only these Content-Type values are accepted. Others are rejected.</p>
+                <p>Use standard MIME values such as application/json or multipart/form-data.</p>
+              </div>
+            </details>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Required Header Names (comma separated)</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Allowed Header Names (comma separated)</label>
             <input
               type="text"
               className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
@@ -1476,14 +1503,21 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                   .split(",")
                   .map((name) => name.trim())
                   .filter(Boolean)
-                  .map((name) => ({ name, required: true })),
+                  .map((name) => ({ name, required: false })),
               })}
               placeholder="x-tenant-id, x-event-type"
             />
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Allowed headers help</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p>These headers are expected/accepted for consumer integrations.</p>
+                <p>Headers are optional unless your auth mode requires specific headers.</p>
+              </div>
+            </details>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Required Query Parameters (comma separated)</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Allowed Query Parameters (comma separated)</label>
             <input
               type="text"
               className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
@@ -1493,10 +1527,17 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                   .split(",")
                   .map((name) => name.trim())
                   .filter(Boolean)
-                  .map((name) => ({ name, required: true })),
+                  .map((name) => ({ name, required: false })),
               })}
               placeholder="source, version"
             />
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Allowed query parameters help</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p>These query parameters are accepted by this endpoint format.</p>
+                <p>They are optional unless your downstream orchestration logic expects them.</p>
+              </div>
+            </details>
           </div>
 
           <div>
@@ -1510,10 +1551,17 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                   .split(",")
                   .map((name) => name.trim())
                   .filter(Boolean)
-                  .map((name) => ({ name, required: true })),
+                  .map((name) => ({ name, required: false })),
               })}
               placeholder="accountId, orderId"
             />
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Path parameter help</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p>These names map to extra path segments after /apitrigger/shortName/.</p>
+                <p>Example: /apitrigger/invoice/acme/123 maps accountId=acme, orderId=123.</p>
+              </div>
+            </details>
           </div>
 
           <div>
@@ -1530,6 +1578,17 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <option value="hmac">HMAC Signature</option>
               <option value="m_tls">Mutual TLS</option>
             </select>
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Authentication help + usage samples</summary>
+              <div className="mt-2 space-y-2 text-slate-700">
+                <p>Choose one auth mode. Each request is validated before orchestration starts.</p>
+                <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`# API Key\ncurl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\\n  -H "x-api-key: <key>" \\\n  -H "content-type: application/json" \\\n  -d '{"event":"ping"}'`}</code></pre>
+                <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`# Basic Auth\ncurl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\\n  -u "username:password" \\\n  -H "content-type: application/json" \\\n  -d '{"event":"ping"}'`}</code></pre>
+                <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`# OAuth2/JWT\ncurl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\\n  -H "authorization: Bearer <jwt>" \\\n  -H "content-type: application/json" \\\n  -d '{"event":"ping"}'`}</code></pre>
+                <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`# HMAC\n# Sign: METHOD + PATH + QUERY + TIMESTAMP + NONCE + BODY\ncurl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\\n  -H "x-hmac-key-id: <key-id>" \\\n  -H "x-signature-timestamp: <epoch-seconds>" \\\n  -H "x-signature-nonce: <nonce>" \\\n  -H "x-hmac-signature: <hex-signature>" \\\n  -H "content-type: application/json" \\\n  -d '{"event":"ping"}'`}</code></pre>
+                <p>mTLS mode expects client certificate identity to be forwarded by your gateway/proxy.</p>
+              </div>
+            </details>
           </div>
 
           {config.auth?.type === "api_key" && (
@@ -1734,6 +1793,13 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                   },
                 })}
               />
+              <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Rate window help</summary>
+                <div className="mt-2 space-y-1 text-slate-700">
+                  <p>Time bucket for rate counting.</p>
+                  <p>Example: maxRequests=60 and window=60 means 60 requests per minute per caller key.</p>
+                </div>
+              </details>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Replay Max Age (seconds)</label>
@@ -1752,6 +1818,13 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                   },
                 })}
               />
+              <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+                <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Replay max age help</summary>
+                <div className="mt-2 space-y-1 text-slate-700">
+                  <p>Maximum allowed age for signed request timestamps.</p>
+                  <p>Requests older than this window are rejected to reduce replay attacks.</p>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -1773,6 +1846,14 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               Require Request Body
             </label>
           </div>
+          <details className="text-xs bg-white border border-cyan-200 rounded p-2">
+            <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">HTTPS and request body help</summary>
+            <div className="mt-2 space-y-1 text-slate-700">
+              <p>Enforce HTTPS rejects non-TLS requests (especially important in production).</p>
+              <p>Require Request Body applies only for methods that typically send payload (POST/PUT/PATCH/DELETE).</p>
+              <p>GET and HEAD usually do not carry a body and are not blocked by this setting.</p>
+            </div>
+          </details>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Trigger State</label>
@@ -1788,6 +1869,14 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <p className="mt-1 text-xs text-slate-500">
               Suspended endpoints return a non-success status and do not start orchestrations.
             </p>
+            <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
+              <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">State meaning</summary>
+              <div className="mt-2 space-y-1 text-slate-700">
+                <p><strong>Active:</strong> accepts valid requests and starts orchestration.</p>
+                <p><strong>Suspended:</strong> temporarily blocked; endpoint stays configured.</p>
+                <p><strong>Revoked:</strong> explicitly invalidated for security/operations; stronger than inactive and should be re-authorized before reuse.</p>
+              </div>
+            </details>
           </div>
         </div>
       )}
