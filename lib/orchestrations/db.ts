@@ -149,6 +149,7 @@ export async function getOrchestrationPage(filters: {
   search?: string;
   page?: number;
   pageSize?: number;
+  userId?: string;
 }) {
   const pool = getPool();
   const page = Math.max(1, Number(filters.page) || 1);
@@ -171,6 +172,24 @@ export async function getOrchestrationPage(filters: {
   if (filters.search?.trim()) {
     params.push(`%${filters.search.trim()}%`);
     conditions.push(`o.name ILIKE $${params.length}`);
+  }
+  if (filters.userId) {
+    params.push(filters.userId);
+    const userParam = params.length;
+    conditions.push(`(
+      o.target_app_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1 FROM user_target_app_access uta
+        INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
+        WHERE uta.user_id = $${userParam} AND uta.deleted_at IS NULL
+          AND scope_app.company_id = o.company_id
+      )
+      OR EXISTS (
+        SELECT 1 FROM user_target_app_access uta
+        WHERE uta.user_id = $${userParam} AND uta.deleted_at IS NULL
+          AND uta.target_app_id = o.target_app_id
+      )
+    )`);
   }
 
   const where = conditions.join(" AND ");

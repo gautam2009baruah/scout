@@ -314,6 +314,7 @@ export async function getEmployeePage(filters: EmployeeFilters) {
                 INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
                 WHERE uta.user_id = users.id
                   AND gta.company_id = member_roles.company_id
+                  AND uta.deleted_at IS NULL
               ), ARRAY[]::uuid[]),
               'isPrimary', member_roles.is_primary
             )
@@ -653,16 +654,20 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
       }
     }
     await client.query(
-      `DELETE FROM user_target_app_access uta
-       USING guided_workflow_target_apps gta
+      `UPDATE user_target_app_access uta
+       SET deleted_at = NOW(), deleted_by = $3, updated_at = NOW(), updated_by = $3
+       FROM guided_workflow_target_apps gta
        WHERE uta.target_app_id = gta.id
-         AND uta.user_id = $1 AND gta.company_id = $2`,
-      [employeeId, primaryCompanyId]
+         AND uta.user_id = $1 AND gta.company_id = $2
+         AND uta.deleted_at IS NULL`,
+      [employeeId, primaryCompanyId, session.user.id]
     );
     for (const targetAppId of targetAppIds) {
       await client.query(
-        `INSERT INTO user_target_app_access (user_id, target_app_id, created_by)
-         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        `INSERT INTO user_target_app_access (user_id, target_app_id, created_by, updated_by)
+         VALUES ($1, $2, $3, $3)
+         ON CONFLICT (user_id, target_app_id) DO UPDATE
+         SET deleted_at = NULL, deleted_by = NULL, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
         [employeeId, targetAppId, session.user.id]
       );
     }

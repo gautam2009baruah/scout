@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
       search: search || undefined,
       page: Number(searchParams.get("page") || 1),
       pageSize: Number(searchParams.get("pageSize") || 25),
+      userId: session.user.id,
     });
 
     return NextResponse.json(result);

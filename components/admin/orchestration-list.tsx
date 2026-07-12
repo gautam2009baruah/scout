@@ -34,6 +34,7 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
   const [pageSize, setPageSize] = useState(25);
   const [pageCount, setPageCount] = useState(1);
   const [total, setTotal] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const fetchOrchestrations = async () => {
     try {
@@ -66,18 +67,14 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
     fetchOrchestrations();
   }, [status, targetAppId, appliedSearch, page, pageSize, selectedCompanyId]);
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete orchestration "${name}"? This cannot be undone.`)) {
-      return;
-    }
-
+  const handleDelete = async (id: string) => {
     try {
       const response = await fetch(`/api/admin/orchestrations/${id}`, {
         method: "DELETE",
       });
 
       if (response.ok) {
-        alert("Orchestration deleted successfully");
+        setDeleteTarget(null);
         fetchOrchestrations();
       } else {
         const error = await response.json();
@@ -213,7 +210,7 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
                         <Edit className="h-5 w-5" />
                       </button>
                       <button
-                        onClick={() => handleDelete(orch.id, orch.name)}
+                        onClick={() => setDeleteTarget({ id: orch.id, name: orch.name })}
                         className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete"
                       >
@@ -244,6 +241,18 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
           </div>
         </div>
       </div>
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-slate-950">Delete orchestration</h3>
+            <p className="mt-2 text-sm text-slate-600">Delete “{deleteTarget.name}”? This action cannot be undone.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => setDeleteTarget(null)} type="button">Cancel</button>
+              <button className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700" onClick={() => void handleDelete(deleteTarget.id)} type="button">Delete</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -280,7 +280,7 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
                 <td className="px-3 py-3 text-slate-600 capitalize">{employee.status === "disabled" ? "inactive" : employee.status}</td>
                 <td className="px-3 py-3">
                   <div className="flex items-center justify-end gap-2">
-                    {!employee.hasSystemRole ? (
+                    {!employee.hasSystemRole && employee.id !== currentUserId ? (
                       <button aria-label="Edit user" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100" onClick={() => startEdit(employee)} type="button">
                         <Pencil className="h-4 w-4" />
                       </button>

@@ -518,9 +518,24 @@ export async function listCompanyTargetApplications(session: AdminSession): Prom
       WHERE company_target_applications.deleted_at IS NULL
         AND companies.deleted_at IS NULL
         AND company_target_applications.company_id = ANY($1::uuid[])
+        AND (
+          NOT EXISTS (
+            SELECT 1 FROM user_target_app_access uta
+            INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
+            WHERE uta.user_id = $2 AND uta.deleted_at IS NULL
+              AND gta.company_id = company_target_applications.company_id
+          )
+          OR EXISTS (
+            SELECT 1 FROM user_target_app_access uta
+            INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
+            WHERE uta.user_id = $2 AND uta.deleted_at IS NULL
+              AND gta.company_id = company_target_applications.company_id
+              AND lower(gta.name) = lower(company_target_applications.name)
+          )
+        )
       ORDER BY companies.name ASC, company_target_applications.name ASC
     `,
-    [companyIds]
+    [companyIds, session.user.id]
   );
 
   return result.rows.map((row) => ({

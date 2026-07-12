@@ -481,12 +481,14 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
           ON company_app.id = company_access.target_app_id
         WHERE company_access.user_id = $${userIdParam}
           AND company_app.company_id = guided_workflow_target_apps.company_id
+          AND company_access.deleted_at IS NULL
       )
       OR EXISTS (
         SELECT 1
         FROM user_target_app_access app_access
         WHERE app_access.user_id = $${userIdParam}
           AND app_access.target_app_id = guided_workflow_target_apps.id
+          AND app_access.deleted_at IS NULL
       )
     )
   `;
@@ -569,6 +571,8 @@ export async function listGuidedWorkflowRecordingSessions(session: AdminSession)
   if (!session.user.isAdminRole) {
     params.push(session.user.tenantId, session.user.id);
   }
+  params.push(session.user.id);
+  const targetUserParam = params.length;
 
   const result = await withPoolRetry(() =>
     getPool().query(
@@ -578,6 +582,20 @@ export async function listGuidedWorkflowRecordingSessions(session: AdminSession)
           AND company_target_applications.deleted_at IS NULL
           AND guided_workflow_recording_sessions.deleted_at IS NULL
           ${access}
+          AND (
+            target_app_map.id IS NULL
+            OR NOT EXISTS (
+              SELECT 1 FROM user_target_app_access uta
+              INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
+              WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
+                AND scope_app.company_id = company_target_applications.company_id
+            )
+            OR EXISTS (
+              SELECT 1 FROM user_target_app_access uta
+              WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
+                AND uta.target_app_id = target_app_map.id
+            )
+          )
         ORDER BY guided_workflow_recording_sessions.updated_at DESC
       `,
       params
@@ -611,6 +629,8 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
   if (!session.user.isAdminRole) {
     params.push(session.user.tenantId, session.user.id);
   }
+  params.push(session.user.id);
+  const targetUserParam = params.length;
 
   const result = await withPoolRetry(() =>
     getPool().query(
@@ -632,11 +652,31 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
         FROM guided_workflow_topics
         INNER JOIN guided_workflow_recording_sessions ON guided_workflow_recording_sessions.id = guided_workflow_topics.recording_session_id
         INNER JOIN companies ON companies.id = guided_workflow_topics.company_id
+        INNER JOIN company_target_applications cta ON cta.id = guided_workflow_recording_sessions.company_target_application_id
+        LEFT JOIN LATERAL (
+          SELECT gta.id FROM guided_workflow_target_apps gta
+          WHERE gta.company_id = cta.company_id AND lower(gta.name) = lower(cta.name)
+          ORDER BY gta.updated_at DESC LIMIT 1
+        ) topic_target_app ON true
         LEFT JOIN guided_workflow_guides ON guided_workflow_guides.id = guided_workflow_topics.guide_id
         WHERE companies.deleted_at IS NULL
           AND guided_workflow_recording_sessions.deleted_at IS NULL
           AND guided_workflow_topics.deleted_at IS NULL
           ${access}
+          AND (
+            topic_target_app.id IS NULL
+            OR NOT EXISTS (
+              SELECT 1 FROM user_target_app_access uta
+              INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
+              WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
+                AND scope_app.company_id = guided_workflow_topics.company_id
+            )
+            OR EXISTS (
+              SELECT 1 FROM user_target_app_access uta
+              WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
+                AND uta.target_app_id = topic_target_app.id
+            )
+          )
         ORDER BY guided_workflow_topics.recording_session_id, guided_workflow_topics.sort_order ASC, guided_workflow_topics.created_at ASC
       `,
       params

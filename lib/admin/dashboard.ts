@@ -220,7 +220,7 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
   if (hasModuleAccess(session, MODULE_KEYS.guidedWorkflows)) {
     const accessFilter = "AND company_id = $1";
     const sessionAccessFilter = "AND company_target_applications.company_id = $1";
-    const params = [selectedCompanyId];
+    const params = [selectedCompanyId, session.user.id];
     const result = await getPool().query<{
       target_apps: string;
       training_sessions: string;
@@ -229,7 +229,15 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
     }>(
       `
         SELECT
-          (SELECT COUNT(*) FROM guided_workflow_target_apps WHERE 1 = 1 ${accessFilter}) AS target_apps,
+          (SELECT COUNT(*) FROM guided_workflow_target_apps gta WHERE gta.company_id = $1
+            AND (NOT EXISTS (
+              SELECT 1 FROM user_target_app_access uta
+              INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
+              WHERE uta.user_id = $2 AND uta.deleted_at IS NULL AND scope_app.company_id = gta.company_id
+            ) OR EXISTS (
+              SELECT 1 FROM user_target_app_access uta
+              WHERE uta.user_id = $2 AND uta.deleted_at IS NULL AND uta.target_app_id = gta.id
+            ))) AS target_apps,
           (
             SELECT COUNT(*)
             FROM guided_workflow_recording_sessions
@@ -238,9 +246,23 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
             WHERE guided_workflow_recording_sessions.deleted_at IS NULL
               AND company_target_applications.deleted_at IS NULL
               ${sessionAccessFilter}
+              AND (NOT EXISTS (
+                SELECT 1 FROM user_target_app_access uta
+                INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
+                WHERE uta.user_id = $2 AND uta.deleted_at IS NULL
+                  AND scope_app.company_id = company_target_applications.company_id
+              ) OR EXISTS (
+                SELECT 1 FROM user_target_app_access uta
+                INNER JOIN guided_workflow_target_apps allowed_app ON allowed_app.id = uta.target_app_id
+                WHERE uta.user_id = $2 AND uta.deleted_at IS NULL
+                  AND allowed_app.company_id = company_target_applications.company_id
+                  AND lower(allowed_app.name) = lower(company_target_applications.name)
+              ))
           ) AS training_sessions,
-          (SELECT COUNT(*) FROM guided_workflow_guides WHERE status = 'draft' ${accessFilter}) AS draft_guides,
-          (SELECT COUNT(*) FROM guided_workflow_guides WHERE status = 'published' ${accessFilter}) AS published_guides
+          (SELECT COUNT(*) FROM guided_workflow_guides gw WHERE status = 'draft' AND company_id = $1
+            AND (gw.target_app_id IS NULL OR NOT EXISTS (SELECT 1 FROM user_target_app_access uta INNER JOIN guided_workflow_target_apps sa ON sa.id=uta.target_app_id WHERE uta.user_id=$2 AND uta.deleted_at IS NULL AND sa.company_id=gw.company_id) OR EXISTS (SELECT 1 FROM user_target_app_access uta WHERE uta.user_id=$2 AND uta.deleted_at IS NULL AND uta.target_app_id=gw.target_app_id))) AS draft_guides,
+          (SELECT COUNT(*) FROM guided_workflow_guides gw WHERE status = 'published' AND company_id = $1
+            AND (gw.target_app_id IS NULL OR NOT EXISTS (SELECT 1 FROM user_target_app_access uta INNER JOIN guided_workflow_target_apps sa ON sa.id=uta.target_app_id WHERE uta.user_id=$2 AND uta.deleted_at IS NULL AND sa.company_id=gw.company_id) OR EXISTS (SELECT 1 FROM user_target_app_access uta WHERE uta.user_id=$2 AND uta.deleted_at IS NULL AND uta.target_app_id=gw.target_app_id))) AS published_guides
       `,
       params
     );
