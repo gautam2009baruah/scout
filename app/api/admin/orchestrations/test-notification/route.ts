@@ -62,10 +62,19 @@ export async function GET(request: NextRequest) {
         body: {
           config: {
             type: "notification",
-            channel: "email | teams | slack | internal",
-            recipient: "email@example.com | webhook-url | user-id",
-            subject: "optional - for email only",
-            message: "Message text with {{variable}} support",
+            channels: {
+              email: {
+                enabled: true,
+                to: "user@example.com",
+                subject: "Order Confirmation for {{customerName}}",
+                body: "Hello {{customerName}}, your order {{orderId}} is confirmed.",
+              },
+              slack: {
+                enabled: true,
+                webhookUrl: "https://hooks.slack.com/services/...",
+                message: "Deployment completed for {{environment}}",
+              },
+            },
           },
           context: {
             variable: "value to substitute in message",
@@ -75,10 +84,16 @@ export async function GET(request: NextRequest) {
           email: {
             config: {
               type: "notification",
-              channel: "email",
-              recipient: "user@example.com",
-              subject: "Order Confirmation for {{customerName}}",
-              message: "Hello {{customerName}},\\n\\nYour order {{orderId}} has been confirmed.\\n\\nThank you!",
+              channels: {
+                email: {
+                  enabled: true,
+                  to: "user@example.com",
+                  subject: "Order Confirmation for {{customerName}}",
+                  body: "Hello {{customerName}},\n\nYour order {{orderId}} has been confirmed.\n\nThank you!",
+                  bodyFormat: "rich_text",
+                  priority: "normal",
+                },
+              },
             },
             context: {
               customerName: "John Doe",
@@ -88,10 +103,15 @@ export async function GET(request: NextRequest) {
           teams: {
             config: {
               type: "notification",
-              channel: "teams",
-              recipient: "https://outlook.office.com/webhook/...",
-              subject: "Workflow Alert",
-              message: "Workflow {{workflowName}} completed successfully.",
+              channels: {
+                teams: {
+                  enabled: true,
+                  webhookUrl: "https://outlook.office.com/webhook/...",
+                  title: "Workflow Alert",
+                  message: "Workflow {{workflowName}} completed successfully.",
+                  messageFormat: "adaptive_card",
+                },
+              },
             },
             context: {
               workflowName: "Customer Onboarding",
@@ -100,9 +120,14 @@ export async function GET(request: NextRequest) {
           slack: {
             config: {
               type: "notification",
-              channel: "slack",
-              recipient: "https://hooks.slack.com/services/...",
-              message: "🎉 Deployment to {{environment}} completed!",
+              channels: {
+                slack: {
+                  enabled: true,
+                  webhookUrl: "https://hooks.slack.com/services/...",
+                  message: "Deployment to {{environment}} completed!",
+                  messageFormat: "plain_text",
+                },
+              },
             },
             context: {
               environment: "production",
@@ -111,10 +136,15 @@ export async function GET(request: NextRequest) {
           internal: {
             config: {
               type: "notification",
-              channel: "internal",
-              recipient: "user@example.com",
-              subject: "Task Assigned",
-              message: "You have been assigned task: {{taskName}}",
+              channels: {
+                internal: {
+                  enabled: true,
+                  users: "user@example.com",
+                  title: "Task Assigned",
+                  message: "You have been assigned task: {{taskName}}",
+                  notificationType: "information",
+                },
+              },
             },
             context: {
               taskName: "Review customer feedback",
@@ -124,10 +154,12 @@ export async function GET(request: NextRequest) {
       },
       notes: {
         email: "Requires SMTP_HOST environment variable configured",
-        teams: "Recipient should be a Teams webhook URL",
-        slack: "Recipient should be a Slack webhook URL",
+        teams: "Provide webhookUrl for Teams connector",
+        slack: "Provide webhookUrl for Slack app/webhook",
+        sms: "Provide channel webhookUrl or NOTIFICATION_SMS_WEBHOOK_URL",
+        whatsapp: "Provide channel webhookUrl or NOTIFICATION_WHATSAPP_WEBHOOK_URL",
         internal: "Creates notification in database for in-app display",
-        variables: "Use {{variableName}} syntax in message and subject fields",
+        variables: "Use {{variableName}} syntax in channel fields",
       },
     });
   } catch (error) {

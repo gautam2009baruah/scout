@@ -223,6 +223,87 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
 
     }
 
+    if (nodeType === "notification") {
+      const channels = localConfig.channels || {};
+      const enabledChannels = ["email", "internal", "teams", "slack", "sms", "whatsapp"].filter(
+        (channel) => channels?.[channel]?.enabled === true
+      );
+
+      if (enabledChannels.length === 0) {
+        return { valid: false, error: "Enable at least one notification channel" };
+      }
+
+      if (channels.email?.enabled) {
+        if (!String(channels.email.to || "").trim()) {
+          return { valid: false, error: "Email: To recipients are required" };
+        }
+        if (!String(channels.email.subject || "").trim()) {
+          return { valid: false, error: "Email: Subject is required" };
+        }
+        if (!String(channels.email.body || "").trim()) {
+          return { valid: false, error: "Email: Message body is required" };
+        }
+      }
+
+      if (channels.internal?.enabled) {
+        const hasRecipients =
+          String(channels.internal.users || "").trim() ||
+          String(channels.internal.roles || "").trim() ||
+          String(channels.internal.teams || "").trim() ||
+          String(channels.internal.groups || "").trim();
+
+        if (!hasRecipients) {
+          return { valid: false, error: "Internal Notification: At least one recipient target is required" };
+        }
+        if (!String(channels.internal.title || "").trim()) {
+          return { valid: false, error: "Internal Notification: Title is required" };
+        }
+        if (!String(channels.internal.message || "").trim()) {
+          return { valid: false, error: "Internal Notification: Message is required" };
+        }
+      }
+
+      if (channels.teams?.enabled) {
+        if (!String(channels.teams.message || "").trim()) {
+          return { valid: false, error: "Microsoft Teams: Message is required" };
+        }
+        if (!String(channels.teams.webhookUrl || channels.teams.connection || "").trim()) {
+          return { valid: false, error: "Microsoft Teams: Webhook URL or connection is required" };
+        }
+      }
+
+      if (channels.slack?.enabled) {
+        if (!String(channels.slack.message || "").trim()) {
+          return { valid: false, error: "Slack: Message is required" };
+        }
+        if (!String(channels.slack.webhookUrl || channels.slack.connection || "").trim()) {
+          return { valid: false, error: "Slack: Webhook URL or connection is required" };
+        }
+      }
+
+      if (channels.sms?.enabled) {
+        if (!String(channels.sms.recipients || "").trim()) {
+          return { valid: false, error: "SMS: Recipient phone numbers are required" };
+        }
+        if (!String(channels.sms.message || "").trim()) {
+          return { valid: false, error: "SMS: Message is required" };
+        }
+      }
+
+      if (channels.whatsapp?.enabled) {
+        if (!String(channels.whatsapp.recipients || "").trim()) {
+          return { valid: false, error: "WhatsApp: Recipient phone numbers are required" };
+        }
+        if ((channels.whatsapp.messageType || "session_message") === "approved_template") {
+          if (!String(channels.whatsapp.templateName || "").trim()) {
+            return { valid: false, error: "WhatsApp: Template name is required for approved template mode" };
+          }
+        } else if (!String(channels.whatsapp.body || "").trim()) {
+          return { valid: false, error: "WhatsApp: Message body is required for session message mode" };
+        }
+      }
+    }
+
     // Add more validation rules here as needed for other node types
     
     return { valid: true, error: null };
@@ -4069,74 +4150,1299 @@ function HumanApprovalConfig({ config, updateConfig }: any) {
 }
 
 function NotificationConfig({ config, updateConfig }: any) {
+  const channelMeta: Array<{ key: string; label: string; summary: string }> = [
+    { key: "email", label: "Email", summary: "Structured email notifications" },
+    { key: "internal", label: "Internal Notification", summary: "In-app alerts for users and roles" },
+    { key: "teams", label: "Microsoft Teams", summary: "Channel messages and mentions" },
+    { key: "slack", label: "Slack", summary: "Workspace/channel or DM notifications" },
+    { key: "sms", label: "SMS", summary: "Short message delivery with segment estimation" },
+    { key: "whatsapp", label: "WhatsApp", summary: "Template or session message delivery" },
+  ];
+
+  const variableTokens = [
+    "{{trigger.id}}",
+    "{{trigger.timestamp}}",
+    "{{variables.status}}",
+    "{{variables.referenceId}}",
+    "{{workflow.currentNode}}",
+  ];
+
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ email: true });
+  const [testState, setTestState] = useState<Record<string, { loading: boolean; status: "idle" | "success" | "error"; message: string }>>({});
+
+  useEffect(() => {
+    if (config.channels) return;
+
+    const defaults: Record<string, any> = {
+      email: {
+        enabled: config.channel === "email",
+        fromName: "",
+        replyTo: "",
+        to: config.channel === "email" ? (config.recipient || "") : "",
+        cc: "",
+        bcc: "",
+        subject: config.channel === "email" ? (config.subject || "Notification") : "Notification",
+        body: config.channel === "email" ? (config.message || "") : "",
+        bodyFormat: "rich_text",
+        template: config.template || "",
+        attachments: [],
+        priority: "normal",
+        delivery: { mode: "immediate", scheduledAt: "" },
+        retry: { enabled: true, maxAttempts: 2, delaySeconds: 2 },
+      },
+      internal: {
+        enabled: config.channel === "internal",
+        users: config.channel === "internal" ? (config.recipient || "") : "",
+        roles: "",
+        teams: "",
+        groups: "",
+        title: config.channel === "internal" ? (config.subject || "Orchestration Notification") : "Orchestration Notification",
+        message: config.channel === "internal" ? (config.message || "") : "",
+        notificationType: "information",
+        actionLabel: "",
+        actionUrl: "",
+        expiryDate: "",
+        persistentUntilRead: false,
+        delivery: { mode: "immediate", scheduledAt: "" },
+        retry: { enabled: true, maxAttempts: 2, delaySeconds: 1 },
+      },
+      teams: {
+        enabled: config.channel === "teams",
+        connection: "",
+        workspace: "",
+        team: "",
+        channel: "",
+        mentions: "",
+        title: config.channel === "teams" ? (config.subject || "Orchestration Notification") : "Orchestration Notification",
+        message: config.channel === "teams" ? (config.message || "") : "",
+        messageFormat: "adaptive_card",
+        actionButtons: [],
+        webhookUrl: config.channel === "teams" ? (config.recipient || "") : "",
+        delivery: { mode: "immediate", scheduledAt: "" },
+        retry: { enabled: true, maxAttempts: 2, delaySeconds: 2 },
+      },
+      slack: {
+        enabled: config.channel === "slack",
+        connection: "",
+        workspace: "",
+        channel: "",
+        directMessageRecipient: "",
+        mentions: "",
+        message: config.channel === "slack" ? (config.message || "") : "",
+        messageFormat: "plain_text",
+        actionButtons: [],
+        threadTs: "",
+        webhookUrl: config.channel === "slack" ? (config.recipient || "") : "",
+        delivery: { mode: "immediate", scheduledAt: "" },
+        retry: { enabled: true, maxAttempts: 2, delaySeconds: 2 },
+      },
+      sms: {
+        enabled: false,
+        senderId: "",
+        recipients: "",
+        message: "",
+        template: "",
+        unicodeSupport: false,
+        webhookUrl: "",
+        delivery: { mode: "immediate", scheduledAt: "" },
+        retry: { enabled: true, maxAttempts: 2, delaySeconds: 2 },
+      },
+      whatsapp: {
+        enabled: false,
+        businessAccount: "",
+        senderNumber: "",
+        recipients: "",
+        messageType: "session_message",
+        templateName: "",
+        templateLanguage: "en",
+        templateVariables: "",
+        body: "",
+        mediaAttachment: "",
+        interactiveButtons: [],
+        webhookUrl: "",
+        delivery: { mode: "immediate", scheduledAt: "" },
+        retry: { enabled: true, maxAttempts: 2, delaySeconds: 2 },
+      },
+    };
+
+    updateConfig({ channels: defaults });
+  }, [config.channels, config.channel, config.message, config.recipient, config.subject, config.template, updateConfig]);
+
+  const channels = config.channels || {};
+
+  const setChannel = (key: string, updates: Record<string, any>) => {
+    updateConfig({
+      channels: {
+        ...channels,
+        [key]: {
+          ...(channels[key] || {}),
+          ...updates,
+        },
+      },
+    });
+  };
+
+  const setChannelNested = (key: string, nestedKey: string, updates: Record<string, any>) => {
+    const current = channels[key] || {};
+    setChannel(key, {
+      [nestedKey]: {
+        ...(current[nestedKey] || {}),
+        ...updates,
+      },
+    });
+  };
+
+  const appendVariable = (key: string, field: string, token: string) => {
+    const existing = String(channels[key]?.[field] || "");
+    const spacer = existing && !existing.endsWith(" ") ? " " : "";
+    setChannel(key, { [field]: `${existing}${spacer}${token}` });
+  };
+
+  const addListItem = (key: string, field: string, item: Record<string, any>) => {
+    const current = Array.isArray(channels[key]?.[field]) ? channels[key][field] : [];
+    setChannel(key, { [field]: [...current, item] });
+  };
+
+  const updateListItem = (key: string, field: string, index: number, updates: Record<string, any>) => {
+    const current = Array.isArray(channels[key]?.[field]) ? [...channels[key][field]] : [];
+    current[index] = { ...(current[index] || {}), ...updates };
+    setChannel(key, { [field]: current });
+  };
+
+  const removeListItem = (key: string, field: string, index: number) => {
+    const current = Array.isArray(channels[key]?.[field]) ? [...channels[key][field]] : [];
+    setChannel(key, { [field]: current.filter((_: any, i: number) => i !== index) });
+  };
+
+  const enabledChannels = channelMeta.filter((entry) => channels?.[entry.key]?.enabled);
+
+  const smsMessage = String(channels.sms?.message || "");
+  const smsUnicode = channels.sms?.unicodeSupport === true;
+  const smsSingleLimit = smsUnicode ? 70 : 160;
+  const smsConcatLimit = smsUnicode ? 67 : 153;
+  const smsSegments =
+    smsMessage.length === 0
+      ? 0
+      : smsMessage.length <= smsSingleLimit
+      ? 1
+      : Math.ceil(smsMessage.length / smsConcatLimit);
+
+  const getError = (condition: boolean, text: string) => (condition ? text : "");
+
+  const channelErrors = {
+    email: {
+      to: getError(channels.email?.enabled && !String(channels.email?.to || "").trim(), "To recipients are required"),
+      subject: getError(channels.email?.enabled && !String(channels.email?.subject || "").trim(), "Subject is required"),
+      body: getError(channels.email?.enabled && !String(channels.email?.body || "").trim(), "Message body is required"),
+    },
+    internal: {
+      recipients: getError(
+        channels.internal?.enabled &&
+          !String(channels.internal?.users || "").trim() &&
+          !String(channels.internal?.roles || "").trim() &&
+          !String(channels.internal?.teams || "").trim() &&
+          !String(channels.internal?.groups || "").trim(),
+        "At least one recipient target is required"
+      ),
+      title: getError(channels.internal?.enabled && !String(channels.internal?.title || "").trim(), "Title is required"),
+      message: getError(channels.internal?.enabled && !String(channels.internal?.message || "").trim(), "Message is required"),
+    },
+    teams: {
+      message: getError(channels.teams?.enabled && !String(channels.teams?.message || "").trim(), "Message is required"),
+      webhook: getError(
+        channels.teams?.enabled && !String(channels.teams?.webhookUrl || channels.teams?.connection || "").trim(),
+        "Webhook URL or connection is required"
+      ),
+    },
+    slack: {
+      message: getError(channels.slack?.enabled && !String(channels.slack?.message || "").trim(), "Message is required"),
+      webhook: getError(
+        channels.slack?.enabled && !String(channels.slack?.webhookUrl || channels.slack?.connection || "").trim(),
+        "Webhook URL or connection is required"
+      ),
+    },
+    sms: {
+      recipients: getError(channels.sms?.enabled && !String(channels.sms?.recipients || "").trim(), "Recipient phone numbers are required"),
+      message: getError(channels.sms?.enabled && !String(channels.sms?.message || "").trim(), "Message is required"),
+    },
+    whatsapp: {
+      recipients: getError(channels.whatsapp?.enabled && !String(channels.whatsapp?.recipients || "").trim(), "Recipient phone numbers are required"),
+      template: getError(
+        channels.whatsapp?.enabled &&
+          channels.whatsapp?.messageType === "approved_template" &&
+          !String(channels.whatsapp?.templateName || "").trim(),
+        "Template name is required for approved template mode"
+      ),
+      body: getError(
+        channels.whatsapp?.enabled &&
+          channels.whatsapp?.messageType !== "approved_template" &&
+          !String(channels.whatsapp?.body || "").trim(),
+        "Message body is required for session message mode"
+      ),
+    },
+  };
+
+  const handleTestSend = async (channelKey: string) => {
+    const channelConfig = channels[channelKey] || {};
+    setTestState((prev) => ({
+      ...prev,
+      [channelKey]: { loading: true, status: "idle", message: "Sending test notification..." },
+    }));
+
+    try {
+      const response = await fetch("/api/admin/orchestrations/test-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          config: {
+            type: "notification",
+            channels: {
+              [channelKey]: {
+                ...channelConfig,
+                enabled: true,
+              },
+            },
+          },
+          context: {
+            testMode: true,
+            trigger: { id: "test-trigger", timestamp: new Date().toISOString() },
+            variables: { status: "test", referenceId: "TEST-001" },
+            workflow: { currentNode: "notification" },
+          },
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok || payload?.result?.success === false) {
+        throw new Error(payload?.result?.error || payload?.error || payload?.message || "Test send failed");
+      }
+
+      setTestState((prev) => ({
+        ...prev,
+        [channelKey]: { loading: false, status: "success", message: "Test notification sent successfully" },
+      }));
+    } catch (error) {
+      setTestState((prev) => ({
+        ...prev,
+        [channelKey]: {
+          loading: false,
+          status: "error",
+          message: error instanceof Error ? error.message : "Test send failed",
+        },
+      }));
+    }
+  };
+
+  const renderVariableButtons = (channelKey: string, field: string) => (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {variableTokens.map((token) => (
+        <button
+          key={token}
+          type="button"
+          className="rounded border border-slate-300 px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50"
+          onClick={() => appendVariable(channelKey, field, token)}
+        >
+          {token}
+        </button>
+      ))}
+    </div>
+  );
+
+  const renderDeliveryAndRetry = (channelKey: string) => {
+    const channel = channels[channelKey] || {};
+    return (
+      <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Delivery mode</label>
+            <select
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              value={channel.delivery?.mode || "immediate"}
+              onChange={(e) => setChannelNested(channelKey, "delivery", { mode: e.target.value })}
+            >
+              <option value="immediate">Immediate</option>
+              <option value="scheduled">Scheduled</option>
+            </select>
+          </div>
+          {channel.delivery?.mode === "scheduled" && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Scheduled at</label>
+              <input
+                type="datetime-local"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                value={channel.delivery?.scheduledAt || ""}
+                onChange={(e) => setChannelNested(channelKey, "delivery", { scheduledAt: e.target.value })}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="flex items-center gap-2">
+            <input
+              id={`${channelKey}-retry-enabled`}
+              type="checkbox"
+              className="rounded border-slate-300"
+              checked={channel.retry?.enabled !== false}
+              onChange={(e) => setChannelNested(channelKey, "retry", { enabled: e.target.checked })}
+            />
+            <label htmlFor={`${channelKey}-retry-enabled`} className="text-xs text-slate-700">Enable retries</label>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Max attempts</label>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              value={channel.retry?.maxAttempts ?? 2}
+              onChange={(e) => setChannelNested(channelKey, "retry", { maxAttempts: Number(e.target.value || 2) })}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Retry delay (sec)</label>
+            <input
+              type="number"
+              min={0}
+              max={300}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+              value={channel.retry?.delaySeconds ?? 2}
+              onChange={(e) => setChannelNested(channelKey, "retry", { delaySeconds: Number(e.target.value || 0) })}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Channel <span className="text-red-500">*</span>
-        </label>
-        <select
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.channel || "email"}
-          onChange={(e) => updateConfig({ channel: e.target.value })}
-        >
-          <option value="email">Email</option>
-          <option value="teams">Microsoft Teams</option>
-          <option value="slack">Slack</option>
-          <option value="internal">Internal Notification</option>
-        </select>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-semibold text-slate-800">Enabled channels summary</p>
+        {enabledChannels.length === 0 ? (
+          <p className="mt-1 text-xs text-amber-700">No channels enabled yet. Expand a panel and enable at least one channel.</p>
+        ) : (
+          <div className="mt-2 space-y-1 text-xs text-slate-700">
+            {enabledChannels.map((entry) => (
+              <div key={entry.key} className="flex items-center justify-between rounded border border-slate-200 bg-white px-2 py-1">
+                <span className="font-semibold">{entry.label}</span>
+                <span className="text-slate-500 truncate max-w-[220px] text-right">
+                  {entry.key === "email" && (channels.email?.to || "No recipients")}
+                  {entry.key === "internal" && (channels.internal?.users || channels.internal?.roles || channels.internal?.teams || channels.internal?.groups || "No recipients")}
+                  {entry.key === "teams" && (channels.teams?.team || channels.teams?.channel || channels.teams?.webhookUrl || "No destination")}
+                  {entry.key === "slack" && (channels.slack?.channel || channels.slack?.directMessageRecipient || channels.slack?.webhookUrl || "No destination")}
+                  {entry.key === "sms" && (channels.sms?.recipients || "No recipients")}
+                  {entry.key === "whatsapp" && (channels.whatsapp?.recipients || "No recipients")}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Recipient <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.recipient || ""}
-          onChange={(e) => updateConfig({ recipient: e.target.value })}
-          placeholder={
-            config.channel === "email" || config.channel === "internal"
-              ? "user@example.com or {{variableName}}"
-              : "Webhook URL"
-          }
-        />
-        <p className="mt-1 text-xs text-slate-500">
-          {config.channel === "email" || config.channel === "internal"
-            ? "Email address or {{variable}}"
-            : "Incoming webhook URL"}
-        </p>
-      </div>
+      {channelMeta.map((entry) => {
+        const channel = channels[entry.key] || {};
+        const isOpen = !!expanded[entry.key];
+        const isEnabled = channel.enabled === true;
+        const state = testState[entry.key] || { loading: false, status: "idle", message: "" };
 
-      {(config.channel === "email" || config.channel === "internal") && (
-        <div>
-          <label className="block text-sm font-semibold text-slate-700 mb-1">
-            Subject <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="text"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-            value={config.subject || ""}
-            onChange={(e) => updateConfig({ subject: e.target.value })}
-            placeholder="Notification subject"
-          />
-        </div>
-      )}
+        return (
+          <div key={entry.key} className="rounded-lg border border-slate-200 bg-white">
+            <button
+              type="button"
+              onClick={() => setExpanded((prev) => ({ ...prev, [entry.key]: !isOpen }))}
+              className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-slate-50"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                {isOpen ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronRight className="h-4 w-4 text-slate-500" />}
+                <span className="text-sm font-semibold text-slate-900">{entry.label}</span>
+                <span className="text-xs text-slate-500 truncate">{entry.summary}</span>
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded font-semibold ${isEnabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                {isEnabled ? "Enabled" : "Disabled"}
+              </span>
+            </button>
 
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Message <span className="text-red-500">*</span>
-        </label>
-        <textarea
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          rows={5}
-          value={config.message || ""}
-          onChange={(e) => updateConfig({ message: e.target.value })}
-          placeholder="Use {{variableName}} for dynamic content"
-        />
-        <p className="mt-1 text-xs text-slate-500">Supports {'{{variable}}'} substitution</p>
-      </div>
+            {isOpen && (
+              <div className="border-t border-slate-200 px-3 py-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={(e) => setChannel(entry.key, { enabled: e.target.checked })}
+                      className="rounded border-slate-300"
+                    />
+                    Enable channel
+                  </label>
+                  <button
+                    type="button"
+                    className="rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                    onClick={() => handleTestSend(entry.key)}
+                    disabled={!isEnabled || state.loading}
+                  >
+                    {state.loading ? "Testing..." : "Test send"}
+                  </button>
+                </div>
+
+                {state.status !== "idle" && (
+                  <p className={`text-xs ${state.status === "success" ? "text-green-700" : "text-red-700"}`}>
+                    {state.message}
+                  </p>
+                )}
+
+                {entry.key === "email" && (
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">From name</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.fromName || ""}
+                          onChange={(e) => setChannel("email", { fromName: e.target.value })}
+                          placeholder="Scout Notifications"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Reply-to email</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.replyTo || ""}
+                          onChange={(e) => setChannel("email", { replyTo: e.target.value })}
+                          placeholder="support@example.com"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">To recipients <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.to ? "border-red-400" : "border-slate-300"}`}
+                        rows={2}
+                        value={channel.to || ""}
+                        onChange={(e) => setChannel("email", { to: e.target.value })}
+                        placeholder="user@example.com, {{variables.ownerEmail}}"
+                      />
+                      {channelErrors.email.to && <p className="mt-1 text-xs text-red-600">{channelErrors.email.to}</p>}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">CC</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.cc || ""}
+                          onChange={(e) => setChannel("email", { cc: e.target.value })}
+                          placeholder="optional"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">BCC</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.bcc || ""}
+                          onChange={(e) => setChannel("email", { bcc: e.target.value })}
+                          placeholder="optional"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Subject <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.subject ? "border-red-400" : "border-slate-300"}`}
+                        value={channel.subject || ""}
+                        onChange={(e) => setChannel("email", { subject: e.target.value })}
+                        placeholder="Status update for {{variables.referenceId}}"
+                      />
+                      {channelErrors.email.subject && <p className="mt-1 text-xs text-red-600">{channelErrors.email.subject}</p>}
+                      {renderVariableButtons("email", "subject")}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Body format</label>
+                        <select
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.bodyFormat || "rich_text"}
+                          onChange={(e) => setChannel("email", { bodyFormat: e.target.value })}
+                        >
+                          <option value="rich_text">Rich text</option>
+                          <option value="plain_text">Plain text</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Template</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.template || ""}
+                          onChange={(e) => setChannel("email", { template: e.target.value })}
+                          placeholder="template name"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
+                        <select
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.priority || "normal"}
+                          onChange={(e) => setChannel("email", { priority: e.target.value })}
+                        >
+                          <option value="low">Low</option>
+                          <option value="normal">Normal</option>
+                          <option value="high">High</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Message body <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.body ? "border-red-400" : "border-slate-300"}`}
+                        rows={5}
+                        value={channel.body || ""}
+                        onChange={(e) => setChannel("email", { body: e.target.value })}
+                        placeholder="Use variables like {{variables.referenceId}} and {{trigger.timestamp}}"
+                      />
+                      {channelErrors.email.body && <p className="mt-1 text-xs text-red-600">{channelErrors.email.body}</p>}
+                      {renderVariableButtons("email", "body")}
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700">Attachments</label>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-700 hover:text-blue-800"
+                          onClick={() => addListItem("email", "attachments", { name: "", url: "", contentType: "" })}
+                        >
+                          Add attachment
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {(Array.isArray(channel.attachments) ? channel.attachments : []).map((attachment: any, index: number) => (
+                          <div key={index} className="rounded border border-slate-200 p-2 space-y-2 bg-slate-50">
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                              <input
+                                type="text"
+                                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                                placeholder="Name"
+                                value={attachment.name || ""}
+                                onChange={(e) => updateListItem("email", "attachments", index, { name: e.target.value })}
+                              />
+                              <input
+                                type="text"
+                                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                                placeholder="URL"
+                                value={attachment.url || ""}
+                                onChange={(e) => updateListItem("email", "attachments", index, { url: e.target.value })}
+                              />
+                              <input
+                                type="text"
+                                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                                placeholder="Content type"
+                                value={attachment.contentType || ""}
+                                onChange={(e) => updateListItem("email", "attachments", index, { contentType: e.target.value })}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              className="text-xs text-red-600 hover:text-red-700"
+                              onClick={() => removeListItem("email", "attachments", index)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {renderDeliveryAndRetry("email")}
+
+                    <details className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                      <summary className="cursor-pointer font-semibold text-slate-700">Learn more</summary>
+                      <p className="mt-2">Use comma-separated recipients for To, CC, and BCC. Rich text supports variable interpolation. Attachment URLs must be reachable by the server process.</p>
+                    </details>
+                  </div>
+                )}
+
+                {entry.key === "internal" && (
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Users</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.users || ""}
+                          onChange={(e) => setChannel("internal", { users: e.target.value })}
+                          placeholder="emails or user IDs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Roles</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.roles || ""}
+                          onChange={(e) => setChannel("internal", { roles: e.target.value })}
+                          placeholder="role names or IDs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Teams</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.teams || ""}
+                          onChange={(e) => setChannel("internal", { teams: e.target.value })}
+                          placeholder="team names or IDs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Groups</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.groups || ""}
+                          onChange={(e) => setChannel("internal", { groups: e.target.value })}
+                          placeholder="group names or IDs"
+                        />
+                      </div>
+                    </div>
+                    {channelErrors.internal.recipients && <p className="text-xs text-red-600">{channelErrors.internal.recipients}</p>}
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Title <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.internal.title ? "border-red-400" : "border-slate-300"}`}
+                        value={channel.title || ""}
+                        onChange={(e) => setChannel("internal", { title: e.target.value })}
+                        placeholder="Approval required"
+                      />
+                      {channelErrors.internal.title && <p className="mt-1 text-xs text-red-600">{channelErrors.internal.title}</p>}
+                      {renderVariableButtons("internal", "title")}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Message <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.internal.message ? "border-red-400" : "border-slate-300"}`}
+                        rows={4}
+                        value={channel.message || ""}
+                        onChange={(e) => setChannel("internal", { message: e.target.value })}
+                        placeholder="You have a new approval request"
+                      />
+                      {channelErrors.internal.message && <p className="mt-1 text-xs text-red-600">{channelErrors.internal.message}</p>}
+                      {renderVariableButtons("internal", "message")}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Notification type</label>
+                        <select
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.notificationType || "information"}
+                          onChange={(e) => setChannel("internal", { notificationType: e.target.value })}
+                        >
+                          <option value="information">Information</option>
+                          <option value="success">Success</option>
+                          <option value="warning">Warning</option>
+                          <option value="critical">Critical</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Expiry date</label>
+                        <input
+                          type="datetime-local"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.expiryDate || ""}
+                          onChange={(e) => setChannel("internal", { expiryDate: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Action label</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.actionLabel || ""}
+                          onChange={(e) => setChannel("internal", { actionLabel: e.target.value })}
+                          placeholder="Open request"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Action URL</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.actionUrl || ""}
+                          onChange={(e) => setChannel("internal", { actionUrl: e.target.value })}
+                          placeholder="https://..."
+                        />
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300"
+                        checked={channel.persistentUntilRead === true}
+                        onChange={(e) => setChannel("internal", { persistentUntilRead: e.target.checked })}
+                      />
+                      Mark as persistent until read
+                    </label>
+
+                    {renderDeliveryAndRetry("internal")}
+
+                    <details className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                      <summary className="cursor-pointer font-semibold text-slate-700">Learn more</summary>
+                      <p className="mt-2">Users can be specified by UUID or email. Roles are resolved through active company role assignments. Teams/groups are resolved when membership tables exist.</p>
+                    </details>
+                  </div>
+                )}
+
+                {entry.key === "teams" && (
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Connection or workspace</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.connection || channel.workspace || ""}
+                          onChange={(e) => setChannel("teams", { connection: e.target.value, workspace: e.target.value })}
+                          placeholder="workspace alias"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Team and channel</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            value={channel.team || ""}
+                            onChange={(e) => setChannel("teams", { team: e.target.value })}
+                            placeholder="Team"
+                          />
+                          <input
+                            type="text"
+                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            value={channel.channel || ""}
+                            onChange={(e) => setChannel("teams", { channel: e.target.value })}
+                            placeholder="Channel"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Recipients or mentions</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.mentions || ""}
+                          onChange={(e) => setChannel("teams", { mentions: e.target.value })}
+                          placeholder="@ops-team, @john"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Title</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.title || ""}
+                          onChange={(e) => setChannel("teams", { title: e.target.value })}
+                          placeholder="Workflow update"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Message <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.teams.message ? "border-red-400" : "border-slate-300"}`}
+                        rows={4}
+                        value={channel.message || ""}
+                        onChange={(e) => setChannel("teams", { message: e.target.value })}
+                        placeholder="Status for {{variables.referenceId}}"
+                      />
+                      {channelErrors.teams.message && <p className="mt-1 text-xs text-red-600">{channelErrors.teams.message}</p>}
+                      {renderVariableButtons("teams", "message")}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Message format</label>
+                        <select
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.messageFormat || "adaptive_card"}
+                          onChange={(e) => setChannel("teams", { messageFormat: e.target.value })}
+                        >
+                          <option value="adaptive_card">Adaptive Card</option>
+                          <option value="plain_text">Plain text</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700">Action buttons</label>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-700 hover:text-blue-800"
+                          onClick={() => addListItem("teams", "actionButtons", { label: "", url: "" })}
+                        >
+                          Add button
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {(Array.isArray(channel.actionButtons) ? channel.actionButtons : []).map((button: any, index: number) => (
+                          <div key={index} className="rounded border border-slate-200 p-2 bg-slate-50 flex gap-2">
+                            <input
+                              type="text"
+                              className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              value={button.label || ""}
+                              onChange={(e) => updateListItem("teams", "actionButtons", index, { label: e.target.value })}
+                              placeholder="Label"
+                            />
+                            <input
+                              type="text"
+                              className="flex-[2] rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              value={button.url || ""}
+                              onChange={(e) => updateListItem("teams", "actionButtons", index, { url: e.target.value })}
+                              placeholder="URL"
+                            />
+                            <button type="button" className="text-red-600 text-xs" onClick={() => removeListItem("teams", "actionButtons", index)}>Remove</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <details className="rounded border border-slate-200 bg-slate-50 p-2">
+                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Advanced options</summary>
+                      <div className="mt-2">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Webhook URL <span className="text-red-500">*</span></label>
+                        <input
+                          type="text"
+                          className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.teams.webhook ? "border-red-400" : "border-slate-300"}`}
+                          value={channel.webhookUrl || ""}
+                          onChange={(e) => setChannel("teams", { webhookUrl: e.target.value })}
+                          placeholder="https://outlook.office.com/webhook/..."
+                        />
+                        {channelErrors.teams.webhook && <p className="mt-1 text-xs text-red-600">{channelErrors.teams.webhook}</p>}
+                      </div>
+                    </details>
+
+                    {renderDeliveryAndRetry("teams")}
+
+                    <details className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                      <summary className="cursor-pointer font-semibold text-slate-700">Learn more</summary>
+                      <p className="mt-2">Adaptive Card mode supports richer layout and action buttons. Use mentions for key recipients. Webhook URL remains available under advanced options.</p>
+                    </details>
+                  </div>
+                )}
+
+                {entry.key === "slack" && (
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Connection or workspace</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.connection || channel.workspace || ""}
+                          onChange={(e) => setChannel("slack", { connection: e.target.value, workspace: e.target.value })}
+                          placeholder="workspace alias"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Channel or DM recipient</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            value={channel.channel || ""}
+                            onChange={(e) => setChannel("slack", { channel: e.target.value })}
+                            placeholder="#channel"
+                          />
+                          <input
+                            type="text"
+                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            value={channel.directMessageRecipient || ""}
+                            onChange={(e) => setChannel("slack", { directMessageRecipient: e.target.value })}
+                            placeholder="@user"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Mentions</label>
+                      <input
+                        type="text"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        value={channel.mentions || ""}
+                        onChange={(e) => setChannel("slack", { mentions: e.target.value })}
+                        placeholder="@ops, <!here>"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Message <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.slack.message ? "border-red-400" : "border-slate-300"}`}
+                        rows={4}
+                        value={channel.message || ""}
+                        onChange={(e) => setChannel("slack", { message: e.target.value })}
+                        placeholder="Deployment for {{variables.referenceId}} completed"
+                      />
+                      {channelErrors.slack.message && <p className="mt-1 text-xs text-red-600">{channelErrors.slack.message}</p>}
+                      {renderVariableButtons("slack", "message")}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Message format</label>
+                        <select
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.messageFormat || "plain_text"}
+                          onChange={(e) => setChannel("slack", { messageFormat: e.target.value })}
+                        >
+                          <option value="plain_text">Plain text</option>
+                          <option value="block_kit">Block Kit</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700">Action buttons</label>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-700 hover:text-blue-800"
+                          onClick={() => addListItem("slack", "actionButtons", { label: "", url: "" })}
+                        >
+                          Add button
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {(Array.isArray(channel.actionButtons) ? channel.actionButtons : []).map((button: any, index: number) => (
+                          <div key={index} className="rounded border border-slate-200 p-2 bg-slate-50 flex gap-2">
+                            <input
+                              type="text"
+                              className="flex-1 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              value={button.label || ""}
+                              onChange={(e) => updateListItem("slack", "actionButtons", index, { label: e.target.value })}
+                              placeholder="Label"
+                            />
+                            <input
+                              type="text"
+                              className="flex-[2] rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              value={button.url || ""}
+                              onChange={(e) => updateListItem("slack", "actionButtons", index, { url: e.target.value })}
+                              placeholder="URL"
+                            />
+                            <button type="button" className="text-red-600 text-xs" onClick={() => removeListItem("slack", "actionButtons", index)}>Remove</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <details className="rounded border border-slate-200 bg-slate-50 p-2">
+                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Advanced options</summary>
+                      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Thread timestamp</label>
+                          <input
+                            type="text"
+                            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            value={channel.threadTs || ""}
+                            onChange={(e) => setChannel("slack", { threadTs: e.target.value })}
+                            placeholder="1731106130.111900"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Webhook URL <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.slack.webhook ? "border-red-400" : "border-slate-300"}`}
+                            value={channel.webhookUrl || ""}
+                            onChange={(e) => setChannel("slack", { webhookUrl: e.target.value })}
+                            placeholder="https://hooks.slack.com/services/..."
+                          />
+                          {channelErrors.slack.webhook && <p className="mt-1 text-xs text-red-600">{channelErrors.slack.webhook}</p>}
+                        </div>
+                      </div>
+                    </details>
+
+                    {renderDeliveryAndRetry("slack")}
+
+                    <details className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                      <summary className="cursor-pointer font-semibold text-slate-700">Learn more</summary>
+                      <p className="mt-2">Block Kit mode is best for structured updates and action buttons. Use thread timestamp to reply in an existing thread when needed.</p>
+                    </details>
+                  </div>
+                )}
+
+                {entry.key === "sms" && (
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Sender ID or number</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.senderId || ""}
+                          onChange={(e) => setChannel("sms", { senderId: e.target.value })}
+                          placeholder="SCOUT or +15550100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Template</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.template || ""}
+                          onChange={(e) => setChannel("sms", { template: e.target.value })}
+                          placeholder="template code"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient phone numbers <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.sms.recipients ? "border-red-400" : "border-slate-300"}`}
+                        rows={2}
+                        value={channel.recipients || ""}
+                        onChange={(e) => setChannel("sms", { recipients: e.target.value })}
+                        placeholder="+15551234567, +15550987654"
+                      />
+                      {channelErrors.sms.recipients && <p className="mt-1 text-xs text-red-600">{channelErrors.sms.recipients}</p>}
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Message <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.sms.message ? "border-red-400" : "border-slate-300"}`}
+                        rows={4}
+                        value={channel.message || ""}
+                        onChange={(e) => setChannel("sms", { message: e.target.value })}
+                        placeholder="Reference {{variables.referenceId}} is now complete"
+                      />
+                      {channelErrors.sms.message && <p className="mt-1 text-xs text-red-600">{channelErrors.sms.message}</p>}
+                      {renderVariableButtons("sms", "message")}
+                      <p className="mt-1 text-xs text-slate-500">Character count: {smsMessage.length} | Estimated segments: {smsSegments}</p>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        className="rounded border-slate-300"
+                        checked={channel.unicodeSupport === true}
+                        onChange={(e) => setChannel("sms", { unicodeSupport: e.target.checked })}
+                      />
+                      Unicode support
+                    </label>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Webhook URL</label>
+                      <input
+                        type="text"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        value={channel.webhookUrl || ""}
+                        onChange={(e) => setChannel("sms", { webhookUrl: e.target.value })}
+                        placeholder="Uses NOTIFICATION_SMS_WEBHOOK_URL if blank"
+                      />
+                    </div>
+
+                    {renderDeliveryAndRetry("sms")}
+
+                    <details className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                      <summary className="cursor-pointer font-semibold text-slate-700">Learn more</summary>
+                      <p className="mt-2">SMS segmentation changes for Unicode messages. Keep critical updates concise to reduce segment count and provider costs.</p>
+                    </details>
+                  </div>
+                )}
+
+                {entry.key === "whatsapp" && (
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Business account or sender number</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.businessAccount || channel.senderNumber || ""}
+                          onChange={(e) => setChannel("whatsapp", { businessAccount: e.target.value, senderNumber: e.target.value })}
+                          placeholder="WABA_ID or +15550100"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Message type</label>
+                        <select
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.messageType || "session_message"}
+                          onChange={(e) => setChannel("whatsapp", { messageType: e.target.value })}
+                        >
+                          <option value="approved_template">Approved template</option>
+                          <option value="session_message">Session message</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Recipient phone numbers <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.whatsapp.recipients ? "border-red-400" : "border-slate-300"}`}
+                        rows={2}
+                        value={channel.recipients || ""}
+                        onChange={(e) => setChannel("whatsapp", { recipients: e.target.value })}
+                        placeholder="+15551234567"
+                      />
+                      {channelErrors.whatsapp.recipients && <p className="mt-1 text-xs text-red-600">{channelErrors.whatsapp.recipients}</p>}
+                    </div>
+
+                    {channel.messageType === "approved_template" ? (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Template name <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.whatsapp.template ? "border-red-400" : "border-slate-300"}`}
+                            value={channel.templateName || ""}
+                            onChange={(e) => setChannel("whatsapp", { templateName: e.target.value })}
+                            placeholder="order_update"
+                          />
+                          {channelErrors.whatsapp.template && <p className="mt-1 text-xs text-red-600">{channelErrors.whatsapp.template}</p>}
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Language</label>
+                          <input
+                            type="text"
+                            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            value={channel.templateLanguage || "en"}
+                            onChange={(e) => setChannel("whatsapp", { templateLanguage: e.target.value })}
+                            placeholder="en"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700 mb-1">Template variables</label>
+                          <input
+                            type="text"
+                            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                            value={channel.templateVariables || ""}
+                            onChange={(e) => setChannel("whatsapp", { templateVariables: e.target.value })}
+                            placeholder="value1, value2"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Message body <span className="text-red-500">*</span></label>
+                        <textarea
+                          className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.whatsapp.body ? "border-red-400" : "border-slate-300"}`}
+                          rows={4}
+                          value={channel.body || ""}
+                          onChange={(e) => setChannel("whatsapp", { body: e.target.value })}
+                          placeholder="Order {{variables.referenceId}} is ready"
+                        />
+                        {channelErrors.whatsapp.body && <p className="mt-1 text-xs text-red-600">{channelErrors.whatsapp.body}</p>}
+                        {renderVariableButtons("whatsapp", "body")}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Media attachment</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.mediaAttachment || ""}
+                          onChange={(e) => setChannel("whatsapp", { mediaAttachment: e.target.value })}
+                          placeholder="https://..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Webhook URL</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.webhookUrl || ""}
+                          onChange={(e) => setChannel("whatsapp", { webhookUrl: e.target.value })}
+                          placeholder="Uses NOTIFICATION_WHATSAPP_WEBHOOK_URL if blank"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700">Interactive buttons</label>
+                        <button
+                          type="button"
+                          className="text-xs text-blue-700 hover:text-blue-800"
+                          onClick={() => addListItem("whatsapp", "interactiveButtons", { label: "", actionType: "url", value: "" })}
+                        >
+                          Add button
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {(Array.isArray(channel.interactiveButtons) ? channel.interactiveButtons : []).map((button: any, index: number) => (
+                          <div key={index} className="rounded border border-slate-200 p-2 bg-slate-50 grid grid-cols-1 gap-2 sm:grid-cols-4">
+                            <input
+                              type="text"
+                              className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              value={button.label || ""}
+                              onChange={(e) => updateListItem("whatsapp", "interactiveButtons", index, { label: e.target.value })}
+                              placeholder="Label"
+                            />
+                            <select
+                              className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              value={button.actionType || "url"}
+                              onChange={(e) => updateListItem("whatsapp", "interactiveButtons", index, { actionType: e.target.value })}
+                            >
+                              <option value="url">URL</option>
+                              <option value="reply">Reply</option>
+                            </select>
+                            <input
+                              type="text"
+                              className="sm:col-span-2 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              value={button.value || ""}
+                              onChange={(e) => updateListItem("whatsapp", "interactiveButtons", index, { value: e.target.value })}
+                              placeholder={button.actionType === "reply" ? "Reply payload" : "https://..."}
+                            />
+                            <button type="button" className="text-red-600 text-xs" onClick={() => removeListItem("whatsapp", "interactiveButtons", index)}>Remove</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {renderDeliveryAndRetry("whatsapp")}
+
+                    <details className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                      <summary className="cursor-pointer font-semibold text-slate-700">Learn more</summary>
+                      <p className="mt-2">Approved templates are required outside session windows. Session messages allow free-form body text. Interactive buttons can be URL or quick-reply style.</p>
+                    </details>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

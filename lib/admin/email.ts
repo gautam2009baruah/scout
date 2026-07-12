@@ -5,6 +5,19 @@ export type EmailMessage = {
   to: string;
   subject: string;
   body: string;
+  cc?: string;
+  bcc?: string;
+  replyTo?: string;
+  fromName?: string;
+  priority?: "low" | "normal" | "high";
+  htmlBody?: string;
+  attachments?: Array<{
+    filename?: string;
+    path?: string;
+    contentType?: string;
+    content?: string;
+    encoding?: string;
+  }>;
 };
 
 export async function sendEmail(message: EmailMessage) {
@@ -38,10 +51,18 @@ export async function sendEmail(message: EmailMessage) {
     });
 
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM || "Scout Admin <no-reply@localhost>",
+      from: message.fromName
+        ? `${message.fromName} <${process.env.EMAIL_FROM_ADDRESS || "no-reply@localhost"}>`
+        : (process.env.EMAIL_FROM || "Scout Admin <no-reply@localhost>"),
       to: message.to,
+      cc: message.cc,
+      bcc: message.bcc,
+      replyTo: message.replyTo,
       subject: message.subject,
-      text: message.body
+      text: message.body,
+      html: message.htmlBody,
+      priority: message.priority,
+      attachments: message.attachments,
     });
 
     await getPool().query("UPDATE email_outbox SET status = 'sent', sent_at = now() WHERE id = $1", [outboxId]);

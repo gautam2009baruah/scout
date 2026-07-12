@@ -797,6 +797,8 @@ export function TriggersMonitoringDashboard({
                                             <pre className="text-slate-700 whitespace-pre-wrap">
                                               {JSON.stringify(step.output, null, 2)}
                                             </pre>
+                                          ) : step.nodeType === "notification" ? (
+                                            <NotificationOutputSummary value={step.output} />
                                           ) : (
                                             <ReadableValue value={step.output} />
                                           )}
@@ -888,4 +890,67 @@ function ReadableValue({ value }: { value: unknown }) {
   }
 
   return <span className="text-slate-900 break-words">{String(value)}</span>;
+}
+
+function NotificationOutputSummary({ value }: { value: unknown }) {
+  const output = value as Record<string, unknown>;
+  const channelResults = Array.isArray(output?.channelResults)
+    ? (output.channelResults as Array<Record<string, unknown>>)
+    : [];
+
+  if (channelResults.length === 0) {
+    return <ReadableValue value={value} />;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2 text-[11px]">
+        <div className="rounded border border-slate-200 bg-white p-1.5">
+          <span className="font-semibold text-slate-600">Sent channels:</span>{" "}
+          <span className="text-slate-900">{String(output.sentChannelCount ?? 0)}</span>
+        </div>
+        <div className="rounded border border-slate-200 bg-white p-1.5">
+          <span className="font-semibold text-slate-600">Failed channels:</span>{" "}
+          <span className="text-slate-900">{String(output.failedChannelCount ?? 0)}</span>
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        {channelResults.map((result, index) => {
+          const status = String(result.status || "unknown");
+          return (
+            <div key={index} className="rounded border border-slate-200 bg-white p-2 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-slate-800">{String(result.channel || "unknown")}</span>
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                    status === "sent"
+                      ? "bg-green-100 text-green-700"
+                      : status === "failed"
+                      ? "bg-red-100 text-red-700"
+                      : "bg-amber-100 text-amber-700"
+                  }`}
+                >
+                  {status}
+                </span>
+              </div>
+
+              <div className="text-[11px] text-slate-600">Attempts: {String(result.attempts ?? 0)}</div>
+              {result.error ? (
+                <div className="text-[11px] text-red-700 bg-red-50 border border-red-100 rounded p-1">
+                  {String(result.error)}
+                </div>
+              ) : null}
+
+              {result.details ? (
+                <div className="rounded border border-slate-100 bg-slate-50 p-1">
+                  <ReadableValue value={result.details} />
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

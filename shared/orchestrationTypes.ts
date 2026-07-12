@@ -219,11 +219,160 @@ export type HumanApprovalNodeConfig = {
 
 export type NotificationNodeConfig = {
   type: "notification";
-  channel: "email" | "teams" | "slack" | "internal";
-  recipient: string; // can use variable expression
-  subject?: string; // for email
-  message: string; // can use variable expressions
+  // Legacy single-channel fields (kept for backward compatibility)
+  channel?: "email" | "teams" | "slack" | "internal";
+  recipient?: string; // can use variable expression
+  subject?: string; // legacy subject
+  message?: string; // legacy message
   template?: string;
+  // New multi-channel configuration
+  channels?: {
+    email?: {
+      enabled: boolean;
+      fromName?: string;
+      replyTo?: string;
+      to?: string;
+      cc?: string;
+      bcc?: string;
+      subject?: string;
+      body?: string;
+      bodyFormat?: "rich_text" | "plain_text";
+      template?: string;
+      attachments?: Array<{
+        name?: string;
+        url?: string;
+        contentType?: string;
+      }>;
+      priority?: "low" | "normal" | "high";
+      delivery?: {
+        mode?: "immediate" | "scheduled";
+        scheduledAt?: string;
+      };
+      retry?: {
+        enabled?: boolean;
+        maxAttempts?: number;
+        delaySeconds?: number;
+      };
+    };
+    internal?: {
+      enabled: boolean;
+      users?: string;
+      roles?: string;
+      teams?: string;
+      groups?: string;
+      title?: string;
+      message?: string;
+      notificationType?: "information" | "success" | "warning" | "critical";
+      actionLabel?: string;
+      actionUrl?: string;
+      expiryDate?: string;
+      persistentUntilRead?: boolean;
+      delivery?: {
+        mode?: "immediate" | "scheduled";
+        scheduledAt?: string;
+      };
+      retry?: {
+        enabled?: boolean;
+        maxAttempts?: number;
+        delaySeconds?: number;
+      };
+    };
+    teams?: {
+      enabled: boolean;
+      connection?: string;
+      workspace?: string;
+      team?: string;
+      channel?: string;
+      mentions?: string;
+      title?: string;
+      message?: string;
+      messageFormat?: "adaptive_card" | "plain_text";
+      actionButtons?: Array<{
+        label: string;
+        url: string;
+      }>;
+      webhookUrl?: string;
+      delivery?: {
+        mode?: "immediate" | "scheduled";
+        scheduledAt?: string;
+      };
+      retry?: {
+        enabled?: boolean;
+        maxAttempts?: number;
+        delaySeconds?: number;
+      };
+    };
+    slack?: {
+      enabled: boolean;
+      connection?: string;
+      workspace?: string;
+      channel?: string;
+      directMessageRecipient?: string;
+      mentions?: string;
+      message?: string;
+      messageFormat?: "plain_text" | "block_kit";
+      actionButtons?: Array<{
+        label: string;
+        url: string;
+      }>;
+      threadTs?: string;
+      webhookUrl?: string;
+      delivery?: {
+        mode?: "immediate" | "scheduled";
+        scheduledAt?: string;
+      };
+      retry?: {
+        enabled?: boolean;
+        maxAttempts?: number;
+        delaySeconds?: number;
+      };
+    };
+    sms?: {
+      enabled: boolean;
+      senderId?: string;
+      recipients?: string;
+      message?: string;
+      template?: string;
+      unicodeSupport?: boolean;
+      webhookUrl?: string;
+      delivery?: {
+        mode?: "immediate" | "scheduled";
+        scheduledAt?: string;
+      };
+      retry?: {
+        enabled?: boolean;
+        maxAttempts?: number;
+        delaySeconds?: number;
+      };
+    };
+    whatsapp?: {
+      enabled: boolean;
+      businessAccount?: string;
+      senderNumber?: string;
+      recipients?: string;
+      messageType?: "approved_template" | "session_message";
+      templateName?: string;
+      templateLanguage?: string;
+      templateVariables?: string;
+      body?: string;
+      mediaAttachment?: string;
+      interactiveButtons?: Array<{
+        label: string;
+        actionType: "url" | "reply";
+        value: string;
+      }>;
+      webhookUrl?: string;
+      delivery?: {
+        mode?: "immediate" | "scheduled";
+        scheduledAt?: string;
+      };
+      retry?: {
+        enabled?: boolean;
+        maxAttempts?: number;
+        delaySeconds?: number;
+      };
+    };
+  };
 };
 
 export type VariableNodeConfig = {
