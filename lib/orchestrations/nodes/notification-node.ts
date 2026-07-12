@@ -969,7 +969,7 @@ function normalizeWhatsAppButtons(
     .map((button) => {
       const label = interpolateString(button?.label || "", context);
       const value = interpolateString(button?.value || "", context);
-      const actionType = button?.actionType === "reply" ? "reply" : "url";
+      const actionType: "url" | "reply" = button?.actionType === "reply" ? "reply" : "url";
       return { label, actionType, value };
     })
     .filter((button) => {

@@ -4477,19 +4477,19 @@ function NotificationConfig({ config, updateConfig }: any) {
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="col-span-2 flex h-9 min-w-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3" htmlFor={`${channelKey}-retry-enabled`}>
             <input
               id={`${channelKey}-retry-enabled`}
               type="checkbox"
-              className="rounded border-slate-300"
+              className="h-4 w-4 shrink-0 rounded border-slate-300"
               checked={channel.retry?.enabled !== false}
               onChange={(e) => setChannelNested(channelKey, "retry", { enabled: e.target.checked })}
             />
-            <label htmlFor={`${channelKey}-retry-enabled`} className="text-xs text-slate-700">Enable retries</label>
-          </div>
+            <span className="truncate text-xs font-medium text-slate-700" title="Enable retries">Enable retries</span>
+          </label>
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Max attempts</label>
+            <label className="mb-1 block truncate text-xs font-semibold text-slate-700" title="Max attempts">Max attempts</label>
             <input
               type="number"
               min={1}
@@ -4500,7 +4500,7 @@ function NotificationConfig({ config, updateConfig }: any) {
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Retry delay (sec)</label>
+            <label className="mb-1 block truncate text-xs font-semibold text-slate-700" title="Retry delay (seconds)">Retry delay (sec)</label>
             <input
               type="number"
               min={0}
@@ -4551,14 +4551,14 @@ function NotificationConfig({ config, updateConfig }: any) {
             <button
               type="button"
               onClick={() => setExpanded((prev) => ({ ...prev, [entry.key]: !isOpen }))}
-              className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-slate-50"
+              className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-50"
             >
-              <div className="flex items-center gap-2 min-w-0">
-                {isOpen ? <ChevronDown className="h-4 w-4 text-slate-500" /> : <ChevronRight className="h-4 w-4 text-slate-500" />}
-                <span className="text-sm font-semibold text-slate-900">{entry.label}</span>
-                <span className="text-xs text-slate-500 truncate">{entry.summary}</span>
+              {isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />}
+              <div className="grid min-w-0 grid-cols-[minmax(72px,0.8fr)_minmax(0,1.4fr)] items-center gap-2">
+                <span className="truncate text-sm font-semibold text-slate-900" title={entry.label}>{entry.label}</span>
+                <span className="truncate text-xs text-slate-500" title={entry.summary}>{entry.summary}</span>
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded font-semibold ${isEnabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+              <span className={`shrink-0 whitespace-nowrap rounded px-2 py-0.5 text-xs font-semibold ${isEnabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
                 {isEnabled ? "Enabled" : "Disabled"}
               </span>
             </button>
@@ -5280,21 +5280,21 @@ function NotificationConfig({ config, updateConfig }: any) {
 
                 {entry.key === "whatsapp" && (
                   <div className="grid grid-cols-1 gap-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Business account or sender number</label>
+                    <div className="grid grid-cols-2 items-end gap-3">
+                      <div className="min-w-0">
+                        <label className="mb-1 block h-5 truncate text-xs font-semibold leading-5 text-slate-700" title="Business account or sender number">Business account or sender number</label>
                         <input
                           type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          className="h-10 w-full min-w-0 rounded border border-slate-300 px-2 text-sm"
                           value={channel.businessAccount || channel.senderNumber || ""}
                           onChange={(e) => setChannel("whatsapp", { businessAccount: e.target.value, senderNumber: e.target.value })}
                           placeholder="WABA_ID or +15550100"
                         />
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Message type</label>
+                      <div className="min-w-0">
+                        <label className="mb-1 block h-5 truncate text-xs font-semibold leading-5 text-slate-700" title="Message type">Message type</label>
                         <select
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          className="h-10 w-full min-w-0 rounded border border-slate-300 px-2 text-sm"
                           value={channel.messageType || "session_message"}
                           onChange={(e) => setChannel("whatsapp", { messageType: e.target.value })}
                         >
