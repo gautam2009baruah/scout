@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Pencil, Search, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
+import { MultiSelectDropdown } from "./multi-select-dropdown";
 import type { EmployeeMembership, EmployeeRow, EmployeeStatus } from "@/lib/admin/user-management";
 import type { AdminModule } from "@/lib/admin/permissions";
 import type { CompanySummary, RoleSummary } from "@/lib/admin/administration";
@@ -20,6 +21,7 @@ type UserListProps = {
   pageSize: number;
   roles: RoleSummary[];
   total: number;
+  targetApps: Array<{ id: string; name: string; companyId: string }>;
 };
 
 type ConfirmDialog = {
@@ -33,6 +35,7 @@ type EditDialog = {
   roleId: string;
   status: EmployeeStatus;
   moduleKeys: string[];
+  targetAppIds: string[];
   name: string;
   email: string;
   employeeCode: string;
@@ -44,7 +47,7 @@ async function readMessage(response: Response, fallback: string) {
   return typeof body?.message === "string" ? body.message : fallback;
 }
 
-export function UserList({ companies, currentCompanyId, currentUserId, employees, modules, page, pageCount, pageSize, roles, total }: UserListProps) {
+export function UserList({ companies, currentCompanyId, currentUserId, employees, modules, page, pageCount, pageSize, roles, total, targetApps }: UserListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -113,7 +116,8 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
         employeeCode: String(form.get("employeeCode") ?? ""),
         status: editDialog.status,
         statusReason: editDialog.statusReason,
-        moduleKeys: editDialog.moduleKeys
+        moduleKeys: editDialog.moduleKeys,
+        targetAppIds: editDialog.targetAppIds
       })
     });
 
@@ -142,6 +146,7 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
       roleId: membership?.roleId ?? "",
       status: employee.status === "invited" ? "invited" : membership?.status ?? "active",
       moduleKeys: (membership?.moduleKeys ?? []).map(String),
+      targetAppIds: membership?.targetAppIds ?? [],
       name: employee.name,
       email: employee.email,
       employeeCode: employee.employeeCode ?? "",
@@ -160,6 +165,7 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
       status: editDialog.employee.status === "invited" ? "invited" : membership?.status ?? "active",
       statusReason: "",
       moduleKeys: (membership?.moduleKeys ?? []).map(String)
+      ,targetAppIds: membership?.targetAppIds ?? []
     });
   }
 
@@ -293,7 +299,7 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
       </div>
 
       {editDialog ? (
-        <EditUserModal companies={companyOptions} dialog={editDialog} modules={modules} onChange={setEditDialog} onClose={() => setEditDialog(null)} onCompanyChange={updateDialogCompany} onSubmit={(event) => updateUser(event, editDialog.employee.id)} roles={sortedRoles} />
+        <EditUserModal companies={companyOptions} dialog={editDialog} modules={modules} onChange={setEditDialog} onClose={() => setEditDialog(null)} onCompanyChange={updateDialogCompany} onSubmit={(event) => updateUser(event, editDialog.employee.id)} roles={sortedRoles} targetApps={targetApps} />
       ) : null}
 
       <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-3 lg:flex-row lg:items-center lg:justify-between">
@@ -329,7 +335,7 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
   );
 }
 
-function EditUserModal({ companies, dialog, modules, onChange, onClose, onCompanyChange, onSubmit, roles }: {
+function EditUserModal({ companies, dialog, modules, onChange, onClose, onCompanyChange, onSubmit, roles, targetApps }: {
   companies: CompanySummary[];
   dialog: NonNullable<EditDialog>;
   modules: AdminModule[];
@@ -338,6 +344,7 @@ function EditUserModal({ companies, dialog, modules, onChange, onClose, onCompan
   onCompanyChange(companyId: string): void;
   onSubmit(event: FormEvent<HTMLFormElement>): void;
   roles: RoleSummary[];
+  targetApps: Array<{ id: string; name: string; companyId: string }>;
 }) {
   const companyRoles = roles.filter((role) => role.companyId === dialog.companyId);
   const selectedMembership = dialog.employee.memberships.find((membership) => membership.companyId === dialog.companyId);
@@ -392,8 +399,27 @@ function EditUserModal({ companies, dialog, modules, onChange, onClose, onCompan
             </select>
           </label>
 
-          <div className="md:col-span-2">
+          <div>
             <HierarchicalModuleSelector label="Control Panel modules" modules={modules} onChange={(values) => onChange({ ...dialog, moduleKeys: values })} selectedValues={dialog.moduleKeys} />
+          </div>
+          <div>
+            <MultiSelectDropdown
+              emptyLabel="All Apps"
+              label="Select Target App"
+              options={[
+                { label: "All Apps", value: "__all_apps__" },
+                ...targetApps.filter((app) => app.companyId === dialog.companyId).map((app) => ({ label: app.name, value: app.id })),
+              ]}
+              selectedValues={dialog.targetAppIds.length ? dialog.targetAppIds : ["__all_apps__"]}
+              onChange={(values) => {
+                const all = "__all_apps__";
+                const next = values.includes(all)
+                  ? (dialog.targetAppIds.length ? [] : values.filter((value) => value !== all))
+                  : values;
+                onChange({ ...dialog, targetAppIds: next });
+              }}
+            />
+            <p className="mt-2 text-xs text-slate-500">All Apps stores no assignments and grants access to every target app in this company.</p>
           </div>
 
           <div className="md:col-span-2 rounded-lg border border-slate-200 p-4">

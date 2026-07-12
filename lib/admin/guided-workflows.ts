@@ -470,12 +470,34 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
     params.push(session.user.tenantId, session.user.id);
   }
 
+  params.push(session.user.id);
+  const userIdParam = params.length;
+  const targetAppAccess = `
+    AND (
+      NOT EXISTS (
+        SELECT 1
+        FROM user_target_app_access company_access
+        INNER JOIN guided_workflow_target_apps company_app
+          ON company_app.id = company_access.target_app_id
+        WHERE company_access.user_id = $${userIdParam}
+          AND company_app.company_id = guided_workflow_target_apps.company_id
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM user_target_app_access app_access
+        WHERE app_access.user_id = $${userIdParam}
+          AND app_access.target_app_id = guided_workflow_target_apps.id
+      )
+    )
+  `;
+
   const result = await withPoolRetry(() =>
     getPool().query(
       `
         ${targetAppSelect}
         WHERE companies.deleted_at IS NULL
           ${access}
+          ${targetAppAccess}
         ORDER BY companies.name ASC, guided_workflow_target_apps.name ASC
       `,
       params

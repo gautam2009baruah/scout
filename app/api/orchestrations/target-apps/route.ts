@@ -2,8 +2,8 @@
 // Fetch available target apps for email credential assignment
 
 import { NextRequest, NextResponse } from "next/server";
-import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import { listGuidedWorkflowTargetApps } from "@/lib/admin/guided-workflows";
 
 /**
  * GET /api/orchestrations/target-apps?companyId=xxx
@@ -23,23 +23,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const companyId = searchParams.get("companyId") || session.user.tenantId;
 
-    const pool = getPool();
-    
-    const result = await pool.query(
-      `SELECT 
-        id,
-        name,
-        base_url,
-        created_at
-       FROM guided_workflow_target_apps
-       WHERE company_id = $1
-       ORDER BY name ASC`,
-      [companyId]
-    );
+    const targetApps = (await listGuidedWorkflowTargetApps(session))
+      .filter((app) => app.companyId === companyId);
 
     return NextResponse.json({
       success: true,
-      targetApps: result.rows,
+      targetApps: targetApps.map((app) => ({
+        id: app.id,
+        name: app.name,
+        base_url: app.baseUrl,
+        created_at: app.createdAt,
+      })),
     });
   } catch (error: any) {
     console.error("[API] Error fetching target apps:", error);

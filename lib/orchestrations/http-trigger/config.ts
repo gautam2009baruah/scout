@@ -220,6 +220,8 @@ export async function buildHttpApiTriggerConfig(raw: Record<string, unknown>, or
     throw new Error("Short name already in use by another orchestration");
   }
 
+  const auth = normalizeHttpApiAuth(raw.auth);
+
   return {
     type: "http_api",
     shortName,
@@ -232,7 +234,7 @@ export async function buildHttpApiTriggerConfig(raw: Record<string, unknown>, or
     headers: normalizeFieldRules(raw.headers),
     queryParameters: normalizeFieldRules(raw.queryParameters),
     pathParameters: normalizeFieldRules(raw.pathParameters),
-    auth: normalizeHttpApiAuth(raw.auth),
+    auth,
     ipAllowlist: Array.isArray(raw.ipAllowlist)
       ? raw.ipAllowlist.map((v) => String(v).trim()).filter(Boolean)
       : [],
@@ -243,7 +245,9 @@ export async function buildHttpApiTriggerConfig(raw: Record<string, unknown>, or
       throttleDelayMs: Math.max(0, toNumber((raw.rateLimit as Record<string, unknown>)?.throttleDelayMs, 0)),
     },
     replayProtection: {
-      enabled: toBoolean((raw.replayProtection as Record<string, unknown>)?.enabled, true),
+      enabled: auth.type === "none"
+        ? false
+        : toBoolean((raw.replayProtection as Record<string, unknown>)?.enabled, true),
       timestampHeader: String((raw.replayProtection as Record<string, unknown>)?.timestampHeader || "x-signature-timestamp"),
       nonceHeader: String((raw.replayProtection as Record<string, unknown>)?.nonceHeader || "x-signature-nonce"),
       maxAgeSeconds: Math.max(30, toNumber((raw.replayProtection as Record<string, unknown>)?.maxAgeSeconds, 300)),

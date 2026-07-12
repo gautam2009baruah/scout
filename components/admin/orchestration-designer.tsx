@@ -860,16 +860,15 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
             <List className="h-4 w-4" />
             All Orchestrations
           </button>
-          {!orchestration ? (
-            <button
+          <button
               className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               onClick={() => setIsCreateDialogOpen(true)}
               type="button"
             >
               <Plus className="h-4 w-4" />
               New Orchestration
-            </button>
-          ) : (
+          </button>
+          {orchestration ? (
             <>
               <button
                 className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
@@ -904,7 +903,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                 </button>
               )}
             </>
-          )}
+          ) : null}
         </div>
 
         {orchestration && (
@@ -1139,6 +1138,8 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
           }}
           onClose={() => setIsListOpen(false)}
           currentOrchestrationId={orchestration?.id}
+          selectedCompanyId={selectedCompanyId}
+          targetApps={targetApps}
         />
       )}
 

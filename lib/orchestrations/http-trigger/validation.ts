@@ -344,7 +344,9 @@ export async function validateHttpRequest(
     }
   }
 
-  if (config.replayProtection?.enabled) {
+  // "None" means callers can invoke the endpoint without security headers.
+  // Replay protection is meaningful only alongside an authenticated request.
+  if (config.auth.type !== "none" && config.replayProtection?.enabled) {
     const timestampHeader = config.replayProtection.timestampHeader || "x-signature-timestamp";
     const nonceHeader = config.replayProtection.nonceHeader || "x-signature-nonce";
     const rawTimestamp = headers[timestampHeader.toLowerCase()];

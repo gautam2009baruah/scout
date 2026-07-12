@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
         ot.id,
         ot.orchestration_id,
         ot.trigger_type,
+        ot.description,
         ot.config,
         ot.status,
         ot.last_triggered_at,
@@ -63,6 +64,12 @@ export async function GET(request: NextRequest) {
             AND ($2::timestamptz IS NULL OR etm.received_at <= $2::timestamptz)
         ) as email_message_count,
         (
+          SELECT COUNT(*)::int FROM email_trigger_messages etm
+          WHERE etm.trigger_id = ot.id AND etm.status = 'failed'
+            AND ($1::timestamptz IS NULL OR etm.received_at >= $1::timestamptz)
+            AND ($2::timestamptz IS NULL OR etm.received_at <= $2::timestamptz)
+        ) as email_error_count,
+        (
           SELECT MAX(etm.received_at) FROM email_trigger_messages etm
           WHERE etm.trigger_id = ot.id
             AND ($1::timestamptz IS NULL OR etm.received_at >= $1::timestamptz)
@@ -76,13 +83,13 @@ export async function GET(request: NextRequest) {
         ) as email_last_ran
         ,
         (
-          SELECT COUNT(*)::int FROM trigger_execution_logs tel
+          SELECT COUNT(DISTINCT COALESCE(tel.execution_id::text, tel.id::text))::int FROM trigger_execution_logs tel
           WHERE tel.trigger_id = ot.id
             AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
             AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
         ) as schedule_execution_count,
         (
-          SELECT COUNT(*)::int FROM trigger_execution_logs tel
+          SELECT COUNT(DISTINCT COALESCE(tel.execution_id::text, tel.id::text))::int FROM trigger_execution_logs tel
           WHERE tel.trigger_id = ot.id
             AND tel.status = 'failed'
             AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
@@ -144,6 +151,7 @@ export async function GET(request: NextRequest) {
       orchestrationName: trigger.orchestration_name,
       orchestrationStatus: trigger.orchestration_status,
       triggerType: trigger.trigger_type,
+      description: trigger.description,
       isActive: trigger.status === "active",
       companyId: trigger.company_id,
       targetAppId: trigger.target_app_id,
@@ -159,6 +167,14 @@ export async function GET(request: NextRequest) {
       scheduleExecutionCount: trigger.schedule_execution_count || 0,
       scheduleErrorCount: trigger.schedule_error_count || 0,
       scheduleLastError: trigger.schedule_last_error,
+      scheduleType: trigger.config?.scheduleType || null,
+      scheduleTime: trigger.config?.specificTime || trigger.config?.specificTimeUtc || null,
+      scheduleDayOfWeek: trigger.config?.dayOfWeek ?? null,
+      scheduleDayOfMonth: trigger.config?.dayOfMonth ?? null,
+      scheduleOneTimeDate: trigger.config?.oneTimeDate || null,
+      scheduleCronExpression: trigger.config?.cronExpression || null,
+      executionCount: trigger.trigger_type === "email" ? (trigger.email_message_count || 0) : (trigger.schedule_execution_count || 0),
+      errorCount: trigger.trigger_type === "email" ? (trigger.email_error_count || 0) : (trigger.schedule_error_count || 0),
       // Email-specific (respecting the date range)
       emailLastFound: trigger.email_last_found,
       emailLastRan: trigger.email_last_ran,

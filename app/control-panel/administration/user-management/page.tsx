@@ -5,6 +5,7 @@ import { getEmployeePage } from "@/lib/admin/user-management";
 import { getMasterData } from "@/lib/admin/administration";
 import { MODULE_KEYS, getAllAdminModules, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import { listGuidedWorkflowTargetApps } from "@/lib/admin/guided-workflows";
 
 export const metadata: Metadata = {
   title: "User Management | Scout Admin",
@@ -38,7 +39,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
   const params = await searchParams;
   const currentCompanyId = session.user.tenantId;
   const accessibleCompanyIds = new Set(session.availableCompanies.map((company) => company.companyId));
-  const [{ companies, roles }, userPage, modules] = await Promise.all([
+  const [{ companies, roles }, userPage, modules, targetApps] = await Promise.all([
     getMasterData(),
     getEmployeePage({
       companyId: currentCompanyId,
@@ -48,7 +49,8 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
       page: Number(params.page) || 1,
       pageSize: Number(params.pageSize) || 10
     }),
-    getAllAdminModules()
+    getAllAdminModules(),
+    listGuidedWorkflowTargetApps(session)
   ]);
 
   const accessibleCompanies = companies.filter((company) => accessibleCompanyIds.has(company.id));
@@ -75,6 +77,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
         pageSize={userPage.pageSize}
         roles={accessibleRoles}
         total={userPage.total}
+        targetApps={targetApps.map((app) => ({ id: app.id, name: app.name, companyId: app.companyId }))}
       />
     </AdminShell>
   );

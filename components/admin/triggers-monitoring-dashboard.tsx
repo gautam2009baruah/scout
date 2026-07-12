@@ -7,10 +7,12 @@
 
 import { useEffect, useState } from "react";
 import {
-  Play,
   Clock,
   Mail,
   Calendar,
+  Globe2,
+  MessageCircle,
+  MousePointerClick,
   CheckCircle,
   XCircle,
   Filter,
@@ -23,7 +25,7 @@ import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 type TargetAppOption = { id: string; name: string; companyId: string };
 
 // Only automated trigger types are meaningful to monitor here.
-const MONITORABLE_TRIGGER_TYPES = ["email", "schedule", "http_api"] as const;
+const MONITORABLE_TRIGGER_TYPES = ["manual", "chatbot", "email", "schedule", "http_api"] as const;
 
 type TriggerStatus = {
   id: string;
@@ -31,6 +33,7 @@ type TriggerStatus = {
   orchestrationName: string;
   orchestrationStatus: string;
   triggerType: string;
+  description: string | null;
   isActive: boolean;
   companyId: string | null;
   targetAppId: string | null;
@@ -46,6 +49,14 @@ type TriggerStatus = {
   scheduleExecutionCount: number;
   scheduleErrorCount: number;
   scheduleLastError: string | null;
+  scheduleType: string | null;
+  scheduleTime: string | null;
+  scheduleDayOfWeek: number | null;
+  scheduleDayOfMonth: number | null;
+  scheduleOneTimeDate: string | null;
+  scheduleCronExpression: string | null;
+  executionCount: number;
+  errorCount: number;
   // Email-specific (respecting the date range)
   emailLastFound: string | null;
   emailLastRan: string | null;
@@ -111,29 +122,16 @@ type ExecutionDetail = {
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
-// Interpret a datetime-local value (YYYY-MM-DDTHH:mm) as UTC and return ISO 8601.
+// Interpret datetime-local in the browser's local timezone and send UTC to APIs.
 function localInputToUtcIso(value: string): string | undefined {
   if (!value) return undefined;
-  const withSeconds = value.length === 16 ? `${value}:00` : value;
-  return `${withSeconds}Z`;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-// Format a Date as a UTC datetime-local string (YYYY-MM-DDTHH:mm) for the inputs.
-function toUtcInputValue(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}` +
-    `T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
-  );
-}
-
-// Defaults: start of today (UTC) -> now (UTC)
+// No implicit execution window. Users opt into date filtering explicitly.
 function defaultDateRange(): { from: string; to: string } {
-  const now = new Date();
-  const startOfTodayUtc = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0)
-  );
-  return { from: toUtcInputValue(startOfTodayUtc), to: toUtcInputValue(now) };
+  return { from: "", to: "" };
 }
 
 function formatDateTime(dateStr: string | null) {
@@ -146,6 +144,30 @@ function formatDateTimeInTimeZone(dateStr: string | null, timeZone: string) {
   return `${new Date(dateStr).toLocaleString(undefined, { timeZone })} (${timeZone})`;
 }
 
+function formatScheduleType(value: string | null) {
+  if (!value) return "Not configured";
+  return value.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function formatScheduleSettings(trigger: TriggerStatus) {
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const zone = trigger.scheduleTimezone || "UTC";
+  switch (trigger.scheduleType) {
+    case "one-time":
+      return trigger.scheduleOneTimeDate ? `${formatDateTimeInTimeZone(trigger.scheduleOneTimeDate, zone)}` : "Date not configured";
+    case "daily":
+      return `${trigger.scheduleTime || "00:00"} (${zone})`;
+    case "weekly":
+      return `${days[trigger.scheduleDayOfWeek ?? 0]} at ${trigger.scheduleTime || "00:00"} (${zone})`;
+    case "monthly":
+      return `Day ${trigger.scheduleDayOfMonth ?? 1} at ${trigger.scheduleTime || "00:00"} (${zone})`;
+    case "cron":
+      return `${trigger.scheduleCronExpression || "Not configured"} (${zone})`;
+    default:
+      return "Not configured";
+  }
+}
+
 export function TriggersMonitoringDashboard({
   selectedCompanyId = "",
   targetApps = [],
@@ -156,6 +178,7 @@ export function TriggersMonitoringDashboard({
   const [triggers, setTriggers] = useState<TriggerStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState(() => {
     const { from, to } = defaultDateRange();
     return {
@@ -166,8 +189,6 @@ export function TriggersMonitoringDashboard({
       to,
     };
   });
-  const [testing, setTesting] = useState<string | null>(null);
-
   // Per-trigger expand + executions state, keyed by trigger id
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [executions, setExecutions] = useState<Record<string, ExecutionsState>>({});
@@ -194,6 +215,7 @@ export function TriggersMonitoringDashboard({
 
   const loadTriggers = async () => {
     setLoading(true);
+    setLoadError(null);
     setHasSearched(true);
     // Collapse and reset any previously expanded executions
     setExpanded({});
@@ -213,10 +235,14 @@ export function TriggersMonitoringDashboard({
         `/api/admin/orchestrations/triggers/monitoring?${params.toString()}`
       );
       const data = await response.json();
-      setTriggers(data.success ? data.triggers : []);
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || `Unable to load triggers (${response.status})`);
+      }
+      setTriggers(data.triggers || []);
     } catch (error) {
       console.error("Failed to load triggers:", error);
       setTriggers([]);
+      setLoadError(error instanceof Error ? error.message : "Unable to load triggers");
     } finally {
       setLoading(false);
     }
@@ -333,26 +359,6 @@ export function TriggersMonitoringDashboard({
     }
   };
 
-  const testTrigger = async (triggerId: string) => {
-    setTesting(triggerId);
-    try {
-      const response = await fetch(
-        `/api/admin/orchestrations/triggers/${triggerId}/test`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ testPayload: { testMode: true } }),
-        }
-      );
-      const data = await response.json();
-      alert(data.success ? "Test execution started" : `Test failed: ${data.error}`);
-    } catch (error) {
-      alert("Test failed: " + error);
-    } finally {
-      setTesting(null);
-    }
-  };
-
   const getTriggerIcon = (triggerType: string) => {
     switch (triggerType) {
       case "schedule":
@@ -360,7 +366,11 @@ export function TriggersMonitoringDashboard({
       case "email":
         return <Mail className="h-5 w-5 text-pink-600" />;
       case "http_api":
-        return <Clock className="h-5 w-5 text-cyan-600" />;
+        return <Globe2 className="h-5 w-5 text-cyan-600" />;
+      case "chatbot":
+        return <MessageCircle className="h-5 w-5 text-blue-600" />;
+      case "manual":
+        return <MousePointerClick className="h-5 w-5 text-amber-600" />;
       default:
         return <Clock className="h-5 w-5 text-slate-600" />;
     }
@@ -456,7 +466,7 @@ export function TriggersMonitoringDashboard({
 
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">
-              Executions From (UTC)
+              Executions From
             </label>
             <input
               type="datetime-local"
@@ -468,7 +478,7 @@ export function TriggersMonitoringDashboard({
 
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">
-              Executions To (UTC)
+              Executions To
             </label>
             <input
               type="datetime-local"
@@ -501,6 +511,11 @@ export function TriggersMonitoringDashboard({
               Choose filters and click <span className="font-semibold">Filter</span> to load triggers.
             </p>
           </div>
+        ) : loadError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
+            <p className="font-semibold text-red-800">Unable to load triggers</p>
+            <p className="mt-1 text-sm text-red-700">{loadError}</p>
+          </div>
         ) : triggers.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-lg p-8 text-center">
             <p className="text-slate-600">No triggers found</p>
@@ -524,54 +539,27 @@ export function TriggersMonitoringDashboard({
                       </h3>
                       <p className="text-xs text-slate-600">
                         {TRIGGER_TYPE_LABELS[trigger.triggerType as keyof typeof TRIGGER_TYPE_LABELS] ?? trigger.triggerType}
+                        {trigger.description ? ` — ${trigger.description}` : ""}
                         {trigger.targetAppName ? ` • ${trigger.targetAppName}` : ""}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(trigger.isActive)}
-                    {trigger.triggerType !== "email" && (
-                      <button
-                        onClick={() => testTrigger(trigger.id)}
-                        disabled={testing === trigger.id || !trigger.isActive}
-                        className="flex items-center gap-1 px-3 py-1 text-sm font-medium bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <Play className="h-3 w-3" />
-                        {testing === trigger.id ? "Testing..." : "Test"}
-                      </button>
-                    )}
                   </div>
                 </div>
 
                 {/* Trigger-Specific Stats */}
-                <div className="grid grid-cols-4 gap-4 mb-3">
+                <div className="grid gap-4 mb-3 sm:grid-cols-2 lg:grid-cols-4">
                   {trigger.triggerType === "schedule" && (
                     <>
-                      <Stat label="Next Run" value={formatDateTimeInTimeZone(trigger.scheduleNextRun, trigger.scheduleTimezone || "UTC")} />
-                      <Stat label="Last Run" value={formatDateTimeInTimeZone(trigger.scheduleLastRun, trigger.scheduleTimezone || "UTC")} />
-                      <Stat
-                        label="Executions"
-                        value={String(trigger.scheduleExecutionCount || 0)}
-                        valueClass="text-blue-700"
-                      />
-                      <Stat
-                        label="Errors"
-                        value={String(trigger.scheduleErrorCount || 0)}
-                        valueClass={(trigger.scheduleErrorCount || 0) > 0 ? "text-red-700" : "text-green-700"}
-                      />
+                      <Stat label="Schedule Type" value={formatScheduleType(trigger.scheduleType)} />
+                      <Stat label="Schedule Settings" value={formatScheduleSettings(trigger)} />
                     </>
                   )}
 
-                  {trigger.triggerType === "email" && (
-                    <>
-                      <Stat label="Last Found" value={formatDateTime(trigger.emailLastFound)} />
-                      <Stat
-                        label="Emails Found"
-                        value={String(trigger.emailMessageCount || 0)}
-                        valueClass="text-green-700"
-                      />
-                    </>
-                  )}
+                  <Stat label="Executions" value={String(trigger.executionCount || 0)} valueClass="text-blue-700" />
+                  <Stat label="Errors" value={String(trigger.errorCount || 0)} valueClass={(trigger.errorCount || 0) > 0 ? "text-red-700" : "text-green-700"} />
 
                 </div>
 

@@ -6,13 +6,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Edit, Trash2, RefreshCw, Clock, X } from "lucide-react";
+import { Edit, Trash2, RefreshCw, Clock, X, Search, Filter } from "lucide-react";
 import type { Orchestration } from "@/shared/orchestrationTypes";
 
 interface OrchestrationListProps {
   onLoad: (orchestration: Orchestration) => void;
   onClose: () => void;
   currentOrchestrationId?: string;
+  selectedCompanyId: string;
+  targetApps: Array<{ id: string; name: string; companyId: string }>;
 }
 
 const STATUS_COLORS = {
@@ -21,21 +23,37 @@ const STATUS_COLORS = {
   archived: "bg-red-100 text-red-700",
 };
 
-export function OrchestrationList({ onLoad, onClose, currentOrchestrationId }: OrchestrationListProps) {
+export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, selectedCompanyId, targetApps }: OrchestrationListProps) {
   const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "draft" | "published">("all");
+  const [status, setStatus] = useState("all");
+  const [targetAppId, setTargetAppId] = useState("all");
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [pageCount, setPageCount] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const fetchOrchestrations = async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
-      if (filter !== "all") params.append("status", filter);
+      if (selectedCompanyId) params.set("companyId", selectedCompanyId);
+      if (status !== "all") params.set("status", status);
+      if (targetAppId !== "all") params.set("targetAppId", targetAppId);
+      if (appliedSearch) params.set("search", appliedSearch);
+      params.set("page", String(page));
+      params.set("pageSize", String(pageSize));
       
       const response = await fetch(`/api/admin/orchestrations?${params}`);
       if (response.ok) {
         const data = await response.json();
         setOrchestrations(data.orchestrations || []);
+        setPage(data.page || 1);
+        setPageCount(data.pageCount || 1);
+        setPageSize(data.pageSize || pageSize);
+        setTotal(data.total || 0);
       }
     } catch (error) {
       console.error("Error fetching orchestrations:", error);
@@ -46,7 +64,7 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId }: O
 
   useEffect(() => {
     fetchOrchestrations();
-  }, [filter]);
+  }, [status, targetAppId, appliedSearch, page, pageSize, selectedCompanyId]);
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`Delete orchestration "${name}"? This cannot be undone.`)) {
@@ -114,38 +132,20 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId }: O
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                filter === "all"
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setFilter("draft")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                filter === "draft"
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              Drafts
-            </button>
-            <button
-              onClick={() => setFilter("published")}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                filter === "published"
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              Published
-            </button>
-          </div>
+          <form className="rounded-lg border border-slate-200 bg-slate-50 p-3" onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedSearch(search.trim()); }}>
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700"><Filter className="h-4 w-4" />Filters</div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-[160px_1fr_1.5fr_auto]">
+              <select aria-label="Orchestration status" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>
+                <option value="all">All statuses</option><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option>
+              </select>
+              <select aria-label="Target application" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" value={targetAppId} onChange={(event) => { setTargetAppId(event.target.value); setPage(1); }}>
+                <option value="all">All target apps</option>
+                {targetApps.filter((app) => !selectedCompanyId || app.companyId === selectedCompanyId).map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}
+              </select>
+              <input className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" placeholder="Search orchestration name" type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
+              <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" type="submit"><Search className="h-4 w-4" />Search</button>
+            </div>
+          </form>
         </div>
 
         {/* List */}
@@ -228,15 +228,19 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId }: O
         </div>
 
         {/* Footer */}
-        <div className="border-t border-slate-200 p-4 bg-slate-50">
-          <div className="flex items-center justify-between text-sm text-slate-600">
-            <span>{filteredOrchestrations.length} orchestration(s)</span>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 transition-colors"
-            >
-              Close
-            </button>
+        <div className="border-t border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+              <span>Page <strong className="text-slate-900">{page}</strong> of <strong className="text-slate-900">{pageCount}</strong></span>
+              <span>Total: <strong className="text-slate-900">{total}</strong> orchestrations</span>
+              <label className="inline-flex items-center gap-2"><span>Page size</span><select aria-label="Orchestrations per page" className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>{[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}</select></label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40" disabled={page <= 1} onClick={() => setPage(page - 1)} type="button">Previous</button>
+              {Array.from({ length: pageCount }, (_, index) => index + 1).filter((pageNumber) => pageNumber === 1 || pageNumber === pageCount || Math.abs(pageNumber - page) <= 1).map((pageNumber, index, pages) => <span className="contents" key={pageNumber}>{index > 0 && pageNumber - pages[index - 1] > 1 ? <span className="px-1 text-slate-400">…</span> : null}<button className={`h-9 min-w-9 rounded-lg border px-2 text-sm font-semibold ${pageNumber === page ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}`} onClick={() => setPage(pageNumber)} type="button">{pageNumber}</button></span>)}
+              <button className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40" disabled={page >= pageCount} onClick={() => setPage(page + 1)} type="button">Next</button>
+              <button onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white" type="button">Close</button>
+            </div>
           </div>
         </div>
       </div>

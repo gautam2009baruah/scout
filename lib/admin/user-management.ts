@@ -13,6 +13,7 @@ export type EmployeeMembership = {
   roleName: string;
   status: "active" | "inactive";
   moduleKeys: number[];
+  targetAppIds: string[];
   isPrimary: boolean;
 };
 
@@ -54,6 +55,7 @@ export type RegisterEmployeeInput = {
   email: string;
   employeeCode?: string;
   moduleKeys?: Array<number | string>;
+  targetAppIds?: string[];
 };
 
 export type UpdateEmployeeInput = RegisterEmployeeInput & {
@@ -306,6 +308,13 @@ export async function getEmployeePage(filters: EmployeeFilters) {
               'roleName', member_roles.name,
               'status', member_roles.status,
               'moduleKeys', COALESCE(member_module_access.module_keys, ARRAY[]::integer[]),
+              'targetAppIds', COALESCE((
+                SELECT array_agg(uta.target_app_id ORDER BY uta.target_app_id)
+                FROM user_target_app_access uta
+                INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
+                WHERE uta.user_id = users.id
+                  AND gta.company_id = member_roles.company_id
+              ), ARRAY[]::uuid[]),
               'isPrimary', member_roles.is_primary
             )
             ORDER BY member_roles.company_name
@@ -632,6 +641,31 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
     }
 
     await replaceUserModuleOverrides(employeeId, primaryCompanyId, input.moduleKeys ?? [], session.user.id, client);
+    const targetAppIds = Array.from(new Set(input.targetAppIds ?? []));
+    if (targetAppIds.length > 0) {
+      const validApps = await client.query<{ id: string }>(
+        `SELECT id FROM guided_workflow_target_apps
+         WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+        [primaryCompanyId, targetAppIds]
+      );
+      if (validApps.rowCount !== targetAppIds.length) {
+        throw new EmployeeError("One or more selected target apps do not belong to the selected company.");
+      }
+    }
+    await client.query(
+      `DELETE FROM user_target_app_access uta
+       USING guided_workflow_target_apps gta
+       WHERE uta.target_app_id = gta.id
+         AND uta.user_id = $1 AND gta.company_id = $2`,
+      [employeeId, primaryCompanyId]
+    );
+    for (const targetAppId of targetAppIds) {
+      await client.query(
+        `INSERT INTO user_target_app_access (user_id, target_app_id, created_by)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [employeeId, targetAppId, session.user.id]
+      );
+    }
     const modules = await getEffectiveUserModules(employeeId, primaryRoleId, roleTemplate?.is_system === true, primaryCompanyId, client);
     const hasControlPanelAccess = modules.length > 0;
     const shouldSendPanelPassword = hasControlPanelAccess && !existing.password_hash;

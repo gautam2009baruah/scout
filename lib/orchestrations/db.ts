@@ -142,6 +142,63 @@ export async function getOrchestrations(filters: {
   return result.rows.map(mapOrchestrationRow);
 }
 
+export async function getOrchestrationPage(filters: {
+  companyId?: string;
+  targetAppId?: string;
+  status?: OrchestrationStatus;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  const pool = getPool();
+  const page = Math.max(1, Number(filters.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 25));
+  const conditions = ["1=1"];
+  const params: any[] = [];
+
+  if (filters.companyId) {
+    params.push(filters.companyId);
+    conditions.push(`o.company_id = $${params.length}`);
+  }
+  if (filters.targetAppId) {
+    params.push(filters.targetAppId);
+    conditions.push(`o.target_app_id = $${params.length}`);
+  }
+  if (filters.status) {
+    params.push(filters.status);
+    conditions.push(`o.status = $${params.length}`);
+  }
+  if (filters.search?.trim()) {
+    params.push(`%${filters.search.trim()}%`);
+    conditions.push(`o.name ILIKE $${params.length}`);
+  }
+
+  const where = conditions.join(" AND ");
+  const countResult = await pool.query<{ total: string }>(
+    `SELECT COUNT(*)::text AS total FROM orchestrations o WHERE ${where}`,
+    params
+  );
+  const total = Number(countResult.rows[0]?.total || 0);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const dataParams = [...params, pageSize, (safePage - 1) * pageSize];
+  const result = await pool.query<OrchestrationRow>(`
+    SELECT o.*, created_user.email AS created_by_email,
+      updated_user.email AS updated_by_email,
+      published_user.email AS published_by_email
+    FROM orchestrations o
+    LEFT JOIN users created_user ON created_user.id = o.created_by
+    LEFT JOIN users updated_user ON updated_user.id = o.updated_by
+    LEFT JOIN users published_user ON published_user.id = o.published_by
+    WHERE ${where}
+    ORDER BY o.updated_at DESC
+    LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    dataParams
+  );
+
+  return { orchestrations: result.rows.map(mapOrchestrationRow), page: safePage, pageSize, pageCount, total };
+}
+
 export async function getOrchestrationById(id: string): Promise<Orchestration | null> {
   const orchestrations = await getOrchestrations({ id });
   return orchestrations[0] || null;

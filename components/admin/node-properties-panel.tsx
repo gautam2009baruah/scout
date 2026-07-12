@@ -1647,7 +1647,18 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <select
               className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
               value={config.auth?.type || "none"}
-              onChange={(e) => updateConfig({ auth: { ...(config.auth || {}), type: e.target.value } })}
+              onChange={(e) => updateConfig({
+                auth: { ...(config.auth || {}), type: e.target.value },
+                ...(e.target.value === "none" ? {
+                  replayProtection: {
+                    ...(config.replayProtection || {}),
+                    enabled: false,
+                    timestampHeader: config.replayProtection?.timestampHeader || "x-signature-timestamp",
+                    nonceHeader: config.replayProtection?.nonceHeader || "x-signature-nonce",
+                    maxAgeSeconds: config.replayProtection?.maxAgeSeconds || 300,
+                  },
+                } : {}),
+              })}
             >
               <option value="none">None</option>
               <option value="api_key">API Key</option>

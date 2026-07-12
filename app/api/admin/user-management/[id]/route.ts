@@ -41,6 +41,9 @@ export async function PUT(request: Request, context: RouteContext) {
         statusReason: typeof body.statusReason === "string" ? body.statusReason : undefined,
         moduleKeys: Array.isArray(body.moduleKeys)
           ? body.moduleKeys.filter((value: unknown): value is string => typeof value === "string")
+          : [],
+        targetAppIds: Array.isArray(body.targetAppIds)
+          ? body.targetAppIds.filter((value: unknown): value is string => typeof value === "string")
           : []
       },
       session

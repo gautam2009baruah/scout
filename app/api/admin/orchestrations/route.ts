@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
-import { getOrchestrations, getOrchestrationById } from "@/lib/orchestrations/db";
+import { getOrchestrationPage, getOrchestrationById } from "@/lib/orchestrations/db";
 import type { OrchestrationStatus } from "@/shared/orchestrationTypes";
 
 export async function GET(request: NextRequest) {
@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
     const orchestrationId = searchParams.get("id");
     const companyId = searchParams.get("companyId");
     const status = searchParams.get("status") as OrchestrationStatus | null;
+    const targetAppId = searchParams.get("targetAppId");
+    const search = searchParams.get("search");
 
     // Get single orchestration by ID
     if (orchestrationId) {
@@ -31,12 +33,16 @@ export async function GET(request: NextRequest) {
     }
 
     // Get orchestrations with filters
-    const orchestrations = await getOrchestrations({
+    const result = await getOrchestrationPage({
       companyId: companyId || undefined,
+      targetAppId: targetAppId || undefined,
       status: status || undefined,
+      search: search || undefined,
+      page: Number(searchParams.get("page") || 1),
+      pageSize: Number(searchParams.get("pageSize") || 25),
     });
 
-    return NextResponse.json({ orchestrations });
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching orchestrations:", error);
     return NextResponse.json(
