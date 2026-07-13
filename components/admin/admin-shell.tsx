@@ -23,7 +23,8 @@ const MODULE_KEYS = {
   orchestrationDesigner: 10,
   emailCredentials: 11,
   companyRoleSetup: 12,
-  triggersMonitoring: 13
+  triggersMonitoring: 13,
+  searchAnalytics: 14
 } as const;
 
 type AdminShellProps = {
@@ -47,7 +48,8 @@ const moduleIcons = {
   [MODULE_KEYS.orchestrationDesigner]: GitBranch,
   [MODULE_KEYS.emailCredentials]: Bot,
   [MODULE_KEYS.companyRoleSetup]: TableProperties,
-  [MODULE_KEYS.triggersMonitoring]: Activity
+  [MODULE_KEYS.triggersMonitoring]: Activity,
+  [MODULE_KEYS.searchAnalytics]: BarChart3
 } as const;
 
 const CRS_SCOUT_BASE_URL = "http://localhost:3000";

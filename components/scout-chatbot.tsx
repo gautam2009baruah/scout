@@ -10,6 +10,8 @@ import {
   Grip,
   MessageCircle,
   Play,
+  ThumbsDown,
+  ThumbsUp,
   Undo2,
   UserRound,
   X
@@ -32,7 +34,24 @@ export type ScoutChatMessage = {
   role: ScoutChatRole;
   text: string;
   time?: string;
+  queryId?: string;
+  citations?: ScoutChatCitation[];
+  noAnswer?: boolean;
+  noAnswerReason?: string;
+  feedback?: "up" | "down";
   workflowSuggestion?: ScoutWorkflowSession;
+};
+
+export type ScoutChatCitation = {
+  document_id: string;
+  document_name: string;
+  folder_path: string;
+  page_number: number;
+  section_title: string;
+  chunk_id: string;
+  preview: string;
+  citation_type?: "text" | "visual";
+  visual_asset_type?: string;
 };
 
 export type ScoutWorkflowSession = {
@@ -140,6 +159,11 @@ export type ScoutChatbotProps = {
 };
 
 type RenderedMessage = Required<Pick<ScoutChatMessage, "id" | "role" | "text" | "time">> & {
+  queryId?: string;
+  citations?: ScoutChatCitation[];
+  noAnswer?: boolean;
+  noAnswerReason?: string;
+  feedback?: "up" | "down";
   workflowSuggestion?: ScoutWorkflowSession;
 };
 
@@ -551,7 +575,7 @@ export function ScoutChatbot({
     });
   }
 
-  async function sendChatQuery(question: string) {
+  async function sendChatQuery(question: string): Promise<ScoutChatMessage | undefined> {
     if (!companyId || !userId) {
       return undefined;
     }
@@ -637,7 +661,18 @@ export function ScoutChatbot({
       console.log('📚 Total executions stored:', Object.keys((window as any).__orchestrationExecutions).length);
     }
 
-    return typeof body?.answer === "string" ? body.answer : undefined;
+    if (typeof body?.answer !== "string") {
+      return undefined;
+    }
+
+    return {
+      role: "assistant",
+      text: body.answer,
+      queryId: typeof body?.query_id === "string" ? body.query_id : undefined,
+      citations: Array.isArray(body?.citations) ? body.citations : [],
+      noAnswer: body?.no_answer === true,
+      noAnswerReason: typeof body?.no_answer_reason === "string" ? body.no_answer_reason : undefined,
+    };
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -763,7 +798,14 @@ export function ScoutChatbot({
             <>
               <div className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5">
                 {messages.map((message) => (
-                  <MessageBubble key={message.id} message={message} onStartWorkflow={startWorkflow} userLabel={userLabel} />
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    onStartWorkflow={startWorkflow}
+                    userLabel={userLabel}
+                    companyId={companyId}
+                    userId={userId}
+                  />
                 ))}
 
                 {isTyping && <TypingIndicator />}
@@ -1080,13 +1122,49 @@ function parseMarkdownText(text: string): ReactNode {
 function MessageBubble({
   message,
   onStartWorkflow,
-  userLabel
+  userLabel,
+  companyId,
+  userId,
 }: {
   message: RenderedMessage;
   onStartWorkflow: (workflow: ScoutWorkflowSession) => void;
   userLabel: string;
+  companyId?: string;
+  userId?: string;
 }) {
   const isAssistant = message.role === "assistant";
+  const [citationsOpen, setCitationsOpen] = useState(false);
+  const [feedbackState, setFeedbackState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [selectedFeedback, setSelectedFeedback] = useState<"up" | "down" | undefined>(message.feedback);
+
+  async function submitFeedback(feedback: "up" | "down") {
+    if (!message.queryId || !companyId || !userId || feedbackState === "saving") {
+      return;
+    }
+
+    setFeedbackState("saving");
+    try {
+      const response = await fetch("/chat/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId,
+          user_id: userId,
+          query_id: message.queryId,
+          feedback,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to save feedback");
+      }
+
+      setSelectedFeedback(feedback);
+      setFeedbackState("saved");
+    } catch {
+      setFeedbackState("error");
+    }
+  }
 
   return (
     <div className={cn("flex gap-3", isAssistant ? "justify-start" : "justify-end")}>
@@ -1107,6 +1185,76 @@ function MessageBubble({
           )}
         >
           {parseMarkdownText(message.text)}
+
+          {isAssistant && message.noAnswer && (
+            <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+              No-answer: I could not confidently find this in the available documents.
+            </div>
+          )}
+
+          {isAssistant && message.citations && message.citations.length > 0 && (
+            <div className="mt-2 rounded-md border border-slate-200 bg-white">
+              <button
+                className="flex w-full items-center justify-between px-2 py-1.5 text-xs font-semibold text-slate-700"
+                onClick={() => setCitationsOpen((current) => !current)}
+                type="button"
+              >
+                <span>Sources ({message.citations.length})</span>
+                {citationsOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              </button>
+
+              {citationsOpen && (
+                <div className="space-y-1 border-t border-slate-200 px-2 py-2 text-xs text-slate-700">
+                  {message.citations.map((citation) => (
+                    <div key={citation.chunk_id} className="rounded border border-slate-100 bg-slate-50 p-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-semibold text-slate-800">
+                          {citation.document_name} - p.{citation.page_number}
+                        </div>
+                        {citation.citation_type === "visual" ? (
+                          <span className="rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                            Visual{citation.visual_asset_type ? `: ${citation.visual_asset_type.replaceAll("_", " ")}` : ""}
+                          </span>
+                        ) : null}
+                      </div>
+                      {citation.section_title ? <div className="text-slate-600">{citation.section_title}</div> : null}
+                      <div className="mt-0.5 text-slate-600">{citation.preview}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {isAssistant && message.queryId && companyId && userId && (
+            <div className="mt-2 flex items-center gap-1.5 text-slate-500">
+              <button
+                className={cn(
+                  "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] border",
+                  selectedFeedback === "up" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white"
+                )}
+                onClick={() => submitFeedback("up")}
+                type="button"
+              >
+                <ThumbsUp className="h-3.5 w-3.5" />
+                Helpful
+              </button>
+              <button
+                className={cn(
+                  "inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] border",
+                  selectedFeedback === "down" ? "border-rose-300 bg-rose-50 text-rose-700" : "border-slate-200 bg-white"
+                )}
+                onClick={() => submitFeedback("down")}
+                type="button"
+              >
+                <ThumbsDown className="h-3.5 w-3.5" />
+                Not helpful
+              </button>
+              {feedbackState === "saving" ? <span className="text-[11px]">Saving...</span> : null}
+              {feedbackState === "saved" ? <span className="text-[11px] text-emerald-700">Saved</span> : null}
+              {feedbackState === "error" ? <span className="text-[11px] text-rose-700">Failed</span> : null}
+            </div>
+          )}
         </div>
         {message.workflowSuggestion && (
           <div className="mt-2">
@@ -1210,6 +1358,11 @@ function createRenderedMessage(message: ScoutChatMessage & { id: string; time: s
     role: message.role,
     text: message.text,
     time: message.time,
+    queryId: message.queryId,
+    citations: message.citations,
+    noAnswer: message.noAnswer,
+    noAnswerReason: message.noAnswerReason,
+    feedback: message.feedback,
     workflowSuggestion: message.workflowSuggestion
   };
 }

@@ -2,12 +2,15 @@ import { getPool } from "@/lib/db/pool";
 import { getStorageProvider } from "@/lib/storage/provider";
 import { enqueueProcessingJob } from "@/lib/admin/processing-jobs";
 import { getDocumentParser, type ParsedDocumentOutput } from "./parsers";
+import { extractVisualInsights } from "./visual-intelligence";
 
 type DocumentForParsing = {
   id: string;
   company_id: string;
   file_type: string;
+  version: number;
   name: string;
+  original_filename: string;
   storage_path: string | null;
 };
 
@@ -26,7 +29,7 @@ function serializeParsedOutput(output: ParsedDocumentOutput) {
 async function loadDocument(documentId: string) {
   const result = await getPool().query<DocumentForParsing>(
     `
-      SELECT id, company_id, file_type, name, storage_path
+      SELECT id, company_id, file_type, version, name, original_filename, storage_path
       FROM documents
       WHERE id = $1 AND status <> 'deleted'
     `,
@@ -57,6 +60,12 @@ export async function parseDocumentById(documentId: string) {
   const originalFile = await storage.get_file(document.storage_path);
   const output = await parser.parse(originalFile);
   const parsedPath = parsedOutputPath(document.company_id, document.id);
+  const visualInsights = extractVisualInsights({
+    fileType: document.file_type,
+    documentName: document.name,
+    originalFilename: document.original_filename,
+    parsed: output
+  });
 
   await storage.save_file(serializeParsedOutput(output), parsedPath);
 
@@ -106,6 +115,89 @@ export async function parseDocumentById(documentId: string) {
           output.pages.map((page) => page.text.length)
         ]
       );
+
+    await client.query(
+      `
+        UPDATE document_versions
+        SET
+          parsed_file_path = $3,
+          page_count = $4,
+          content_text = $5
+        WHERE document_id = $1
+          AND version_number = $2
+      `,
+      [
+        document.id,
+        document.version,
+        parsedPath,
+        output.pages.length,
+        output.pages.map((page) => page.text || "").join("\n\n")
+      ]
+    );
+
+    await client.query(
+      "DELETE FROM document_visual_insights WHERE document_id = $1 AND version_number = $2",
+      [document.id, document.version]
+    );
+    await client.query(
+      "DELETE FROM document_visual_assets WHERE document_id = $1 AND version_number = $2",
+      [document.id, document.version]
+    );
+
+    if (visualInsights.length > 0) {
+      for (const insight of visualInsights) {
+        const assetResult = await client.query<{ id: string }>(
+          `
+            INSERT INTO document_visual_assets (
+              company_id,
+              document_id,
+              version_number,
+              page_number,
+              asset_type,
+              label,
+              metadata_json
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+            RETURNING id
+          `,
+          [
+            document.company_id,
+            document.id,
+            document.version,
+            insight.pageNumber,
+            insight.assetType,
+            insight.label,
+            JSON.stringify(insight.metadata)
+          ]
+        );
+
+        await client.query(
+          `
+            INSERT INTO document_visual_insights (
+              company_id,
+              document_id,
+              version_number,
+              asset_id,
+              extracted_text,
+              confidence,
+              citation_preview,
+              metadata_json
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+          `,
+          [
+            document.company_id,
+            document.id,
+            document.version,
+            assetResult.rows[0].id,
+            insight.extractedText,
+            insight.confidence,
+            insight.citationPreview,
+            JSON.stringify(insight.metadata)
+          ]
+        );
+      }
+    }
     }
 
     await client.query(

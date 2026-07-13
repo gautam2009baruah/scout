@@ -137,12 +137,30 @@ class PlaceholderDocumentParser implements DocumentParser {
   }
 }
 
+class ImageDocumentParser implements DocumentParser {
+  can_parse(fileType: string) {
+    return ["png", "jpg", "jpeg", "webp", "tiff"].includes(fileType);
+  }
+
+  async parse() {
+    return buildOutput(
+      "Visual document",
+      [{
+        page_number: 1,
+        text: "Visual content file detected. OCR text extraction is not enabled for this deployment, but visual evidence metadata will be indexed for search."
+      }],
+      { visual_only: true }
+    );
+  }
+}
+
 const parsers: DocumentParser[] = [
   new TxtDocumentParser(),
   new PdfDocumentParser(),
   new DocxDocumentParser(),
   new StructuredTextDocumentParser(),
-  new PlaceholderDocumentParser(["xlsx", "pptx", "epub", "png", "jpg", "jpeg", "webp", "tiff", "zip"])
+  new ImageDocumentParser(),
+  new PlaceholderDocumentParser(["xlsx", "pptx", "epub", "zip"])
 ];
 
 export function getDocumentParser(fileType: string) {

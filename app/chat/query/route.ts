@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { answerChatQuery, ChatQueryError } from "@/lib/chat/query";
+import { recordChatQueryTelemetry } from "@/lib/chat/telemetry";
 
 export const runtime = "nodejs";
 
@@ -19,14 +20,54 @@ export async function POST(request: Request) {
     const response = await answerChatQuery({
       company_id: body.company_id,
       user_id: body.user_id,
+      target_app_id:
+        typeof body.target_app_id === "string"
+          ? body.target_app_id
+          : typeof body.targetAppId === "string"
+          ? body.targetAppId
+          : undefined,
       question: body.question,
-      target_app_id: typeof body.target_app_id === "string" ? body.target_app_id : typeof body.targetAppId === "string" ? body.targetAppId : undefined,
       conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,
-      top_k: typeof body.top_k !== "undefined" ? Number(body.top_k) : undefined
+      top_k: typeof body.top_k !== "undefined" ? Number(body.top_k) : undefined,
     });
 
     return NextResponse.json(response);
   } catch (error) {
+    if (
+      typeof body.company_id === "string"
+      && typeof body.user_id === "string"
+      && typeof body.question === "string"
+      && body.company_id.trim()
+      && body.user_id.trim()
+      && body.question.trim()
+    ) {
+      try {
+        await recordChatQueryTelemetry({
+          company_id: body.company_id,
+          target_app_id: typeof body.target_app_id === "string" ? body.target_app_id : undefined,
+          user_id: body.user_id,
+          conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,
+          question: body.question,
+          answer: "",
+          answer_status: "failed",
+          no_answer_reason: "request_failed",
+          retrieved_chunk_count: 0,
+          citations: [],
+          latency_ms: 0,
+          token_usage: {
+            prompt_tokens: null,
+            completion_tokens: null,
+            total_tokens: null,
+            estimated_cost_usd: null,
+          },
+          metadata: { source: "app/chat/query/route" },
+          error_message: error instanceof Error ? error.message : "Unknown chat query error",
+        });
+      } catch {
+        // Non-blocking telemetry path.
+      }
+    }
+
     if (error instanceof ChatQueryError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }

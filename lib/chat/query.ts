@@ -5,6 +5,7 @@ import type { Citation } from "@/lib/search/citation-engine";
 import { appendConversationExchange, getOrCreateConversation } from "./conversations";
 import { matchChatbotTriggers, shouldCheckTriggers } from "@/lib/orchestrations/chatbot-trigger-matcher";
 import { createExecution } from "@/lib/orchestrations/db";
+import { buildEstimatedTokenUsage, recordChatQueryTelemetry } from "./telemetry";
 
 export type ChatQueryInput = {
   company_id: string;
@@ -16,9 +17,19 @@ export type ChatQueryInput = {
 };
 
 export type ChatQueryResponse = {
+  query_id: string;
   answer: string;
   citations: Citation[];
   conversation_id: string;
+  no_answer: boolean;
+  no_answer_reason?: string;
+  latency_ms: number;
+  token_usage: {
+    prompt_tokens: number | null;
+    completion_tokens: number | null;
+    total_tokens: number | null;
+    estimated_cost_usd: number | null;
+  };
   retrieved_chunk_count: number;
   orchestration_trigger?: {
     triggerId: string;
@@ -101,6 +112,32 @@ function buildLLMContext(chunks: Awaited<ReturnType<typeof RetrievalEngine.retri
     section_title: chunk.section_title,
     chunk_id: chunk.chunk_id
   }));
+}
+
+function buildRetrievalDiagnostics(
+  retrieval: Awaited<ReturnType<typeof RetrievalEngine.retrieve>>,
+  options: {
+    topK: number;
+    targetAppId?: string;
+  }
+) {
+  return {
+    topK: options.topK,
+    targetAppId: options.targetAppId || null,
+    retrievedChunkCount: retrieval.chunks.length,
+    citationCount: retrieval.citations.length,
+    chunkPaths: retrieval.chunks.slice(0, options.topK).map((chunk) => ({
+      chunk_id: chunk.chunk_id,
+      document_id: chunk.document_id,
+      document_name: chunk.document_name,
+      folder_path: chunk.folder_path,
+      page_number: chunk.page_number,
+      section_title: chunk.section_title,
+      score: chunk.score,
+      citation_type: chunk.citation_type || "text",
+      visual_asset_type: chunk.visual_asset_type || null,
+    })),
+  };
 }
 
 function cleanExtractedValue(value: string) {
@@ -295,6 +332,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   if (isGreetingOnly(question)) {
     const greeting = "Hi. Ask me a question about the available documents, and I will answer using only the information I can find there.";
+    const latencyMs = Date.now() - startedAt;
 
     await appendConversationExchange({
       companyId,
@@ -306,10 +344,32 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       metadata: {
         llm_provider: "none",
         llm_model: "greeting",
-        latency_ms: Date.now() - startedAt,
+        latency_ms: latencyMs,
         retrieved_chunk_count: 0,
         token_usage_summary: null
       }
+    });
+
+    const queryId = await recordChatQueryTelemetry({
+      company_id: companyId,
+      target_app_id: input.target_app_id?.trim() || undefined,
+      user_id: userId,
+      conversation_id: conversationId,
+      question,
+      answer: greeting,
+      answer_status: "answered",
+      retrieved_chunk_count: 0,
+      citations: [],
+      llm_provider: "none",
+      llm_model: "greeting",
+      latency_ms: latencyMs,
+      token_usage: {
+        prompt_tokens: null,
+        completion_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: 0,
+      },
+      metadata: { mode: "greeting" },
     });
 
     let modifiedGreeting = greeting;
@@ -320,9 +380,18 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
     
     const response: ChatQueryResponse = {
+      query_id: queryId,
       answer: modifiedGreeting,
       citations: [],
       conversation_id: conversationId,
+      no_answer: false,
+      latency_ms: latencyMs,
+      token_usage: {
+        prompt_tokens: null,
+        completion_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: 0,
+      },
       retrieved_chunk_count: 0
     };
     
@@ -339,6 +408,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const retrieval = await RetrievalEngine.retrieve(companyId, userId, question, topK, input.target_app_id?.trim() || undefined);
 
   if (retrieval.chunks.length === 0) {
+    const latencyMs = Date.now() - startedAt;
     await appendConversationExchange({
       companyId,
       userId,
@@ -349,10 +419,42 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       metadata: {
         llm_provider: "none",
         llm_model: "none",
-        latency_ms: Date.now() - startedAt,
+        latency_ms: latencyMs,
         retrieved_chunk_count: 0,
         token_usage_summary: null
       }
+    });
+
+    const queryId = await recordChatQueryTelemetry({
+      company_id: companyId,
+      target_app_id: input.target_app_id?.trim() || undefined,
+      user_id: userId,
+      conversation_id: conversationId,
+      question,
+      answer: INSUFFICIENT_CONTEXT_MESSAGE,
+      answer_status: "no_answer",
+      no_answer_reason: "no_retrieval_chunks",
+      retrieved_chunk_count: 0,
+      citations: [],
+      llm_provider: "none",
+      llm_model: "none",
+      latency_ms: latencyMs,
+      token_usage: {
+        prompt_tokens: null,
+        completion_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: 0,
+      },
+      metadata: {
+        mode: "no_retrieval_chunks",
+        retrievalDiagnostics: {
+          topK,
+          targetAppId: input.target_app_id?.trim() || null,
+          retrievedChunkCount: 0,
+          citationCount: 0,
+          chunkPaths: [],
+        },
+      },
     });
 
     let modifiedMessage = INSUFFICIENT_CONTEXT_MESSAGE;
@@ -363,9 +465,19 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
     
     const response: ChatQueryResponse = {
+      query_id: queryId,
       answer: modifiedMessage,
       citations: [],
       conversation_id: conversationId,
+      no_answer: true,
+      no_answer_reason: "no_retrieval_chunks",
+      latency_ms: latencyMs,
+      token_usage: {
+        prompt_tokens: null,
+        completion_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: 0,
+      },
       retrieved_chunk_count: 0
     };
     
@@ -382,6 +494,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const extractiveAnswer = buildExtractiveAnswer(question, retrieval.chunks);
 
   if (extractiveAnswer) {
+    const latencyMs = Date.now() - startedAt;
     await appendConversationExchange({
       companyId,
       userId,
@@ -392,10 +505,38 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       metadata: {
         llm_provider: "none",
         llm_model: "extractive",
-        latency_ms: Date.now() - startedAt,
+        latency_ms: latencyMs,
         retrieved_chunk_count: retrieval.chunks.length,
         token_usage_summary: null
       }
+    });
+
+    const queryId = await recordChatQueryTelemetry({
+      company_id: companyId,
+      target_app_id: input.target_app_id?.trim() || undefined,
+      user_id: userId,
+      conversation_id: conversationId,
+      question,
+      answer: extractiveAnswer,
+      answer_status: "answered",
+      retrieved_chunk_count: retrieval.chunks.length,
+      citations: retrieval.citations,
+      llm_provider: "none",
+      llm_model: "extractive",
+      latency_ms: latencyMs,
+      token_usage: {
+        prompt_tokens: null,
+        completion_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: 0,
+      },
+      metadata: {
+        mode: "extractive",
+        retrievalDiagnostics: buildRetrievalDiagnostics(retrieval, {
+          topK,
+          targetAppId: input.target_app_id?.trim() || undefined,
+        }),
+      },
     });
 
     let modifiedExtractiveAnswer = extractiveAnswer;
@@ -406,9 +547,18 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
     
     const response: ChatQueryResponse = {
+      query_id: queryId,
       answer: modifiedExtractiveAnswer,
       citations: retrieval.citations,
       conversation_id: conversationId,
+      no_answer: false,
+      latency_ms: latencyMs,
+      token_usage: {
+        prompt_tokens: null,
+        completion_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: 0,
+      },
       retrieved_chunk_count: retrieval.chunks.length
     };
     
@@ -421,8 +571,19 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   }
 
   const provider = await getLLMProvider();
-  const answer = await provider.generate_answer(buildSystemPrompt(), question, buildLLMContext(retrieval.chunks));
+  const systemPrompt = buildSystemPrompt();
+  const llmContext = buildLLMContext(retrieval.chunks);
+  const answer = await provider.generate_answer(systemPrompt, question, llmContext);
   const finalAnswer = answer || INSUFFICIENT_CONTEXT_MESSAGE;
+  const latencyMs = Date.now() - startedAt;
+  const tokenUsage = buildEstimatedTokenUsage({
+    provider: provider.provider,
+    model: provider.model,
+    systemPrompt,
+    question,
+    contextText: llmContext.map((item) => item.content).join("\n\n"),
+    answerText: finalAnswer,
+  });
 
   await appendConversationExchange({
     companyId,
@@ -434,10 +595,35 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     metadata: {
       llm_provider: provider.provider,
       llm_model: provider.model,
-      latency_ms: Date.now() - startedAt,
+      latency_ms: latencyMs,
       retrieved_chunk_count: retrieval.chunks.length,
-      token_usage_summary: null
+      token_usage_summary: tokenUsage
     }
+  });
+
+  const noAnswer = finalAnswer === INSUFFICIENT_CONTEXT_MESSAGE;
+  const queryId = await recordChatQueryTelemetry({
+    company_id: companyId,
+    target_app_id: input.target_app_id?.trim() || undefined,
+    user_id: userId,
+    conversation_id: conversationId,
+    question,
+    answer: finalAnswer,
+    answer_status: noAnswer ? "no_answer" : "answered",
+    no_answer_reason: noAnswer ? "insufficient_context_from_llm" : undefined,
+    retrieved_chunk_count: retrieval.chunks.length,
+    citations: retrieval.citations,
+    llm_provider: provider.provider,
+    llm_model: provider.model,
+    latency_ms: latencyMs,
+    token_usage: tokenUsage,
+    metadata: {
+      mode: "llm",
+      retrievalDiagnostics: buildRetrievalDiagnostics(retrieval, {
+        topK,
+        targetAppId: input.target_app_id?.trim() || undefined,
+      }),
+    },
   });
 
   // Include orchestration trigger if matched (alongside normal response)
@@ -452,9 +638,14 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   }
   
   const response: ChatQueryResponse = {
+    query_id: queryId,
     answer: modifiedAnswer,
     citations: retrieval.citations,
     conversation_id: conversationId,
+    no_answer: noAnswer,
+    no_answer_reason: noAnswer ? "insufficient_context_from_llm" : undefined,
+    latency_ms: latencyMs,
+    token_usage: tokenUsage,
     retrieved_chunk_count: retrieval.chunks.length
   };
 

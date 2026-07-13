@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Trash2, X } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./topic-tree";
 import type { RoleSummary } from "@/lib/admin/administration";
@@ -73,6 +73,42 @@ type DocumentProgressRow = {
   progress: number;
   error?: string;
   documentId?: string;
+};
+
+type DocumentVersionRow = {
+  id: string;
+  versionNumber: number;
+  checksum: string;
+  fileType: string;
+  fileSize: number;
+  pageCount: number | null;
+  status: string;
+  createdByName: string | null;
+  createdAt: string;
+};
+
+type DocumentVersionComparison = {
+  fromVersion: number;
+  toVersion: number;
+  identical: boolean;
+  stats: {
+    fromLineCount: number;
+    toLineCount: number;
+    addedLines: number;
+    removedLines: number;
+    pageCountDelta: number;
+  };
+  addedPreview: string[];
+  removedPreview: string[];
+};
+
+type DocumentVersionSummary = {
+  fromVersion: number;
+  toVersion: number;
+  summary: string;
+  provider: string;
+  model: string;
+  generatedAt: string;
 };
 
 type DeleteConfirmation =
@@ -212,6 +248,7 @@ function ReadOnlyAccess({ all, label, names }: { all: boolean; label: string; na
 
 export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId, selectedCompanyName, targetApps, topics, tree, users }: TopicManagerProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [topicState, setTopicState] = useState<FormState>({ message: "", status: "idle" });
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>(null);
   const [deletingFolderIds, setDeletingFolderIds] = useState<Set<string>>(new Set());
@@ -223,6 +260,15 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [uploadTarget, setUploadTarget] = useState<TopicActionTarget | null>(null);
   const [documentsTarget, setDocumentsTarget] = useState<TopicActionTarget | null>(null);
   const [accessDocument, setAccessDocument] = useState<DocumentGridRow | null>(null);
+  const [versionDocument, setVersionDocument] = useState<DocumentGridRow | null>(null);
+  const [versionRows, setVersionRows] = useState<DocumentVersionRow[]>([]);
+  const [versionLoading, setVersionLoading] = useState(false);
+  const [compareFromVersion, setCompareFromVersion] = useState<number | null>(null);
+  const [compareToVersion, setCompareToVersion] = useState<number | null>(null);
+  const [versionComparison, setVersionComparison] = useState<DocumentVersionComparison | null>(null);
+  const [versionSummary, setVersionSummary] = useState<DocumentVersionSummary | null>(null);
+  const [versionSummaryLoading, setVersionSummaryLoading] = useState(false);
+  const [versionCompareLoading, setVersionCompareLoading] = useState(false);
   const [folderAccessTarget, setFolderAccessTarget] = useState<TopicActionTarget | null>(null);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -250,6 +296,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
   const [editUserIds, setEditUserIds] = useState<string[]>([]);
   const [editTargetAppIds, setEditTargetAppIds] = useState<string[]>([]);
+  const [handledDeepLinkKey, setHandledDeepLinkKey] = useState<string | null>(null);
 
   const rootParentOptions = useMemo(
     () => topics.filter((topic) => topic.companyId === createCompanyId),
@@ -284,6 +331,12 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setToast({ message, type });
     globalThis.setTimeout(() => setToast((current) => current?.message === message ? null : current), duration);
   }
+
+  function formatTimestamp(value: string) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString();
+  }
   const editRoleNames = useMemo(
     () => grants
       .filter((grant) => grant.type === "role" && grant.topicId === editTarget?.topicId && editRoleIds.includes(grant.assigneeId))
@@ -300,6 +353,117 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     () => documentStorageModeOptions.find((option) => option.value === documentStorageMode) ?? documentStorageModeOptions[0],
     [documentStorageMode]
   );
+
+  function toDocumentGridRow(document: any): DocumentGridRow {
+    return {
+      id: String(document.id || ""),
+      name: String(document.name || ""),
+      originalFilename: String(document.originalFilename || ""),
+      fileType: String(document.fileType || ""),
+      mimeType: typeof document.mimeType === "string" ? document.mimeType : null,
+      fileSize: Number(document.fileSize || 0),
+      storageMode: (document.storageMode || "managed_upload") as DocumentStorageMode,
+      storagePath: typeof document.storagePath === "string" ? document.storagePath : null,
+      version: Number(document.version || 1),
+      status: String(document.status || "uploaded"),
+      uploadedByName: String(document.uploadedByName || "-"),
+      errorMessage: typeof document.errorMessage === "string" ? document.errorMessage : null,
+      roleAccessCount: Number(document.roleAccessCount || 0),
+      userAccessCount: Number(document.userAccessCount || 0),
+      canDelete: Boolean(document.canDelete),
+      createdAt: String(document.createdAt || new Date().toISOString()),
+      updatedAt: String(document.updatedAt || new Date().toISOString())
+    };
+  }
+
+  useEffect(() => {
+    const documentId = String(searchParams.get("documentId") || "").trim();
+    const docAction = String(searchParams.get("docAction") || "").trim().toLowerCase();
+
+    if (!documentId) {
+      return;
+    }
+
+    const deepLinkKey = `${documentId}:${docAction || "open"}`;
+    if (handledDeepLinkKey === deepLinkKey) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function openDocumentDeepLink() {
+      setHandledDeepLinkKey(deepLinkKey);
+
+      const documentResponse = await fetch(`/api/admin/documents/${documentId}`);
+      const documentBody = await documentResponse.json().catch(() => null);
+
+      if (!documentResponse.ok || !documentBody?.document) {
+        showToast(typeof documentBody?.message === "string" ? documentBody.message : "Linked document could not be loaded.", "error");
+        return;
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      const document = documentBody.document as Record<string, unknown>;
+      const folderId = String(document.folderId || "");
+
+      const topic = topics.find((entry) => entry.id === folderId && entry.companyId === selectedCompanyId)
+        || topics.find((entry) => entry.id === folderId);
+
+      if (!topic) {
+        showToast("Document folder is not accessible in this workspace.", "error");
+        return;
+      }
+
+      const parentName = topic.parentId
+        ? topics.find((entry) => entry.id === topic.parentId)?.name || "Parent folder"
+        : "Base";
+
+      const target: TopicActionTarget = {
+        companyId: topic.companyId,
+        companyName: topic.companyName,
+        parentId: topic.parentId,
+        parentName,
+        roleAccessAll: topic.roleAccessAll,
+        topicId: topic.id,
+        topicName: topic.name,
+        userAccessAll: topic.userAccessAll,
+        targetAppIds: topic.targetAppIds,
+        targetAppNames: topic.targetAppNames,
+        x: 0,
+        y: 0
+      };
+
+      setActionTarget(null);
+      setTopicState({ message: "", status: "idle" });
+      setDocumentsTarget(target);
+      setDocumentFilters({ fileType: "", search: "", status: "" });
+      await loadDocuments(target, 1, { fileType: "", search: "", status: "" });
+
+      if (cancelled) {
+        return;
+      }
+
+      const gridRow = toDocumentGridRow(document);
+      if (docAction === "versions" || docAction === "compare") {
+        await openVersionModal(gridRow);
+      }
+
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.delete("documentId");
+      nextParams.delete("docAction");
+      const nextQuery = nextParams.toString();
+      router.replace(`/control-panel/content-structure${nextQuery ? `?${nextQuery}` : ""}`);
+    }
+
+    void openDocumentDeepLink();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [handledDeepLinkKey, router, searchParams, selectedCompanyId, topics]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openContextMenu(target: TopicActionTarget) {
     setActionTarget({
@@ -428,6 +592,12 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   function closeDocumentsModal() {
     setDocumentsTarget(null);
     setAccessDocument(null);
+    setVersionDocument(null);
+    setVersionRows([]);
+    setVersionComparison(null);
+    setVersionSummary(null);
+    setCompareFromVersion(null);
+    setCompareToVersion(null);
     setTopicState({ message: "", status: "idle" });
   }
 
@@ -488,6 +658,98 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setAccessDocument(row);
     setAccessRoleIds(body.access.roleIds ?? []);
     setAccessUserIds(body.access.userIds ?? []);
+  }
+
+  async function openVersionModal(row: DocumentGridRow) {
+    setVersionDocument(row);
+    setVersionRows([]);
+    setVersionComparison(null);
+    setVersionSummary(null);
+    setCompareFromVersion(null);
+    setCompareToVersion(null);
+    setVersionLoading(true);
+
+    const response = await fetch(`/api/admin/documents/${row.id}/versions`);
+    const body = await response.json().catch(() => null);
+
+    setVersionLoading(false);
+
+    if (!response.ok) {
+      setTopicState({ message: typeof body?.message === "string" ? body.message : "Unable to load document versions.", status: "error" });
+      return;
+    }
+
+    const rows = Array.isArray(body?.versions) ? body.versions as DocumentVersionRow[] : [];
+    setVersionRows(rows);
+
+    if (rows.length >= 2) {
+      const toVersion = rows[0].versionNumber;
+      const fromVersion = rows[1].versionNumber;
+      setCompareFromVersion(fromVersion);
+      setCompareToVersion(toVersion);
+      await compareVersions(row.id, fromVersion, toVersion);
+    } else if (rows.length === 1) {
+      setCompareFromVersion(rows[0].versionNumber);
+      setCompareToVersion(rows[0].versionNumber);
+    }
+  }
+
+  function closeVersionModal() {
+    setVersionDocument(null);
+    setVersionRows([]);
+    setVersionComparison(null);
+    setVersionSummary(null);
+    setCompareFromVersion(null);
+    setCompareToVersion(null);
+  }
+
+  async function compareVersions(documentId: string, fromVersion: number, toVersion: number) {
+    setVersionCompareLoading(true);
+    const response = await fetch(`/api/admin/documents/${documentId}/compare?fromVersion=${fromVersion}&toVersion=${toVersion}`);
+    const body = await response.json().catch(() => null);
+    setVersionCompareLoading(false);
+
+    if (!response.ok) {
+      setTopicState({ message: typeof body?.message === "string" ? body.message : "Unable to compare document versions.", status: "error" });
+      return;
+    }
+
+    setVersionComparison(body.comparison ?? null);
+    setVersionSummary(null);
+  }
+
+  async function runSelectedVersionCompare() {
+    if (!versionDocument || !compareFromVersion || !compareToVersion) {
+      return;
+    }
+
+    await compareVersions(versionDocument.id, compareFromVersion, compareToVersion);
+  }
+
+  async function generateVersionSummary() {
+    if (!versionDocument || !compareFromVersion || !compareToVersion) {
+      return;
+    }
+
+    setVersionSummaryLoading(true);
+    const response = await fetch(`/api/admin/documents/${versionDocument.id}/compare/summary`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fromVersion: compareFromVersion, toVersion: compareToVersion })
+    });
+    const body = await response.json().catch(() => null);
+    setVersionSummaryLoading(false);
+
+    if (!response.ok) {
+      setTopicState({ message: typeof body?.message === "string" ? body.message : "Unable to generate AI summary.", status: "error" });
+      return;
+    }
+
+    if (body?.comparison) {
+      setVersionComparison(body.comparison as DocumentVersionComparison);
+    }
+
+    setVersionSummary(body?.summary as DocumentVersionSummary);
   }
 
   async function openFolderAccessModal(target: TopicActionTarget) {
@@ -1171,6 +1433,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex justify-end gap-2">
+                          <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-200 text-amber-700 hover:bg-amber-50" onClick={() => openVersionModal(document)} title="Version history" type="button">
+                            <FileText className="h-4 w-4" />
+                          </button>
                           <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50" onClick={() => openAccessModal(document)} title="Access" type="button">
                             <ShieldCheck className="h-4 w-4" />
                           </button>
@@ -1220,6 +1485,168 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   ))}
                 <button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold disabled:opacity-40" disabled={documentGrid.page >= documentGrid.pageCount} onClick={() => loadDocuments(documentsTarget, Math.min(documentGrid.pageCount, documentGrid.page + 1))} type="button">Next</button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {versionDocument ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={closeVersionModal}>
+          <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Version History</h2>
+                <p className="text-sm text-slate-500">{versionDocument.name}</p>
+              </div>
+              <button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={closeVersionModal} type="button">
+                Close
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-3 overflow-auto p-5 lg:grid-cols-[minmax(320px,1fr)_minmax(420px,1.2fr)]">
+              <section className="rounded-lg border border-slate-200 bg-white p-3">
+                <h3 className="text-sm font-semibold text-slate-900">Versions</h3>
+                <div className="mt-3 max-h-[38vh] overflow-auto rounded-lg border border-slate-200">
+                  <table className="w-full border-collapse text-left text-sm">
+                    <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Version</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2">Pages</th>
+                        <th className="px-3 py-2">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {versionLoading ? (
+                        <tr>
+                          <td className="px-3 py-4 text-slate-500" colSpan={4}>Loading versions...</td>
+                        </tr>
+                      ) : versionRows.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-4 text-slate-500" colSpan={4}>No versions found.</td>
+                        </tr>
+                      ) : (
+                        versionRows.map((version) => (
+                          <tr key={version.id}>
+                            <td className="px-3 py-2 font-semibold text-slate-900">v{version.versionNumber}</td>
+                            <td className="px-3 py-2 text-slate-600">{version.status}</td>
+                            <td className="px-3 py-2 text-slate-600">{version.pageCount ?? "-"}</td>
+                            <td className="px-3 py-2 text-xs text-slate-500">{formatTimestamp(version.createdAt)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-slate-200 bg-white p-3">
+                <h3 className="text-sm font-semibold text-slate-900">Structural Compare</h3>
+                <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                  <label className="flex flex-col gap-1 text-xs font-semibold uppercase text-slate-500">
+                    From
+                    <select className="h-9 rounded-lg border border-slate-300 px-2 text-sm font-medium text-slate-700" onChange={(event) => setCompareFromVersion(Number(event.target.value))} value={compareFromVersion ?? ""}>
+                      {versionRows.map((version) => (
+                        <option key={`from-${version.id}`} value={version.versionNumber}>v{version.versionNumber}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-semibold uppercase text-slate-500">
+                    To
+                    <select className="h-9 rounded-lg border border-slate-300 px-2 text-sm font-medium text-slate-700" onChange={(event) => setCompareToVersion(Number(event.target.value))} value={compareToVersion ?? ""}>
+                      {versionRows.map((version) => (
+                        <option key={`to-${version.id}`} value={version.versionNumber}>v{version.versionNumber}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="flex items-end">
+                    <button className="h-9 rounded-lg bg-slate-950 px-3 text-sm font-semibold text-white disabled:opacity-40" disabled={!compareFromVersion || !compareToVersion || versionCompareLoading} onClick={runSelectedVersionCompare} type="button">
+                      {versionCompareLoading ? "Comparing..." : "Compare"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex justify-end">
+                  <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-3 text-sm font-semibold text-violet-800 disabled:opacity-40" disabled={!compareFromVersion || !compareToVersion || versionSummaryLoading} onClick={generateVersionSummary} type="button">
+                    <Sparkles className="h-4 w-4" />
+                    {versionSummaryLoading ? "Generating summary..." : "Generate AI Summary"}
+                  </button>
+                </div>
+
+                {versionComparison ? (
+                  <div className="mt-3 space-y-3">
+                    {versionSummary ? (
+                      <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs font-semibold uppercase text-violet-700">AI Change Summary</p>
+                          <p className="text-[11px] text-violet-700">{versionSummary.provider}:{versionSummary.model}</p>
+                        </div>
+                        <pre className="mt-2 whitespace-pre-wrap text-xs leading-5 text-violet-950">{versionSummary.summary}</pre>
+                      </div>
+                    ) : null}
+
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Identity</p>
+                        <p className="mt-1 font-semibold text-slate-900">{versionComparison.identical ? "No content change" : "Content changed"}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Page delta</p>
+                        <p className="mt-1 font-semibold text-slate-900">{versionComparison.stats.pageCountDelta}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Added lines</p>
+                        <p className="mt-1 font-semibold text-slate-900">{versionComparison.stats.addedLines}</p>
+                      </div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                        <p className="text-xs font-semibold uppercase text-slate-500">Removed lines</p>
+                        <p className="mt-1 font-semibold text-slate-900">{versionComparison.stats.removedLines}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2 lg:grid-cols-2">
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+                        <p className="text-xs font-semibold uppercase text-emerald-700">Added preview</p>
+                        <ul className="mt-2 max-h-36 space-y-1 overflow-auto text-xs text-emerald-900">
+                          {versionComparison.addedPreview.length === 0 ? <li>No added lines.</li> : versionComparison.addedPreview.map((line, index) => <li key={`add-${index}`}>{line}</li>)}
+                        </ul>
+                      </div>
+                      <div className="rounded-lg border border-red-200 bg-red-50/60 p-3">
+                        <p className="text-xs font-semibold uppercase text-red-700">Removed preview</p>
+                        <ul className="mt-2 max-h-36 space-y-1 overflow-auto text-xs text-red-900">
+                          {versionComparison.removedPreview.length === 0 ? <li>No removed lines.</li> : versionComparison.removedPreview.map((line, index) => <li key={`remove-${index}`}>{line}</li>)}
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-slate-200 bg-white p-3">
+                      <p className="text-xs font-semibold uppercase text-slate-500">Side-by-side Highlights</p>
+                      <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                        <div className="rounded-lg border border-red-200 bg-red-50/60 p-2">
+                          <p className="text-xs font-semibold uppercase text-red-700">From v{versionComparison.fromVersion} (removed)</p>
+                          <ul className="mt-2 max-h-36 space-y-1 overflow-auto text-xs text-red-900">
+                            {versionComparison.removedPreview.length === 0
+                              ? <li>No removed lines.</li>
+                              : versionComparison.removedPreview.map((line, index) => <li key={`side-from-${index}`}>{line}</li>)}
+                          </ul>
+                        </div>
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
+                          <p className="text-xs font-semibold uppercase text-emerald-700">To v{versionComparison.toVersion} (added)</p>
+                          <ul className="mt-2 max-h-36 space-y-1 overflow-auto text-xs text-emerald-900">
+                            {versionComparison.addedPreview.length === 0
+                              ? <li>No added lines.</li>
+                              : versionComparison.addedPreview.map((line, index) => <li key={`side-to-${index}`}>{line}</li>)}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                    Select two versions to compare structural differences.
+                  </p>
+                )}
+              </section>
             </div>
           </div>
         </div>

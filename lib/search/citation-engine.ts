@@ -8,6 +8,8 @@ export type Citation = {
   section_title: string;
   chunk_id: string;
   preview: string;
+  citation_type?: "text" | "visual";
+  visual_asset_type?: string;
 };
 
 function buildPreview(content: string) {
@@ -25,7 +27,10 @@ export class CitationEngine {
     const citations = new Map<string, Citation>();
 
     for (const chunk of chunks) {
-      const key = `${chunk.document_id}:${chunk.page_number}`;
+      const citationType = chunk.citation_type ?? "text";
+      const key = citationType === "visual"
+        ? `${chunk.document_id}:${chunk.page_number}:${chunk.chunk_id}`
+        : `${chunk.document_id}:${chunk.page_number}`;
 
       if (citations.has(key)) {
         continue;
@@ -38,7 +43,9 @@ export class CitationEngine {
         page_number: chunk.page_number,
         section_title: chunk.section_title,
         chunk_id: chunk.chunk_id,
-        preview: buildPreview(chunk.content)
+        preview: buildPreview(chunk.content),
+        citation_type: citationType,
+        visual_asset_type: chunk.visual_asset_type
       });
     }
 

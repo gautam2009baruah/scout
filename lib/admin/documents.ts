@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/db/pool";
+import { getLLMProvider } from "@/lib/llm/providers";
 import { getStorageProvider } from "@/lib/storage/provider";
 import { getAccessibleTopicIds } from "./content-structure";
 import { enqueueProcessingJob } from "./processing-jobs";
@@ -50,6 +51,53 @@ export type DocumentRow = {
   canDelete: boolean;
   createdAt: Date;
   updatedAt: Date;
+};
+
+export type DocumentVersionRow = {
+  id: string;
+  documentId: string;
+  versionNumber: number;
+  checksum: string;
+  fileSize: number;
+  fileType: string;
+  mimeType: string | null;
+  status: string;
+  storageMode: DocumentStorageMode;
+  storagePath: string | null;
+  externalSourceUrl: string | null;
+  externalSourceReference: string | null;
+  sourceMetadata: Record<string, unknown>;
+  parsedFilePath: string | null;
+  pageCount: number | null;
+  createdBy: string | null;
+  createdByName: string | null;
+  createdAt: Date;
+};
+
+export type DocumentVersionComparison = {
+  fromVersion: number;
+  toVersion: number;
+  identical: boolean;
+  fromChecksum: string;
+  toChecksum: string;
+  stats: {
+    fromLineCount: number;
+    toLineCount: number;
+    addedLines: number;
+    removedLines: number;
+    pageCountDelta: number;
+  };
+  addedPreview: string[];
+  removedPreview: string[];
+};
+
+export type DocumentVersionChangeSummary = {
+  fromVersion: number;
+  toVersion: number;
+  summary: string;
+  provider: string;
+  model: string;
+  generatedAt: string;
 };
 
 export type CreateDocumentInput = {
@@ -423,6 +471,190 @@ function mapDocument(row: {
   };
 }
 
+function mapDocumentVersion(row: {
+  id: string;
+  document_id: string;
+  version_number: number;
+  checksum: string;
+  file_size: string | number;
+  file_type: string;
+  mime_type: string | null;
+  status: string;
+  storage_mode: DocumentStorageMode;
+  storage_path: string | null;
+  external_source_url: string | null;
+  external_source_reference: string | null;
+  source_metadata_json: Record<string, unknown>;
+  parsed_file_path: string | null;
+  page_count: number | null;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: Date;
+}): DocumentVersionRow {
+  return {
+    id: row.id,
+    documentId: row.document_id,
+    versionNumber: row.version_number,
+    checksum: row.checksum,
+    fileSize: Number(row.file_size),
+    fileType: row.file_type,
+    mimeType: row.mime_type,
+    status: row.status,
+    storageMode: row.storage_mode,
+    storagePath: row.storage_path,
+    externalSourceUrl: row.external_source_url,
+    externalSourceReference: row.external_source_reference,
+    sourceMetadata: row.source_metadata_json ?? {},
+    parsedFilePath: row.parsed_file_path,
+    pageCount: row.page_count,
+    createdBy: row.created_by,
+    createdByName: row.created_by_name,
+    createdAt: row.created_at
+  };
+}
+
+async function insertDocumentVersionSnapshot(client: { query: (sql: string, params?: unknown[]) => Promise<unknown> }, input: {
+  documentId: string;
+  companyId: string;
+  folderId: string;
+  versionNumber: number;
+  name: string;
+  originalFilename: string;
+  fileType: string;
+  mimeType: string | null;
+  fileSize: number;
+  checksum: string;
+  status: DocumentStatus;
+  storageMode: DocumentStorageMode;
+  storagePath: string | null;
+  externalSourceUrl: string | null;
+  externalSourceReference: string | null;
+  sourceMetadata: Record<string, unknown>;
+  createdBy: string;
+}) {
+  await client.query(
+    `
+      INSERT INTO document_versions (
+        document_id,
+        company_id,
+        folder_id,
+        version_number,
+        name,
+        original_filename,
+        file_type,
+        mime_type,
+        file_size,
+        checksum,
+        status,
+        storage_mode,
+        storage_path,
+        external_source_url,
+        external_source_reference,
+        source_metadata_json,
+        created_by
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        $6,
+        $7,
+        $8,
+        $9,
+        $10,
+        $11::document_status,
+        $12::document_storage_mode,
+        $13,
+        $14,
+        $15,
+        $16::jsonb,
+        $17
+      )
+      ON CONFLICT (document_id, version_number)
+      DO UPDATE SET
+        checksum = EXCLUDED.checksum,
+        file_size = EXCLUDED.file_size,
+        file_type = EXCLUDED.file_type,
+        mime_type = EXCLUDED.mime_type,
+        status = EXCLUDED.status,
+        storage_mode = EXCLUDED.storage_mode,
+        storage_path = EXCLUDED.storage_path,
+        external_source_url = EXCLUDED.external_source_url,
+        external_source_reference = EXCLUDED.external_source_reference,
+        source_metadata_json = EXCLUDED.source_metadata_json
+    `,
+    [
+      input.documentId,
+      input.companyId,
+      input.folderId,
+      input.versionNumber,
+      input.name,
+      input.originalFilename,
+      input.fileType,
+      input.mimeType,
+      input.fileSize,
+      input.checksum,
+      input.status,
+      input.storageMode,
+      input.storagePath,
+      input.externalSourceUrl,
+      input.externalSourceReference,
+      JSON.stringify(input.sourceMetadata),
+      input.createdBy
+    ]
+  );
+}
+
+async function findVersionTrackedDocument(client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: Array<{ id: string; version: number; checksum: string; storage_path: string | null; status: DocumentStatus }> }> }, input: {
+  companyId: string;
+  folderId: string;
+  storageMode: DocumentStorageMode;
+  originalFilename: string;
+  externalSourceReference: string | null;
+}) {
+  if (input.storageMode === "managed_upload") {
+    const result = await client.query(
+      `
+        SELECT id, version, checksum, storage_path, status
+        FROM documents
+        WHERE company_id = $1
+          AND folder_id = $2
+          AND storage_mode = 'managed_upload'::document_storage_mode
+          AND lower(original_filename) = lower($3)
+          AND status <> 'deleted'
+        ORDER BY updated_at DESC
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [input.companyId, input.folderId, input.originalFilename]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  if (!input.externalSourceReference) {
+    return null;
+  }
+
+  const result = await client.query(
+    `
+      SELECT id, version, checksum, storage_path, status
+      FROM documents
+      WHERE company_id = $1
+        AND folder_id = $2
+        AND storage_mode <> 'managed_upload'::document_storage_mode
+        AND external_source_reference = $3
+        AND status <> 'deleted'
+      ORDER BY updated_at DESC
+      LIMIT 1
+      FOR UPDATE
+    `,
+    [input.companyId, input.folderId, input.externalSourceReference]
+  );
+  return result.rows[0] ?? null;
+}
+
 const documentSelect = `
   SELECT
     documents.id,
@@ -506,8 +738,141 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
 
   await assertFolderAccess(input.companyId, input.folderId, session);
 
+  const sourceMetadata = input.sourceMetadata ?? {};
+  const storagePath = storageMode === "managed_upload" ? input.storagePath?.trim() || null : null;
+  const client = await getPool().connect();
+
   try {
-    const result = await getPool().query<{ id: string }>(
+    await client.query("BEGIN");
+
+    const existing = await findVersionTrackedDocument(client, {
+      companyId: input.companyId,
+      folderId: input.folderId,
+      storageMode,
+      originalFilename,
+      externalSourceReference
+    });
+
+    if (existing) {
+      if (existing.checksum.toLowerCase() === checksum) {
+        await client.query(
+          `
+            UPDATE documents
+            SET
+              name = $2,
+              mime_type = $3,
+              file_size = $4,
+              status = $5::document_status,
+              external_source_url = $6,
+              external_source_reference = $7,
+              source_metadata_json = $8::jsonb,
+              updated_at = now()
+            WHERE id = $1
+          `,
+          [
+            existing.id,
+            name,
+            input.mimeType?.trim() || null,
+            fileSize,
+            status,
+            externalSourceUrl,
+            externalSourceReference,
+            JSON.stringify(sourceMetadata)
+          ]
+        );
+
+        await insertDocumentVersionSnapshot(client, {
+          documentId: existing.id,
+          companyId: input.companyId,
+          folderId: input.folderId,
+          versionNumber: existing.version,
+          name,
+          originalFilename,
+          fileType,
+          mimeType: input.mimeType?.trim() || null,
+          fileSize,
+          checksum,
+          status,
+          storageMode,
+          storagePath: existing.storage_path,
+          externalSourceUrl,
+          externalSourceReference,
+          sourceMetadata,
+          createdBy: session.user.id
+        });
+
+        await client.query("COMMIT");
+        return getDocumentById(existing.id, session);
+      }
+
+      const nextVersion = existing.version + 1;
+
+      await client.query(
+        `
+          UPDATE documents
+          SET
+            name = $2,
+            original_filename = $3,
+            file_type = $4,
+            mime_type = $5,
+            file_size = $6,
+            checksum = $7,
+            storage_path = $8,
+            storage_mode = $9::document_storage_mode,
+            external_source_url = $10,
+            external_source_reference = $11,
+            source_metadata_json = $12::jsonb,
+            version = $13,
+            status = $14::document_status,
+            uploaded_by = $15,
+            error_message = NULL,
+            updated_at = now()
+          WHERE id = $1
+        `,
+        [
+          existing.id,
+          name,
+          originalFilename,
+          fileType,
+          input.mimeType?.trim() || null,
+          fileSize,
+          checksum,
+          storagePath ?? existing.storage_path,
+          storageMode,
+          externalSourceUrl,
+          externalSourceReference,
+          JSON.stringify(sourceMetadata),
+          nextVersion,
+          status,
+          session.user.id
+        ]
+      );
+
+      await insertDocumentVersionSnapshot(client, {
+        documentId: existing.id,
+        companyId: input.companyId,
+        folderId: input.folderId,
+        versionNumber: nextVersion,
+        name,
+        originalFilename,
+        fileType,
+        mimeType: input.mimeType?.trim() || null,
+        fileSize,
+        checksum,
+        status,
+        storageMode,
+        storagePath: storagePath ?? existing.storage_path,
+        externalSourceUrl,
+        externalSourceReference,
+        sourceMetadata,
+        createdBy: session.user.id
+      });
+
+      await client.query("COMMIT");
+      return getDocumentById(existing.id, session);
+    }
+
+    const result = await client.query<{ id: string }>(
       `
         INSERT INTO documents (
           company_id,
@@ -539,24 +904,48 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
         input.mimeType?.trim() || null,
         fileSize,
         checksum,
-        storageMode === "managed_upload" ? input.storagePath?.trim() || null : null,
+        storagePath,
         storageMode,
         externalSourceUrl,
         externalSourceReference,
-        JSON.stringify(input.sourceMetadata ?? {}),
+        JSON.stringify(sourceMetadata),
         version,
         status,
         session.user.id
       ]
     );
 
+    await insertDocumentVersionSnapshot(client, {
+      documentId: result.rows[0].id,
+      companyId: input.companyId,
+      folderId: input.folderId,
+      versionNumber: version,
+      name,
+      originalFilename,
+      fileType,
+      mimeType: input.mimeType?.trim() || null,
+      fileSize,
+      checksum,
+      status,
+      storageMode,
+      storagePath,
+      externalSourceUrl,
+      externalSourceReference,
+      sourceMetadata,
+      createdBy: session.user.id
+    });
+
+    await client.query("COMMIT");
     return getDocumentById(result.rows[0].id, session);
   } catch (error) {
+    await client.query("ROLLBACK");
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
       throw new DocumentError("A document with the same checksum already exists for this company.", 409);
     }
 
     throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -764,6 +1153,188 @@ export async function getDocumentById(id: string, session: AdminSession) {
   return document;
 }
 
+export async function listDocumentVersions(documentId: string, session: AdminSession) {
+  const document = await getDocumentById(documentId, session);
+
+  const result = await getPool().query(
+    `
+      SELECT
+        document_versions.id,
+        document_versions.document_id,
+        document_versions.version_number,
+        document_versions.checksum,
+        document_versions.file_size,
+        document_versions.file_type,
+        document_versions.mime_type,
+        document_versions.status,
+        document_versions.storage_mode,
+        document_versions.storage_path,
+        document_versions.external_source_url,
+        document_versions.external_source_reference,
+        document_versions.source_metadata_json,
+        document_versions.parsed_file_path,
+        document_versions.page_count,
+        document_versions.created_by,
+        users.name AS created_by_name,
+        document_versions.created_at
+      FROM document_versions
+      LEFT JOIN users ON users.id = document_versions.created_by
+      WHERE document_versions.document_id = $1
+      ORDER BY document_versions.version_number DESC
+    `,
+    [document.id]
+  );
+
+  return {
+    document,
+    versions: result.rows.map((row) => mapDocumentVersion(row))
+  };
+}
+
+function normalizeComparisonText(value: string | null) {
+  if (!value) return [] as string[];
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+export async function compareDocumentVersions(documentId: string, fromVersion: number, toVersion: number, session: AdminSession): Promise<DocumentVersionComparison> {
+  const document = await getDocumentById(documentId, session);
+
+  const versionsResult = await getPool().query<{
+    version_number: number;
+    checksum: string;
+    page_count: number | null;
+    content_text: string | null;
+  }>(
+    `
+      SELECT version_number, checksum, page_count, content_text
+      FROM document_versions
+      WHERE document_id = $1
+        AND version_number = ANY($2::int[])
+    `,
+    [document.id, [fromVersion, toVersion]]
+  );
+
+  const from = versionsResult.rows.find((row) => row.version_number === fromVersion);
+  const to = versionsResult.rows.find((row) => row.version_number === toVersion);
+
+  if (!from || !to) {
+    throw new DocumentError("Requested document versions were not found.", 404);
+  }
+
+  const fromLines = normalizeComparisonText(from.content_text);
+  const toLines = normalizeComparisonText(to.content_text);
+  const fromSet = new Set(fromLines);
+  const toSet = new Set(toLines);
+  const added = Array.from(toSet).filter((line) => !fromSet.has(line));
+  const removed = Array.from(fromSet).filter((line) => !toSet.has(line));
+
+  return {
+    fromVersion,
+    toVersion,
+    identical: from.checksum === to.checksum,
+    fromChecksum: from.checksum,
+    toChecksum: to.checksum,
+    stats: {
+      fromLineCount: fromLines.length,
+      toLineCount: toLines.length,
+      addedLines: added.length,
+      removedLines: removed.length,
+      pageCountDelta: Number(to.page_count ?? 0) - Number(from.page_count ?? 0)
+    },
+    addedPreview: added.slice(0, 50),
+    removedPreview: removed.slice(0, 50)
+  };
+}
+
+function buildChangeSummarySystemPrompt() {
+  return [
+    "You summarize differences between document versions for enterprise admins.",
+    "Use only the provided comparison data.",
+    "Do not invent changes.",
+    "Return concise markdown with sections: Overview, Added, Removed, Impact.",
+    "If there are no meaningful changes, explicitly say that."
+  ].join(" ");
+}
+
+function buildChangeSummaryUserPrompt(comparison: DocumentVersionComparison) {
+  return [
+    `Summarize document changes from version ${comparison.fromVersion} to ${comparison.toVersion}.`,
+    "Focus on actionable differences for knowledge quality and retrieval impact."
+  ].join(" ");
+}
+
+function buildChangeSummaryContext(comparison: DocumentVersionComparison) {
+  const stats = comparison.stats;
+  const addedPreview = comparison.addedPreview.length
+    ? comparison.addedPreview.map((line, index) => `${index + 1}. ${line}`).join("\n")
+    : "None";
+  const removedPreview = comparison.removedPreview.length
+    ? comparison.removedPreview.map((line, index) => `${index + 1}. ${line}`).join("\n")
+    : "None";
+
+  return [
+    `From version: ${comparison.fromVersion}`,
+    `To version: ${comparison.toVersion}`,
+    `Identical checksums: ${comparison.identical ? "yes" : "no"}`,
+    `From checksum: ${comparison.fromChecksum}`,
+    `To checksum: ${comparison.toChecksum}`,
+    `From line count: ${stats.fromLineCount}`,
+    `To line count: ${stats.toLineCount}`,
+    `Added lines: ${stats.addedLines}`,
+    `Removed lines: ${stats.removedLines}`,
+    `Page count delta: ${stats.pageCountDelta}`,
+    "Added preview:",
+    addedPreview,
+    "Removed preview:",
+    removedPreview
+  ].join("\n");
+}
+
+export async function generateDocumentVersionChangeSummary(
+  documentId: string,
+  fromVersion: number,
+  toVersion: number,
+  session: AdminSession
+): Promise<{ comparison: DocumentVersionComparison; summary: DocumentVersionChangeSummary }> {
+  const comparison = await compareDocumentVersions(documentId, fromVersion, toVersion, session);
+
+  if (comparison.identical || (comparison.stats.addedLines === 0 && comparison.stats.removedLines === 0)) {
+    return {
+      comparison,
+      summary: {
+        fromVersion,
+        toVersion,
+        summary: "## Overview\nNo meaningful textual changes were detected between these versions.\n\n## Added\nNone.\n\n## Removed\nNone.\n\n## Impact\nRetrieval behavior is expected to remain stable for this document.",
+        provider: "deterministic",
+        model: "rule-based",
+        generatedAt: new Date().toISOString()
+      }
+    };
+  }
+
+  const provider = await getLLMProvider();
+  const aiSummary = await provider.generate_answer(
+    buildChangeSummarySystemPrompt(),
+    buildChangeSummaryUserPrompt(comparison),
+    buildChangeSummaryContext(comparison)
+  );
+
+  return {
+    comparison,
+    summary: {
+      fromVersion,
+      toVersion,
+      summary: aiSummary.trim() || "No summary could be generated.",
+      provider: provider.provider,
+      model: provider.model,
+      generatedAt: new Date().toISOString()
+    }
+  };
+}
+
 export async function updateDocument(id: string, input: UpdateDocumentInput, session: AdminSession) {
   const existing = await getDocumentById(id, session);
   const fields: string[] = [];
@@ -822,6 +1393,26 @@ export async function updateDocument(id: string, input: UpdateDocumentInput, ses
     `,
     params
   );
+
+  if (typeof input.status !== "undefined" || typeof input.storagePath !== "undefined") {
+    const versionNumber = typeof input.version === "number" ? input.version : existing.version;
+    await getPool().query(
+      `
+        UPDATE document_versions
+        SET
+          status = COALESCE($3::document_status, status),
+          storage_path = COALESCE($4, storage_path)
+        WHERE document_id = $1
+          AND version_number = $2
+      `,
+      [
+        id,
+        versionNumber,
+        typeof input.status === "string" && isDocumentStatus(input.status) ? input.status : null,
+        typeof input.storagePath !== "undefined" ? input.storagePath?.trim() || null : null
+      ]
+    );
+  }
 
   return getDocumentById(id, session);
 }

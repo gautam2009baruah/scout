@@ -1,6 +1,7 @@
 import { getPool } from "@/lib/db/pool";
 import { CitationEngine, type Citation } from "./citation-engine";
 import { KeywordSearchService } from "./keyword-search";
+import { VisualSearchService } from "./visual-search";
 import { VectorSearchService, type VectorSearchResult } from "./vector-search";
 
 export type RetrievalChunk = {
@@ -12,6 +13,8 @@ export type RetrievalChunk = {
   page_number: number;
   section_title: string;
   score: number;
+  citation_type?: "text" | "visual";
+  visual_asset_type?: string;
 };
 
 export type RetrievalResponse = {
@@ -107,37 +110,39 @@ export class RetrievalEngine {
       return { query: normalizedQuery, chunks: [], citations: [] };
     }
 
-    const [vectorResults, keywordResults] = await Promise.all([
+    const [vectorResults, keywordResults, visualResults] = await Promise.all([
       VectorSearchService.search(company_id, normalizedQuery, roleIds, 20, user_id),
-      KeywordSearchService.search(company_id, normalizedQuery, roleIds, 20, user_id)
+      KeywordSearchService.search(company_id, normalizedQuery, roleIds, 20, user_id),
+      VisualSearchService.search(company_id, normalizedQuery, roleIds, 20, user_id)
     ]);
 
-    let allowedChunkIds: Set<string> | null = null;
+    let allowedFolderIds: Set<string> | null = null;
     if (target_app_id) {
       const allowed = await getPool().query<{ id: string }>(`
-        SELECT document_chunks.id
-        FROM document_chunks
-        WHERE document_chunks.company_id = $1
+        SELECT topics.id
+        FROM topics
+        WHERE topics.company_id = $1
+          AND topics.deleted_at IS NULL
           AND (
             NOT EXISTS (
               SELECT 1 FROM folder_target_apps any_scope
-              WHERE any_scope.folder_id = document_chunks.folder_id AND any_scope.deleted_at IS NULL
+              WHERE any_scope.folder_id = topics.id AND any_scope.deleted_at IS NULL
             )
             OR EXISTS (
               SELECT 1 FROM folder_target_apps app_scope
-              WHERE app_scope.folder_id = document_chunks.folder_id
+              WHERE app_scope.folder_id = topics.id
                 AND app_scope.target_app_id = $2
                 AND app_scope.deleted_at IS NULL
             )
           )
       `, [company_id, target_app_id]);
-      allowedChunkIds = new Set(allowed.rows.map((row) => row.id));
+      allowedFolderIds = new Set(allowed.rows.map((row) => row.id));
     }
 
     const merged = new Map<string, SearchScores>();
 
     for (const result of vectorResults) {
-      if (allowedChunkIds && !allowedChunkIds.has(result.chunk_id)) continue;
+      if (allowedFolderIds && !allowedFolderIds.has(result.folder_id)) continue;
       merged.set(result.chunk_id, {
         result,
         vectorScore: result.score
@@ -145,7 +150,7 @@ export class RetrievalEngine {
     }
 
     for (const result of keywordResults) {
-      if (allowedChunkIds && !allowedChunkIds.has(result.chunk_id)) continue;
+      if (allowedFolderIds && !allowedFolderIds.has(result.folder_id)) continue;
       const existing = merged.get(result.chunk_id);
 
       if (existing) {
@@ -158,10 +163,18 @@ export class RetrievalEngine {
       }
     }
 
+    const filteredVisualResults = allowedFolderIds
+      ? visualResults.filter((result) => allowedFolderIds.has(result.folder_id))
+      : visualResults;
+
     const items = Array.from(merged.values());
     const maxVectorScore = Math.max(0, ...items.map((item) => item.vectorScore ?? 0));
     const maxKeywordScore = Math.max(0, ...items.map((item) => item.keywordScore ?? 0));
-    const recencyByDocumentId = await getDocumentRecency(Array.from(new Set(items.map((item) => item.result.document_id))));
+    const maxVisualScore = Math.max(0, ...filteredVisualResults.map((item) => item.score));
+    const recencyByDocumentId = await getDocumentRecency(Array.from(new Set([
+      ...items.map((item) => item.result.document_id),
+      ...filteredVisualResults.map((item) => item.document_id)
+    ])));
 
     const chunks = items
       .map((item) => {
@@ -179,9 +192,29 @@ export class RetrievalEngine {
           folder_path: item.result.folder_path,
           page_number: item.result.page_number,
           section_title: item.result.section_title,
-          score: Number(score.toFixed(4))
+          score: Number(score.toFixed(4)),
+          citation_type: "text" as const
         };
       })
+      .concat(
+        filteredVisualResults.map((result) => {
+          const recencyBoost = recencyByDocumentId.get(result.document_id) ?? 0;
+          const score = normalizeScore(result.score, maxVisualScore) * 0.75 + recencyBoost * 0.25;
+
+          return {
+            chunk_id: result.insight_id,
+            content: result.extracted_text,
+            document_id: result.document_id,
+            document_name: result.document_name,
+            folder_path: result.folder_path,
+            page_number: result.page_number,
+            section_title: `Visual ${result.asset_type.replaceAll("_", " ")}`,
+            score: Number(score.toFixed(4)),
+            citation_type: "visual" as const,
+            visual_asset_type: result.asset_type
+          };
+        })
+      )
       .sort((first, second) => second.score - first.score)
       .slice(0, limit);
 
