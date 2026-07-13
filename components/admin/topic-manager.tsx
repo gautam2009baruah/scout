@@ -31,6 +31,8 @@ type DocumentGridRow = {
   fileType: string;
   mimeType: string | null;
   fileSize: number;
+  storageMode: "managed_upload" | "external_reference" | "strict_external_reference";
+  storagePath: string | null;
   version: number;
   status: string;
   uploadedByName: string;
@@ -71,6 +73,11 @@ type DocumentProgressRow = {
   error?: string;
   documentId?: string;
 };
+
+type DeleteConfirmation =
+  | { kind: "folder"; target: TopicActionTarget }
+  | { kind: "document"; document: DocumentGridRow }
+  | null;
 
 const supportedFileTypes = ["pdf", "docx", "pptx", "xlsx", "csv", "txt", "md", "html", "json", "xml", "epub", "png", "jpg", "jpeg", "webp", "tiff", "zip"];
 
@@ -204,6 +211,10 @@ function ReadOnlyAccess({ all, label, names }: { all: boolean; label: string; na
 export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId, selectedCompanyName, topics, tree, users }: TopicManagerProps) {
   const router = useRouter();
   const [topicState, setTopicState] = useState<FormState>({ message: "", status: "idle" });
+  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>(null);
+  const [deletingFolderIds, setDeletingFolderIds] = useState<Set<string>>(new Set());
+  const [deletingDocumentIds, setDeletingDocumentIds] = useState<Set<string>>(new Set());
+  const [toast, setToast] = useState<{ message: string; type: "info" | "success" | "error" } | null>(null);
   const createCompanyId = selectedCompanyId;
   const [createTarget, setCreateTarget] = useState<TopicCreateTarget | null>(null);
   const [editTarget, setEditTarget] = useState<TopicActionTarget | null>(null);
@@ -256,10 +267,17 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     () => users.filter((user) => editTarget?.companyId ? user.companyIds.includes(editTarget.companyId) : false),
     [editTarget?.companyId, users]
   );
-  const visibleTree = useMemo(
-    () => selectedCompanyId ? filterTreeByCompany(tree, selectedCompanyId) : [],
-    [selectedCompanyId, tree]
-  );
+  const visibleTree = useMemo(() => {
+    const removeDeletingBranches = (nodes: TopicTreeNode[]): TopicTreeNode[] => nodes
+      .filter((node) => !deletingFolderIds.has(node.id))
+      .map((node) => ({ ...node, children: removeDeletingBranches(node.children) }));
+    return selectedCompanyId ? removeDeletingBranches(filterTreeByCompany(tree, selectedCompanyId)) : [];
+  }, [deletingFolderIds, selectedCompanyId, tree]);
+
+  function showToast(message: string, type: "info" | "success" | "error" = "success", duration = 4000) {
+    setToast({ message, type });
+    globalThis.setTimeout(() => setToast((current) => current?.message === message ? null : current), duration);
+  }
   const editRoleNames = useMemo(
     () => grants
       .filter((grant) => grant.type === "role" && grant.topicId === editTarget?.topicId && editRoleIds.includes(grant.assigneeId))
@@ -421,20 +439,30 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     await loadDocuments(documentsTarget, 1, nextFilters);
   }
 
-  async function deleteDocument(row: DocumentGridRow) {
-    if (!documentsTarget || !window.confirm(`Delete document "${row.name}"?`)) {
-      return;
-    }
+  function deleteDocument(row: DocumentGridRow) {
+    setDeleteConfirmation({ kind: "document", document: row });
+  }
+
+  async function confirmDocumentDeletion(row: DocumentGridRow) {
+    if (!documentsTarget) return;
+    setDeleteConfirmation(null);
+    setDeletingDocumentIds((current) => new Set(current).add(row.id));
+    setDocumentGrid((current) => ({ ...current, documents: current.documents.filter((document) => document.id !== row.id), total: Math.max(0, current.total - 1) }));
+    showToast(`Deleting “${row.name}” in the background…`, "info", 6000);
 
     const response = await fetch(`/api/admin/documents/${row.id}`, { method: "DELETE" });
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setTopicState({ message: typeof body?.message === "string" ? body.message : "Unable to delete document.", status: "error" });
+      const message = typeof body?.message === "string" ? body.message : "Unable to delete document.";
+      showToast(message, "error");
+      await loadDocuments(documentsTarget, documentGrid.page);
+      setDeletingDocumentIds((current) => { const next = new Set(current); next.delete(row.id); return next; });
       return;
     }
 
-    setTopicState({ message: "Document deleted.", status: "success" });
+    setDeletingDocumentIds((current) => { const next = new Set(current); next.delete(row.id); return next; });
+    showToast(`“${row.name}” was deleted.`, "success");
     await loadDocuments(documentsTarget, documentGrid.page);
     router.refresh();
   }
@@ -618,22 +646,28 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     router.refresh();
   }
 
-  async function deleteSelectedTopic(target: TopicActionTarget) {
-    if (!target.topicId || !window.confirm(`Delete "${target.topicName}" and all of its subfolders? All documents, chunks, embeddings, processing records, and stored files inside them will be permanently deleted. Folder names are retained only for audit.`)) {
-      return;
-    }
+  function deleteSelectedTopic(target: TopicActionTarget) {
+    if (target.topicId) setDeleteConfirmation({ kind: "folder", target });
+  }
 
+  async function confirmFolderDeletion(target: TopicActionTarget) {
+    if (!target.topicId) return;
+
+    setDeleteConfirmation(null);
     setActionTarget(null);
-    setTopicState({ message: "", status: "submitting" });
+    setDeletingFolderIds((current) => new Set(current).add(target.topicId!));
+    showToast(`Deleting “${target.topicName}” and its contents in the background… This may take a while.`, "info", 8000);
 
     const response = await fetch(`/api/admin/content-structure/${target.topicId}`, { method: "DELETE" });
 
     if (!response.ok) {
-      setTopicState({ message: await readMessage(response, "Unable to delete topic."), status: "error" });
+      const message = await readMessage(response, "Unable to delete folder.");
+      setDeletingFolderIds((current) => { const next = new Set(current); next.delete(target.topicId!); return next; });
+      showToast(message, "error");
       return;
     }
 
-    setTopicState({ message: "Topic deleted.", status: "success" });
+    showToast(`“${target.topicName}” and its contents were deleted.`, "success");
     router.refresh();
   }
 
@@ -929,6 +963,32 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         />
       </section>
 
+      {toast ? (
+        <div className={`fixed left-1/2 top-1/2 z-[10000] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl ${toast.type === "error" ? "border-red-200 bg-red-50 text-red-800" : toast.type === "info" ? "border-violet-200 bg-violet-50 text-violet-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role="status">
+          {toast.type === "info" ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" /> : <span className="font-bold">{toast.type === "success" ? "✓" : "!"}</span>}
+          <span className="text-sm font-medium leading-5">{toast.message}</span>
+          <button aria-label="Dismiss notification" className="ml-1 rounded p-0.5 opacity-60 hover:bg-black/5 hover:opacity-100" onClick={() => setToast(null)} type="button"><X className="h-4 w-4" /></button>
+        </div>
+      ) : null}
+
+      {deleteConfirmation ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm" onClick={() => setDeleteConfirmation(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true">
+            <span className="grid h-11 w-11 place-items-center rounded-xl bg-red-50 text-red-600"><Trash2 className="h-5 w-5" /></span>
+            <h2 className="mt-4 text-lg font-semibold text-slate-950">{deleteConfirmation.kind === "folder" ? "Delete folder and contents?" : "Delete document?"}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {deleteConfirmation.kind === "folder"
+                ? <>“{deleteConfirmation.target.topicName}”, all subfolders, documents, chunks, embeddings and stored files will be permanently deleted. Only folder names remain for audit. Large folders may take some time.</>
+                : <>“{deleteConfirmation.document.name}” and all of its processed content will be permanently deleted.</>}
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button className="h-10 rounded-lg px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={() => setDeleteConfirmation(null)} type="button">Cancel</button>
+              <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700" onClick={() => deleteConfirmation.kind === "folder" ? void confirmFolderDeletion(deleteConfirmation.target) : void confirmDocumentDeletion(deleteConfirmation.document)} type="button"><Trash2 className="h-4 w-4" /> Delete permanently</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {actionTarget ? (
         <div className="fixed inset-0 z-40" onClick={() => setActionTarget(null)}>
           <div
@@ -1058,13 +1118,25 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                       <td className="px-3 py-3">
                         <div className="flex max-w-72 items-center gap-2">
                           <p className="min-w-0 truncate font-semibold text-slate-950">{document.name}</p>
-                          <a
-                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
-                            href={`/api/admin/documents/${document.id}/download`}
-                            title="Download"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </a>
+                          {document.storageMode === "managed_upload" && document.storagePath ? (
+                            <a
+                              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+                              href={`/api/admin/documents/${document.id}/download`}
+                              title="Download original file"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </a>
+                          ) : (
+                            <button
+                              aria-label="Original file is not stored"
+                              className="inline-flex h-6 w-6 shrink-0 cursor-help items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-300"
+                              onClick={() => showToast("This content was imported from an external source. Scout stores its processed text for search, but not a downloadable copy of the original file.", "info", 6000)}
+                              title="Original file not stored — click for details"
+                              type="button"
+                            >
+                              <Download className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                         <p className="max-w-64 truncate text-xs text-slate-500">{document.originalFilename}</p>
                         <p className="text-xs text-slate-400">By {document.uploadedByName}</p>

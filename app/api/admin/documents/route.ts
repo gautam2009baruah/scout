@@ -83,7 +83,13 @@ export async function POST(request: Request) {
       }));
     }))).flat();
 
-    const registered = await Promise.all(expandedDocuments.map(async (document) => {
+    const uniqueDocuments = Array.from(new Map(expandedDocuments.map((document: Record<string, unknown>) => {
+      const url = String(document.externalSourceUrl ?? document.external_source_url ?? document.externalSourceReference ?? document.external_source_reference ?? "");
+      const key = url ? `url:${url}` : `file:${String(document.originalFilename ?? document.original_filename ?? "")}:${String(document.checksum ?? "")}`;
+      return [key, document] as const;
+    })).values());
+
+    const registered = await Promise.all(uniqueDocuments.map(async (document) => {
       const storageMode = typeof document.storageMode === "string" ? document.storageMode : typeof document.storage_mode === "string" ? document.storage_mode : "managed_upload";
       const createInput = {
         companyId: String(document.companyId ?? document.company_id ?? ""),
@@ -98,7 +104,7 @@ export async function POST(request: Request) {
         storageMode,
         externalSourceUrl: typeof document.externalSourceUrl === "string" ? document.externalSourceUrl : typeof document.external_source_url === "string" ? document.external_source_url : undefined,
         externalSourceReference: typeof document.externalSourceReference === "string" ? document.externalSourceReference : typeof document.external_source_reference === "string" ? document.external_source_reference : undefined,
-        sourceMetadata: typeof document.sourceMetadata === "object" && document.sourceMetadata ? document.sourceMetadata : typeof document.source_metadata_json === "object" && document.source_metadata_json ? document.source_metadata_json : undefined,
+        sourceMetadata: typeof document.sourceMetadata === "object" && document.sourceMetadata ? document.sourceMetadata as Record<string, unknown> : typeof document.source_metadata_json === "object" && document.source_metadata_json ? document.source_metadata_json as Record<string, unknown> : undefined,
         version: typeof document.version === "number" ? document.version : undefined
       };
 

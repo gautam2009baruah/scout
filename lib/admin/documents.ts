@@ -142,6 +142,7 @@ export async function discoverWebsitePages(startReference: string, options: { ma
   const maxDepth = Math.min(10, Math.max(0, options.maxDepth ?? 4));
   const pending: Array<{ url: URL; depth: number }> = [{ url: root, depth: 0 }];
   const queued = new Set([root.href]);
+  const emitted = new Set<string>();
   const pages: ExternalFolderEntry[] = [];
 
   while (pending.length && pages.length < maxPages) {
@@ -153,6 +154,8 @@ export async function discoverWebsitePages(startReference: string, options: { ma
     if (!response.ok || !(response.headers.get("content-type") ?? "").toLowerCase().includes("text/html")) continue;
     const finalUrl = canonicalCrawlUrl(new URL(response.url || current.url.href));
     if (finalUrl.origin !== root.origin) continue;
+    if (emitted.has(finalUrl.href)) continue;
+    emitted.add(finalUrl.href);
     const html = await response.text();
     const title = htmlTitle(html, finalUrl.pathname || finalUrl.hostname);
     pages.push({
@@ -568,18 +571,32 @@ export async function registerExternalDocument(input: CreateDocumentInput, sessi
   const originalFilename = input.originalFilename?.trim() || filenameFromExternalReference(sourceReference);
   const fileType = input.fileType || originalFilename.split(".").pop()?.toLowerCase() || "";
 
-  const document = await createDocument(
-    {
-      ...input,
-      originalFilename,
-      fileType,
-      fileSize: Number(input.fileSize ?? 0),
-      checksum: input.checksum || checksumText(`${input.companyId}:${input.folderId}:${sourceReference}`),
-      storageMode,
-      status: "queued"
-    },
-    session
-  );
+  const checksum = input.checksum || checksumText(`${input.companyId}:${input.folderId}:${sourceReference}`);
+  let document: DocumentRow;
+  try {
+    document = await createDocument(
+      {
+        ...input,
+        originalFilename,
+        fileType,
+        fileSize: Number(input.fileSize ?? 0),
+        checksum,
+        storageMode,
+        status: "queued"
+      },
+      session
+    );
+  } catch (error) {
+    if (!(error instanceof DocumentError) || error.statusCode !== 409) throw error;
+    const existingResult = await getPool().query<{ id: string }>(`
+      SELECT id FROM documents
+      WHERE company_id = $1 AND checksum = $2 AND status <> 'deleted'
+      LIMIT 1
+    `, [input.companyId, checksum.toLowerCase()]);
+    if (!existingResult.rows[0]) throw error;
+    document = await getDocumentById(existingResult.rows[0].id, session);
+    return document;
+  }
 
   await enqueueProcessingJob({
     companyId: document.companyId,
@@ -834,8 +851,12 @@ export async function deleteDocument(id: string, session: AdminSession) {
 export async function getDocumentDownload(id: string, session: AdminSession) {
   const document = await getDocumentById(id, session);
 
+  if (document.storageMode !== "managed_upload") {
+    throw new DocumentError("This content was imported from an external source. Scout does not store a downloadable copy of the original file.", 409);
+  }
+
   if (!document.storagePath) {
-    throw new DocumentError("Document file is not available for download.", 404);
+    throw new DocumentError("The original file is not available in storage.", 404);
   }
 
   const storage = getStorageProvider();

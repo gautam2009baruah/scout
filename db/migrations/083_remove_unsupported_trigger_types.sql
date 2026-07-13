@@ -7,6 +7,12 @@ BEGIN;
 DELETE FROM orchestration_triggers
 WHERE trigger_type IN ('webhook', 'api', 'file_upload');
 
+-- Normalize any legacy rows that do not fit the supported values so the constraint
+-- can be re-applied safely on already-migrated databases.
+UPDATE orchestration_triggers
+SET trigger_type = 'manual'
+WHERE COALESCE(trigger_type, 'manual') NOT IN ('manual', 'chatbot', 'email', 'schedule', 'http_api');
+
 -- Remove trigger-specific tables no longer used.
 DROP TABLE IF EXISTS webhook_deliveries CASCADE;
 DROP TABLE IF EXISTS webhook_triggers CASCADE;
@@ -16,6 +22,8 @@ DROP TABLE IF EXISTS api_request_logs CASCADE;
 DROP TABLE IF EXISTS api_clients CASCADE;
 
 -- Rebuild trigger_type checks to only allow supported trigger types.
+-- Keep the later http_api support value present so already-migrated databases
+-- can apply this migration without violating the check constraint.
 DO $$
 DECLARE
   c record;
@@ -37,6 +45,6 @@ $$;
 
 ALTER TABLE orchestration_triggers
   ADD CONSTRAINT orchestration_triggers_trigger_type_check
-  CHECK (trigger_type IN ('manual', 'chatbot', 'email', 'schedule'));
+  CHECK (trigger_type IN ('manual', 'chatbot', 'email', 'schedule', 'http_api'));
 
 COMMIT;

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS ingestion_sources (
   source_type text NOT NULL CHECK (source_type IN ('upload','web_url','crawler','sitemap','rss','google_drive','sharepoint')),
   name text NOT NULL,
   config_json jsonb NOT NULL DEFAULT '{}'::jsonb,
-  secret_reference text,
+  secret_reference uuid,
   sync_cursor text,
   last_synced_at timestamptz,
   last_sync_status text CHECK (last_sync_status IN ('running','completed','partial','failed')),
@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS ingestion_credentials (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (company_id, provider, name)
 );
+
+ALTER TABLE ingestion_sources
+  ALTER COLUMN secret_reference TYPE uuid USING secret_reference::uuid;
+
+ALTER TABLE ingestion_sources
+  DROP CONSTRAINT IF EXISTS ingestion_sources_secret_reference_fk;
 
 ALTER TABLE ingestion_sources
   ADD CONSTRAINT ingestion_sources_secret_reference_fk

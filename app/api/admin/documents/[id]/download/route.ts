@@ -39,6 +39,7 @@ export async function GET(_request: Request, context: RouteContext) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }
 
-    throw error;
+    console.error("Unable to download document", error);
+    return NextResponse.json({ message: "Unable to download the document right now." }, { status: 500 });
   }
 }
