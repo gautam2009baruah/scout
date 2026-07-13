@@ -46,12 +46,34 @@ function splitTextIntoPages(text: string) {
 
 class TxtDocumentParser implements DocumentParser {
   can_parse(fileType: string) {
-    return fileType === "txt";
+    return ["txt", "md", "csv"].includes(fileType);
   }
 
   async parse(file: Buffer) {
     const text = file.toString("utf8");
     return buildOutput("", [{ page_number: 1, text }]);
+  }
+}
+
+class StructuredTextDocumentParser implements DocumentParser {
+  can_parse(fileType: string) { return ["json", "xml", "html"].includes(fileType); }
+
+  async parse(file: Buffer) {
+    const raw = file.toString("utf8");
+    let text = raw;
+    if (raw.trimStart().startsWith("{") || raw.trimStart().startsWith("[")) {
+      try { text = JSON.stringify(JSON.parse(raw), null, 2); } catch { /* retain source for useful diagnostics */ }
+    } else {
+      text = raw
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/\s+\n/g, "\n")
+        .trim();
+    }
+    return buildOutput("", [{ page_number: 1, text }], { structured: true });
   }
 }
 
@@ -119,7 +141,8 @@ const parsers: DocumentParser[] = [
   new TxtDocumentParser(),
   new PdfDocumentParser(),
   new DocxDocumentParser(),
-  new PlaceholderDocumentParser(["csv", "xlsx", "pptx"])
+  new StructuredTextDocumentParser(),
+  new PlaceholderDocumentParser(["xlsx", "pptx", "epub", "png", "jpg", "jpeg", "webp", "tiff", "zip"])
 ];
 
 export function getDocumentParser(fileType: string) {

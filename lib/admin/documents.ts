@@ -17,7 +17,7 @@ export const DOCUMENT_STATUSES = [
   "deleted"
 ] as const;
 
-export const SUPPORTED_DOCUMENT_FILE_TYPES = ["pdf", "docx", "txt", "csv", "xlsx", "pptx"] as const;
+export const SUPPORTED_DOCUMENT_FILE_TYPES = ["pdf", "docx", "pptx", "xlsx", "csv", "txt", "md", "html", "json", "xml", "epub", "png", "jpg", "jpeg", "webp", "tiff", "zip"] as const;
 export const DOCUMENT_STORAGE_MODES = ["managed_upload", "external_reference", "strict_external_reference"] as const;
 
 type DocumentStatus = typeof DOCUMENT_STATUSES[number];
@@ -108,7 +108,108 @@ export type ExternalFolderEntry = {
   externalSourceUrl: string;
   originalFilename: string;
   fileType: string;
+  name?: string;
+  sourceMetadata?: Record<string, unknown>;
 };
+
+function canonicalCrawlUrl(value: URL) {
+  const url = new URL(value.href);
+  url.hash = "";
+  for (const key of Array.from(url.searchParams.keys())) {
+    if (/^(utm_|fbclid|gclid|ref$|source$)/i.test(key)) url.searchParams.delete(key);
+  }
+  if (Array.from(url.searchParams.keys()).length === 0) url.search = "";
+  return url;
+}
+
+function htmlTitle(html: string, fallback: string) {
+  const title = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+    ?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return title || fallback;
+}
+
+function pageFilename(url: URL, index: number) {
+  const slug = decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g, "").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 130);
+  return `${slug || `page-${index + 1}`}.html`;
+}
+
+export async function discoverWebsitePages(startReference: string, options: { maxPages?: number; maxDepth?: number } = {}): Promise<ExternalFolderEntry[]> {
+  let root: URL;
+  try { root = canonicalCrawlUrl(new URL(startReference)); } catch { throw new DocumentError("Website must be a valid HTTP or HTTPS URL."); }
+  if (!["http:", "https:"].includes(root.protocol)) throw new DocumentError("Only HTTP and HTTPS websites are supported.");
+
+  const maxPages = Math.min(1000, Math.max(1, options.maxPages ?? 200));
+  const maxDepth = Math.min(10, Math.max(0, options.maxDepth ?? 4));
+  const pending: Array<{ url: URL; depth: number }> = [{ url: root, depth: 0 }];
+  const queued = new Set([root.href]);
+  const pages: ExternalFolderEntry[] = [];
+
+  while (pending.length && pages.length < maxPages) {
+    const current = pending.shift()!;
+    let response: Response;
+    try {
+      response = await fetch(current.url, { headers: { Accept: "text/html,application/xhtml+xml" }, redirect: "follow", signal: AbortSignal.timeout(15000) });
+    } catch { continue; }
+    if (!response.ok || !(response.headers.get("content-type") ?? "").toLowerCase().includes("text/html")) continue;
+    const finalUrl = canonicalCrawlUrl(new URL(response.url || current.url.href));
+    if (finalUrl.origin !== root.origin) continue;
+    const html = await response.text();
+    const title = htmlTitle(html, finalUrl.pathname || finalUrl.hostname);
+    pages.push({
+      externalSourceUrl: finalUrl.href,
+      originalFilename: pageFilename(finalUrl, pages.length),
+      fileType: "html",
+      name: title,
+      sourceMetadata: { crawl_root: root.href, crawl_depth: current.depth, canonical_url: finalUrl.href }
+    });
+    if (current.depth >= maxDepth) continue;
+
+    const hrefPattern = /<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["']/gi;
+    let match: RegExpExecArray | null;
+    while ((match = hrefPattern.exec(html))) {
+      let candidate: URL;
+      try { candidate = canonicalCrawlUrl(new URL(match[1], finalUrl)); } catch { continue; }
+      if (candidate.origin !== root.origin || !["http:", "https:"].includes(candidate.protocol)) continue;
+      if (/\.(?:jpg|jpeg|png|gif|svg|webp|ico|css|js|woff2?|ttf|eot|mp4|mp3|zip|pdf)(?:$|\?)/i.test(candidate.pathname)) continue;
+      if (/\/(?:logout|signout|cart|checkout)(?:\/|$)/i.test(candidate.pathname)) continue;
+      if (!queued.has(candidate.href)) {
+        queued.add(candidate.href);
+        pending.push({ url: candidate, depth: current.depth + 1 });
+      }
+    }
+  }
+  if (!pages.length) throw new DocumentError("No crawlable HTML pages were found.");
+  return pages;
+}
+
+export async function discoverFeedPages(feedReference: string): Promise<ExternalFolderEntry[]> {
+  const response = await fetch(feedReference, { headers: { Accept: "application/rss+xml,application/atom+xml,application/xml,text/xml" }, signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new DocumentError(`Unable to read feed. HTTP ${response.status}.`);
+  const xml = await response.text();
+  const urls = new Set<string>();
+  for (const pattern of [/<link\b[^>]*href=["']([^"']+)["'][^>]*\/?\s*>/gi, /<link\b[^>]*>([\s\S]*?)<\/link>/gi]) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(xml))) {
+      const value = match[1].replace(/<!\[CDATA\[|\]\]>/g, "").trim();
+      try { const url = new URL(value, feedReference); if (["http:", "https:"].includes(url.protocol)) urls.add(canonicalCrawlUrl(url).href); } catch { /* ignore malformed feed entry */ }
+    }
+  }
+  return Array.from(urls).slice(0, 500).map((url, index) => ({ externalSourceUrl: url, originalFilename: pageFilename(new URL(url), index), fileType: "html", sourceMetadata: { feed_url: feedReference } }));
+}
+
+export async function discoverSitemapPages(sitemapReference: string): Promise<ExternalFolderEntry[]> {
+  const response = await fetch(sitemapReference, { headers: { Accept: "application/xml,text/xml" }, signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new DocumentError(`Unable to read sitemap. HTTP ${response.status}.`);
+  const xml = await response.text();
+  const urls: string[] = [];
+  const locPattern = /<loc\b[^>]*>([\s\S]*?)<\/loc>/gi;
+  let locMatch: RegExpExecArray | null;
+  while ((locMatch = locPattern.exec(xml))) {
+    try { const url = new URL(locMatch[1].trim()); if (["http:", "https:"].includes(url.protocol)) urls.push(canonicalCrawlUrl(url).href); } catch { /* ignore malformed sitemap URL */ }
+  }
+  if (!urls.length) throw new DocumentError("No page URLs were found in the sitemap.");
+  return Array.from(new Set(urls)).slice(0, 1000).map((url, index) => ({ externalSourceUrl: url, originalFilename: pageFilename(new URL(url), index), fileType: "html", sourceMetadata: { sitemap_url: sitemapReference } }));
+}
 
 function isDocumentStatus(value: string): value is DocumentStatus {
   return DOCUMENT_STATUSES.includes(value as DocumentStatus);

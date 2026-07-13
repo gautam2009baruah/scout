@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createDocument, discoverExternalFolder, DocumentError, listDocuments, registerExternalDocument, uploadDocuments } from "@/lib/admin/documents";
+import { createDocument, discoverExternalFolder, discoverFeedPages, discoverSitemapPages, discoverWebsitePages, DocumentError, listDocuments, registerExternalDocument, uploadDocuments } from "@/lib/admin/documents";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export const runtime = "nodejs";
@@ -62,13 +62,22 @@ export async function POST(request: Request) {
       if (sourceKind !== "folder") return [document];
 
       const folderUrl = String(document.externalSourceUrl ?? document.external_source_url ?? "");
-      const entries = await discoverExternalFolder(folderUrl);
+      const metadata = typeof document.sourceMetadata === "object" && document.sourceMetadata ? document.sourceMetadata as Record<string, unknown> : {};
+      const sourceType = String(metadata.ingestion_source_type ?? "");
+      const entries = sourceType === "crawler"
+        ? await discoverWebsitePages(folderUrl, { maxPages: Number(metadata.max_pages || 200), maxDepth: Number(metadata.max_depth || 4) })
+        : sourceType === "sitemap"
+          ? await discoverSitemapPages(folderUrl)
+          : sourceType === "rss"
+            ? await discoverFeedPages(folderUrl)
+            : await discoverExternalFolder(folderUrl);
       return entries.map((entry) => ({
         ...document,
         ...entry,
         externalSourceReference: entry.externalSourceUrl,
         sourceMetadata: {
-          ...(typeof document.sourceMetadata === "object" && document.sourceMetadata ? document.sourceMetadata : {}),
+          ...metadata,
+          ...(entry.sourceMetadata ?? {}),
           source_folder_url: folderUrl
         }
       }));

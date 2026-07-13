@@ -553,15 +553,48 @@ async function parseDocx(file) {
   });
 }
 
+function decodeHtmlEntities(value) {
+  return value.replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)));
+}
+
+async function parseHtml(file) {
+  const html = file.toString("utf8");
+  const title = decodeHtmlEntities(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, " ").trim() || "");
+  const text = decodeHtmlEntities(html.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi, " ").replace(/<(h[1-6]|p|div|section|article|li|tr|br)\b[^>]*>/gi, "\n").replace(/<\/((h[1-6])|p|div|section|article|li|tr|table)>/gi, "\n").replace(/<t[dh]\b[^>]*>/gi, "\t").replace(/<[^>]+>/g, " ")).replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
+  if (!text) throw new Error("The HTML page did not contain extractable text.");
+  return buildOutput(title, [{ page_number: 1, text }], { content_type: "text/html" });
+}
+
+async function parseJson(file) {
+  let value;
+  try { value = JSON.parse(file.toString("utf8")); } catch { throw new Error("The JSON document is invalid."); }
+  return buildOutput("", [{ page_number: 1, text: JSON.stringify(value, null, 2) }], { content_type: "application/json" });
+}
+
+async function parseXml(file) {
+  const raw = file.toString("utf8");
+  if (/<!DOCTYPE|<!ENTITY/i.test(raw)) throw new Error("XML documents containing DTD or entity declarations are not supported.");
+  const text = decodeHtmlEntities(raw.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+  if (!text) throw new Error("The XML document did not contain extractable text.");
+  return buildOutput("", [{ page_number: 1, text }], { content_type: "application/xml" });
+}
+
 async function parseByFileType(fileType, file) {
   switch (fileType) {
     case "txt":
+    case "md":
+    case "csv":
       return parseTxt(file);
+    case "html":
+      return parseHtml(file);
+    case "json":
+      return parseJson(file);
+    case "xml":
+      return parseXml(file);
     case "pdf":
       return parsePdf(file);
     case "docx":
       return parseDocx(file);
-    case "csv":
     case "xlsx":
     case "pptx":
       throw new Error("Parser is not implemented for this file type yet.");

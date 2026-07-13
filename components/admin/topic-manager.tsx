@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download, FileText, FileUp, FolderPlus, KeyRound, Link2, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Trash2, X } from "lucide-react";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./topic-tree";
 import type { RoleSummary } from "@/lib/admin/administration";
@@ -51,6 +51,8 @@ type DocumentGridState = {
 };
 
 type DocumentStorageMode = "managed_upload" | "external_reference" | "strict_external_reference";
+type IngestionSourceType = "upload" | "web_url" | "crawler" | "sitemap" | "rss" | "google_drive" | "sharepoint";
+type SourceAuth = { authType: string; credentialName: string; tenantId: string; clientId: string; clientSecret: string; accessToken: string; serviceAccountJson: string };
 
 type ExternalReferenceRow = {
   id: string;
@@ -70,7 +72,17 @@ type DocumentProgressRow = {
   documentId?: string;
 };
 
-const supportedFileTypes = ["pdf", "docx", "txt", "csv", "xlsx", "pptx"];
+const supportedFileTypes = ["pdf", "docx", "pptx", "xlsx", "csv", "txt", "md", "html", "json", "xml", "epub", "png", "jpg", "jpeg", "webp", "tiff", "zip"];
+
+const ingestionSources = [
+  { value: "upload", label: "Upload", description: "Files from your device", icon: FileUp },
+  { value: "web_url", label: "Web page", description: "One public URL", icon: Link2 },
+  { value: "crawler", label: "Website", description: "Crawl linked pages", icon: Globe2 },
+  { value: "sitemap", label: "Sitemap", description: "Import sitemap URLs", icon: Network },
+  { value: "rss", label: "RSS feed", description: "Sync new articles", icon: Rss },
+  { value: "google_drive", label: "Google Drive", description: "Files and folders", icon: Cloud },
+  { value: "sharepoint", label: "SharePoint", description: "Sites and libraries", icon: Cloud }
+] as const;
 
 const documentStorageModeOptions: Array<{
   value: DocumentStorageMode;
@@ -203,6 +215,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadProgressLabel, setUploadProgressLabel] = useState("");
   const [documentStorageMode, setDocumentStorageMode] = useState<DocumentStorageMode>("managed_upload");
+  const [ingestionSource, setIngestionSource] = useState<IngestionSourceType>("upload");
+  const [sourceAuth, setSourceAuth] = useState<SourceAuth>({ authType: "oauth_client", credentialName: "", tenantId: "", clientId: "", clientSecret: "", accessToken: "", serviceAccountJson: "" });
+  const [crawlSettings, setCrawlSettings] = useState({ maxPages: 200, maxDepth: 4 });
   const [externalRows, setExternalRows] = useState<ExternalReferenceRow[]>([createExternalReferenceRow()]);
   const [documentProgressRows, setDocumentProgressRows] = useState<DocumentProgressRow[]>([]);
   const [documentGrid, setDocumentGrid] = useState<DocumentGridState>({ documents: [], page: 1, pageCount: 1, pageSize: 25, total: 0 });
@@ -318,6 +333,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setUploadProgress(0);
     setUploadProgressLabel("");
     setDocumentStorageMode("managed_upload");
+    setIngestionSource("upload");
+    setSourceAuth({ authType: "oauth_client", credentialName: "", tenantId: "", clientId: "", clientSecret: "", accessToken: "", serviceAccountJson: "" });
     setExternalRows([createExternalReferenceRow()]);
     setDocumentProgressRows([]);
   }
@@ -328,6 +345,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setUploadProgress(0);
     setUploadProgressLabel("");
     setDocumentStorageMode("managed_upload");
+    setIngestionSource("upload");
+    setSourceAuth({ authType: "oauth_client", credentialName: "", tenantId: "", clientId: "", clientSecret: "", accessToken: "", serviceAccountJson: "" });
     setExternalRows([createExternalReferenceRow()]);
     setDocumentProgressRows([]);
     setTopicState({ message: "", status: "idle" });
@@ -600,7 +619,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   }
 
   async function deleteSelectedTopic(target: TopicActionTarget) {
-    if (!target.topicId || !window.confirm(`Delete "${target.topicName}" and all of its subfolders?`)) {
+    if (!target.topicId || !window.confirm(`Delete "${target.topicName}" and all of its subfolders? All documents, chunks, embeddings, processing records, and stored files inside them will be permanently deleted. Folder names are retained only for audit.`)) {
       return;
     }
 
@@ -721,19 +740,19 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       return;
     }
 
-    if (documentStorageMode === "managed_upload" && uploadFiles.length === 0) {
+    if (ingestionSource === "upload" && uploadFiles.length === 0) {
       setTopicState({ message: "Select at least one file.", status: "error" });
       return;
     }
 
     setTopicState({ message: "", status: "submitting" });
     setUploadProgress(2);
-    setUploadProgressLabel(documentStorageMode === "managed_upload" ? "Preparing upload..." : "Registering references...");
+    setUploadProgressLabel(ingestionSource === "upload" ? "Preparing upload..." : "Connecting to source...");
 
     let createdDocuments: Array<{ id: string; originalFilename?: string; name?: string; status?: string; errorMessage?: string | null }> = [];
     let uploadFailureCount = 0;
 
-    if (documentStorageMode === "managed_upload") {
+    if (ingestionSource === "upload") {
       setDocumentProgressRows(uploadFiles.map((file) => ({
         id: `${file.name}-${file.lastModified}`,
         label: file.name,
@@ -766,6 +785,36 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       }
       if (failedCount) setTopicState({ message: `${createdDocuments.length} file(s) queued; ${failedCount} failed to upload.`, status: "error" });
     } else {
+      let credentialId: string | undefined;
+      if (ingestionSource === "google_drive" || ingestionSource === "sharepoint") {
+        if (!sourceAuth.credentialName.trim()) {
+          setTopicState({ message: "Enter a connection name.", status: "error" });
+          return;
+        }
+        const secret = sourceAuth.authType === "oauth_client"
+          ? { clientSecret: sourceAuth.clientSecret }
+          : sourceAuth.authType === "service_account"
+            ? { serviceAccountJson: sourceAuth.serviceAccountJson }
+            : { accessToken: sourceAuth.accessToken };
+        const credentialResponse = await fetch("/api/admin/ingestion-credentials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            provider: ingestionSource,
+            name: sourceAuth.credentialName,
+            authType: sourceAuth.authType,
+            publicConfig: { tenantId: sourceAuth.tenantId, clientId: sourceAuth.clientId },
+            secret
+          })
+        });
+        const credentialBody = await credentialResponse.json().catch(() => null);
+        if (!credentialResponse.ok) {
+          setTopicState({ message: credentialBody?.message || "Unable to save connection credentials.", status: "error" });
+          return;
+        }
+        credentialId = credentialBody.credentialId;
+      }
+
       const activeRows = externalRows
         .map((row) => ({ ...row, externalSourceUrl: row.externalSourceUrl.trim(), originalFilename: row.originalFilename.trim(), sourceMetadata: row.sourceMetadata.trim() }))
         .filter((row) => row.externalSourceUrl || row.originalFilename);
@@ -799,7 +848,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
           originalFilename: row.sourceKind === "folder" ? "external-folder" : row.originalFilename || inferNameFromReference(row.externalSourceUrl),
           fileType: row.fileType,
           fileSize: 0,
-          sourceMetadata
+          sourceMetadata: { ...sourceMetadata, ingestion_source_type: ingestionSource, credential_reference: credentialId, max_pages: crawlSettings.maxPages, max_depth: crawlSettings.maxDepth }
         });
       }
 
@@ -1177,8 +1226,41 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
-              {documentStorageModeOptions.map((option) => {
+            <div className="mt-5">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Choose a source</div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                {ingestionSources.map((source) => {
+                  const active = source.value === ingestionSource;
+                  return (
+                    <button
+                      className={`min-h-24 rounded-xl border p-3 text-left transition ${active ? "border-violet-400 bg-violet-50 ring-2 ring-violet-100" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}
+                      disabled={topicState.status === "submitting"}
+                      key={source.value}
+                      onClick={() => {
+                        setIngestionSource(source.value);
+                        setDocumentStorageMode(source.value === "upload" ? "managed_upload" : "external_reference");
+                        setExternalRows([{ ...createExternalReferenceRow(), sourceKind: source.value === "web_url" ? "file" : "folder", fileType: ["web_url", "crawler", "sitemap", "rss"].includes(source.value) ? "html" : "pdf" }]);
+                        setDocumentProgressRows([]);
+                        setTopicState({ message: "", status: "idle" });
+                      }}
+                      type="button"
+                    >
+                      <source.icon className={`h-4 w-4 ${active ? "text-violet-600" : "text-slate-500"}`} />
+                      <span className={`mt-2 block text-xs font-semibold ${active ? "text-violet-900" : "text-slate-800"}`}>{source.label}</span>
+                      <span className="mt-0.5 block text-[11px] leading-4 text-slate-500">{source.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-700">
+                <span className="inline-flex items-center gap-2"><Settings2 className="h-4 w-4" /> Storage & retention</span>
+                <span className="text-xs font-medium text-slate-500">{selectedStorageMode.label}</span>
+              </summary>
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              {documentStorageModeOptions.filter((option) => ingestionSource === "upload" ? option.value === "managed_upload" : option.value !== "managed_upload").map((option) => {
                 const active = option.value === documentStorageMode;
 
                 return (
@@ -1211,12 +1293,13 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 ))}
               </div>
             </div>
+            </details>
 
-            {documentStorageMode === "managed_upload" ? (
+            {ingestionSource === "upload" ? (
               <>
                 <label className="mt-5 block rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-violet-300 hover:bg-violet-50/50">
                   <input
-                    accept=".pdf,.docx,.txt,.csv,.xlsx,.pptx"
+                    accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,.md,.html,.json,.xml,.epub,.png,.jpg,.jpeg,.webp,.tiff,.zip"
                     className="sr-only"
                     disabled={topicState.status === "submitting"}
                     multiple
@@ -1227,7 +1310,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                     type="file"
                   />
                   <span className="text-sm font-semibold text-slate-800">Choose files</span>
-                  <span className="mt-1 block text-xs text-slate-500">PDF, DOCX, TXT, CSV, XLSX, PPTX</span>
+                  <span className="mt-1 block text-xs text-slate-500">Documents, spreadsheets, web formats, images and ZIP archives</span>
                 </label>
 
                 {uploadFiles.length ? (
@@ -1243,14 +1326,50 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               </>
             ) : (
               <div className="mt-5 space-y-3">
+                {ingestionSource === "crawler" ? (
+                  <div className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+                    <label className="text-xs font-semibold text-slate-600">Maximum pages
+                      <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" max={1000} min={1} onChange={(event) => setCrawlSettings((value) => ({ ...value, maxPages: Number(event.target.value) }))} type="number" value={crawlSettings.maxPages} />
+                    </label>
+                    <label className="text-xs font-semibold text-slate-600">Link depth
+                      <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" max={10} min={0} onChange={(event) => setCrawlSettings((value) => ({ ...value, maxDepth: Number(event.target.value) }))} type="number" value={crawlSettings.maxDepth} />
+                    </label>
+                    <p className="text-xs leading-5 text-slate-500 sm:col-span-2">Follows same-domain links only. Tracking parameters, media assets, logout, cart and checkout URLs are skipped.</p>
+                  </div>
+                ) : null}
+                {(ingestionSource === "google_drive" || ingestionSource === "sharepoint") ? (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-800"><KeyRound className="h-4 w-4 text-violet-600" /> Connection credentials</div>
+                    <p className="mt-1 text-xs text-slate-500">Secrets are encrypted and are never stored in document metadata.</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-semibold text-slate-600">Connection name
+                        <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal outline-none focus:border-violet-400" onChange={(event) => setSourceAuth((value) => ({ ...value, credentialName: event.target.value }))} placeholder="Company knowledge drive" value={sourceAuth.credentialName} />
+                      </label>
+                      <label className="text-xs font-semibold text-slate-600">Authentication
+                        <select className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" onChange={(event) => setSourceAuth((value) => ({ ...value, authType: event.target.value }))} value={sourceAuth.authType}>
+                          <option value="oauth_client">OAuth client credentials</option>
+                          {ingestionSource === "google_drive" ? <option value="service_account">Service account JSON</option> : null}
+                          <option value="access_token">Existing access token</option>
+                        </select>
+                      </label>
+                      {sourceAuth.authType === "oauth_client" ? <>
+                        {ingestionSource === "sharepoint" ? <label className="text-xs font-semibold text-slate-600">Microsoft tenant ID<input className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" onChange={(event) => setSourceAuth((value) => ({ ...value, tenantId: event.target.value }))} value={sourceAuth.tenantId} /></label> : null}
+                        <label className="text-xs font-semibold text-slate-600">Client ID<input className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" onChange={(event) => setSourceAuth((value) => ({ ...value, clientId: event.target.value }))} value={sourceAuth.clientId} /></label>
+                        <label className="text-xs font-semibold text-slate-600">Client secret<input autoComplete="new-password" className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" onChange={(event) => setSourceAuth((value) => ({ ...value, clientSecret: event.target.value }))} type="password" value={sourceAuth.clientSecret} /></label>
+                      </> : null}
+                      {sourceAuth.authType === "access_token" ? <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Access token<input autoComplete="off" className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" onChange={(event) => setSourceAuth((value) => ({ ...value, accessToken: event.target.value }))} type="password" value={sourceAuth.accessToken} /></label> : null}
+                      {sourceAuth.authType === "service_account" ? <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Service account JSON<textarea className="mt-1 min-h-24 w-full rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs font-normal" onChange={(event) => setSourceAuth((value) => ({ ...value, serviceAccountJson: event.target.value }))} placeholder='{"type":"service_account", ...}' value={sourceAuth.serviceAccountJson} /></label> : null}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-slate-800">External references</div>
-                    <div className="text-xs text-slate-500">Add a file URL or an HTML directory URL. Folder contents are discovered and processed in parallel.</div>
+                    <div className="text-sm font-semibold text-slate-800">{ingestionSources.find((source) => source.value === ingestionSource)?.label} settings</div>
+                    <div className="text-xs text-slate-500">Only the settings needed for this source are shown.</div>
                   </div>
                   <button className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60" disabled={topicState.status === "submitting"} onClick={addExternalReferenceRow} type="button">
                     <Plus className="h-3.5 w-3.5" />
-                    Add row
+                    Add another
                   </button>
                 </div>
 
@@ -1259,17 +1378,17 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                     <div className="rounded-lg border border-slate-200 bg-white p-3" key={row.id}>
                       <div className="grid gap-2 md:grid-cols-[110px_1.4fr_1fr_110px_36px]">
                         <label className="block">
-                          <span className="text-xs font-semibold text-slate-600">Source</span>
+                          <span className="text-xs font-semibold text-slate-600">Scope</span>
                           <select className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { sourceKind: event.target.value as "file" | "folder" })} value={row.sourceKind}>
-                            <option value="file">File</option>
-                            <option value="folder">Folder</option>
+                            <option value="file">Single item</option>
+                            <option value="folder">Collection</option>
                           </select>
                         </label>
                         <label className="block">
-                          <span className="text-xs font-semibold text-slate-600">File or folder URL</span>
+                          <span className="text-xs font-semibold text-slate-600">{ingestionSource === "google_drive" ? "Drive file or folder URL" : ingestionSource === "sharepoint" ? "Site, library or file URL" : ingestionSource === "sitemap" ? "Sitemap.xml URL" : ingestionSource === "rss" ? "RSS or Atom feed URL" : ingestionSource === "crawler" ? "Website start URL" : "Page URL"}</span>
                           <div className="mt-1 flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 focus-within:border-slate-900 focus-within:ring-4 focus-within:ring-slate-900/10">
                             <Link2 className="h-4 w-4 text-slate-400" />
-                            <input className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { externalSourceUrl: event.target.value })} placeholder={row.sourceKind === "folder" ? "https://source.example/folder/" : "https://source.example/file.pdf"} value={row.externalSourceUrl} />
+                            <input className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { externalSourceUrl: event.target.value })} placeholder="https://example.com/..." value={row.externalSourceUrl} />
                           </div>
                         </label>
                         <label className="block">
@@ -1339,7 +1458,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               </button>
               <button className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-70" disabled={topicState.status === "submitting"} type="submit">
                 {topicState.status === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-                {documentStorageMode === "managed_upload" ? "Upload" : "Register"}
+                {ingestionSource === "upload" ? "Upload & process" : "Connect & import"}
               </button>
             </div>
           </form>

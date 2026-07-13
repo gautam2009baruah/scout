@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/db/pool";
+import { getStorageProvider } from "@/lib/storage/provider";
 import type { AdminSession } from "./auth";
 
 export type TopicRow = {
@@ -717,45 +718,77 @@ export async function deleteTopic(topicId: string, session: AdminSession) {
     throw new TopicError("Only admin users can delete folders.");
   }
 
-  const result = await getPool().query<{ deleted_count: string }>(
-    `
+  const client = await getPool().connect();
+  const storagePaths = new Set<string>();
+
+  try {
+    await client.query("BEGIN");
+    const branchResult = await client.query<{ id: string }>(`
       WITH RECURSIVE topic_branch AS (
-        SELECT id
-        FROM topics
-        WHERE id = $1 AND deleted_at IS NULL
+        SELECT id FROM topics WHERE id = $1 AND deleted_at IS NULL
         UNION ALL
-        SELECT child.id
-        FROM topics child
+        SELECT child.id FROM topics child
         INNER JOIN topic_branch parent ON parent.id = child.parent_id
         WHERE child.deleted_at IS NULL
-      ),
-      deleted_topics AS (
-        UPDATE topics
-        SET deleted_at = now(), updated_by = $2, updated_at = now()
-        WHERE id IN (SELECT id FROM topic_branch)
-        RETURNING id
-      ),
-      deleted_role_access AS (
-        UPDATE role_topic_permissions
-        SET deleted_at = now(), updated_by = $2, updated_at = now()
-        WHERE topic_id IN (SELECT id FROM deleted_topics)
-          AND deleted_at IS NULL
-        RETURNING id
-      ),
-      deleted_user_access AS (
-        UPDATE user_topic_permissions
-        SET deleted_at = now(), updated_by = $2, updated_at = now()
-        WHERE topic_id IN (SELECT id FROM deleted_topics)
-          AND deleted_at IS NULL
-        RETURNING id
       )
-      SELECT COUNT(*) AS deleted_count FROM deleted_topics
-    `,
-    [topicId, session.user.id]
-  );
+      SELECT id FROM topic_branch
+    `, [topicId]);
+    const topicIds = branchResult.rows.map((row) => row.id);
+    if (topicIds.length === 0) throw new TopicError("Topic was not found.");
 
-  if (Number(result.rows[0]?.deleted_count ?? 0) === 0) {
-    throw new TopicError("Topic was not found.");
+    const documentResult = await client.query<{ id: string; storage_path: string | null; parsed_file_path: string | null }>(`
+      SELECT documents.id, documents.storage_path, document_parsed_contents.parsed_file_path
+      FROM documents
+      LEFT JOIN document_parsed_contents ON document_parsed_contents.document_id = documents.id
+      WHERE documents.folder_id = ANY($1::uuid[])
+    `, [topicIds]);
+    const documentIds = documentResult.rows.map((row) => row.id);
+    for (const row of documentResult.rows) {
+      if (row.storage_path) storagePaths.add(row.storage_path);
+      if (row.parsed_file_path) storagePaths.add(row.parsed_file_path);
+    }
+
+    // Sources and their sync runs/items are no longer valid once their folder is deleted.
+    await client.query("DELETE FROM ingestion_sources WHERE folder_id = ANY($1::uuid[])", [topicIds]);
+
+    if (documentIds.length > 0) {
+      // Delete RESTRICT-linked data from the leaves upward. CASCADE relations are
+      // also named explicitly so the retention behavior remains obvious.
+      await client.query("DELETE FROM chunk_embeddings WHERE document_id = ANY($1::uuid[])", [documentIds]);
+      await client.query("DELETE FROM processing_jobs WHERE document_id = ANY($1::uuid[])", [documentIds]);
+      await client.query("DELETE FROM document_pages WHERE document_id = ANY($1::uuid[])", [documentIds]);
+      await client.query("DELETE FROM document_parsed_contents WHERE document_id = ANY($1::uuid[])", [documentIds]);
+      await client.query("DELETE FROM document_chunks WHERE document_id = ANY($1::uuid[])", [documentIds]);
+      await client.query("DELETE FROM document_role_permissions WHERE document_id = ANY($1::uuid[])", [documentIds]);
+      await client.query("DELETE FROM document_user_permissions WHERE document_id = ANY($1::uuid[])", [documentIds]);
+      await client.query("DELETE FROM documents WHERE id = ANY($1::uuid[])", [documentIds]);
+    }
+
+    // Only topic rows survive for audit. All auxiliary access data is disposable.
+    await client.query("DELETE FROM folder_document_role_permissions WHERE folder_id = ANY($1::uuid[])", [topicIds]);
+    await client.query("DELETE FROM folder_document_user_permissions WHERE folder_id = ANY($1::uuid[])", [topicIds]);
+    await client.query("DELETE FROM role_topic_permissions WHERE topic_id = ANY($1::uuid[])", [topicIds]);
+    await client.query("DELETE FROM user_topic_permissions WHERE topic_id = ANY($1::uuid[])", [topicIds]);
+    await client.query(`
+      UPDATE topics
+      SET deleted_at = now(), updated_by = $2, updated_at = now()
+      WHERE id = ANY($1::uuid[])
+    `, [topicIds, session.user.id]);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const storage = getStorageProvider();
+  const failures: string[] = [];
+  await Promise.all(Array.from(storagePaths).map(async (storagePath) => {
+    try { await storage.delete_file(storagePath); } catch { failures.push(storagePath); }
+  }));
+  if (failures.length > 0) {
+    console.error("Folder data was deleted but some stored files could not be removed", { topicId, failures });
   }
 }
 
