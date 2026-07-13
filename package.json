@@ -6,6 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "chatbot-api:dev": "tsx services/chatbot-api/src/server.ts",
+    "chatbot-api:start": "node --import tsx services/chatbot-api/src/server.ts",
     "lint": "eslint .",
     "db:migrate": "node scripts/db/migrate.mjs",
     "db:seed:first-admin": "node scripts/db/seed-first-admin.mjs",
