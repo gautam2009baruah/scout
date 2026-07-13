@@ -101,23 +101,27 @@ function buildDocumentScopeFilter(params: {
 
 function toPathItems(value: unknown): PathItem[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((raw) => {
-      if (!raw || typeof raw !== "object") return null;
-      const item = raw as Record<string, unknown>;
-      return {
-        chunk_id: typeof item.chunk_id === "string" ? item.chunk_id : undefined,
-        document_id: typeof item.document_id === "string" ? item.document_id : undefined,
-        document_name: typeof item.document_name === "string" ? item.document_name : undefined,
-        folder_path: typeof item.folder_path === "string" ? item.folder_path : undefined,
-        section_title: typeof item.section_title === "string" ? item.section_title : undefined,
-        page_number: typeof item.page_number === "number" ? item.page_number : undefined,
-        score: typeof item.score === "number" ? item.score : undefined,
-        citation_type: item.citation_type === "visual" ? "visual" : item.citation_type === "text" ? "text" : undefined,
-        visual_asset_type: typeof item.visual_asset_type === "string" ? item.visual_asset_type : undefined,
-      };
-    })
-    .filter((item): item is PathItem => item !== null);
+
+  const items: PathItem[] = [];
+
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+
+    const item = raw as Record<string, unknown>;
+    items.push({
+      chunk_id: typeof item.chunk_id === "string" ? item.chunk_id : undefined,
+      document_id: typeof item.document_id === "string" ? item.document_id : undefined,
+      document_name: typeof item.document_name === "string" ? item.document_name : undefined,
+      folder_path: typeof item.folder_path === "string" ? item.folder_path : undefined,
+      section_title: typeof item.section_title === "string" ? item.section_title : undefined,
+      page_number: typeof item.page_number === "number" ? item.page_number : undefined,
+      score: typeof item.score === "number" ? item.score : undefined,
+      citation_type: item.citation_type === "visual" ? "visual" : item.citation_type === "text" ? "text" : undefined,
+      visual_asset_type: typeof item.visual_asset_type === "string" ? item.visual_asset_type : undefined,
+    });
+  }
+
+  return items;
 }
 
 export async function GET(request: Request) {

@@ -176,45 +176,45 @@ export class RetrievalEngine {
       ...filteredVisualResults.map((item) => item.document_id)
     ])));
 
-    const chunks = items
-      .map((item) => {
-        const recencyBoost = recencyByDocumentId.get(item.result.document_id) ?? 0;
-        const score =
-          normalizeScore(item.vectorScore, maxVectorScore) * 0.55
-          + normalizeScore(item.keywordScore, maxKeywordScore) * 0.35
-          + recencyBoost * 0.1;
+    const textChunks: RetrievalChunk[] = items.map((item) => {
+      const recencyBoost = recencyByDocumentId.get(item.result.document_id) ?? 0;
+      const score =
+        normalizeScore(item.vectorScore, maxVectorScore) * 0.55
+        + normalizeScore(item.keywordScore, maxKeywordScore) * 0.35
+        + recencyBoost * 0.1;
 
-        return {
-          chunk_id: item.result.chunk_id,
-          content: item.result.content,
-          document_id: item.result.document_id,
-          document_name: item.result.document_name,
-          folder_path: item.result.folder_path,
-          page_number: item.result.page_number,
-          section_title: item.result.section_title,
-          score: Number(score.toFixed(4)),
-          citation_type: "text" as const
-        };
-      })
-      .concat(
-        filteredVisualResults.map((result) => {
-          const recencyBoost = recencyByDocumentId.get(result.document_id) ?? 0;
-          const score = normalizeScore(result.score, maxVisualScore) * 0.75 + recencyBoost * 0.25;
+      return {
+        chunk_id: item.result.chunk_id,
+        content: item.result.content,
+        document_id: item.result.document_id,
+        document_name: item.result.document_name,
+        folder_path: item.result.folder_path,
+        page_number: item.result.page_number,
+        section_title: item.result.section_title,
+        score: Number(score.toFixed(4)),
+        citation_type: "text" as const
+      };
+    });
 
-          return {
-            chunk_id: result.insight_id,
-            content: result.extracted_text,
-            document_id: result.document_id,
-            document_name: result.document_name,
-            folder_path: result.folder_path,
-            page_number: result.page_number,
-            section_title: `Visual ${result.asset_type.replaceAll("_", " ")}`,
-            score: Number(score.toFixed(4)),
-            citation_type: "visual" as const,
-            visual_asset_type: result.asset_type
-          };
-        })
-      )
+    const visualChunks: RetrievalChunk[] = filteredVisualResults.map((result) => {
+      const recencyBoost = recencyByDocumentId.get(result.document_id) ?? 0;
+      const score = normalizeScore(result.score, maxVisualScore) * 0.75 + recencyBoost * 0.25;
+
+      return {
+        chunk_id: result.insight_id,
+        content: result.extracted_text,
+        document_id: result.document_id,
+        document_name: result.document_name,
+        folder_path: result.folder_path,
+        page_number: result.page_number,
+        section_title: `Visual ${result.asset_type.replaceAll("_", " ")}`,
+        score: Number(score.toFixed(4)),
+        citation_type: "visual" as const,
+        visual_asset_type: result.asset_type
+      };
+    });
+
+    const chunks: RetrievalChunk[] = [...textChunks, ...visualChunks]
       .sort((first, second) => second.score - first.score)
       .slice(0, limit);
 
