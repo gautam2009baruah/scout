@@ -16,6 +16,7 @@ type TopicManagerProps = {
   selectedCompanyName?: string;
   topics: TopicRow[];
   tree: TopicTreeNode[];
+  targetApps: Array<{ id: string; name: string; companyId: string }>;
   users: TopicUserOption[];
 };
 
@@ -90,6 +91,7 @@ const ingestionSources = [
   { value: "google_drive", label: "Google Drive", description: "Files and folders", icon: Cloud },
   { value: "sharepoint", label: "SharePoint", description: "Sites and libraries", icon: Cloud }
 ] as const;
+const GLOBAL_TARGET_APP = "__global__";
 
 const documentStorageModeOptions: Array<{
   value: DocumentStorageMode;
@@ -208,7 +210,7 @@ function ReadOnlyAccess({ all, label, names }: { all: boolean; label: string; na
   );
 }
 
-export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId, selectedCompanyName, topics, tree, users }: TopicManagerProps) {
+export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId, selectedCompanyName, targetApps, topics, tree, users }: TopicManagerProps) {
   const router = useRouter();
   const [topicState, setTopicState] = useState<FormState>({ message: "", status: "idle" });
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>(null);
@@ -242,10 +244,12 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [createAllUsers, setCreateAllUsers] = useState(true);
   const [createRoleIds, setCreateRoleIds] = useState<string[]>([]);
   const [createUserIds, setCreateUserIds] = useState<string[]>([]);
+  const [createTargetAppIds, setCreateTargetAppIds] = useState<string[]>([]);
   const [editAllRoles, setEditAllRoles] = useState(true);
   const [editAllUsers, setEditAllUsers] = useState(true);
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
   const [editUserIds, setEditUserIds] = useState<string[]>([]);
+  const [editTargetAppIds, setEditTargetAppIds] = useState<string[]>([]);
 
   const rootParentOptions = useMemo(
     () => topics.filter((topic) => topic.companyId === createCompanyId),
@@ -267,6 +271,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     () => users.filter((user) => editTarget?.companyId ? user.companyIds.includes(editTarget.companyId) : false),
     [editTarget?.companyId, users]
   );
+  const createTargetAppOptions = useMemo(() => targetApps.filter((app) => app.companyId === (createTarget?.companyId || createCompanyId)), [createCompanyId, createTarget?.companyId, targetApps]);
+  const editTargetAppOptions = useMemo(() => targetApps.filter((app) => app.companyId === editTarget?.companyId), [editTarget?.companyId, targetApps]);
   const visibleTree = useMemo(() => {
     const removeDeletingBranches = (nodes: TopicTreeNode[]): TopicTreeNode[] => nodes
       .filter((node) => !deletingFolderIds.has(node.id))
@@ -311,6 +317,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setCreateAllUsers(true);
     setCreateRoleIds([]);
     setCreateUserIds([]);
+    const parentApps = target.parentId ? topics.find((topic) => topic.id === target.parentId)?.targetAppIds ?? [] : [];
+    setCreateTargetAppIds(parentApps.length ? parentApps : [GLOBAL_TARGET_APP]);
   }
 
   function closeCreateModal() {
@@ -336,6 +344,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setEditAllUsers(userAccessAll);
     setEditRoleIds(roleAccessAll ? [] : roleIds);
     setEditUserIds(userAccessAll ? [] : userIds);
+    setEditTargetAppIds(target.targetAppIds?.length ? target.targetAppIds : [GLOBAL_TARGET_APP]);
   }
 
   function closeEditModal() {
@@ -579,6 +588,12 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     }
   }
 
+  function normalizeTargetAppSelection(values: string[], previous: string[]) {
+    const selectedGlobalNow = values.includes(GLOBAL_TARGET_APP) && !previous.includes(GLOBAL_TARGET_APP);
+    if (selectedGlobalNow || values.length === 0) return [GLOBAL_TARGET_APP];
+    return values.filter((value) => value !== GLOBAL_TARGET_APP);
+  }
+
   async function createTopic(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -595,12 +610,13 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         allRoles: createAllRoles,
         allUsers: createAllUsers,
         roleIds: createAllRoles ? [] : createRoleIds,
-        userIds: createAllUsers ? [] : createUserIds
+        userIds: createAllUsers ? [] : createUserIds,
+        targetAppIds: createTargetAppIds.filter((id) => id !== GLOBAL_TARGET_APP)
       })
     });
 
     if (!response.ok) {
-      setTopicState({ message: await readMessage(response, "Unable to create topic."), status: "error" });
+      setTopicState({ message: await readMessage(response, "Unable to create folder."), status: "error" });
       return;
     }
 
@@ -610,7 +626,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setCreateAllUsers(true);
     setCreateRoleIds([]);
     setCreateUserIds([]);
-    setTopicState({ message: "Topic folder created.", status: "success" });
+    setTopicState({ message: "Folder created.", status: "success" });
     router.refresh();
   }
 
@@ -632,17 +648,18 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         allRoles: editAllRoles,
         allUsers: editAllUsers,
         roleIds: editAllRoles ? [] : editRoleIds,
-        userIds: editAllUsers ? [] : editUserIds
+        userIds: editAllUsers ? [] : editUserIds,
+        targetAppIds: editTargetAppIds.filter((id) => id !== GLOBAL_TARGET_APP)
       })
     });
 
     if (!response.ok) {
-      setTopicState({ message: await readMessage(response, "Unable to update topic."), status: "error" });
+      setTopicState({ message: await readMessage(response, "Unable to update folder."), status: "error" });
       return;
     }
 
     setEditTarget(null);
-    setTopicState({ message: "Topic updated.", status: "success" });
+    setTopicState({ message: "Folder updated.", status: "success" });
     router.refresh();
   }
 
@@ -955,6 +972,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     <div className="grid gap-6">
       <section>
         <TopicTree
+          accessibleTargetAppIds={targetApps.map((app) => app.id)}
           canCreateRoot={canManageAccess}
           onOpenMenu={openContextMenu}
           selectedCompanyId={selectedCompanyId}
@@ -1554,7 +1572,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               {!createTarget.parentId && canManageAccess ? (
                 <label className="block">
                   <span className="text-sm font-medium text-slate-700">Parent folder</span>
-                  <select className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10" name="parentId">
+                  <select className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10" name="parentId" onChange={(event) => { const apps = topics.find((topic) => topic.id === event.target.value)?.targetAppIds ?? []; setCreateTargetAppIds(apps.length ? apps : [GLOBAL_TARGET_APP]); }}>
                     <option value="">Root folder</option>
                     {rootParentOptions.map((topic) => (
                       <option key={topic.id} value={topic.id}>{topic.name}</option>
@@ -1570,6 +1588,17 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   <input className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none" name="name" placeholder="Payslip" required />
                 </span>
               </label>
+
+              <div>
+                <MultiSelectDropdown
+                  emptyLabel="Global"
+                  label="Target app"
+                  onChange={(values) => setCreateTargetAppIds((previous) => normalizeTargetAppSelection(values, previous))}
+                  options={[{ label: "Global", value: GLOBAL_TARGET_APP }, ...createTargetAppOptions.map((app) => ({ label: app.name, value: app.id }))]}
+                  selectedValues={createTargetAppIds}
+                />
+                <p className="mt-1.5 text-xs leading-5 text-slate-500">Defaults to the parent folder’s selection. Global makes this folder available company-wide.</p>
+              </div>
 
               {canManageAccess ? (
                 <>
@@ -1668,6 +1697,17 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 <input className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none" defaultValue={editTarget.topicName} name="name" required />
               </span>
             </label>
+
+            <div className="mt-5">
+              <MultiSelectDropdown
+                emptyLabel="Global"
+                label="Target app"
+                onChange={(values) => setEditTargetAppIds((previous) => normalizeTargetAppSelection(values, previous))}
+                options={[{ label: "Global", value: GLOBAL_TARGET_APP }, ...editTargetAppOptions.map((app) => ({ label: app.name, value: app.id }))]}
+                selectedValues={editTargetAppIds}
+              />
+              <p className="mt-1.5 text-xs leading-5 text-slate-500">Changing this folder does not overwrite existing subfolder overrides.</p>
+            </div>
 
             {canManageAccess ? (
               <div className="mt-5 space-y-4">

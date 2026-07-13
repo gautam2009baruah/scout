@@ -10,6 +10,7 @@ export type ChatQueryInput = {
   company_id: string;
   user_id: string;
   question: string;
+  target_app_id?: string;
   conversation_id?: string;
   top_k?: number;
 };
@@ -335,7 +336,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     return response;
   }
 
-  const retrieval = await RetrievalEngine.retrieve(companyId, userId, question, topK);
+  const retrieval = await RetrievalEngine.retrieve(companyId, userId, question, topK, input.target_app_id?.trim() || undefined);
 
   if (retrieval.chunks.length === 0) {
     await appendConversationExchange({

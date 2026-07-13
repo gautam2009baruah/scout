@@ -563,6 +563,7 @@ export function ScoutChatbot({
         company_id: companyId,
         user_id: userId,
         question,
+        target_app_id: targetAppId || undefined,
         conversation_id: activeConversationId.current || undefined
       })
     });

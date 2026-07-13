@@ -13,13 +13,13 @@ export async function POST(request: Request) {
   }
 
   if (!hasModuleAccess(session, MODULE_KEYS.contentStructure)) {
-    return NextResponse.json({ message: "You do not have permission to manage topics." }, { status: 403 });
+    return NextResponse.json({ message: "You do not have permission to manage folders." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);
 
   if (!body || typeof body.topicId !== "string") {
-    return NextResponse.json({ message: "Topic is required." }, { status: 400 });
+    return NextResponse.json({ message: "Folder is required." }, { status: 400 });
   }
 
   try {

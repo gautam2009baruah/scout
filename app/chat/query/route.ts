@@ -20,6 +20,7 @@ export async function POST(request: Request) {
       company_id: body.company_id,
       user_id: body.user_id,
       question: body.question,
+      target_app_id: typeof body.target_app_id === "string" ? body.target_app_id : typeof body.targetAppId === "string" ? body.targetAppId : undefined,
       conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,
       top_k: typeof body.top_k !== "undefined" ? Number(body.top_k) : undefined
     });

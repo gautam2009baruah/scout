@@ -13,6 +13,8 @@ type D3TopicNode = {
   roleAccessAll?: boolean;
   userAccessAll?: boolean;
   documentCount?: number;
+  targetAppIds?: string[];
+  targetAppNames?: string[];
   children?: D3TopicNode[];
 };
 
@@ -28,6 +30,8 @@ export type TopicActionTarget = TopicCreateTarget & {
   topicId: string | null;
   topicName: string;
   userAccessAll?: boolean;
+  targetAppIds?: string[];
+  targetAppNames?: string[];
   x: number;
   y: number;
 };
@@ -38,6 +42,7 @@ type TopicTreeProps = {
   selectedCompanyId: string;
   selectedCompanyName?: string;
   tree: TopicTreeNode[];
+  accessibleTargetAppIds: string[];
 };
 
 function toD3Node(nodes: TopicTreeNode[]): D3TopicNode {
@@ -52,6 +57,8 @@ function toD3Node(nodes: TopicTreeNode[]): D3TopicNode {
       roleAccessAll: node.roleAccessAll,
       userAccessAll: node.userAccessAll,
       documentCount: node.documentCount,
+      targetAppIds: node.targetAppIds,
+      targetAppNames: node.targetAppNames,
       children: node.children.map((child) => toChildNode(child))
     }))
   };
@@ -66,11 +73,13 @@ function toChildNode(node: TopicTreeNode): D3TopicNode {
     roleAccessAll: node.roleAccessAll,
     userAccessAll: node.userAccessAll,
     documentCount: node.documentCount,
+    targetAppIds: node.targetAppIds,
+    targetAppNames: node.targetAppNames,
     children: node.children.map((child) => toChildNode(child))
   };
 }
 
-export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, selectedCompanyName, tree }: TopicTreeProps) {
+export function TopicTree({ accessibleTargetAppIds, canCreateRoot, onOpenMenu, selectedCompanyId, selectedCompanyName, tree }: TopicTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -86,6 +95,8 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
 
     const width = Math.max(container.clientWidth, 760);
     const data = toD3Node(tree);
+    const accessibleApps = new Set(accessibleTargetAppIds);
+    const isRestricted = (node: D3TopicNode) => node.id !== "root" && Boolean(node.targetAppIds?.some((id) => !accessibleApps.has(id)));
     const root = d3.hierarchy<D3TopicNode>(data);
 
     root.each((node) => {
@@ -129,6 +140,7 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
       .topic-node:hover .topic-menu { opacity: 1; }
       .topic-node .topic-menu:hover circle { fill: #0f172a; }
       .topic-node .topic-menu:hover circle.dot { fill: #ffffff; }
+      .topic-node.restricted .topic-menu { opacity: 0.35; pointer-events: none; }
     `);
 
     const link = d3.linkVertical<d3.HierarchyPointLink<D3TopicNode>, d3.HierarchyPointNode<D3TopicNode>>()
@@ -149,6 +161,7 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
       .data(descendants)
       .join("g")
       .attr("class", "topic-node")
+      .classed("restricted", (node) => isRestricted(node.data))
       .attr("transform", (node) => `translate(${node.x},${node.y})`)
       .style("cursor", (node) => node.data.id === "root" || node.data.children?.length ? "pointer" : "default")
       .on("click", (_event, node) => {
@@ -187,8 +200,8 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
       .attr("d", (node) => {
         return folderPath(node);
       })
-      .attr("fill", (node) => node.data.id === "root" ? "#1e293b" : collapsedIds.has(node.data.id) ? "#f59e0b" : "#facc15")
-      .attr("stroke", (node) => node.data.id === "root" ? "#0f172a" : "#b45309")
+      .attr("fill", (node) => isRestricted(node.data) ? "#cbd5e1" : node.data.id === "root" ? "#1e293b" : collapsedIds.has(node.data.id) ? "#f59e0b" : "#facc15")
+      .attr("stroke", (node) => isRestricted(node.data) ? "#94a3b8" : node.data.id === "root" ? "#0f172a" : "#b45309")
       .attr("stroke-linejoin", "round")
       .attr("stroke-width", 1.25);
 
@@ -197,12 +210,17 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
       .attr("y", 36)
       .attr("font-size", 13)
       .attr("font-weight", 700)
-      .attr("fill", "#0f172a")
+      .attr("fill", (node) => isRestricted(node.data) ? "#94a3b8" : "#0f172a")
       .attr("text-anchor", "middle")
       .text((node) => formatNodeName(node.data.name));
 
     nodeLabel.append("title")
-      .text((node) => node.data.name);
+      .text((node) => isRestricted(node.data)
+        ? `You cannot edit this folder because you do not have access to its assigned target app${(node.data.targetAppNames?.length ?? 0) === 1 ? "" : "s"}: ${node.data.targetAppNames?.join(", ") || "Restricted target app"}.`
+        : node.data.name);
+
+    nodeGroup.filter((node) => isRestricted(node.data)).append("title")
+      .text((node) => `You cannot edit this folder because you do not have access to its assigned target app${(node.data.targetAppNames?.length ?? 0) === 1 ? "" : "s"}: ${node.data.targetAppNames?.join(", ") || "Restricted target app"}. Global subfolders remain available.`);
 
     const documentBadge = nodeGroup.filter((node) => node.data.id !== "root" && Number(node.data.documentCount ?? 0) > 0)
       .append("g")
@@ -254,6 +272,7 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
       .style("cursor", "pointer")
       .on("click", (event, node) => {
         event.stopPropagation();
+        if (isRestricted(node.data)) return;
 
         if (node.data.id === "root") {
           onOpenMenu({
@@ -264,6 +283,7 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
             roleAccessAll: true,
             topicId: null,
             topicName: "Base",
+            targetAppIds: [],
             userAccessAll: true,
             x: event.clientX,
             y: event.clientY
@@ -279,6 +299,8 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
           roleAccessAll: node.data.roleAccessAll,
           topicId: node.data.id,
           topicName: node.data.name,
+          targetAppIds: node.data.targetAppIds ?? [],
+          targetAppNames: node.data.targetAppNames ?? [],
           userAccessAll: node.data.userAccessAll,
           x: event.clientX,
           y: event.clientY
@@ -299,7 +321,7 @@ export function TopicTree({ canCreateRoot, onOpenMenu, selectedCompanyId, select
       .attr("cy", 0)
       .attr("r", 1.35)
       .attr("fill", "#0f172a");
-  }, [canCreateRoot, collapsedIds, onOpenMenu, selectedCompanyId, selectedCompanyName, tree, zoom]);
+  }, [accessibleTargetAppIds, canCreateRoot, collapsedIds, onOpenMenu, selectedCompanyId, selectedCompanyName, tree, zoom]);
 
   return (
     <div className="space-y-3">

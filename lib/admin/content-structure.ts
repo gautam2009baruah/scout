@@ -13,6 +13,8 @@ export type TopicRow = {
   roleAccessAll: boolean;
   userAccessAll: boolean;
   documentCount: number;
+  targetAppIds: string[];
+  targetAppNames: string[];
   createdAt: Date;
 };
 
@@ -57,6 +59,7 @@ export type CreateTopicInput = {
   name: string;
   roleIds?: string[];
   userIds?: string[];
+  targetAppIds?: string[];
 };
 
 export type GrantTopicAccessInput = {
@@ -71,6 +74,7 @@ export type UpdateTopicInput = {
   name: string;
   roleIds?: string[];
   userIds?: string[];
+  targetAppIds?: string[];
 };
 
 export class TopicError extends Error {
@@ -92,6 +96,69 @@ function isAdmin(session: AdminSession) {
   return session.user.isAdminRole;
 }
 
+async function validateTargetAppIds(companyId: string, targetAppIds: string[], session: AdminSession) {
+  const uniqueIds = Array.from(new Set(targetAppIds));
+  if (uniqueIds.length === 0) return uniqueIds;
+  const result = await getPool().query<{ id: string }>(`
+    SELECT app.id
+    FROM guided_workflow_target_apps app
+    WHERE app.company_id = $1
+      AND app.id = ANY($2::uuid[])
+      AND (
+        $3::boolean = true
+        OR NOT EXISTS (
+          SELECT 1 FROM user_target_app_access scope
+          INNER JOIN guided_workflow_target_apps scoped_app ON scoped_app.id = scope.target_app_id
+          WHERE scope.user_id = $4 AND scope.deleted_at IS NULL AND scoped_app.company_id = $1
+        )
+        OR EXISTS (
+          SELECT 1 FROM user_target_app_access allowed
+          WHERE allowed.user_id = $4 AND allowed.target_app_id = app.id AND allowed.deleted_at IS NULL
+        )
+      )
+  `, [companyId, uniqueIds, isAdmin(session), session.user.id]);
+  if (result.rows.length !== uniqueIds.length) throw new TopicError("One or more selected target apps are unavailable.");
+  return uniqueIds;
+}
+
+async function replaceFolderTargetApps(folderId: string, companyId: string, targetAppIds: string[], session: AdminSession) {
+  const ids = await validateTargetAppIds(companyId, targetAppIds, session);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`UPDATE folder_target_apps SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE folder_id = $1 AND deleted_at IS NULL`, [folderId, session.user.id]);
+    if (ids.length > 0) {
+      await client.query(`
+        INSERT INTO folder_target_apps (company_id, folder_id, target_app_id, created_by, updated_by)
+        SELECT $1, $2, target_app_id, $3, $3 FROM unnest($4::uuid[]) AS target_app_id
+        ON CONFLICT (folder_id, target_app_id) DO UPDATE
+        SET deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
+      `, [companyId, folderId, session.user.id, ids]);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
+}
+
+async function assertFolderTargetAppAccess(folderId: string, companyId: string, session: AdminSession) {
+  if (isAdmin(session)) return;
+  const result = await getPool().query<{ target_app_id: string }>(
+    "SELECT target_app_id FROM folder_target_apps WHERE folder_id = $1 AND deleted_at IS NULL",
+    [folderId]
+  );
+  if (result.rows.length === 0) return;
+  try {
+    await validateTargetAppIds(companyId, result.rows.map((row) => row.target_app_id), session);
+  } catch (error) {
+    if (error instanceof TopicError) {
+      throw new TopicError("You cannot modify this folder because you do not have access to one or more of its assigned target apps.");
+    }
+    throw error;
+  }
+}
+
 function mapTopic(row: {
   id: string;
   company_id: string;
@@ -103,6 +170,8 @@ function mapTopic(row: {
   role_access_all: boolean;
   user_access_all: boolean;
   document_count: string | number;
+  target_app_ids: string[];
+  target_app_names: string[];
   created_at: Date;
 }): TopicRow {
   return {
@@ -116,6 +185,8 @@ function mapTopic(row: {
     roleAccessAll: row.role_access_all,
     userAccessAll: row.user_access_all,
     documentCount: Number(row.document_count ?? 0),
+    targetAppIds: row.target_app_ids ?? [],
+    targetAppNames: row.target_app_names ?? [],
     createdAt: row.created_at
   };
 }
@@ -258,6 +329,8 @@ export async function getTopicWorkspace(session: AdminSession) {
     role_access_all: boolean;
     user_access_all: boolean;
     document_count: string | number;
+    target_app_ids: string[];
+    target_app_names: string[];
     created_at: Date;
   }>(
     `
@@ -277,6 +350,19 @@ export async function getTopicWorkspace(session: AdminSession) {
           WHERE documents.folder_id = topics.id
             AND documents.status <> 'deleted'
         ) AS document_count,
+        COALESCE((
+          SELECT array_agg(folder_target_apps.target_app_id ORDER BY folder_target_apps.target_app_id)
+          FROM folder_target_apps
+          WHERE folder_target_apps.folder_id = topics.id
+            AND folder_target_apps.deleted_at IS NULL
+        ), ARRAY[]::uuid[]) AS target_app_ids,
+        COALESCE((
+          SELECT array_agg(guided_workflow_target_apps.name ORDER BY guided_workflow_target_apps.name)
+          FROM folder_target_apps
+          INNER JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = folder_target_apps.target_app_id
+          WHERE folder_target_apps.folder_id = topics.id
+            AND folder_target_apps.deleted_at IS NULL
+        ), ARRAY[]::text[]) AS target_app_names,
         topics.created_at
       FROM topics
       INNER JOIN companies ON companies.id = topics.company_id
@@ -433,7 +519,7 @@ export async function createTopic(input: CreateTopicInput, session: AdminSession
   const slug = normalizeSlug(input.name);
 
   if (!input.companyId || !name || !slug) {
-    throw new TopicError("Company and topic name are required.");
+    throw new TopicError("Company and folder name are required.");
   }
 
   await assertCanCreateUnder(parentId, session);
@@ -445,12 +531,13 @@ export async function createTopic(input: CreateTopicInput, session: AdminSession
     );
 
     if (!parentResult.rows[0]) {
-      throw new TopicError("Parent topic was not found.");
+      throw new TopicError("Parent folder was not found.");
     }
 
     if (parentResult.rows[0].company_id !== input.companyId) {
       throw new TopicError("Subfolders must belong to the same company as their parent folder.");
     }
+    await assertFolderTargetAppAccess(parentId, input.companyId, session);
   }
 
   try {
@@ -485,6 +572,13 @@ export async function createTopic(input: CreateTopicInput, session: AdminSession
       );
     }
 
+    let targetAppIds = input.targetAppIds;
+    if (typeof targetAppIds === "undefined" && parentId) {
+      const inherited = await getPool().query<{ target_app_id: string }>("SELECT target_app_id FROM folder_target_apps WHERE folder_id = $1 AND deleted_at IS NULL", [parentId]);
+      targetAppIds = inherited.rows.map((row) => row.target_app_id);
+    }
+    await replaceFolderTargetApps(result.rows[0].id, input.companyId, targetAppIds ?? [], session);
+
     return result.rows[0].id;
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
@@ -500,15 +594,16 @@ export async function updateTopic(topicId: string, input: UpdateTopicInput, sess
   const slug = normalizeSlug(input.name);
 
   if (!topicId || !name || !slug) {
-    throw new TopicError("Topic name is required.");
+    throw new TopicError("Folder name is required.");
   }
 
   if (!isAdmin(session)) {
     const accessibleTopicIds = await getAccessibleTopicIds(session);
 
     if (!accessibleTopicIds?.has(topicId)) {
-      throw new TopicError("You do not have permission to edit this topic.");
+      throw new TopicError("You do not have permission to edit this folder.");
     }
+    await assertFolderTargetAppAccess(topicId, await getTopicCompanyId(topicId), session);
   }
 
   try {
@@ -539,7 +634,7 @@ export async function updateTopic(topicId: string, input: UpdateTopicInput, sess
       );
 
     if (result.rowCount !== 1) {
-      throw new TopicError("Topic was not found.");
+      throw new TopicError("Folder was not found.");
     }
 
     if (isAdmin(session)) {
@@ -552,6 +647,8 @@ export async function updateTopic(topicId: string, input: UpdateTopicInput, sess
         session
       );
     }
+    const companyId = await getTopicCompanyId(topicId);
+    await replaceFolderTargetApps(topicId, companyId, input.targetAppIds ?? [], session);
   } catch (error) {
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
       throw new TopicError("A folder with this name already exists at this level.");
@@ -570,7 +667,7 @@ async function getTopicCompanyId(topicId: string) {
   const companyId = result.rows[0]?.company_id;
 
   if (!companyId) {
-    throw new TopicError("Topic was not found.");
+    throw new TopicError("Folder was not found.");
   }
 
   return companyId;
@@ -606,7 +703,7 @@ export async function replaceTopicAccess(input: GrantTopicAccessInput, session: 
   }
 
   if (!input.topicId) {
-    throw new TopicError("Topic is required.");
+    throw new TopicError("Folder is required.");
   }
 
   await getPool().query(
@@ -711,7 +808,7 @@ export async function replaceFolderDocumentAccess(
 
 export async function deleteTopic(topicId: string, session: AdminSession) {
   if (!topicId) {
-    throw new TopicError("Topic is required.");
+    throw new TopicError("Folder is required.");
   }
 
   if (!isAdmin(session)) {
@@ -734,7 +831,7 @@ export async function deleteTopic(topicId: string, session: AdminSession) {
       SELECT id FROM topic_branch
     `, [topicId]);
     const topicIds = branchResult.rows.map((row) => row.id);
-    if (topicIds.length === 0) throw new TopicError("Topic was not found.");
+    if (topicIds.length === 0) throw new TopicError("Folder was not found.");
 
     const documentResult = await client.query<{ id: string; storage_path: string | null; parsed_file_path: string | null }>(`
       SELECT documents.id, documents.storage_path, document_parsed_contents.parsed_file_path
@@ -765,6 +862,7 @@ export async function deleteTopic(topicId: string, session: AdminSession) {
     }
 
     // Only topic rows survive for audit. All auxiliary access data is disposable.
+    await client.query("UPDATE folder_target_apps SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE folder_id = ANY($1::uuid[]) AND deleted_at IS NULL", [topicIds, session.user.id]);
     await client.query("DELETE FROM folder_document_role_permissions WHERE folder_id = ANY($1::uuid[])", [topicIds]);
     await client.query("DELETE FROM folder_document_user_permissions WHERE folder_id = ANY($1::uuid[])", [topicIds]);
     await client.query("DELETE FROM role_topic_permissions WHERE topic_id = ANY($1::uuid[])", [topicIds]);
@@ -798,7 +896,7 @@ export async function grantTopicAccess(input: GrantTopicAccessInput, session: Ad
   }
 
   if (!input.topicId) {
-    throw new TopicError("Topic is required.");
+    throw new TopicError("Folder is required.");
   }
 
   const roleIds = Array.from(new Set(input.roleIds ?? []));
