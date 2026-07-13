@@ -328,3 +328,24 @@ export async function revokeCurrentAdminSession() {
     [hashToken(token)]
   );
 }
+
+export async function extendCurrentAdminSession(): Promise<Date | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(ADMIN_SESSION_COOKIE)?.value;
+
+  if (!token) {
+    return null;
+  }
+
+  const nextExpiresAt = new Date(Date.now() + ADMIN_SESSION_MINUTES * 60 * 1000);
+  const result = await getPool().query<{ id: string }>(
+    "UPDATE user_sessions SET last_seen_at = now(), expires_at = $2 WHERE token_hash = $1 AND revoked_at IS NULL RETURNING id",
+    [hashToken(token), nextExpiresAt]
+  );
+
+  if ((result.rowCount ?? 0) === 0) {
+    return null;
+  }
+
+  return nextExpiresAt;
+}

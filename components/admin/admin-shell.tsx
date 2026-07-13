@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Activity, BarChart3, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
@@ -56,6 +56,14 @@ const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showSessionWarning, setShowSessionWarning] = useState(false);
+  const [warningCountdownSeconds, setWarningCountdownSeconds] = useState(30);
+  const [isExtendingSession, setIsExtendingSession] = useState(false);
+  const [sessionDeadline, setSessionDeadline] = useState(() => new Date(session.expiresAt).getTime());
+  const warningTimerRef = useRef<number | null>(null);
+  const logoutTimerRef = useRef<number | null>(null);
+  const countdownTimerRef = useRef<number | null>(null);
+  const logoutRequestedRef = useRef(false);
 
   useEffect(() => {
     const saved = window.localStorage.getItem("scout-admin-sidebar-collapsed");
@@ -63,6 +71,163 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       setIsSidebarCollapsed(true);
     }
   }, []);
+
+  function clearClientSessionArtifacts() {
+    if (typeof window === "undefined") return;
+
+    const keysToRemove: string[] = [];
+    for (let index = 0; index < window.sessionStorage.length; index += 1) {
+      const key = window.sessionStorage.key(index);
+      if (key && (key.startsWith("scout-chatbot:") || key === "scout-orchestration-executions")) {
+        keysToRemove.push(key);
+      }
+    }
+
+    keysToRemove.forEach((key) => {
+      window.sessionStorage.removeItem(key);
+    });
+
+    const orchestrationExecutions = (window as Window & typeof globalThis & { __orchestrationExecutions?: Record<string, unknown> }).__orchestrationExecutions;
+    if (orchestrationExecutions) {
+      delete (window as Window & typeof globalThis & { __orchestrationExecutions?: Record<string, unknown> }).__orchestrationExecutions;
+    }
+
+    const cookiesToClear = document.cookie.split(";").map((entry) => entry.trim()).filter(Boolean);
+    cookiesToClear.forEach((entry) => {
+      const separatorIndex = entry.indexOf("=");
+      const name = separatorIndex >= 0 ? entry.slice(0, separatorIndex) : entry;
+      const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
+      document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax${secureFlag}`;
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax${secureFlag}`;
+    });
+  }
+
+  function clearSessionTimers() {
+    if (warningTimerRef.current !== null) {
+      window.clearTimeout(warningTimerRef.current);
+      warningTimerRef.current = null;
+    }
+
+    if (logoutTimerRef.current !== null) {
+      window.clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = null;
+    }
+
+    if (countdownTimerRef.current !== null) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+  }
+
+  async function logoutNow() {
+    if (logoutRequestedRef.current) return;
+    logoutRequestedRef.current = true;
+    clearSessionTimers();
+    clearClientSessionArtifacts();
+
+    try {
+      await fetch("/api/admin/auth/logout", { method: "POST" });
+    } catch {
+      // Ignore logout network errors and redirect to login so the user is not stuck.
+    }
+
+    window.location.replace("/control-panel/login");
+  }
+
+  function scheduleSessionWarning(deadlineMs: number) {
+    clearSessionTimers();
+    const remainingMs = deadlineMs - Date.now();
+
+    if (remainingMs <= 0) {
+      setShowSessionWarning(true);
+      setWarningCountdownSeconds(0);
+      void logoutNow();
+      return;
+    }
+
+    if (remainingMs <= 30_000) {
+      setShowSessionWarning(true);
+      setWarningCountdownSeconds(30);
+      const startedAt = Date.now();
+
+      countdownTimerRef.current = window.setInterval(() => {
+        const elapsedMs = Date.now() - startedAt;
+        const remainingCountdownMs = Math.max(0, 30_000 - elapsedMs);
+        setWarningCountdownSeconds(Math.max(0, Math.ceil(remainingCountdownMs / 1000)));
+
+        if (remainingCountdownMs <= 0) {
+          clearSessionTimers();
+          void logoutNow();
+        }
+      }, 250);
+
+      logoutTimerRef.current = window.setTimeout(() => {
+        clearSessionTimers();
+        void logoutNow();
+      }, 30_000);
+      return;
+    }
+
+    warningTimerRef.current = window.setTimeout(() => {
+      setShowSessionWarning(true);
+      setWarningCountdownSeconds(30);
+      const startedAt = Date.now();
+
+      countdownTimerRef.current = window.setInterval(() => {
+        const elapsedMs = Date.now() - startedAt;
+        const remainingCountdownMs = Math.max(0, 30_000 - elapsedMs);
+        setWarningCountdownSeconds(Math.max(0, Math.ceil(remainingCountdownMs / 1000)));
+
+        if (remainingCountdownMs <= 0) {
+          clearSessionTimers();
+          void logoutNow();
+        }
+      }, 250);
+
+      logoutTimerRef.current = window.setTimeout(() => {
+        clearSessionTimers();
+        void logoutNow();
+      }, 30_000);
+    }, remainingMs - 30_000);
+  }
+
+  async function stayOnPage() {
+    if (isExtendingSession || logoutRequestedRef.current) return;
+
+    setIsExtendingSession(true);
+    logoutRequestedRef.current = false;
+
+    try {
+      const response = await fetch("/api/admin/auth/extend", { method: "POST" });
+      const body = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(body?.message || "Unable to extend the session.");
+      }
+
+      const nextDeadline = body?.expiresAt ? new Date(body.expiresAt).getTime() : Date.now() + 15 * 60 * 1000;
+      setSessionDeadline(nextDeadline);
+      setShowSessionWarning(false);
+      setWarningCountdownSeconds(30);
+      scheduleSessionWarning(nextDeadline);
+    } catch {
+      await logoutNow();
+    } finally {
+      setIsExtendingSession(false);
+    }
+  }
+
+  useEffect(() => {
+    setSessionDeadline(new Date(session.expiresAt).getTime());
+  }, [session.expiresAt]);
+
+  useEffect(() => {
+    scheduleSessionWarning(sessionDeadline);
+
+    return () => {
+      clearSessionTimers();
+    };
+  }, [sessionDeadline]);
 
   function toggleDesktopSidebar() {
     setIsSidebarCollapsed((current) => {
@@ -253,6 +418,33 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           <aside className="relative h-full w-80 max-w-[88vw] overflow-y-auto border-r border-slate-200 bg-white px-4 py-5 shadow-xl">
             {sidebarContent(false, () => setIsMobileMenuOpen(false))}
           </aside>
+        </div>
+      ) : null}
+
+      {showSessionWarning ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-teal-700">Session timeout</p>
+                <h2 className="mt-2 text-xl font-semibold text-slate-950">Your session is about to expire</h2>
+              </div>
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              You will be logged out automatically in {warningCountdownSeconds} seconds if you do nothing.
+            </p>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full rounded-full bg-teal-600 transition-[width] duration-200" style={{ width: `${Math.max(0, (warningCountdownSeconds / 30) * 100)}%` }} />
+            </div>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100" onClick={() => void logoutNow()} type="button">
+                Logout
+              </button>
+              <button className="inline-flex items-center justify-center rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={isExtendingSession} onClick={() => void stayOnPage()} type="button">
+                {isExtendingSession ? "Extending..." : "Stay on the page"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

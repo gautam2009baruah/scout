@@ -37,33 +37,34 @@ export function UserMenu({ name }: { name: string }) {
   async function logout() {
     setLoggingOut(true);
     try {
-      // Clear chatbot conversation history from sessionStorage
-      if (typeof window !== 'undefined' && window.sessionStorage) {
+      if (typeof window !== "undefined" && window.sessionStorage) {
         const keysToRemove: string[] = [];
-        
-        // Find all chatbot-related keys and orchestration keys
-        for (let i = 0; i < window.sessionStorage.length; i++) {
+
+        for (let i = 0; i < window.sessionStorage.length; i += 1) {
           const key = window.sessionStorage.key(i);
-          if (key && (key.startsWith('scout-chatbot:') || key === 'scout-orchestration-executions')) {
+          if (key && (key.startsWith("scout-chatbot:") || key === "scout-orchestration-executions")) {
             keysToRemove.push(key);
           }
         }
-        
-        // Remove all chatbot and orchestration keys
-        keysToRemove.forEach(key => {
+
+        keysToRemove.forEach((key) => {
           window.sessionStorage.removeItem(key);
         });
-        
-        console.log(`🧹 Cleared ${keysToRemove.length} session items on logout`);
       }
-      
-      // Clear orchestration executions from window
-      if (typeof window !== 'undefined' && (window as any).__orchestrationExecutions) {
-        const count = Object.keys((window as any).__orchestrationExecutions).length;
-        delete (window as any).__orchestrationExecutions;
-        console.log(`🧹 Cleared ${count} orchestration executions from memory`);
+
+      if (typeof window !== "undefined" && (window as Window & typeof globalThis & { __orchestrationExecutions?: Record<string, unknown> }).__orchestrationExecutions) {
+        delete (window as Window & typeof globalThis & { __orchestrationExecutions?: Record<string, unknown> }).__orchestrationExecutions;
       }
-      
+
+      const cookiesToClear = document.cookie.split(";").map((entry) => entry.trim()).filter(Boolean);
+      cookiesToClear.forEach((entry) => {
+        const separatorIndex = entry.indexOf("=");
+        const name = separatorIndex >= 0 ? entry.slice(0, separatorIndex) : entry;
+        const secureFlag = window.location.protocol === "https:" ? "; Secure" : "";
+        document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax${secureFlag}`;
+        document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax${secureFlag}`;
+      });
+
       await fetch("/api/admin/auth/logout", { method: "POST" });
     } finally {
       window.location.replace("/control-panel/login");
