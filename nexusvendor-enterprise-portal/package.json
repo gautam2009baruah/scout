@@ -1,0 +1,12 @@
+{
+  "name": "nexusvendor-enterprise-portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "start": "node server.mjs",
+    "generate:documents": "node scripts/generate-documents.mjs",
+    "verify": "node scripts/verify.mjs"
+  }
+}
