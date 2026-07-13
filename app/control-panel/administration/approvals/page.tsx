@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatDateTimeForDisplay } from "@/lib/datetime";
 
 type Approval = {
   id: string;
@@ -163,9 +164,9 @@ export default function ApprovalsListPage() {
                         <p className="text-gray-600 mb-2">{approval.requestData.description}</p>
                       )}
                       <div className="flex items-center gap-4 text-sm text-gray-500">
-                        <span>Requested: {new Date(approval.requestedAt).toLocaleString()}</span>
+                        <span>Requested: {formatDateTimeForDisplay(approval.requestedAt, { fallback: "Never" })}</span>
                         {approval.respondedAt && (
-                          <span>Responded: {new Date(approval.respondedAt).toLocaleString()}</span>
+                          <span>Responded: {formatDateTimeForDisplay(approval.respondedAt, { fallback: "Never" })}</span>
                         )}
                       </div>
                       {approval.notes && (

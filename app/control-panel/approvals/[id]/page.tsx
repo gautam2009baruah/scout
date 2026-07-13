@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { formatDateTimeForDisplay } from "@/lib/datetime";
 
 type ApprovalField = {
   label: string;
@@ -160,7 +161,7 @@ export default function ApprovalPage() {
                   {approval.requestData.title}
                 </h1>
                 <p className="text-sm text-gray-600 mt-1">
-                  Requested {new Date(approval.requestedAt).toLocaleString()}
+                  Requested {formatDateTimeForDisplay(approval.requestedAt, { fallback: "Never" })}
                 </p>
               </div>
               <div className={`px-4 py-2 rounded-full font-semibold ${
@@ -210,7 +211,7 @@ export default function ApprovalPage() {
                   Responded by: <span className="font-medium">{approval.respondedByEmail}</span>
                 </p>
                 <p className="text-sm text-gray-600">
-                  At: <span className="font-medium">{new Date(approval.respondedAt!).toLocaleString()}</span>
+                  At: <span className="font-medium">{formatDateTimeForDisplay(approval.respondedAt, { fallback: "Never" })}</span>
                 </p>
                 {approval.notes && (
                   <div className="mt-2">

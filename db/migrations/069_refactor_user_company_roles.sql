@@ -6,7 +6,7 @@
 ALTER TABLE user_company_roles
 ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS created_by UUID,
-ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 -- Step 2: Set first company per user as primary (based on created_at)
 UPDATE user_company_roles SET is_primary = true 

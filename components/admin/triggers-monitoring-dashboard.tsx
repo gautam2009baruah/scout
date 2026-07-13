@@ -20,6 +20,7 @@ import {
   ChevronRight,
   X,
 } from "lucide-react";
+import { formatDateTimeForDisplay } from "@/lib/datetime";
 import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 
 type TargetAppOption = { id: string; name: string; companyId: string };
@@ -135,13 +136,15 @@ function defaultDateRange(): { from: string; to: string } {
 }
 
 function formatDateTime(dateStr: string | null) {
-  if (!dateStr) return "Never";
-  return new Date(dateStr).toLocaleString();
+  return formatDateTimeForDisplay(dateStr, { fallback: "Never" });
 }
 
 function formatDateTimeInTimeZone(dateStr: string | null, timeZone: string) {
-  if (!dateStr) return "Never";
-  return `${new Date(dateStr).toLocaleString(undefined, { timeZone })} (${timeZone})`;
+  return formatDateTimeForDisplay(dateStr, {
+    timeZone,
+    fallback: "Never",
+    includeTimeZoneLabel: true,
+  });
 }
 
 function formatScheduleType(value: string | null) {

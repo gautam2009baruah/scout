@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS internal_notifications (
   read BOOLEAN NOT NULL DEFAULT FALSE,
   type VARCHAR(50) NOT NULL DEFAULT 'orchestration',
   metadata JSONB,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   read_at TIMESTAMP
 );
 

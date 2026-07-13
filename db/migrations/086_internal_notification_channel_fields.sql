@@ -6,7 +6,7 @@ ALTER TABLE IF EXISTS internal_notifications
   ADD COLUMN IF NOT EXISTS notification_type VARCHAR(50) DEFAULT 'information',
   ADD COLUMN IF NOT EXISTS action_label VARCHAR(255),
   ADD COLUMN IF NOT EXISTS action_url TEXT,
-  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP NULL,
+  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NULL,
   ADD COLUMN IF NOT EXISTS persistent_until_read BOOLEAN DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_internal_notifications_expires_at

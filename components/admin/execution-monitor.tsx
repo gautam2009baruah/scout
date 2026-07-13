@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import { X, CheckCircle, XCircle, Clock, AlertCircle, RefreshCw } from "lucide-react";
 import type { OrchestrationExecution, OrchestrationNodeExecution } from "@/shared/orchestrationTypes";
+import { formatDateTimeForDisplay } from "@/lib/datetime";
 
 interface ExecutionMonitorProps {
   executionId: string;
@@ -91,7 +92,7 @@ export function ExecutionMonitor({ executionId, orchestrationName, onClose }: Ex
   }
 
   const formatDate = (date: string) => {
-    return new Date(date).toLocaleString();
+    return formatDateTimeForDisplay(date, { fallback: "Not available" });
   };
 
   const formatDuration = () => {
