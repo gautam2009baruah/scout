@@ -15,6 +15,8 @@ export type RetrievalChunk = {
   score: number;
   citation_type?: "text" | "visual";
   visual_asset_type?: string;
+  source_url?: string;
+  download_available?: boolean;
 };
 
 export type RetrievalResponse = {
@@ -85,6 +87,32 @@ async function getDocumentRecency(documentIds: string[]) {
   );
 
   return new Map(result.rows.map((row) => [row.id, calculateRecencyBoost(row.updated_at)]));
+}
+
+async function getDocumentSources(documentIds: string[]) {
+  if (documentIds.length === 0) {
+    return new Map<string, { sourceUrl?: string; downloadAvailable: boolean }>();
+  }
+
+  const result = await getPool().query<{
+    id: string;
+    external_source_url: string | null;
+    storage_path: string | null;
+  }>(
+    `SELECT id, external_source_url, storage_path
+     FROM documents
+     WHERE id = ANY($1::uuid[])
+       AND status <> 'deleted'`,
+    [documentIds]
+  );
+
+  return new Map(result.rows.map((row) => [
+    row.id,
+    {
+      sourceUrl: row.external_source_url?.trim() || undefined,
+      downloadAvailable: Boolean(row.storage_path)
+    }
+  ]));
 }
 
 export class RetrievalEngine {
@@ -175,6 +203,10 @@ export class RetrievalEngine {
       ...items.map((item) => item.result.document_id),
       ...filteredVisualResults.map((item) => item.document_id)
     ])));
+    const sourceByDocumentId = await getDocumentSources(Array.from(new Set([
+      ...items.map((item) => item.result.document_id),
+      ...filteredVisualResults.map((item) => item.document_id)
+    ])));
 
     const textChunks: RetrievalChunk[] = items.map((item) => {
       const recencyBoost = recencyByDocumentId.get(item.result.document_id) ?? 0;
@@ -182,6 +214,7 @@ export class RetrievalEngine {
         normalizeScore(item.vectorScore, maxVectorScore) * 0.55
         + normalizeScore(item.keywordScore, maxKeywordScore) * 0.35
         + recencyBoost * 0.1;
+      const source = sourceByDocumentId.get(item.result.document_id);
 
       return {
         chunk_id: item.result.chunk_id,
@@ -192,13 +225,16 @@ export class RetrievalEngine {
         page_number: item.result.page_number,
         section_title: item.result.section_title,
         score: Number(score.toFixed(4)),
-        citation_type: "text" as const
+        citation_type: "text" as const,
+        source_url: source?.sourceUrl,
+        download_available: source?.downloadAvailable
       };
     });
 
     const visualChunks: RetrievalChunk[] = filteredVisualResults.map((result) => {
       const recencyBoost = recencyByDocumentId.get(result.document_id) ?? 0;
       const score = normalizeScore(result.score, maxVisualScore) * 0.75 + recencyBoost * 0.25;
+      const source = sourceByDocumentId.get(result.document_id);
 
       return {
         chunk_id: result.insight_id,
@@ -210,7 +246,9 @@ export class RetrievalEngine {
         section_title: `Visual ${result.asset_type.replaceAll("_", " ")}`,
         score: Number(score.toFixed(4)),
         citation_type: "visual" as const,
-        visual_asset_type: result.asset_type
+        visual_asset_type: result.asset_type,
+        source_url: source?.sourceUrl,
+        download_available: source?.downloadAvailable
       };
     });
 

@@ -71,37 +71,6 @@ If `SMTP_HOST` is configured, the activation email is sent through SMTP and the 
 
 The user list uses database-level filtering and pagination. Filters are applied in SQL and records are fetched with `LIMIT` and `OFFSET`, so the UI does not load every user for large companies.
 
-## Universal HTML Embed
-
-Use this option for clients whose websites are built with WordPress, PHP, Laravel, Django, Rails, plain HTML, Webflow, Shopify, or any other non-React stack.
-
-```html
-<div id="scout-chatbot"></div>
-<script src="/scout-chatbot-embed.js"></script>
-<script src="/scout-orchestration-player.js"></script>
-<script>
-  ScoutChatbot.init({
-    mount: "#scout-chatbot",
-    assistantName: "Acme Assistant",
-    brandColor: "#111827",
-    accentColor: "#0ea5e9",
-    position: "bottom-right",
-    heightRatio: 0.75,
-    apiUrl: "/api/chat"
-  });
-</script>
-```
-
-**Note:** Include `/scout-orchestration-player.js` to enable in-context workflow execution and data capture triggered by the chatbot.
-
-Open the plain HTML demo at:
-
-```txt
-http://localhost:3000/embed-demo.html
-```
-
-The universal embed file is [public/scout-chatbot-embed.js](public/scout-chatbot-embed.js). It exposes `window.ScoutChatbot.init(config)` and injects its own CSS, so the client site does not need React, Next.js, or Tailwind.
-
 ## React Or Next.js Component
 
 Import the component and mount it near the root of a customer app:

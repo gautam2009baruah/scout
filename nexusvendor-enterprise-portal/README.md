@@ -13,6 +13,16 @@ npm run dev
 
 Open `http://localhost:4173`. Routes are deterministic (`/vendors`, `/contracts`, `/invoices`, and so on). All records and organizations are fictional.
 
+## Shared ScoutChatbot
+
+NexusVendor installs the canonical hosted React `ScoutChatbot` through `scout-chatbot.js`; it does not contain another chatbot UI. Run Scout on port `3000`, the standalone chatbot API on `4200`, and configure or rotate the local customer key with:
+
+```bash
+npm run configure:chatbot
+```
+
+The generated `scout-chatbot-config.local.js` is intentionally ignored. The same universal installation approach works for React and non-React customer applications; see `services/chatbot-api/CUSTOMER_INSTALLATION.md` in the Scout repository.
+
 ## Training design
 
 - Stable IDs follow `nv-{module}-{section}-{control}`.

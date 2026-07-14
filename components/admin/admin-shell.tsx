@@ -58,6 +58,7 @@ const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isSidebarScrolling, setIsSidebarScrolling] = useState(false);
   const [showSessionWarning, setShowSessionWarning] = useState(false);
   const [warningCountdownSeconds, setWarningCountdownSeconds] = useState(30);
   const [isExtendingSession, setIsExtendingSession] = useState(false);
@@ -65,6 +66,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const warningTimerRef = useRef<number | null>(null);
   const logoutTimerRef = useRef<number | null>(null);
   const countdownTimerRef = useRef<number | null>(null);
+  const sidebarScrollTimerRef = useRef<number | null>(null);
   const logoutRequestedRef = useRef(false);
 
   useEffect(() => {
@@ -73,6 +75,23 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       setIsSidebarCollapsed(true);
     }
   }, []);
+
+  useEffect(() => () => {
+    if (sidebarScrollTimerRef.current !== null) {
+      window.clearTimeout(sidebarScrollTimerRef.current);
+    }
+  }, []);
+
+  function revealSidebarScrollbar() {
+    setIsSidebarScrolling(true);
+    if (sidebarScrollTimerRef.current !== null) {
+      window.clearTimeout(sidebarScrollTimerRef.current);
+    }
+    sidebarScrollTimerRef.current = window.setTimeout(() => {
+      setIsSidebarScrolling(false);
+      sidebarScrollTimerRef.current = null;
+    }, 900);
+  }
 
   function clearClientSessionArtifacts() {
     if (typeof window === "undefined") return;
@@ -371,7 +390,12 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   return (
     <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
       <div className="flex min-h-screen">
-        <aside className={`sticky top-0 hidden h-screen shrink-0 overflow-y-auto border-r border-slate-200 bg-white py-5 transition-[width] duration-200 lg:block ${isSidebarCollapsed ? "w-20 px-3" : "w-72 px-4"}`}>
+        <aside
+          aria-label="Control Panel navigation"
+          className={`admin-sidebar-scroll sticky top-0 hidden h-screen shrink-0 overflow-y-auto border-r border-slate-200 bg-white py-5 transition-[width] duration-200 lg:block ${isSidebarScrolling ? "is-scrolling" : ""} ${isSidebarCollapsed ? "w-20 px-3" : "w-80 px-4"}`}
+          onScroll={revealSidebarScrollbar}
+          tabIndex={0}
+        >
           {sidebarContent(isSidebarCollapsed)}
         </aside>
 
@@ -417,7 +441,12 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
             onClick={() => setIsMobileMenuOpen(false)}
             type="button"
           />
-          <aside className="relative h-full w-80 max-w-[88vw] overflow-y-auto border-r border-slate-200 bg-white px-4 py-5 shadow-xl">
+          <aside
+            aria-label="Control Panel mobile navigation"
+            className={`admin-sidebar-scroll relative h-full w-80 max-w-[88vw] overflow-y-auto border-r border-slate-200 bg-white px-4 py-5 shadow-xl ${isSidebarScrolling ? "is-scrolling" : ""}`}
+            onScroll={revealSidebarScrollbar}
+            tabIndex={0}
+          >
             {sidebarContent(false, () => setIsMobileMenuOpen(false))}
           </aside>
         </div>
@@ -496,7 +525,7 @@ function NavLink({
       }`}
       href={module.href}
       onClick={onNavigate}
-      title={collapsed ? module.name : undefined}
+      title={module.name}
     >
       <Icon className="h-4 w-4 shrink-0" />
       {collapsed ? <span className="sr-only">{module.name}</span> : <span className="min-w-0 truncate">{module.name}</span>}

@@ -7,6 +7,7 @@
     "dev": "node server.mjs",
     "start": "node server.mjs",
     "generate:documents": "node scripts/generate-documents.mjs",
+    "configure:chatbot": "node scripts/configure-scout-chatbot.mjs",
     "verify": "node scripts/verify.mjs"
   }
 }

@@ -7,6 +7,7 @@ const noStoreHeaders = [
 ];
 
 const nextConfig = {
+	devIndicators: false,
 	async headers() {
 		return [
 			{

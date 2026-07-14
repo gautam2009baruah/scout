@@ -575,6 +575,8 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const llmContext = buildLLMContext(retrieval.chunks);
   const answer = await provider.generate_answer(systemPrompt, question, llmContext);
   const finalAnswer = answer || INSUFFICIENT_CONTEXT_MESSAGE;
+  const noAnswer = finalAnswer === INSUFFICIENT_CONTEXT_MESSAGE;
+  const acceptedCitations = noAnswer ? [] : retrieval.citations;
   const latencyMs = Date.now() - startedAt;
   const tokenUsage = buildEstimatedTokenUsage({
     provider: provider.provider,
@@ -591,7 +593,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     conversationId,
     question,
     answer: finalAnswer,
-    citations: retrieval.citations,
+    citations: acceptedCitations,
     metadata: {
       llm_provider: provider.provider,
       llm_model: provider.model,
@@ -601,7 +603,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
   });
 
-  const noAnswer = finalAnswer === INSUFFICIENT_CONTEXT_MESSAGE;
   const queryId = await recordChatQueryTelemetry({
     company_id: companyId,
     target_app_id: input.target_app_id?.trim() || undefined,
@@ -612,7 +613,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     answer_status: noAnswer ? "no_answer" : "answered",
     no_answer_reason: noAnswer ? "insufficient_context_from_llm" : undefined,
     retrieved_chunk_count: retrieval.chunks.length,
-    citations: retrieval.citations,
+    citations: acceptedCitations,
     llm_provider: provider.provider,
     llm_model: provider.model,
     latency_ms: latencyMs,
@@ -640,7 +641,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const response: ChatQueryResponse = {
     query_id: queryId,
     answer: modifiedAnswer,
-    citations: retrieval.citations,
+    citations: acceptedCitations,
     conversation_id: conversationId,
     no_answer: noAnswer,
     no_answer_reason: noAnswer ? "insufficient_context_from_llm" : undefined,

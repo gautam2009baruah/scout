@@ -76,7 +76,7 @@ function buildDocumentScopeFilter(params: {
   session: Awaited<ReturnType<typeof getCurrentAdminSession>>;
 }) {
   const sqlParams: unknown[] = [];
-  let filter = "d.deleted_at IS NULL";
+  let filter = "d.status <> 'deleted'";
 
   if (!params.session?.user.isAdminRole) {
     sqlParams.push(params.session?.user.tenantId, params.session?.user.id);

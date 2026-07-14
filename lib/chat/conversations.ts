@@ -30,6 +30,8 @@ export type CompactCitation = {
   preview: string;
   folder_path?: string;
   section_title?: string;
+  source_url?: string;
+  download_available?: boolean;
 };
 
 type PageInput = {
@@ -71,7 +73,9 @@ function sanitizeCitations(citations: Citation[]): CompactCitation[] {
     chunk_id: citation.chunk_id,
     preview: truncatePreview(citation.preview),
     folder_path: citation.folder_path || undefined,
-    section_title: citation.section_title || undefined
+    section_title: citation.section_title || undefined,
+    source_url: citation.source_url || undefined,
+    download_available: citation.download_available === true
   }));
 }
 

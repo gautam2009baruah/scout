@@ -78,23 +78,22 @@ export class TenantResolver {
     const primary = await getPool().query<{ id: string; name: string }>(
       `
         SELECT id, name
-        FROM company_target_applications
+        FROM guided_workflow_target_apps
         WHERE company_id = $1
-          AND deleted_at IS NULL
           AND lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) = $2
         LIMIT 1
       `,
       [companyId, normalized]
     );
 
-    let row = primary.rows[0] || null;
+    let row: { id: string; name: string } | null = primary.rows[0] || null;
 
     if (!row) {
       try {
         const fallback = await getPool().query<{ id: string; name: string }>(
           `
             SELECT id, name
-            FROM guided_workflow_target_apps
+            FROM company_target_applications
             WHERE company_id = $1
               AND deleted_at IS NULL
               AND lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) = $2

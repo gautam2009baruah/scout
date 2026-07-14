@@ -1,6 +1,6 @@
 # Chatbot API Service
 
-Standalone lightweight API for customer-facing chatbot integrations.
+Standalone authenticated API for customer-facing ScoutChatbot integrations.
 
 This service is intentionally separated from the Control Panel UI runtime and can be deployed independently. It still reads from the same Scout database for retrieval, workflows, and telemetry.
 
@@ -72,109 +72,13 @@ From repo root:
 - Dev: `npm run chatbot-api:dev`
 - Start: `npm run chatbot-api:start`
 
-## Customer drop-in React widget snippet
+Both commands preload the repository `.env.local`/`.env` file. This API listens on port `4200` by default.
 
-Use ready-to-share copy/paste component in:
+## Customer installation
 
-- [services/chatbot-api/CUSTOMER_REACT_DROPIN_SNIPPET.tsx](services/chatbot-api/CUSTOMER_REACT_DROPIN_SNIPPET.tsx)
+All customer technologies use the same hosted React `ScoutChatbot` through the universal loader. There is no separate HTML or framework-specific chatbot implementation.
 
-## Customer website script embed snippet
-
-Use this for non-React websites that want a single copy-paste script block.
-
-```html
-<!-- Start Scout AI Chatbot Widget -->
-<script>
-  (function () {
-    var SCOUT_BASE = "https://your-scout-domain.com";
-    var SCOUT_HEAD = document.getElementsByTagName("head")[0];
-
-    function loadScript(src, onLoad) {
-      var s = document.createElement("script");
-      s.type = "text/javascript";
-      s.src = src;
-      s.async = true;
-      if (onLoad) s.onload = onLoad;
-      SCOUT_HEAD.appendChild(s);
-    }
-
-    loadScript(SCOUT_BASE + "/scout-chatbot-embed.js", function () {
-      // Optional if orchestration playback is required.
-      loadScript(SCOUT_BASE + "/scout-orchestration-player.js");
-
-      window.ScoutChatbot.init({
-        mount: "body",
-        assistantName: "Acme Assistant",
-        brandColor: "#111827",
-        accentColor: "#0ea5e9",
-        position: "bottom-right",
-        apiUrl: SCOUT_BASE + "/v1/chat/query",
-        companyId: "acme-company-id",
-        userId: "current-user-id",
-        headers: {
-          "X-API-Key": "your-restricted-public-key"
-        }
-      });
-    });
-  })();
-</script>
-<!-- End Scout AI Chatbot Widget -->
-```
-
-### Variant: static HTML with auto-generated anonymous user id
-
-Use this when the client site does not have a logged-in user id yet.
-
-```html
-<!-- Start Scout AI Chatbot Widget (Anonymous Session Variant) -->
-<script>
-  (function () {
-    var SCOUT_BASE = "https://your-scout-domain.com";
-    var SCOUT_HEAD = document.getElementsByTagName("head")[0];
-
-    function getAnonymousUserId() {
-      var storageKey = "scout-chat-anon-user-id";
-      var existing = window.localStorage.getItem(storageKey);
-      if (existing) return existing;
-      var generated = "anon-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10);
-      window.localStorage.setItem(storageKey, generated);
-      return generated;
-    }
-
-    function loadScript(src, onLoad) {
-      var s = document.createElement("script");
-      s.type = "text/javascript";
-      s.src = src;
-      s.async = true;
-      if (onLoad) s.onload = onLoad;
-      SCOUT_HEAD.appendChild(s);
-    }
-
-    loadScript(SCOUT_BASE + "/scout-chatbot-embed.js", function () {
-      window.ScoutChatbot.init({
-        mount: "body",
-        assistantName: "Acme Assistant",
-        brandColor: "#111827",
-        accentColor: "#0ea5e9",
-        position: "bottom-right",
-        apiUrl: SCOUT_BASE + "/v1/chat/query",
-        companyId: "acme-company-id",
-        userId: getAnonymousUserId(),
-        headers: {
-          "X-API-Key": "your-restricted-public-key"
-        }
-      });
-    });
-  })();
-</script>
-<!-- End Scout AI Chatbot Widget (Anonymous Session Variant) -->
-```
-
-Security note for direct browser calls:
-
-- Any key included in client-side JavaScript is visible to end users.
-- Use a restricted, rate-limited, and revocable key.
-- Prefer short-lived tokens if you later add a lightweight token-issuing backend.
+- [Customer installation guide](CUSTOMER_INSTALLATION.md)
 
 ## Separate deploy manifests
 

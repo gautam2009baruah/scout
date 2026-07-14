@@ -10,6 +10,8 @@ export type Citation = {
   preview: string;
   citation_type?: "text" | "visual";
   visual_asset_type?: string;
+  source_url?: string;
+  download_available?: boolean;
 };
 
 function buildPreview(content: string) {
@@ -45,7 +47,9 @@ export class CitationEngine {
         chunk_id: chunk.chunk_id,
         preview: buildPreview(chunk.content),
         citation_type: citationType,
-        visual_asset_type: chunk.visual_asset_type
+        visual_asset_type: chunk.visual_asset_type,
+        source_url: chunk.source_url,
+        download_available: chunk.download_available
       });
     }
 

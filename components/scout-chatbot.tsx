@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   Grip,
   MessageCircle,
   Play,
@@ -52,6 +53,8 @@ export type ScoutChatCitation = {
   preview: string;
   citation_type?: "text" | "visual";
   visual_asset_type?: string;
+  source_url?: string;
+  download_available?: boolean;
 };
 
 export type ScoutWorkflowSession = {
@@ -141,8 +144,12 @@ export type ScoutChatbotProps = {
   launcherLabel?: string;
   modeNotice?: ReactNode;
   onConversationChange?: (conversationId: string) => void;
+  onMoveBy?: (delta: { x: number; y: number }) => void;
   onOpenChange?: (isOpen: boolean) => void;
+  onRestoreLayout?: () => void;
+  onSizeChange?: (size: { width: number; height: number }) => void;
   onSendMessage?: (message: string, history: ScoutChatMessage[]) => Promise<ScoutChatMessage | string | void>;
+  onStartWorkflow?: (workflow: ScoutWorkflowSession) => Promise<void> | void;
   placeholder?: string;
   position?: "bottom-right" | "bottom-left";
   quickPrompts?: string[];
@@ -154,7 +161,7 @@ export type ScoutChatbotProps = {
   theme?: ScoutChatTheme;
   userId?: string;
   userLabel?: string;
-  variant?: "floating" | "inline";
+  variant?: "floating" | "inline" | "embedded";
   welcomeMessage?: string;
 };
 
@@ -234,8 +241,12 @@ export function ScoutChatbot({
   initialMessages,
   launcherLabel = "Open chat",
   onConversationChange,
+  onMoveBy,
   onOpenChange,
+  onRestoreLayout,
+  onSizeChange,
   onSendMessage,
+  onStartWorkflow,
   placeholder = "Ask anything...",
   position = "bottom-right",
   showHeaderActions = true,
@@ -399,6 +410,14 @@ export function ScoutChatbot({
   }
 
   function restoreFloatingLayout() {
+    if (variant === "embedded") {
+      const nextSize = { width: 480, height: 740 };
+      setPanelSize(nextSize);
+      onSizeChange?.(nextSize);
+      onRestoreLayout?.();
+      return;
+    }
+
     const nextSize = getDefaultChatSize();
     setPanelSize(nextSize);
     setPanelPosition(getDefaultChatPosition(position, nextSize));
@@ -417,16 +436,27 @@ export function ScoutChatbot({
   }
 
   function handleHeaderPointerDown(event: ReactPointerEvent<HTMLElement>) {
-    if (variant !== "floating" || event.button !== 0 || (event.target as HTMLElement).closest("button")) {
+    if ((variant !== "floating" && variant !== "embedded") || event.button !== 0 || (event.target as HTMLElement).closest("button")) {
       return;
     }
 
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     const startX = event.clientX;
     const startY = event.clientY;
+    let previousScreenX = event.screenX;
+    let previousScreenY = event.screenY;
     const startPosition = clampChatPosition(panelPosition, panelSize);
     document.body.classList.add("select-none");
 
     function move(moveEvent: PointerEvent) {
+      if (variant === "embedded") {
+        onMoveBy?.({ x: moveEvent.screenX - previousScreenX, y: moveEvent.screenY - previousScreenY });
+        previousScreenX = moveEvent.screenX;
+        previousScreenY = moveEvent.screenY;
+        return;
+      }
+
       setPanelPosition(
         clampChatPosition(
           {
@@ -449,26 +479,39 @@ export function ScoutChatbot({
   }
 
   function handleResizePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (variant !== "floating") {
+    if (variant !== "floating" && variant !== "embedded") {
       return;
     }
 
     event.preventDefault();
     event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
 
     const startX = event.clientX;
     const startY = event.clientY;
-    const startSize = panelSize;
+    const startSize = variant === "embedded"
+      ? { width: window.innerWidth, height: window.innerHeight }
+      : panelSize;
     document.body.classList.add("select-none");
 
     function move(moveEvent: PointerEvent) {
-      const nextSize = clampChatSize({
+      const requestedSize = {
         width: startSize.width + moveEvent.clientX - startX,
         height: startSize.height + moveEvent.clientY - startY
-      });
+      };
+      const nextSize = variant === "embedded"
+        ? {
+            width: Math.min(Math.max(requestedSize.width, 340), 960),
+            height: Math.min(Math.max(requestedSize.height, 440), 960)
+          }
+        : clampChatSize(requestedSize);
 
       setPanelSize(nextSize);
-      setPanelPosition((current) => clampChatPosition(current, nextSize));
+      if (variant === "embedded") {
+        onSizeChange?.(nextSize);
+      } else {
+        setPanelPosition((current) => clampChatPosition(current, nextSize));
+      }
     }
 
     function stop() {
@@ -552,7 +595,16 @@ export function ScoutChatbot({
       setOpen(false);
     }
 
-    if (targetAppId) {
+    if (onStartWorkflow) {
+      try {
+        await onStartWorkflow(workflow);
+      } catch (error) {
+        setWorkflowsState({
+          status: "error",
+          message: error instanceof Error ? error.message : "Unable to start guided workflow player."
+        });
+      }
+    } else if (targetAppId) {
       try {
         const player = await getPlayerHandle({ scoutBaseUrl, targetAppId }, playerHandleRef);
         player.play(workflow.id);
@@ -728,8 +780,7 @@ export function ScoutChatbot({
       className={cn(
         "relative flex w-full flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[var(--scout-surface)] shadow-chat-panel ring-1 ring-slate-950/5 animate-slide-up transition duration-200 ease-out",
         isMinimizing && "scale-75 opacity-0",
-        variant === "floating" ? "h-full max-w-none" : "max-w-[440px]",
-        variant === "floating" ? "min-h-0" : "min-h-[680px]",
+        variant === "inline" ? "max-w-[440px] min-h-[680px]" : "h-full min-h-0 max-w-none",
         className
       )}
       style={cssVars}
@@ -737,7 +788,7 @@ export function ScoutChatbot({
       <header
         className={cn(
           "border-b border-slate-100 bg-[var(--scout-brand)] px-4 py-2 text-white",
-          variant === "floating" && "cursor-move touch-none"
+          (variant === "floating" || variant === "embedded") && "cursor-move touch-none"
         )}
         onPointerDown={handleHeaderPointerDown}
       >
@@ -754,7 +805,7 @@ export function ScoutChatbot({
           </div>
 
           <div className="flex items-center gap-1">
-            {showHeaderActions && variant === "floating" && (
+            {showHeaderActions && (variant === "floating" || variant === "embedded") && (
               <IconButton label="Restore size and position" onClick={restoreFloatingLayout}>
                 <Undo2 className="h-4 w-4" />
               </IconButton>
@@ -805,6 +856,7 @@ export function ScoutChatbot({
                     userLabel={userLabel}
                     companyId={companyId}
                     userId={userId}
+                    scoutBaseUrl={scoutBaseUrl}
                   />
                 ))}
 
@@ -930,10 +982,13 @@ export function ScoutChatbot({
             </div>
           )}
 
-          {variant === "floating" && (
+          {(variant === "floating" || variant === "embedded") && (
             <button
               aria-label="Resize chat"
-              className="absolute bottom-2.5 right-2.5 flex h-7 w-7 cursor-nwse-resize items-center justify-center rounded-lg bg-slate-950/5 text-slate-500 transition hover:bg-slate-950/10 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)] max-[520px]:hidden"
+              className={cn(
+                "absolute bottom-2.5 flex h-7 w-7 items-center justify-center rounded-lg bg-slate-950/5 text-slate-500 transition hover:bg-slate-950/10 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
+                variant === "embedded" ? "right-2.5 cursor-nwse-resize" : "right-2.5 cursor-nwse-resize max-[520px]:hidden"
+              )}
               onPointerDown={handleResizePointerDown}
               title="Resize chat"
               type="button"
@@ -1119,18 +1174,45 @@ function parseMarkdownText(text: string): ReactNode {
   return parts.length > 0 ? parts : text;
 }
 
+function getCitationLink(citation: ScoutChatCitation, scoutBaseUrl?: string) {
+  if (citation.source_url) {
+    try {
+      const url = new URL(citation.source_url);
+      if (url.protocol === "http:" || url.protocol === "https:") {
+        return { href: url.toString(), external: true };
+      }
+    } catch {
+      // Fall back to the managed Scout document when the source URL is malformed.
+    }
+  }
+
+  if (citation.download_available && citation.document_id) {
+    try {
+      const origin = scoutBaseUrl || (typeof window !== "undefined" ? window.location.origin : "");
+      const url = new URL(`/api/admin/documents/${encodeURIComponent(citation.document_id)}/download`, origin);
+      return { href: url.toString(), external: false };
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
 function MessageBubble({
   message,
   onStartWorkflow,
   userLabel,
   companyId,
   userId,
+  scoutBaseUrl,
 }: {
   message: RenderedMessage;
   onStartWorkflow: (workflow: ScoutWorkflowSession) => void;
   userLabel: string;
   companyId?: string;
   userId?: string;
+  scoutBaseUrl?: string;
 }) {
   const isAssistant = message.role === "assistant";
   const [citationsOpen, setCitationsOpen] = useState(false);
@@ -1205,8 +1287,10 @@ function MessageBubble({
 
               {citationsOpen && (
                 <div className="space-y-1 border-t border-slate-200 px-2 py-2 text-xs text-slate-700">
-                  {message.citations.map((citation) => (
-                    <div key={citation.chunk_id} className="rounded border border-slate-100 bg-slate-50 p-1.5">
+                  {message.citations.map((citation) => {
+                    const sourceLink = getCitationLink(citation, scoutBaseUrl);
+                    return (
+                      <div key={citation.chunk_id} className="rounded border border-slate-100 bg-slate-50 p-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-semibold text-slate-800">
                           {citation.document_name} - p.{citation.page_number}
@@ -1219,8 +1303,23 @@ function MessageBubble({
                       </div>
                       {citation.section_title ? <div className="text-slate-600">{citation.section_title}</div> : null}
                       <div className="mt-0.5 text-slate-600">{citation.preview}</div>
-                    </div>
-                  ))}
+                      {sourceLink ? (
+                        <a
+                          className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-sky-200 bg-white px-2 py-1 font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                          href={sourceLink.href}
+                          rel="noopener noreferrer"
+                          target="_blank"
+                          title={sourceLink.external ? sourceLink.href : `Open ${citation.document_name}`}
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          {sourceLink.external ? "Open original source" : "Open document"}
+                        </a>
+                      ) : (
+                        <div className="mt-1.5 text-[11px] text-slate-500">No source link is available for this document.</div>
+                      )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
