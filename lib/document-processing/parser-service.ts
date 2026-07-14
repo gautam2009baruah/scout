@@ -3,6 +3,7 @@ import { getStorageProvider } from "@/lib/storage/provider";
 import { enqueueProcessingJob } from "@/lib/admin/processing-jobs";
 import { getDocumentParser, type ParsedDocumentOutput } from "./parsers";
 import { extractVisualInsights } from "./visual-intelligence";
+import { assessParseQuality } from "./parse-quality";
 
 type DocumentForParsing = {
   id: string;
@@ -59,6 +60,38 @@ export async function parseDocumentById(documentId: string) {
   const storage = getStorageProvider();
   const originalFile = await storage.get_file(document.storage_path);
   const output = await parser.parse(originalFile);
+
+  const quality = assessParseQuality(output);
+
+  if (quality.isEmpty) {
+    console.error("[Indexing] Empty parsed document detected.", {
+      documentId: document.id,
+      fileType: document.file_type,
+      pageCount: output.pages.length,
+      totalCharacters: quality.totalCharacters
+    });
+    throw new Error("Document parsing produced empty content.");
+  }
+
+  if (quality.isPoorQuality) {
+    console.warn("[Indexing] Poor parse quality detected.", {
+      documentId: document.id,
+      fileType: document.file_type,
+      pageCount: output.pages.length,
+      sparsePages: quality.sparsePages,
+      totalCharacters: quality.totalCharacters
+    });
+  }
+
+  output.metadata = {
+    ...output.metadata,
+    parse_quality: {
+      total_characters: quality.totalCharacters,
+      sparse_pages: quality.sparsePages,
+      sparse_ratio: Number(quality.sparseRatio.toFixed(4))
+    }
+  };
+
   const parsedPath = parsedOutputPath(document.company_id, document.id);
   const visualInsights = extractVisualInsights({
     fileType: document.file_type,

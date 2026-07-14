@@ -3,8 +3,10 @@ import { getStorageProvider } from "@/lib/storage/provider";
 import { enqueueProcessingJob } from "@/lib/admin/processing-jobs";
 import type { ParsedDocumentOutput } from "./parsers";
 
-const CHUNK_TOKEN_SIZE = 850;
-const CHUNK_TOKEN_OVERLAP = 125;
+const CHUNK_MIN_TOKEN_SIZE = 500;
+const CHUNK_TARGET_TOKEN_SIZE = 820;
+const CHUNK_MAX_TOKEN_SIZE = 900;
+const CHUNK_TOKEN_OVERLAP = 120;
 
 type DocumentForChunking = {
   id: string;
@@ -12,11 +14,125 @@ type DocumentForChunking = {
   folder_id: string;
   name: string;
   file_type: string;
+  source_metadata_json: Record<string, unknown> | null;
+  external_source_url: string | null;
   parsed_file_path: string;
 };
 
 function tokenize(text: string) {
   return text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+}
+
+function isHeadingLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return /^#{1,6}\s+/.test(trimmed)
+    || /^\d+(?:\.\d+)*[.)]?\s+\S+/.test(trimmed)
+    || /^[A-Z][A-Z0-9\s&:/-]{5,}$/.test(trimmed);
+}
+
+function normalizeHeading(line: string) {
+  return line
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\d+(?:\.\d+)*[.)]?\s+/, "")
+    .trim();
+}
+
+function buildSectionPath(previousPath: string[], heading: string) {
+  const numeric = heading.match(/^(\d+(?:\.\d+)*)\s+/);
+
+  if (!numeric) {
+    return [...previousPath.slice(-2), heading].filter(Boolean);
+  }
+
+  const depth = numeric[1].split(".").length;
+  const next = [...previousPath.slice(0, Math.max(0, depth - 1)), heading];
+  return next;
+}
+
+type PageSection = {
+  title: string;
+  sectionPath: string;
+  text: string;
+};
+
+function splitIntoSections(pageText: string, defaultTitle: string) {
+  const lines = pageText.split(/\r?\n/);
+  const sections: PageSection[] = [];
+  let currentTitle = defaultTitle || "Section";
+  let currentPath = currentTitle ? [currentTitle] : [];
+  let buffer: string[] = [];
+
+  const flush = () => {
+    const text = buffer.join("\n").trim();
+    if (!text) {
+      return;
+    }
+
+    sections.push({
+      title: currentTitle,
+      sectionPath: currentPath.join(" > "),
+      text
+    });
+    buffer = [];
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+
+    if (isHeadingLine(line)) {
+      flush();
+      const normalizedHeading = normalizeHeading(line) || currentTitle;
+      currentTitle = normalizedHeading;
+      currentPath = buildSectionPath(currentPath, normalizedHeading);
+      continue;
+    }
+
+    if (!line.trim()) {
+      if (buffer.length > 0) {
+        buffer.push("");
+      }
+      continue;
+    }
+
+    buffer.push(line);
+  }
+
+  flush();
+
+  if (sections.length === 0) {
+    return [{ title: defaultTitle || "Section", sectionPath: defaultTitle || "Section", text: pageText }];
+  }
+
+  return sections;
+}
+
+function chunkSectionTokens(tokens: string[]) {
+  const chunks: string[][] = [];
+
+  if (tokens.length <= CHUNK_MAX_TOKEN_SIZE) {
+    return [tokens];
+  }
+
+  const step = CHUNK_TARGET_TOKEN_SIZE - CHUNK_TOKEN_OVERLAP;
+
+  for (let start = 0; start < tokens.length; start += step) {
+    const next = tokens.slice(start, start + CHUNK_TARGET_TOKEN_SIZE);
+    if (next.length === 0) {
+      break;
+    }
+
+    chunks.push(next);
+
+    if (start + CHUNK_TARGET_TOKEN_SIZE >= tokens.length) {
+      break;
+    }
+  }
+
+  return chunks;
 }
 
 function folderPathExpression() {
@@ -53,36 +169,47 @@ function createChunks(document: DocumentForChunking, folderPath: string, parsed:
   let chunkIndex = 0;
 
   for (const page of parsed.pages) {
-    const tokens = tokenize(page.text);
+    const sections = splitIntoSections(page.text, parsed.title || "Section");
 
-    if (tokens.length === 0) {
-      continue;
-    }
+    for (const section of sections) {
+      const tokens = tokenize(section.text);
 
-    for (let start = 0; start < tokens.length; start += CHUNK_TOKEN_SIZE - CHUNK_TOKEN_OVERLAP) {
-      const chunkTokens = tokens.slice(start, start + CHUNK_TOKEN_SIZE);
-
-      if (chunkTokens.length === 0) {
-        break;
+      if (tokens.length === 0) {
+        continue;
       }
 
-      chunks.push({
-        chunkIndex,
-        content: chunkTokens.join(" "),
-        pageNumber: page.page_number,
-        sectionTitle: parsed.title || null,
-        tokenCount: chunkTokens.length,
-        metadata: {
-          document_name: document.name,
-          folder_path: folderPath,
-          file_type: document.file_type,
-          page_number: page.page_number
-        }
-      });
-      chunkIndex += 1;
+      const tokenWindows = chunkSectionTokens(tokens);
 
-      if (start + CHUNK_TOKEN_SIZE >= tokens.length) {
-        break;
+      for (const chunkTokens of tokenWindows) {
+        if (chunkTokens.length < CHUNK_MIN_TOKEN_SIZE && tokens.length > CHUNK_MIN_TOKEN_SIZE && chunkTokens !== tokenWindows[tokenWindows.length - 1]) {
+          continue;
+        }
+
+        chunks.push({
+          chunkIndex,
+          content: chunkTokens.join(" "),
+          pageNumber: page.page_number,
+          sectionTitle: section.title || parsed.title || null,
+          tokenCount: chunkTokens.length,
+          metadata: {
+            document_name: document.name,
+            document_type: document.file_type,
+            section_title: section.title,
+            section_path: section.sectionPath,
+            folder_path: folderPath,
+            page_number: page.page_number,
+            country: typeof document.source_metadata_json?.country === "string" ? document.source_metadata_json.country : undefined,
+            department: typeof document.source_metadata_json?.department === "string" ? document.source_metadata_json.department : undefined,
+            process_stage: typeof document.source_metadata_json?.process_stage === "string" ? document.source_metadata_json.process_stage : undefined,
+            effective_date: typeof document.source_metadata_json?.effective_date === "string" ? document.source_metadata_json.effective_date : undefined,
+            source_url: document.external_source_url || (typeof document.source_metadata_json?.source_url === "string" ? document.source_metadata_json.source_url : undefined),
+            parsed_title: parsed.title,
+            parsed_author: typeof parsed.metadata?.author === "string" ? parsed.metadata.author : undefined,
+            parsed_created_at: typeof parsed.metadata?.created_at === "string" ? parsed.metadata.created_at : undefined,
+            parse_page_count: parsed.metadata?.page_count
+          }
+        });
+        chunkIndex += 1;
       }
     }
   }
@@ -99,6 +226,8 @@ async function loadDocument(documentId: string) {
         documents.folder_id,
         documents.name,
         documents.file_type,
+        documents.source_metadata_json,
+        documents.external_source_url,
         document_parsed_contents.parsed_file_path
       FROM documents
       INNER JOIN document_parsed_contents ON document_parsed_contents.document_id = documents.id
@@ -124,6 +253,15 @@ export async function chunkDocumentById(documentId: string) {
   const parsed = JSON.parse(parsedFile.toString("utf8")) as ParsedDocumentOutput;
   const folderPath = await getFolderPath(document.folder_id);
   const chunks = createChunks(document, folderPath, parsed);
+
+  if (chunks.length === 0) {
+    console.error("[Indexing] Chunking produced zero chunks.", {
+      documentId: document.id,
+      name: document.name,
+      parsedPages: parsed.pages.length
+    });
+    throw new Error("Chunking produced zero chunks. Check parser output quality and metadata filters.");
+  }
   const client = await getPool().connect();
 
   try {

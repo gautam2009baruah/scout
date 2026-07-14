@@ -7,6 +7,7 @@ export type LLMContextItem = {
   folder_path?: string;
   page_number?: number;
   section_title?: string;
+  section_path?: string;
   chunk_id?: string;
 };
 
@@ -32,6 +33,7 @@ function normalizeContext(context: LLMContextItem[] | string) {
         item.folder_path ? `Folder: ${item.folder_path}` : "",
         item.page_number ? `Page: ${item.page_number}` : "",
         item.section_title ? `Section: ${item.section_title}` : "",
+        item.section_path ? `Section path: ${item.section_path}` : "",
         item.chunk_id ? `Chunk: ${item.chunk_id}` : ""
       ].filter(Boolean).join(" | ");
 

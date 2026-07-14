@@ -2,6 +2,7 @@ import { getPool } from "@/lib/db/pool";
 import { getLLMProvider, INSUFFICIENT_CONTEXT_MESSAGE, type LLMContextItem } from "@/lib/llm/providers";
 import { RetrievalEngine } from "@/lib/search/retrieval-engine";
 import type { Citation } from "@/lib/search/citation-engine";
+import { isAnswerGrounded, shouldRequireCitations } from "@/lib/search/grounding";
 import { appendConversationExchange, getOrCreateConversation } from "./conversations";
 import { matchChatbotTriggers, shouldCheckTriggers } from "@/lib/orchestrations/chatbot-trigger-matcher";
 import { createExecution } from "@/lib/orchestrations/db";
@@ -99,6 +100,8 @@ function buildSystemPrompt() {
     "You are Scout's document question answering assistant.",
     "Use only the retrieved document context to answer the user's question.",
     "Do not use outside knowledge.",
+    "Every factual claim must be supported by retrieved evidence.",
+    "If evidence is weak or missing, return the insufficient-context response.",
     "Keep the answer concise and cite-ready."
   ].join(" ");
 }
@@ -110,6 +113,7 @@ function buildLLMContext(chunks: Awaited<ReturnType<typeof RetrievalEngine.retri
     folder_path: chunk.folder_path,
     page_number: chunk.page_number,
     section_title: chunk.section_title,
+    section_path: chunk.section_path,
     chunk_id: chunk.chunk_id
   }));
 }
@@ -122,10 +126,14 @@ function buildRetrievalDiagnostics(
   }
 ) {
   return {
+    normalizedQuery: retrieval.query,
     topK: options.topK,
     targetAppId: options.targetAppId || null,
     retrievedChunkCount: retrieval.chunks.length,
     citationCount: retrieval.citations.length,
+    attempts: retrieval.diagnostics?.attempts ?? [],
+    matchedSynonymGroups: retrieval.diagnostics?.matchedSynonymGroups ?? [],
+    filterDiagnostics: retrieval.diagnostics?.filterDiagnostics ?? null,
     chunkPaths: retrieval.chunks.slice(0, options.topK).map((chunk) => ({
       chunk_id: chunk.chunk_id,
       document_id: chunk.document_id,
@@ -236,7 +244,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const companyId = input.company_id.trim();
   const userId = input.user_id.trim();
   const question = input.question.trim();
-  const topK = Math.min(20, Math.max(1, Number(input.top_k) || 5));
+  const topK = Math.min(8, Math.max(5, Number(input.top_k) || 8));
 
   if (!companyId) {
     throw new ChatQueryError("Company is required.");
@@ -494,14 +502,20 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const extractiveAnswer = buildExtractiveAnswer(question, retrieval.chunks);
 
   if (extractiveAnswer) {
+    const extractiveNeedsCitations = shouldRequireCitations(extractiveAnswer);
+    const extractiveGrounded = isAnswerGrounded(extractiveAnswer, retrieval.chunks);
+    const shouldRejectExtractive = (extractiveNeedsCitations && retrieval.citations.length === 0) || !extractiveGrounded;
+    const extractiveFinalAnswer = shouldRejectExtractive ? INSUFFICIENT_CONTEXT_MESSAGE : extractiveAnswer;
+    const extractiveNoAnswer = extractiveFinalAnswer === INSUFFICIENT_CONTEXT_MESSAGE;
+    const extractiveCitations = extractiveNoAnswer ? [] : retrieval.citations;
     const latencyMs = Date.now() - startedAt;
     await appendConversationExchange({
       companyId,
       userId,
       conversationId,
       question,
-      answer: extractiveAnswer,
-      citations: retrieval.citations,
+      answer: extractiveFinalAnswer,
+      citations: extractiveCitations,
       metadata: {
         llm_provider: "none",
         llm_model: "extractive",
@@ -517,10 +531,11 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       user_id: userId,
       conversation_id: conversationId,
       question,
-      answer: extractiveAnswer,
-      answer_status: "answered",
+      answer: extractiveFinalAnswer,
+      answer_status: extractiveNoAnswer ? "no_answer" : "answered",
+      no_answer_reason: extractiveNoAnswer ? "insufficient_context_from_grounding" : undefined,
       retrieved_chunk_count: retrieval.chunks.length,
-      citations: retrieval.citations,
+      citations: extractiveCitations,
       llm_provider: "none",
       llm_model: "extractive",
       latency_ms: latencyMs,
@@ -540,18 +555,20 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     });
 
     let modifiedExtractiveAnswer = extractiveAnswer;
+    modifiedExtractiveAnswer = extractiveFinalAnswer;
     
     if (orchestrationMatch) {
       const orchestrationOption = `**🎯 Orchestration Available:**\n**"${orchestrationMatch.orchestrationName}"** - Execute with data capture\n[Click here to start](#orchestration:${orchestrationMatch.executionId})\n\n---\n\n`;
-      modifiedExtractiveAnswer = orchestrationOption + extractiveAnswer;
+      modifiedExtractiveAnswer = orchestrationOption + extractiveFinalAnswer;
     }
     
     const response: ChatQueryResponse = {
       query_id: queryId,
       answer: modifiedExtractiveAnswer,
-      citations: retrieval.citations,
+      citations: extractiveCitations,
       conversation_id: conversationId,
-      no_answer: false,
+      no_answer: extractiveNoAnswer,
+      no_answer_reason: extractiveNoAnswer ? "insufficient_context_from_grounding" : undefined,
       latency_ms: latencyMs,
       token_usage: {
         prompt_tokens: null,
@@ -574,8 +591,15 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const systemPrompt = buildSystemPrompt();
   const llmContext = buildLLMContext(retrieval.chunks);
   const answer = await provider.generate_answer(systemPrompt, question, llmContext);
-  const finalAnswer = answer || INSUFFICIENT_CONTEXT_MESSAGE;
+  const generatedAnswer = answer || INSUFFICIENT_CONTEXT_MESSAGE;
+  const requiresCitations = shouldRequireCitations(generatedAnswer);
+  const grounded = isAnswerGrounded(generatedAnswer, retrieval.chunks);
+  const blockedByEvidence = (requiresCitations && retrieval.citations.length === 0) || !grounded;
+  const finalAnswer = blockedByEvidence ? INSUFFICIENT_CONTEXT_MESSAGE : generatedAnswer;
   const noAnswer = finalAnswer === INSUFFICIENT_CONTEXT_MESSAGE;
+  const noAnswerReason = noAnswer
+    ? (blockedByEvidence ? "insufficient_context_from_grounding" : "insufficient_context_from_llm")
+    : undefined;
   const acceptedCitations = noAnswer ? [] : retrieval.citations;
   const latencyMs = Date.now() - startedAt;
   const tokenUsage = buildEstimatedTokenUsage({
@@ -611,7 +635,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     question,
     answer: finalAnswer,
     answer_status: noAnswer ? "no_answer" : "answered",
-    no_answer_reason: noAnswer ? "insufficient_context_from_llm" : undefined,
+    no_answer_reason: noAnswerReason,
     retrieved_chunk_count: retrieval.chunks.length,
     citations: acceptedCitations,
     llm_provider: provider.provider,
@@ -644,7 +668,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     citations: acceptedCitations,
     conversation_id: conversationId,
     no_answer: noAnswer,
-    no_answer_reason: noAnswer ? "insufficient_context_from_llm" : undefined,
+    no_answer_reason: noAnswerReason,
     latency_ms: latencyMs,
     token_usage: tokenUsage,
     retrieved_chunk_count: retrieval.chunks.length

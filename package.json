@@ -9,6 +9,7 @@
     "chatbot-api:dev": "node --import ./scripts/db/load-env.mjs --import tsx services/chatbot-api/src/server.ts",
     "chatbot-api:start": "node --import ./scripts/db/load-env.mjs --import tsx services/chatbot-api/src/server.ts",
     "lint": "eslint .",
+    "test:rag": "node --import tsx --test tests/rag-pipeline.test.ts",
     "db:migrate": "node scripts/db/migrate.mjs",
     "db:seed:first-admin": "node scripts/db/seed-first-admin.mjs",
     "jobs:documents": "node scripts/jobs/worker.mjs",

@@ -32,6 +32,14 @@ export class KeywordSearchService {
           document_chunks.content,
           document_chunks.page_number,
           COALESCE(document_chunks.section_title, '') AS section_title,
+          COALESCE(document_chunks.metadata_json ->> 'section_path', '') AS section_path,
+          COALESCE(document_chunks.metadata_json ->> 'document_type', documents.file_type) AS document_type,
+          COALESCE(document_chunks.metadata_json ->> 'country', documents.source_metadata_json ->> 'country', '') AS country,
+          COALESCE(document_chunks.metadata_json ->> 'department', documents.source_metadata_json ->> 'department', '') AS department,
+          COALESCE(document_chunks.metadata_json ->> 'process_stage', documents.source_metadata_json ->> 'process_stage', '') AS process_stage,
+          COALESCE(document_chunks.metadata_json ->> 'effective_date', documents.source_metadata_json ->> 'effective_date', '') AS effective_date,
+          COALESCE(documents.external_source_url, documents.source_metadata_json ->> 'source_url', '') AS source_url,
+          document_chunks.metadata_json,
           (
             ts_rank_cd(to_tsvector('simple', document_chunks.content), search_query.query)
             + CASE WHEN document_chunks.content ILIKE '%' || $2 || '%' THEN 0.05 ELSE 0 END
@@ -55,3 +63,5 @@ export class KeywordSearchService {
     return result.rows.map(mapSearchRow);
   }
 }
+
+export const BM25SearchService = KeywordSearchService;

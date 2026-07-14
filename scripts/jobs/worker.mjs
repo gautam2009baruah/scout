@@ -199,6 +199,73 @@ function tokenize(text) {
   return text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
 }
 
+function isHeadingLine(line) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  return /^#{1,6}\s+/.test(trimmed)
+    || /^\d+(?:\.\d+)*[.)]?\s+\S+/.test(trimmed)
+    || /^[A-Z][A-Z0-9\s&:/-]{5,}$/.test(trimmed);
+}
+
+function normalizeHeading(line) {
+  return String(line || "")
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^\d+(?:\.\d+)*[.)]?\s+/, "")
+    .trim();
+}
+
+function splitIntoSections(pageText, defaultTitle) {
+  const lines = String(pageText || "").split(/\r?\n/);
+  const sections = [];
+  let currentTitle = defaultTitle || "Section";
+  let currentPath = [currentTitle].filter(Boolean);
+  let buffer = [];
+
+  const flush = () => {
+    const text = buffer.join("\n").trim();
+    if (!text) {
+      return;
+    }
+
+    sections.push({
+      title: currentTitle,
+      sectionPath: currentPath.join(" > "),
+      text
+    });
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    if (isHeadingLine(line)) {
+      flush();
+      const heading = normalizeHeading(line) || currentTitle;
+      currentTitle = heading;
+      currentPath = [...currentPath.slice(-2), heading].filter(Boolean);
+      continue;
+    }
+
+    if (!String(line).trim()) {
+      if (buffer.length > 0) {
+        buffer.push("");
+      }
+      continue;
+    }
+
+    buffer.push(line);
+  }
+
+  flush();
+
+  if (sections.length === 0) {
+    return [{ title: defaultTitle || "Section", sectionPath: defaultTitle || "Section", text: String(pageText || "") }];
+  }
+
+  return sections;
+}
+
 async function getFolderPath(folderId) {
   const result = await client.query(
     `
@@ -222,44 +289,61 @@ async function getFolderPath(folderId) {
 }
 
 function createDocumentChunks(document, folderPath, parsedOutput) {
-  const chunkTokenSize = 850;
-  const chunkTokenOverlap = 125;
+  const chunkMinTokenSize = 500;
+  const chunkTokenSize = 820;
+  const chunkTokenOverlap = 120;
   const step = chunkTokenSize - chunkTokenOverlap;
   const chunks = [];
   let chunkIndex = 0;
 
   for (const page of parsedOutput.pages ?? []) {
     const pageNumber = Number(page.page_number) || 1;
-    const tokens = tokenize(String(page.text ?? ""));
+    const sections = splitIntoSections(page.text, parsedOutput.title || "Section");
 
-    if (tokens.length === 0) {
-      continue;
-    }
+    for (const section of sections) {
+      const tokens = tokenize(String(section.text || ""));
 
-    for (let start = 0; start < tokens.length; start += step) {
-      const chunkTokens = tokens.slice(start, start + chunkTokenSize);
-
-      if (chunkTokens.length === 0) {
-        break;
+      if (tokens.length === 0) {
+        continue;
       }
 
-      chunks.push({
-        chunkIndex,
-        content: chunkTokens.join(" "),
-        pageNumber,
-        sectionTitle: parsedOutput.title || null,
-        tokenCount: chunkTokens.length,
-        metadata: {
-          document_name: document.name,
-          folder_path: folderPath,
-          file_type: document.file_type,
-          page_number: pageNumber
-        }
-      });
-      chunkIndex += 1;
+      for (let start = 0; start < tokens.length; start += step) {
+        const chunkTokens = tokens.slice(start, start + chunkTokenSize);
 
-      if (start + chunkTokenSize >= tokens.length) {
-        break;
+        if (chunkTokens.length === 0) {
+          break;
+        }
+
+        if (chunkTokens.length < chunkMinTokenSize && tokens.length > chunkMinTokenSize && start + chunkTokenSize < tokens.length) {
+          continue;
+        }
+
+        chunks.push({
+          chunkIndex,
+          content: chunkTokens.join(" "),
+          pageNumber,
+          sectionTitle: section.title || parsedOutput.title || null,
+          tokenCount: chunkTokens.length,
+          metadata: {
+            document_name: document.name,
+            document_type: document.file_type,
+            section_title: section.title,
+            section_path: section.sectionPath,
+            folder_path: folderPath,
+            file_type: document.file_type,
+            page_number: pageNumber,
+            country: document.source_metadata_json?.country,
+            department: document.source_metadata_json?.department,
+            process_stage: document.source_metadata_json?.process_stage,
+            effective_date: document.source_metadata_json?.effective_date,
+            source_url: document.external_source_url || document.source_metadata_json?.source_url
+          }
+        });
+        chunkIndex += 1;
+
+        if (start + chunkTokenSize >= tokens.length) {
+          break;
+        }
       }
     }
   }

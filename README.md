@@ -113,6 +113,24 @@ export function AppShell() {
 - `onSendMessage`: async handler for your future backend API.
 - `modeNotice`: optional message shown at the top of the chat.
 
+## RAG Retrieval Defaults
+
+The retrieval pipeline uses hybrid vector plus BM25 search with synonym-aware normalization, reciprocal-rank fusion, reranking, diversity filtering, and multi-step fallbacks.
+
+Default tuning values:
+
+- `RAG_VECTOR_TOP_K=20`
+- `RAG_BM25_TOP_K=20`
+- `RAG_RERANKER_TOP_K=8`
+- `RAG_VECTOR_WEIGHT=0.55`
+- `RAG_BM25_WEIGHT=0.45`
+
+Retrieval behavior highlights:
+
+- Procurement-domain synonym expansion for vendor/supplier, PR/requisition, RFP/RFQ/tender, PO/purchase order, contract/agreement/MSA/SOW, invoice/AP, compliance/due diligence, and TPRM.
+- Fallback sequence when retrieval returns no evidence: synonym-expanded retry, keyword-only retry, metadata-filter relaxation, then broader document-category scope.
+- Final evidence set is deduplicated and near-duplicate resistant, returning diverse chunks with citation metadata (document, section, page, and chunk id).
+
 ## Backend Hook Shape
 
 `onSendMessage` receives the latest user message and the visible message history:

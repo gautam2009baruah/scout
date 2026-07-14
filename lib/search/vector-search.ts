@@ -10,6 +10,14 @@ export type VectorSearchResult = {
   content: string;
   page_number: number;
   section_title: string;
+  section_path?: string;
+  document_type?: string;
+  country?: string;
+  department?: string;
+  process_stage?: string;
+  effective_date?: string;
+  source_url?: string;
+  metadata_json?: Record<string, unknown>;
   score: number;
 };
 
@@ -157,6 +165,14 @@ async function searchVector(companyId: string, queryEmbedding: number[], roleIds
         document_chunks.content,
         document_chunks.page_number,
         COALESCE(document_chunks.section_title, '') AS section_title,
+        COALESCE(document_chunks.metadata_json ->> 'section_path', '') AS section_path,
+        COALESCE(document_chunks.metadata_json ->> 'document_type', documents.file_type) AS document_type,
+        COALESCE(document_chunks.metadata_json ->> 'country', documents.source_metadata_json ->> 'country', '') AS country,
+        COALESCE(document_chunks.metadata_json ->> 'department', documents.source_metadata_json ->> 'department', '') AS department,
+        COALESCE(document_chunks.metadata_json ->> 'process_stage', documents.source_metadata_json ->> 'process_stage', '') AS process_stage,
+        COALESCE(document_chunks.metadata_json ->> 'effective_date', documents.source_metadata_json ->> 'effective_date', '') AS effective_date,
+        COALESCE(documents.external_source_url, documents.source_metadata_json ->> 'source_url', '') AS source_url,
+        document_chunks.metadata_json,
         1 - (chunk_embeddings.embedding <=> $2::vector) AS score
       FROM chunk_embeddings
       INNER JOIN document_chunks ON document_chunks.id = chunk_embeddings.chunk_id
@@ -187,6 +203,14 @@ async function searchJson(companyId: string, queryEmbedding: number[], roleIds: 
         document_chunks.content,
         document_chunks.page_number,
         COALESCE(document_chunks.section_title, '') AS section_title,
+        COALESCE(document_chunks.metadata_json ->> 'section_path', '') AS section_path,
+        COALESCE(document_chunks.metadata_json ->> 'document_type', documents.file_type) AS document_type,
+        COALESCE(document_chunks.metadata_json ->> 'country', documents.source_metadata_json ->> 'country', '') AS country,
+        COALESCE(document_chunks.metadata_json ->> 'department', documents.source_metadata_json ->> 'department', '') AS department,
+        COALESCE(document_chunks.metadata_json ->> 'process_stage', documents.source_metadata_json ->> 'process_stage', '') AS process_stage,
+        COALESCE(document_chunks.metadata_json ->> 'effective_date', documents.source_metadata_json ->> 'effective_date', '') AS effective_date,
+        COALESCE(documents.external_source_url, documents.source_metadata_json ->> 'source_url', '') AS source_url,
+        document_chunks.metadata_json,
         chunk_embeddings.embedding
       FROM chunk_embeddings
       INNER JOIN document_chunks ON document_chunks.id = chunk_embeddings.chunk_id
@@ -217,6 +241,14 @@ export function mapSearchRow(row: {
   content: string;
   page_number: number;
   section_title?: string | null;
+  section_path?: string | null;
+  document_type?: string | null;
+  country?: string | null;
+  department?: string | null;
+  process_stage?: string | null;
+  effective_date?: string | null;
+  source_url?: string | null;
+  metadata_json?: Record<string, unknown> | null;
   score: string | number;
 }): VectorSearchResult {
   return {
@@ -228,6 +260,14 @@ export function mapSearchRow(row: {
     content: row.content,
     page_number: Number(row.page_number),
     section_title: row.section_title ?? "",
+    section_path: row.section_path || undefined,
+    document_type: row.document_type || undefined,
+    country: row.country || undefined,
+    department: row.department || undefined,
+    process_stage: row.process_stage || undefined,
+    effective_date: row.effective_date || undefined,
+    source_url: row.source_url || undefined,
+    metadata_json: row.metadata_json ?? {},
     score: Number(Number(row.score).toFixed(4))
   };
 }
