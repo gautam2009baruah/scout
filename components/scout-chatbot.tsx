@@ -7,6 +7,7 @@ import {
   ArrowUp,
   Bot,
   Check,
+  ChevronLeft,
   ChevronDown,
   ChevronRight,
   ExternalLink,
@@ -383,6 +384,75 @@ export function ScoutChatbot({
     "--scout-focus": `${theme?.accentColor ?? "#0ea5e9"}24`
   };
 
+  const markActivity = useCallback(() => {
+    lastActivityAtRef.current = Date.now();
+    setActivityVersion((current) => current + 1);
+  }, []);
+
+  const setOpen = useCallback((nextValue: boolean) => {
+    markActivity();
+    setIsOpen(nextValue);
+    onOpenChange?.(nextValue);
+  }, [markActivity, onOpenChange]);
+
+  const resetConversationState = useCallback((options?: { preserveOpenState?: boolean }) => {
+    const nextConversationId = createConversationSessionId();
+    clearStoredMessages(messageStorageKey);
+    clearOrchestrationState();
+    activeConversationId.current = nextConversationId;
+    setConversationSessionId(nextConversationId);
+    setMessages(normalizeMessages(initialMessages ?? []));
+    setInput("");
+    setIsTyping(false);
+    setActiveTab("qa");
+    setActiveWorkflow(null);
+    setHistoryOpen(false);
+    setSelectedConversationIds(new Set());
+    markActivity();
+    onConversationChange?.(nextConversationId);
+
+    if (!options?.preserveOpenState) {
+      setOpen(true);
+    }
+  }, [initialMessages, markActivity, messageStorageKey, onConversationChange, setOpen]);
+
+  function openFloatingChat() {
+    setIsMinimizing(false);
+    const nextSize = clampChatSize(panelSize);
+    setPanelSize(nextSize);
+    setPanelPosition(getBottomRightChatPosition(nextSize));
+    setIsOpen(true);
+  }
+
+  const closeFloatingChat = useCallback(() => {
+    if (variant === "floating" && isOpen) {
+      setIsMinimizing(true);
+      setPanelPosition(getBottomRightChatPosition(launcherSize));
+      window.setTimeout(() => {
+        setIsOpen(false);
+        setIsMinimizing(false);
+      }, 220);
+      return;
+    }
+
+    setPanelPosition(getBottomRightChatPosition(launcherSize));
+    setIsOpen(false);
+  }, [isOpen, setIsOpen, variant]);
+
+  function restoreFloatingLayout() {
+    if (variant === "embedded") {
+      const nextSize = { width: 480, height: 740 };
+      setPanelSize(nextSize);
+      onSizeChange?.(nextSize);
+      onRestoreLayout?.();
+      return;
+    }
+
+    const nextSize = getDefaultChatSize();
+    setPanelSize(nextSize);
+    setPanelPosition(getDefaultChatPosition(position, nextSize));
+  }
+
   useEffect(() => {
     setHasMounted(true);
 
@@ -402,13 +472,15 @@ export function ScoutChatbot({
     }
 
     const controller = new AbortController();
+    const safeCompanyId = companyId;
+    const safeTargetAppId = targetAppId;
 
     async function loadLifecycleSettings() {
       try {
         const url = new URL("/api/chatbot/settings", window.location.origin);
-        url.searchParams.set("company_id", companyId);
-        if (targetAppId) {
-          url.searchParams.set("target_app_id", targetAppId);
+        url.searchParams.set("company_id", safeCompanyId);
+        if (safeTargetAppId) {
+          url.searchParams.set("target_app_id", safeTargetAppId);
         }
         const response = await fetch(url.toString(), { signal: controller.signal });
         const body = await response.json().catch(() => null);
@@ -436,13 +508,13 @@ export function ScoutChatbot({
       if (variant === "floating") {
         closeFloatingChat();
       } else {
-        setOpen(false);
+        setIsOpen(false);
       }
     };
 
     window.addEventListener('SCOUT_MINIMIZE_CHATBOT', handleMinimize);
     return () => window.removeEventListener('SCOUT_MINIMIZE_CHATBOT', handleMinimize);
-  }, [closeFloatingChat, setOpen, variant]);
+  }, [closeFloatingChat, setIsOpen, variant]);
 
   useEffect(() => {
     writeStoredMessages(messageStorageKey, messages);
@@ -689,38 +761,6 @@ export function ScoutChatbot({
     };
   }, [scoutBaseUrl, targetAppId, targetAppName]);
 
-  const markActivity = useCallback(() => {
-    lastActivityAtRef.current = Date.now();
-    setActivityVersion((current) => current + 1);
-  }, []);
-
-  const setOpen = useCallback((nextValue: boolean) => {
-    markActivity();
-    setIsOpen(nextValue);
-    onOpenChange?.(nextValue);
-  }, [markActivity, onOpenChange]);
-
-  const resetConversationState = useCallback((options?: { preserveOpenState?: boolean }) => {
-    const nextConversationId = createConversationSessionId();
-    clearStoredMessages(messageStorageKey);
-    clearOrchestrationState();
-    activeConversationId.current = nextConversationId;
-    setConversationSessionId(nextConversationId);
-    setMessages(normalizeMessages(initialMessages ?? []));
-    setInput("");
-    setIsTyping(false);
-    setActiveTab("qa");
-    setActiveWorkflow(null);
-    setHistoryOpen(false);
-    setSelectedConversationIds(new Set());
-    markActivity();
-    onConversationChange?.(nextConversationId);
-
-    if (!options?.preserveOpenState) {
-      setOpen(true);
-    }
-  }, [initialMessages, markActivity, messageStorageKey, onConversationChange, setOpen]);
-
   const resumeConversation = useCallback(async (targetConversationId: string) => {
     if (!companyId || !userId || !targetConversationId) {
       return;
@@ -840,52 +880,6 @@ export function ScoutChatbot({
     });
   }, [companyId, historyRenameTarget, historyRenameValue, loadConversationHistory, userId]);
 
-  const deleteConversation = useCallback(async () => {
-    if (!companyId || !userId || !historyDeleteTarget) {
-      return;
-    }
-
-    if (historyDeleteTarget.id === "__bulk__") {
-      await bulkDeleteConversations([...historyState.active, ...historyState.archived]);
-      setHistoryDeleteTarget(null);
-      return;
-    }
-
-    setHistoryActionState({
-      type: "deleting",
-      conversationId: historyDeleteTarget.id,
-      message: "Deleting conversation..."
-    });
-
-    const response = await fetch(`/conversations/${encodeURIComponent(historyDeleteTarget.id)}?company_id=${encodeURIComponent(companyId)}&user_id=${encodeURIComponent(userId)}`, {
-      method: "DELETE"
-    });
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setHistoryActionState({
-        type: "error",
-        conversationId: historyDeleteTarget.id,
-        message: typeof body?.message === "string" ? body.message : "Unable to delete conversation."
-      });
-      throw new Error(typeof body?.message === "string" ? body.message : "Unable to delete conversation.");
-    }
-
-    const deletingCurrent = historyDeleteTarget.id === conversationSessionId;
-    setHistoryDeleteTarget(null);
-
-    if (deletingCurrent) {
-      resetConversationState({ preserveOpenState: true });
-    }
-
-    await loadConversationHistory();
-    setHistoryActionState({
-      type: "success",
-      conversationId: null,
-      message: "Conversation deleted."
-    });
-  }, [bulkDeleteConversations, companyId, conversationSessionId, historyDeleteTarget, historyState.active, historyState.archived, loadConversationHistory, resetConversationState, userId]);
-
   const toggleConversationSelection = useCallback((conversationIdToToggle: string) => {
     setSelectedConversationIds((current) => {
       const next = new Set(current);
@@ -996,42 +990,51 @@ export function ScoutChatbot({
     });
   }, [clearConversationSelection, companyId, conversationSessionId, loadConversationHistory, resetConversationState, selectedConversationIds, userId]);
 
-  function openFloatingChat() {
-    setIsMinimizing(false);
-    const nextSize = clampChatSize(panelSize);
-    setPanelSize(nextSize);
-    setPanelPosition(getBottomRightChatPosition(nextSize));
-    setOpen(true);
-  }
-
-  const closeFloatingChat = useCallback(() => {
-    if (variant === "floating" && isOpen) {
-      setIsMinimizing(true);
-      setPanelPosition(getBottomRightChatPosition(launcherSize));
-      window.setTimeout(() => {
-        setOpen(false);
-        setIsMinimizing(false);
-      }, 220);
+  const deleteConversation = useCallback(async () => {
+    if (!companyId || !userId || !historyDeleteTarget) {
       return;
     }
 
-    setPanelPosition(getBottomRightChatPosition(launcherSize));
-    setOpen(false);
-  }, [isOpen, setOpen, variant]);
-
-  function restoreFloatingLayout() {
-    if (variant === "embedded") {
-      const nextSize = { width: 480, height: 740 };
-      setPanelSize(nextSize);
-      onSizeChange?.(nextSize);
-      onRestoreLayout?.();
+    if (historyDeleteTarget.id === "__bulk__") {
+      await bulkDeleteConversations([...historyState.active, ...historyState.archived]);
+      setHistoryDeleteTarget(null);
       return;
     }
 
-    const nextSize = getDefaultChatSize();
-    setPanelSize(nextSize);
-    setPanelPosition(getDefaultChatPosition(position, nextSize));
-  }
+    setHistoryActionState({
+      type: "deleting",
+      conversationId: historyDeleteTarget.id,
+      message: "Deleting conversation..."
+    });
+
+    const response = await fetch(`/conversations/${encodeURIComponent(historyDeleteTarget.id)}?company_id=${encodeURIComponent(companyId)}&user_id=${encodeURIComponent(userId)}`, {
+      method: "DELETE"
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setHistoryActionState({
+        type: "error",
+        conversationId: historyDeleteTarget.id,
+        message: typeof body?.message === "string" ? body.message : "Unable to delete conversation."
+      });
+      throw new Error(typeof body?.message === "string" ? body.message : "Unable to delete conversation.");
+    }
+
+    const deletingCurrent = historyDeleteTarget.id === conversationSessionId;
+    setHistoryDeleteTarget(null);
+
+    if (deletingCurrent) {
+      resetConversationState({ preserveOpenState: true });
+    }
+
+    await loadConversationHistory();
+    setHistoryActionState({
+      type: "success",
+      conversationId: null,
+      message: "Conversation deleted."
+    });
+  }, [bulkDeleteConversations, companyId, conversationSessionId, historyDeleteTarget, historyState.active, historyState.archived, loadConversationHistory, resetConversationState, userId]);
 
   function toggleWorkflowSession(sessionId: string) {
     setExpandedWorkflowSessions((current) => {
@@ -1440,23 +1443,23 @@ export function ScoutChatbot({
 
       <>
           {historyOpen ? (
-            <aside className="absolute inset-y-0 left-0 z-10 flex w-[320px] flex-col border-r border-slate-200 bg-white/98 shadow-xl">
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-950">Conversation History</p>
-                  <p className="text-xs text-slate-500">Resume or archive previous conversations.</p>
+            <aside className="absolute inset-x-0 bottom-0 top-11 z-20 flex min-h-0 w-full flex-col overflow-hidden bg-white shadow-[0_-1px_0_rgba(15,23,42,0.08)]">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-950">Conversation history</p>
+                  <p className="truncate text-xs text-slate-500">Find, resume, archive, or remove a conversation.</p>
                 </div>
-                <button className="rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900" onClick={() => setHistoryOpen(false)} type="button">
+                <button aria-label="Close conversation history" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-sky-100" onClick={() => setHistoryOpen(false)} title="Close history" type="button">
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              <div className="scrollbar-soft flex-1 overflow-y-auto px-4 py-4">
-                <div className="mb-4">
+              <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                <div className="mb-3">
                   <input
                     aria-label="Search conversations"
                     className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
                     onChange={(event) => setHistorySearchDraft(event.target.value)}
-                    placeholder="Search by title or message text"
+                    placeholder="Search conversations"
                     value={historySearchDraft}
                   />
                 </div>
@@ -1473,32 +1476,37 @@ export function ScoutChatbot({
                   </p>
                 ) : null}
                 {selectedConversationIds.size > 0 ? (
-                  <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="mb-3 flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-800">{selectedConversationIds.size} selected</p>
-                      <button className="text-xs font-semibold text-slate-500 hover:text-slate-900" onClick={clearConversationSelection} type="button">
-                        Clear
-                      </button>
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="flex shrink-0 items-center gap-1">
+                      <HistoryActionButton label="Clear selection" onClick={clearConversationSelection}>
+                        <X className="h-4 w-4" />
+                      </HistoryActionButton>
                       <button
-                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Archive selected conversations"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition hover:bg-white hover:text-slate-950 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={historyActionState.type === "archiving" || historyActionState.type === "deleting" || historyActionState.type === "restoring"}
                         onClick={() => void bulkUpdateConversationStatus(historyState.active, "archived")}
+                        title="Archive selected"
                         type="button"
                       >
-                        Archive selected
+                        <Archive className="h-4 w-4" />
                       </button>
                       <button
-                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Restore selected conversations"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition hover:bg-white hover:text-slate-950 focus:outline-none focus:ring-4 focus:ring-sky-100 disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={historyActionState.type === "archiving" || historyActionState.type === "deleting" || historyActionState.type === "restoring"}
                         onClick={() => void bulkUpdateConversationStatus(historyState.archived, "active")}
+                        title="Restore selected"
                         type="button"
                       >
-                        Restore selected
+                        <RotateCcw className="h-4 w-4" />
                       </button>
                       <button
-                        className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Delete selected conversations"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-red-600 transition hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-40"
                         disabled={historyActionState.type === "archiving" || historyActionState.type === "deleting" || historyActionState.type === "restoring"}
                         onClick={() => setHistoryDeleteTarget({
                           id: "__bulk__",
@@ -1508,9 +1516,10 @@ export function ScoutChatbot({
                           last_message_at: null,
                           created_at: new Date().toISOString()
                         })}
+                        title="Delete selected"
                         type="button"
                       >
-                        Delete selected
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
@@ -1599,7 +1608,7 @@ export function ScoutChatbot({
 
           {activeTab === "qa" ? (
             <>
-              <div ref={messagesViewportRef} className={cn("scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5", historyOpen && "pl-[340px]")}>
+              <div ref={messagesViewportRef} className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5">
                 {messages.map((message) => (
                   <MessageBubble
                     key={message.id}
@@ -1615,7 +1624,7 @@ export function ScoutChatbot({
                 {isTyping && <TypingIndicator />}
               </div>
 
-              <div className={cn("border-t border-slate-100 bg-slate-50/70 px-5 py-4", historyOpen && "pl-[340px]")}>
+              <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
                 <form
                   className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-sm focus-within:border-sky-300 focus-within:ring-4 focus-within:ring-[var(--scout-focus)]"
                   onSubmit={handleSubmit}
@@ -2491,8 +2500,8 @@ function ConversationHistorySection({
   const allSelected = selectableItems.length > 0 && selectedCount === selectableItems.length;
 
   return (
-    <section>
-      <div className="mb-2 flex items-center justify-between">
+    <section className="min-w-0">
+      <div className="mb-2 flex min-h-7 items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
             aria-label={allSelected ? `Clear ${title} selection` : `Select all ${title} conversations`}
@@ -2519,12 +2528,12 @@ function ConversationHistorySection({
             const isSelected = selectedConversationIds.has(item.id);
 
             return (
-              <div key={item.id} className={cn("rounded-2xl border px-3 py-3", isCurrent ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-white") }>
-                <div className="flex items-start gap-3">
+              <div key={item.id} className={cn("min-w-0 overflow-hidden rounded-xl border", isCurrent ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-white") }>
+                <div className="flex min-w-0 items-start gap-2.5 px-3 py-3">
                   <button
                     aria-label={isSelected ? `Deselect ${item.title}` : `Select ${item.title}`}
                     className={cn(
-                      "mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] font-bold transition",
+                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] font-bold transition focus:outline-none focus:ring-4 focus:ring-sky-100",
                       isSelected ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white text-slate-400"
                     )}
                     onClick={() => onToggleSelection(item.id)}
@@ -2532,11 +2541,11 @@ function ConversationHistorySection({
                   >
                     {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
                   </button>
-                  <button className="min-w-0 flex-1 text-left" onClick={() => onResume(item.id)} type="button">
-                    <div className="flex items-start justify-between gap-3">
+                  <button className="min-w-0 flex-1 text-left focus:outline-none" onClick={() => onResume(item.id)} title="Resume conversation" type="button">
+                    <div className="flex min-w-0 items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-slate-900">{item.title}</p>
-                        <p className="mt-1 text-xs text-slate-500">
+                        <p className="truncate text-sm font-semibold leading-5 text-slate-900" title={item.title}>{item.title}</p>
+                        <p className="mt-0.5 truncate text-xs text-slate-500">
                           {item.message_count} messages
                           {item.last_message_at ? ` • ${new Date(item.last_message_at).toLocaleString()}` : ""}
                         </p>
@@ -2545,22 +2554,19 @@ function ConversationHistorySection({
                     </div>
                   </button>
                 </div>
-                <div className="mt-3 flex items-center justify-end gap-2">
-                  <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={isBusy} onClick={() => onRename(item)} type="button">
-                    <Pencil className="mr-1 inline h-3.5 w-3.5" />
-                    Rename
-                  </button>
-                  <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={isBusy} onClick={() => onResume(item.id)} type="button">
-                    Resume
-                  </button>
-                  <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={isBusy} onClick={() => onArchive(item.id)} type="button">
-                    {actionLabel === "Restore" ? <RotateCcw className="mr-1 inline h-3.5 w-3.5" /> : <Archive className="mr-1 inline h-3.5 w-3.5" />}
-                    {isBusy && actionState.type === "archiving" ? "Archiving..." : isBusy && actionState.type === "restoring" ? "Restoring..." : actionLabel}
-                  </button>
-                  <button className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={isBusy} onClick={() => onDelete(item)} type="button">
-                    <Trash2 className="mr-1 inline h-3.5 w-3.5" />
-                    {isBusy && actionState.type === "deleting" ? "Deleting..." : "Delete"}
-                  </button>
+                <div className="flex min-h-10 items-center justify-end gap-1 border-t border-slate-100 bg-slate-50/70 px-2">
+                  <HistoryActionButton disabled={isBusy} label="Rename conversation" onClick={() => onRename(item)}>
+                    <Pencil className="h-4 w-4" />
+                  </HistoryActionButton>
+                  <HistoryActionButton disabled={isBusy} label="Resume conversation" onClick={() => onResume(item.id)}>
+                    <Play className="h-4 w-4" />
+                  </HistoryActionButton>
+                  <HistoryActionButton disabled={isBusy} label={`${actionLabel} conversation`} onClick={() => onArchive(item.id)}>
+                    {actionLabel === "Restore" ? <RotateCcw className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                  </HistoryActionButton>
+                  <HistoryActionButton danger disabled={isBusy} label="Delete conversation" onClick={() => onDelete(item)}>
+                    <Trash2 className="h-4 w-4" />
+                  </HistoryActionButton>
                 </div>
               </div>
             );
@@ -2568,16 +2574,48 @@ function ConversationHistorySection({
         </div>
       )}
       {pageCount > 1 ? (
-        <div className="mt-3 flex items-center justify-end gap-2">
-          <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40" disabled={!onPreviousPage} onClick={onPreviousPage} type="button">
-            Previous
-          </button>
-          <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40" disabled={!onNextPage} onClick={onNextPage} type="button">
-            Next
-          </button>
+        <div className="mt-3 flex items-center justify-end gap-1">
+          <HistoryActionButton disabled={!onPreviousPage} label="Previous page" onClick={onPreviousPage}>
+            <ChevronLeft className="h-4 w-4" />
+          </HistoryActionButton>
+          <HistoryActionButton disabled={!onNextPage} label="Next page" onClick={onNextPage}>
+            <ChevronRight className="h-4 w-4" />
+          </HistoryActionButton>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function HistoryActionButton({
+  children,
+  danger = false,
+  disabled = false,
+  label,
+  onClick
+}: {
+  children: ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+  label: string;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className={cn(
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-35",
+        danger
+          ? "text-red-600 hover:bg-red-50 hover:text-red-700 focus:ring-red-100"
+          : "text-slate-600 hover:bg-white hover:text-slate-950 focus:ring-sky-100"
+      )}
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      {children}
+    </button>
   );
 }
 

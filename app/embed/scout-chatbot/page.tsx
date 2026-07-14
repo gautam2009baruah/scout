@@ -53,15 +53,16 @@ export default function EmbeddedScoutChatbotPage() {
     }
 
     const controller = new AbortController();
+    const safeConfig = config;
 
     async function loadLifecycleSettings() {
       try {
-        const response = await fetch(`${config.apiUrl.replace(/\/$/, "")}/v1/chat/settings`, {
+        const response = await fetch(`${safeConfig.apiUrl.replace(/\/$/, "")}/v1/chat/settings`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "X-API-Key": config.apiKey },
+          headers: { "Content-Type": "application/json", "X-API-Key": safeConfig.apiKey },
           body: JSON.stringify({
-            companyName: config.companyName,
-            targetAppName: config.targetAppName || undefined
+            companyName: safeConfig.companyName,
+            targetAppName: safeConfig.targetAppName || undefined
           }),
           signal: controller.signal
         });
@@ -73,11 +74,11 @@ export default function EmbeddedScoutChatbotPage() {
 
         setLifecycleConfig({
           ...(body?.settings || {}),
-          ...(config.lifecycleConfig || {})
+          ...(safeConfig.lifecycleConfig || {})
         });
       } catch {
         if (!controller.signal.aborted) {
-          setLifecycleConfig(config.lifecycleConfig);
+          setLifecycleConfig(safeConfig.lifecycleConfig);
         }
       }
     }
