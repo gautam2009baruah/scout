@@ -21,7 +21,7 @@ NexusVendor installs the canonical hosted React `ScoutChatbot` through `scout-ch
 npm run configure:chatbot
 ```
 
-The generated `scout-chatbot-config.local.js` is intentionally ignored. The same universal installation approach works for React and non-React customer applications; see `services/chatbot-api/CUSTOMER_INSTALLATION.md` in the Scout repository.
+The generated `scout-chatbot-config.local.js` is intentionally ignored. The same universal installation approach works for React and non-React customer applications; see `http-api/chatbot-api/CUSTOMER_INSTALLATION.md` in the Scout repository.
 
 ## Training design
 

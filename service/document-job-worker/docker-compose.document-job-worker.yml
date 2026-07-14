@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  document-job-worker:
+    build:
+      context: ../..
+      dockerfile: service/document-job-worker/Dockerfile
+    container_name: scout-document-job-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      NODE_ENV: ${NODE_ENV:-production}

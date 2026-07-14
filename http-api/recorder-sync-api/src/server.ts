@@ -1,0 +1,90 @@
+import http from "node:http";
+import { URL } from "node:url";
+import { appendRecordedActionByToken, GuidedWorkflowError } from "@/lib/admin/guided-workflows";
+
+const host = process.env.RECORDER_SYNC_API_HOST || "0.0.0.0";
+const port = Number(process.env.RECORDER_SYNC_API_PORT || 4301);
+
+function setCorsHeaders(request: http.IncomingMessage, response: http.ServerResponse) {
+  const origin = request.headers.origin || "*";
+  response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  response.setHeader("Vary", "Origin");
+}
+
+function sendJson(request: http.IncomingMessage, response: http.ServerResponse, status: number, body: unknown) {
+  setCorsHeaders(request, response);
+  response.statusCode = status;
+  response.setHeader("Content-Type", "application/json; charset=utf-8");
+  response.end(JSON.stringify(body));
+}
+
+async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+const server = http.createServer(async (request, response) => {
+  try {
+    const method = request.method?.toUpperCase() || "GET";
+    const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
+
+    if (url.pathname === "/health") {
+      return sendJson(request, response, 200, { ok: true, service: "recorder-sync-api" });
+    }
+
+    if (url.pathname !== "/v1/recorder/actions") {
+      return sendJson(request, response, 404, { message: "Not found." });
+    }
+
+    if (method === "OPTIONS") {
+      setCorsHeaders(request, response);
+      response.statusCode = 204;
+      response.end();
+      return;
+    }
+
+    if (method !== "POST") {
+      return sendJson(request, response, 405, { message: "Method not allowed." });
+    }
+
+    const body = await readJsonBody(request);
+    if (!body || typeof body !== "object") {
+      return sendJson(request, response, 400, { message: "Recorder payload is required." });
+    }
+
+    const payload = body as Record<string, unknown>;
+    const result = await appendRecordedActionByToken(
+      String(payload.recorderToken ?? payload.recorder_token ?? ""),
+      payload.action,
+      request.headers.origin
+    );
+
+    return sendJson(request, response, 200, result);
+  } catch (error) {
+    if (error instanceof GuidedWorkflowError) {
+      return sendJson(request, response, error.statusCode, { message: error.message });
+    }
+
+    const message = error instanceof Error ? error.message : "Internal server error.";
+    return sendJson(request, response, 500, { message });
+  }
+});
+
+server.listen(port, host, () => {
+  console.log(`[recorder-sync-api] listening on http://${host}:${port}`);
+});

@@ -4,7 +4,7 @@ import path from "node:path";
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
 import crypto from "node:crypto";
-import "../db/load-env.mjs";
+import "../../../scripts/db/load-env.mjs";
 
 const { Client } = pg;
 

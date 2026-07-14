@@ -83,8 +83,8 @@ All customer technologies use the same hosted React `ScoutChatbot` through the u
 
 ## Separate deploy manifests
 
-- Docker Compose: [services/chatbot-api/docker-compose.chatbot-api.yml](services/chatbot-api/docker-compose.chatbot-api.yml)
-- Kubernetes: [services/chatbot-api/k8s-deployment.yaml](services/chatbot-api/k8s-deployment.yaml)
+- Docker Compose: [http-api/chatbot-api/docker-compose.chatbot-api.yml](http-api/chatbot-api/docker-compose.chatbot-api.yml)
+- Kubernetes: [http-api/chatbot-api/k8s-deployment.yaml](http-api/chatbot-api/k8s-deployment.yaml)
 
 ## Example request
 

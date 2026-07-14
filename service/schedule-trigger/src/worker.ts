@@ -4,7 +4,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { getSchedulerService } from "../../lib/orchestrations/scheduler-service";
+import { getSchedulerService } from "../../../lib/orchestrations/scheduler-service";
 
 let shuttingDown = false;
 

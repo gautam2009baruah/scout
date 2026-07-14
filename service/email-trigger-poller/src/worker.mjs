@@ -2,17 +2,17 @@
 // Polls email providers and triggers orchestrations based on matching emails
 // Run with: npm run triggers:email
 
-import "./db/load-env.mjs";
+import "../../../scripts/db/load-env.mjs";
 import pg from "pg";
-import { 
+import {
   getActiveEmailTriggers, 
   emailMatchesTrigger, 
   processEmailTrigger,
   updateTriggerLastPolled 
-} from "../lib/orchestrations/email-trigger-processor.ts";
-import { fetchIMAPEmails, getIMAPCredentials, markIMAPEmailAsRead } from "../lib/integrations/email/imap.ts";
-import { fetchGmailEmails, getGmailCredentials, buildGmailQuery, markGmailEmailAsRead } from "../lib/integrations/email/gmail.ts";
-import { fetchOutlookEmails, getOutlookCredentials, buildOutlookFilter, markOutlookEmailAsRead } from "../lib/integrations/email/outlook.ts";
+} from "../../../lib/orchestrations/email-trigger-processor.ts";
+import { fetchIMAPEmails, getIMAPCredentials, markIMAPEmailAsRead } from "../../../lib/integrations/email/imap.ts";
+import { fetchGmailEmails, getGmailCredentials, buildGmailQuery, markGmailEmailAsRead } from "../../../lib/integrations/email/gmail.ts";
+import { fetchOutlookEmails, getOutlookCredentials, buildOutlookFilter, markOutlookEmailAsRead } from "../../../lib/integrations/email/outlook.ts";
 
 const { Pool } = pg;
 

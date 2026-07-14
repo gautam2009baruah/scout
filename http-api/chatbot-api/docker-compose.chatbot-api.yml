@@ -4,7 +4,7 @@ services:
   chatbot-api:
     build:
       context: ../..
-      dockerfile: services/chatbot-api/Dockerfile
+      dockerfile: http-api/chatbot-api/Dockerfile
     container_name: scout-chatbot-api
     restart: unless-stopped
     ports:

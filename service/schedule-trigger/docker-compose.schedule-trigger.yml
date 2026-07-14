@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  schedule-trigger-worker:
+    build:
+      context: ../..
+      dockerfile: service/schedule-trigger/Dockerfile
+    container_name: scout-schedule-trigger-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      NODE_ENV: ${NODE_ENV:-production}

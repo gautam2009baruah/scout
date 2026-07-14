@@ -401,11 +401,11 @@ Set `NODE_ENV=production`, inject secrets through the deployment platform, enabl
 
 ### 7.4 Docker Compose
 
-The repository includes `services/chatbot-api/docker-compose.chatbot-api.yml` and `services/chatbot-api/Dockerfile`.
+The repository includes `http-api/chatbot-api/docker-compose.chatbot-api.yml` and `http-api/chatbot-api/Dockerfile`.
 
 ```bash
 docker compose \
-  -f services/chatbot-api/docker-compose.chatbot-api.yml \
+  -f http-api/chatbot-api/docker-compose.chatbot-api.yml \
   up -d --build
 ```
 
@@ -415,7 +415,7 @@ Check status:
 
 ```bash
 docker compose \
-  -f services/chatbot-api/docker-compose.chatbot-api.yml \
+  -f http-api/chatbot-api/docker-compose.chatbot-api.yml \
   ps
 ```
 
@@ -423,13 +423,13 @@ View logs:
 
 ```bash
 docker compose \
-  -f services/chatbot-api/docker-compose.chatbot-api.yml \
+  -f http-api/chatbot-api/docker-compose.chatbot-api.yml \
   logs -f chatbot-api
 ```
 
 ### 7.5 Kubernetes
 
-The repository includes `services/chatbot-api/k8s-deployment.yaml`. Before applying it:
+The repository includes `http-api/chatbot-api/k8s-deployment.yaml`. Before applying it:
 
 1. publish the image to the approved registry;
 2. update the image reference;
@@ -441,7 +441,7 @@ The repository includes `services/chatbot-api/k8s-deployment.yaml`. Before apply
 Apply:
 
 ```bash
-kubectl apply -f services/chatbot-api/k8s-deployment.yaml
+kubectl apply -f http-api/chatbot-api/k8s-deployment.yaml
 ```
 
 Check:
@@ -1132,12 +1132,12 @@ Complete this section for each customer deployment. Deliver plaintext keys throu
 - Universal widget loader: `public/scout-chatbot.js`
 - Hosted widget route: `app/embed/scout-chatbot/page.tsx`
 - Canonical chatbot component: `components/scout-chatbot.tsx`
-- Chatbot API: `services/chatbot-api/src/server.ts`
-- Authentication: `services/chatbot-api/src/auth.ts`
-- Tenant resolution: `services/chatbot-api/src/tenant-resolution.ts`
-- Dockerfile: `services/chatbot-api/Dockerfile`
-- Docker Compose: `services/chatbot-api/docker-compose.chatbot-api.yml`
-- Kubernetes manifest: `services/chatbot-api/k8s-deployment.yaml`
+- Chatbot API: `http-api/chatbot-api/src/server.ts`
+- Authentication: `http-api/chatbot-api/src/auth.ts`
+- Tenant resolution: `http-api/chatbot-api/src/tenant-resolution.ts`
+- Dockerfile: `http-api/chatbot-api/Dockerfile`
+- Docker Compose: `http-api/chatbot-api/docker-compose.chatbot-api.yml`
+- Kubernetes manifest: `http-api/chatbot-api/k8s-deployment.yaml`
 - API-key migration: `db/migrations/093_chatbot_api_keys.sql`
 - Target-app migration: `db/migrations/036_guided_workflow_training_sessions.sql`
 - User target-app access: `db/migrations/085_user_target_app_access.sql`
