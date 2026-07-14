@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ScoutChatbot, type ScoutChatMessage } from "@/components/scout-chatbot";
+import { ScoutChatbot, type ScoutChatLifecycleConfig, type ScoutChatMessage } from "@/components/scout-chatbot";
 
 type EmbedConfig = {
   scoutUrl: string;
@@ -13,8 +13,10 @@ type EmbedConfig = {
   targetAppId?: string;
   targetAppName?: string;
   assistantName?: string;
+  autoLoadLifecycleSettings?: boolean;
   brandColor?: string;
   accentColor?: string;
+  lifecycleConfig?: ScoutChatLifecycleConfig;
   placeholder?: string;
   quickPrompts?: string[];
 };
@@ -22,6 +24,7 @@ type EmbedConfig = {
 export default function EmbeddedScoutChatbotPage() {
   const [config, setConfig] = useState<EmbedConfig | null>(null);
   const [conversationId, setConversationId] = useState("");
+  const [lifecycleConfig, setLifecycleConfig] = useState<ScoutChatLifecycleConfig | undefined>(undefined);
   const parentOriginRef = useRef("*");
 
   useEffect(() => {
@@ -37,6 +40,52 @@ export default function EmbeddedScoutChatbotPage() {
     window.parent.postMessage({ type: "scout-chatbot:ready" }, "*");
     return () => window.removeEventListener("message", receiveConfig);
   }, []);
+
+  useEffect(() => {
+    if (!config) {
+      setLifecycleConfig(undefined);
+      return;
+    }
+
+    if (config.autoLoadLifecycleSettings === false) {
+      setLifecycleConfig(config.lifecycleConfig);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadLifecycleSettings() {
+      try {
+        const response = await fetch(`${config.apiUrl.replace(/\/$/, "")}/v1/chat/settings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-API-Key": config.apiKey },
+          body: JSON.stringify({
+            companyName: config.companyName,
+            targetAppName: config.targetAppName || undefined
+          }),
+          signal: controller.signal
+        });
+        const body = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          throw new Error(typeof body?.message === "string" ? body.message : "Unable to load lifecycle settings.");
+        }
+
+        setLifecycleConfig({
+          ...(body?.settings || {}),
+          ...(config.lifecycleConfig || {})
+        });
+      } catch {
+        if (!controller.signal.aborted) {
+          setLifecycleConfig(config.lifecycleConfig);
+        }
+      }
+    }
+
+    void loadLifecycleSettings();
+
+    return () => controller.abort();
+  }, [config]);
 
   function notifyOpenState(isOpen: boolean) {
     window.parent.postMessage({ type: "scout-chatbot:open-change", isOpen }, parentOriginRef.current);
@@ -104,6 +153,7 @@ export default function EmbeddedScoutChatbotPage() {
             assistantName={config.assistantName || "Scout Assistant"}
             companyId={config.companyId}
             defaultOpen={false}
+            lifecycleConfig={lifecycleConfig}
             onConversationChange={setConversationId}
             onMoveBy={notifyMove}
             onOpenChange={notifyOpenState}

@@ -1,7 +1,9 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import type { ChatbotLifecycleSettings } from "@/lib/chat/lifecycle-settings";
 import {
+  Archive,
   ArrowUp,
   Bot,
   Check,
@@ -9,10 +11,15 @@ import {
   ChevronRight,
   ExternalLink,
   Grip,
+  History,
   MessageCircle,
+  Pencil,
   Play,
+  RefreshCcw,
+  RotateCcw,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   Undo2,
   UserRound,
   X
@@ -23,6 +30,7 @@ import {
   KeyboardEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
+  useCallback,
   useEffect,
   useRef,
   useState
@@ -131,6 +139,10 @@ export type ScoutChatTheme = {
   surfaceColor?: string;
 };
 
+export type ScoutChatLifecycleConfig = Partial<ChatbotLifecycleSettings> & {
+  resetEventNames?: string[];
+};
+
 export type ScoutChatbotProps = {
   assistantName?: string;
   badge?: string;
@@ -142,6 +154,7 @@ export type ScoutChatbotProps = {
   defaultOpen?: boolean;
   initialMessages?: ScoutChatMessage[];
   launcherLabel?: string;
+  lifecycleConfig?: ScoutChatLifecycleConfig;
   modeNotice?: ReactNode;
   onConversationChange?: (conversationId: string) => void;
   onMoveBy?: (delta: { x: number; y: number }) => void;
@@ -159,6 +172,7 @@ export type ScoutChatbotProps = {
   targetAppId?: string;
   targetAppName?: string;
   theme?: ScoutChatTheme;
+  hostSessionKey?: string;
   userId?: string;
   userLabel?: string;
   variant?: "floating" | "inline" | "embedded";
@@ -193,6 +207,35 @@ type ChatPosition = {
 
 type ChatTab = "qa" | "workflows";
 
+type ConversationStatus = "active" | "archived" | "deleted";
+
+type ConversationListItem = {
+  id: string;
+  title: string;
+  status: ConversationStatus;
+  message_count: number;
+  last_message_at: string | null;
+  created_at: string;
+};
+
+type ConversationHistoryState = {
+  active: ConversationListItem[];
+  archived: ConversationListItem[];
+  activePage: number;
+  archivedPage: number;
+  activePageCount: number;
+  archivedPageCount: number;
+  search: string;
+  loading: boolean;
+  error: string;
+};
+
+type HistoryActionState = {
+  type: "idle" | "renaming" | "deleting" | "archiving" | "restoring" | "success" | "error";
+  conversationId: string | null;
+  message: string;
+};
+
 const defaultReplies = [
   "I am ready for your API. Pass an async onSendMessage handler and I will render the response inside this same polished widget.",
   "This component is portable: configure brand color, welcome copy, launcher position, quick prompts, and message handling from props.",
@@ -213,6 +256,22 @@ const launcherSize: ChatSize = {
   width: 56,
   height: 56
 };
+
+const defaultLifecycleSettings: ChatbotLifecycleSettings = {
+  maxContextMessages: 20,
+  maxContextTokens: 5000,
+  inactivityTimeoutSeconds: 1800,
+  resetOnLogoutEvent: true,
+  resetOnUserChange: true,
+  resetOnTargetAppChange: true
+};
+
+const defaultResetEventNames = [
+  "scout:host-logout",
+  "scout:session-expired",
+  "SCOUT_HOST_LOGOUT",
+  "SCOUT_SESSION_EXPIRED"
+];
 
 const mockWorkflowSessions: ScoutWorkflowSession[] = [
   {
@@ -240,6 +299,8 @@ export function ScoutChatbot({
   defaultOpen = true,
   initialMessages,
   launcherLabel = "Open chat",
+  lifecycleConfig,
+  hostSessionKey,
   onConversationChange,
   onMoveBy,
   onOpenChange,
@@ -258,11 +319,37 @@ export function ScoutChatbot({
   userLabel = "You",
   variant = "inline"
 }: ScoutChatbotProps) {
-  const messageStorageKey = getMessageStorageKey({ companyId, conversationId, userId, variant });
+  const [conversationSessionId, setConversationSessionId] = useState(() => conversationId ?? createConversationSessionId());
+  const messageStorageKey = getMessageStorageKey({ companyId, conversationId: conversationSessionId, userId, variant });
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [messages, setMessages] = useState<RenderedMessage[]>(() =>
     readStoredMessages(messageStorageKey) ?? normalizeMessages(initialMessages ?? [])
   );
+  const [activityVersion, setActivityVersion] = useState(0);
+  const [resolvedLifecycleSettings, setResolvedLifecycleSettings] = useState<ChatbotLifecycleSettings>(mergeLifecycleSettings(defaultLifecycleSettings, lifecycleConfig));
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historySearchDraft, setHistorySearchDraft] = useState("");
+  const [historyDeleteTarget, setHistoryDeleteTarget] = useState<ConversationListItem | null>(null);
+  const [historyRenameTarget, setHistoryRenameTarget] = useState<ConversationListItem | null>(null);
+  const [historyRenameValue, setHistoryRenameValue] = useState("");
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Set<string>>(() => new Set());
+  const [historyActionState, setHistoryActionState] = useState<HistoryActionState>({
+    type: "idle",
+    conversationId: null,
+    message: ""
+  });
+  const [historyState, setHistoryState] = useState<ConversationHistoryState>({
+    active: [],
+    archived: [],
+    activePage: 1,
+    archivedPage: 1,
+    activePageCount: 1,
+    archivedPageCount: 1,
+    search: "",
+    loading: false,
+    error: ""
+  });
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [activeTab, setActiveTab] = useState<ChatTab>("qa");
@@ -279,7 +366,10 @@ export function ScoutChatbot({
   const [panelSize, setPanelSize] = useState<ChatSize>(initialChatSize);
   const [panelPosition, setPanelPosition] = useState<ChatPosition>(initialChatPosition);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const activeConversationId = useRef(conversationId ?? "");
+  const messagesViewportRef = useRef<HTMLDivElement>(null);
+  const activeConversationId = useRef(conversationId ?? conversationSessionId);
+  const lastActivityAtRef = useRef(Date.now());
+  const scopeRef = useRef<string | null>(null);
 
   // Generate unique message ID using timestamp + random component
   const generateMessageId = () => {
@@ -305,6 +395,40 @@ export function ScoutChatbot({
     setPanelPosition(defaultOpen ? getDefaultChatPosition(position, nextSize) : getBottomRightChatPosition(launcherSize));
   }, [defaultOpen, position, variant]);
 
+  useEffect(() => {
+    if (!companyId) {
+      setResolvedLifecycleSettings(mergeLifecycleSettings(defaultLifecycleSettings, lifecycleConfig));
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadLifecycleSettings() {
+      try {
+        const url = new URL("/api/chatbot/settings", window.location.origin);
+        url.searchParams.set("company_id", companyId);
+        if (targetAppId) {
+          url.searchParams.set("target_app_id", targetAppId);
+        }
+        const response = await fetch(url.toString(), { signal: controller.signal });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(typeof body?.message === "string" ? body.message : "Unable to load chatbot lifecycle settings.");
+        }
+
+        setResolvedLifecycleSettings(mergeLifecycleSettings(body ?? defaultLifecycleSettings, lifecycleConfig));
+      } catch {
+        if (!controller.signal.aborted) {
+          setResolvedLifecycleSettings(mergeLifecycleSettings(defaultLifecycleSettings, lifecycleConfig));
+        }
+      }
+    }
+
+    void loadLifecycleSettings();
+
+    return () => controller.abort();
+  }, [companyId, lifecycleConfig, targetAppId]);
+
   // Listen for minimize events from orchestration links
   useEffect(() => {
     const handleMinimize = () => {
@@ -318,11 +442,195 @@ export function ScoutChatbot({
 
     window.addEventListener('SCOUT_MINIMIZE_CHATBOT', handleMinimize);
     return () => window.removeEventListener('SCOUT_MINIMIZE_CHATBOT', handleMinimize);
-  }, [variant]);
+  }, [closeFloatingChat, setOpen, variant]);
 
   useEffect(() => {
     writeStoredMessages(messageStorageKey, messages);
   }, [messageStorageKey, messages]);
+
+  useEffect(() => {
+    const stored = readStoredMessages(messageStorageKey);
+    setMessages(stored ?? normalizeMessages(initialMessages ?? []));
+    setInput("");
+    setIsTyping(false);
+  }, [initialMessages, messageStorageKey]);
+
+  useEffect(() => {
+    if (conversationId && conversationId !== activeConversationId.current) {
+      activeConversationId.current = conversationId;
+      setConversationSessionId(conversationId);
+    }
+  }, [conversationId]);
+
+  const loadConversationHistory = useCallback(async (overrides?: { activePage?: number; archivedPage?: number; search?: string }) => {
+    if (!companyId || !userId) {
+      setHistoryState((current) => ({
+        ...current,
+        active: [],
+        archived: [],
+        activePage: 1,
+        archivedPage: 1,
+        activePageCount: 1,
+        archivedPageCount: 1,
+        loading: false,
+        error: ""
+      }));
+      return;
+    }
+
+    const nextActivePage = overrides?.activePage ?? historyState.activePage;
+    const nextArchivedPage = overrides?.archivedPage ?? historyState.archivedPage;
+    const nextSearch = overrides?.search ?? historyState.search;
+
+    setHistoryState((current) => ({ ...current, loading: true, error: "", search: nextSearch }));
+
+    try {
+      const buildUrl = (status: "active" | "archived", page: number) => {
+        const url = new URL("/conversations", window.location.origin);
+        url.searchParams.set("company_id", companyId);
+        url.searchParams.set("user_id", userId);
+        url.searchParams.set("status", status);
+        url.searchParams.set("page", String(page));
+        url.searchParams.set("pageSize", "20");
+        if (nextSearch) {
+          url.searchParams.set("search", nextSearch);
+        }
+        return url.toString();
+      };
+
+      const [activeResponse, archivedResponse] = await Promise.all([
+        fetch(buildUrl("active", nextActivePage)),
+        fetch(buildUrl("archived", nextArchivedPage))
+      ]);
+
+      const [activeBody, archivedBody] = await Promise.all([
+        activeResponse.json().catch(() => null),
+        archivedResponse.json().catch(() => null)
+      ]);
+
+      if (!activeResponse.ok || !archivedResponse.ok) {
+        throw new Error(
+          typeof activeBody?.message === "string"
+            ? activeBody.message
+            : typeof archivedBody?.message === "string"
+            ? archivedBody.message
+            : "Unable to load conversation history."
+        );
+      }
+
+      setHistoryState({
+        active: Array.isArray(activeBody?.conversations) ? activeBody.conversations : [],
+        archived: Array.isArray(archivedBody?.conversations) ? archivedBody.conversations : [],
+        activePage: Number(activeBody?.page ?? nextActivePage),
+        archivedPage: Number(archivedBody?.page ?? nextArchivedPage),
+        activePageCount: Number(activeBody?.pageCount ?? 1),
+        archivedPageCount: Number(archivedBody?.pageCount ?? 1),
+        search: nextSearch,
+        loading: false,
+        error: ""
+      });
+    } catch (error) {
+      setHistoryState((current) => ({
+        ...current,
+        active: [],
+        archived: [],
+        activePageCount: 1,
+        archivedPageCount: 1,
+        loading: false,
+        error: error instanceof Error ? error.message : "Unable to load conversation history."
+      }));
+    }
+  }, [companyId, historyState.activePage, historyState.archivedPage, historyState.search, userId]);
+
+  useEffect(() => {
+    if (!historyOpen) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadConversationHistory({ activePage: 1, archivedPage: 1, search: historySearchDraft });
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [historyOpen, historySearchDraft, loadConversationHistory]);
+
+  useEffect(() => {
+    if (!["success", "error"].includes(historyActionState.type)) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setHistoryActionState({ type: "idle", conversationId: null, message: "" });
+    }, 2500);
+
+    return () => window.clearTimeout(timeout);
+  }, [historyActionState]);
+
+  useEffect(() => {
+    if (!historyOpen) {
+      return;
+    }
+
+    void loadConversationHistory();
+  }, [historyOpen, loadConversationHistory, conversationSessionId, messages.length]);
+
+  useEffect(() => {
+    const scopeKey = [companyId || "", userId || "", targetAppId || "", hostSessionKey || ""].join(":");
+    if (scopeRef.current === null) {
+      scopeRef.current = scopeKey;
+      return;
+    }
+
+    if (scopeRef.current === scopeKey) {
+      return;
+    }
+
+    const companyOrUserChanged = scopeRef.current.split(":").slice(0, 2).join(":") !== scopeKey.split(":").slice(0, 2).join(":");
+    const targetChanged = scopeRef.current.split(":")[2] !== scopeKey.split(":")[2];
+
+    scopeRef.current = scopeKey;
+
+    if ((companyOrUserChanged && resolvedLifecycleSettings.resetOnUserChange) || (targetChanged && resolvedLifecycleSettings.resetOnTargetAppChange)) {
+      resetConversationState({ preserveOpenState: true });
+    }
+  }, [companyId, hostSessionKey, resetConversationState, resolvedLifecycleSettings.resetOnTargetAppChange, resolvedLifecycleSettings.resetOnUserChange, targetAppId, userId]);
+
+  useEffect(() => {
+    const eventNames = lifecycleConfig?.resetEventNames ?? defaultResetEventNames;
+
+    if (!resolvedLifecycleSettings.resetOnLogoutEvent) {
+      return;
+    }
+
+    const handler = () => resetConversationState({ preserveOpenState: true });
+    eventNames.forEach((name) => window.addEventListener(name, handler));
+
+    return () => {
+      eventNames.forEach((name) => window.removeEventListener(name, handler));
+    };
+  }, [lifecycleConfig?.resetEventNames, resetConversationState, resolvedLifecycleSettings.resetOnLogoutEvent]);
+
+  useEffect(() => {
+    const timeoutMs = resolvedLifecycleSettings.inactivityTimeoutSeconds * 1000;
+    const timer = window.setTimeout(() => {
+      resetConversationState({ preserveOpenState: true });
+    }, timeoutMs);
+
+    return () => window.clearTimeout(timer);
+  }, [activityVersion, conversationSessionId, resetConversationState, resolvedLifecycleSettings.inactivityTimeoutSeconds]);
+
+  useEffect(() => {
+    if (!isOpen || activeTab !== "qa") {
+      return;
+    }
+
+    const viewport = messagesViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [activeTab, isOpen, isTyping, messages]);
 
   useEffect(() => {
     if (!targetAppId) {
@@ -381,10 +689,312 @@ export function ScoutChatbot({
     };
   }, [scoutBaseUrl, targetAppId, targetAppName]);
 
-  function setOpen(nextValue: boolean) {
+  const markActivity = useCallback(() => {
+    lastActivityAtRef.current = Date.now();
+    setActivityVersion((current) => current + 1);
+  }, []);
+
+  const setOpen = useCallback((nextValue: boolean) => {
+    markActivity();
     setIsOpen(nextValue);
     onOpenChange?.(nextValue);
-  }
+  }, [markActivity, onOpenChange]);
+
+  const resetConversationState = useCallback((options?: { preserveOpenState?: boolean }) => {
+    const nextConversationId = createConversationSessionId();
+    clearStoredMessages(messageStorageKey);
+    clearOrchestrationState();
+    activeConversationId.current = nextConversationId;
+    setConversationSessionId(nextConversationId);
+    setMessages(normalizeMessages(initialMessages ?? []));
+    setInput("");
+    setIsTyping(false);
+    setActiveTab("qa");
+    setActiveWorkflow(null);
+    setHistoryOpen(false);
+    setSelectedConversationIds(new Set());
+    markActivity();
+    onConversationChange?.(nextConversationId);
+
+    if (!options?.preserveOpenState) {
+      setOpen(true);
+    }
+  }, [initialMessages, markActivity, messageStorageKey, onConversationChange, setOpen]);
+
+  const resumeConversation = useCallback(async (targetConversationId: string) => {
+    if (!companyId || !userId || !targetConversationId) {
+      return;
+    }
+
+    const url = new URL(`/conversations/${encodeURIComponent(targetConversationId)}`, window.location.origin);
+    url.searchParams.set("company_id", companyId);
+    url.searchParams.set("user_id", userId);
+    url.searchParams.set("pageSize", "200");
+
+    const response = await fetch(url.toString());
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(typeof body?.message === "string" ? body.message : "Unable to resume conversation.");
+    }
+
+    const serverMessages = Array.isArray(body?.messages?.messages) ? body.messages.messages : [];
+    const renderedMessages = normalizeMessages(serverMessages.map((message: { id: string; sender: string; content: string; citations_json?: ScoutChatCitation[]; created_at?: string }) => ({
+      id: message.id,
+      role: message.sender === "user" ? "user" : "assistant",
+      text: message.content,
+      time: formatTimeFromDate(message.created_at),
+      citations: Array.isArray(message.citations_json) ? message.citations_json : []
+    })));
+
+    activeConversationId.current = targetConversationId;
+    setConversationSessionId(targetConversationId);
+    setMessages(renderedMessages);
+    setActiveTab("qa");
+    setHistoryOpen(false);
+    markActivity();
+    onConversationChange?.(targetConversationId);
+  }, [companyId, markActivity, onConversationChange, userId]);
+
+  const updateConversationStatus = useCallback(async (targetConversationId: string, status: "active" | "archived") => {
+    if (!companyId || !userId || !targetConversationId) {
+      return;
+    }
+
+    setHistoryActionState({
+      type: status === "archived" ? "archiving" : "restoring",
+      conversationId: targetConversationId,
+      message: status === "archived" ? "Archiving conversation..." : "Restoring conversation..."
+    });
+
+    const response = await fetch(`/conversations/${encodeURIComponent(targetConversationId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_id: companyId,
+        user_id: userId,
+        status
+      })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setHistoryActionState({
+        type: "error",
+        conversationId: targetConversationId,
+        message: typeof body?.message === "string" ? body.message : "Unable to update conversation."
+      });
+      throw new Error(typeof body?.message === "string" ? body.message : "Unable to update conversation.");
+    }
+
+    if (status === "archived" && targetConversationId === conversationSessionId) {
+      resetConversationState({ preserveOpenState: true });
+    }
+
+    await loadConversationHistory();
+    setHistoryActionState({
+      type: "success",
+      conversationId: targetConversationId,
+      message: status === "archived" ? "Conversation archived." : "Conversation restored."
+    });
+  }, [companyId, conversationSessionId, loadConversationHistory, resetConversationState, userId]);
+
+  const renameConversation = useCallback(async () => {
+    if (!companyId || !userId || !historyRenameTarget || !historyRenameValue.trim()) {
+      return;
+    }
+
+    setHistoryActionState({
+      type: "renaming",
+      conversationId: historyRenameTarget.id,
+      message: "Saving conversation title..."
+    });
+
+    const response = await fetch(`/conversations/${encodeURIComponent(historyRenameTarget.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        company_id: companyId,
+        user_id: userId,
+        title: historyRenameValue.trim()
+      })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setHistoryActionState({
+        type: "error",
+        conversationId: historyRenameTarget.id,
+        message: typeof body?.message === "string" ? body.message : "Unable to rename conversation."
+      });
+      throw new Error(typeof body?.message === "string" ? body.message : "Unable to rename conversation.");
+    }
+
+    setHistoryRenameTarget(null);
+    setHistoryRenameValue("");
+    await loadConversationHistory();
+    setHistoryActionState({
+      type: "success",
+      conversationId: null,
+      message: "Conversation renamed."
+    });
+  }, [companyId, historyRenameTarget, historyRenameValue, loadConversationHistory, userId]);
+
+  const deleteConversation = useCallback(async () => {
+    if (!companyId || !userId || !historyDeleteTarget) {
+      return;
+    }
+
+    if (historyDeleteTarget.id === "__bulk__") {
+      await bulkDeleteConversations([...historyState.active, ...historyState.archived]);
+      setHistoryDeleteTarget(null);
+      return;
+    }
+
+    setHistoryActionState({
+      type: "deleting",
+      conversationId: historyDeleteTarget.id,
+      message: "Deleting conversation..."
+    });
+
+    const response = await fetch(`/conversations/${encodeURIComponent(historyDeleteTarget.id)}?company_id=${encodeURIComponent(companyId)}&user_id=${encodeURIComponent(userId)}`, {
+      method: "DELETE"
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setHistoryActionState({
+        type: "error",
+        conversationId: historyDeleteTarget.id,
+        message: typeof body?.message === "string" ? body.message : "Unable to delete conversation."
+      });
+      throw new Error(typeof body?.message === "string" ? body.message : "Unable to delete conversation.");
+    }
+
+    const deletingCurrent = historyDeleteTarget.id === conversationSessionId;
+    setHistoryDeleteTarget(null);
+
+    if (deletingCurrent) {
+      resetConversationState({ preserveOpenState: true });
+    }
+
+    await loadConversationHistory();
+    setHistoryActionState({
+      type: "success",
+      conversationId: null,
+      message: "Conversation deleted."
+    });
+  }, [bulkDeleteConversations, companyId, conversationSessionId, historyDeleteTarget, historyState.active, historyState.archived, loadConversationHistory, resetConversationState, userId]);
+
+  const toggleConversationSelection = useCallback((conversationIdToToggle: string) => {
+    setSelectedConversationIds((current) => {
+      const next = new Set(current);
+      if (next.has(conversationIdToToggle)) {
+        next.delete(conversationIdToToggle);
+      } else {
+        next.add(conversationIdToToggle);
+      }
+      return next;
+    });
+  }, []);
+
+  const setSectionSelection = useCallback((items: ConversationListItem[], shouldSelect: boolean) => {
+    setSelectedConversationIds((current) => {
+      const next = new Set(current);
+      items.forEach((item) => {
+        if (shouldSelect) {
+          next.add(item.id);
+        } else {
+          next.delete(item.id);
+        }
+      });
+      return next;
+    });
+  }, []);
+
+  const clearConversationSelection = useCallback(() => {
+    setSelectedConversationIds(new Set());
+  }, []);
+
+  const bulkUpdateConversationStatus = useCallback(async (items: ConversationListItem[], status: "active" | "archived") => {
+    const selectedItems = items.filter((item) => selectedConversationIds.has(item.id));
+    if (!companyId || !userId || selectedItems.length === 0) {
+      return;
+    }
+
+    setHistoryActionState({
+      type: status === "archived" ? "archiving" : "restoring",
+      conversationId: null,
+      message: status === "archived"
+        ? `Archiving ${selectedItems.length} conversation${selectedItems.length === 1 ? "" : "s"}...`
+        : `Restoring ${selectedItems.length} conversation${selectedItems.length === 1 ? "" : "s"}...`
+    });
+
+    await Promise.all(selectedItems.map(async (item) => {
+      const response = await fetch(`/conversations/${encodeURIComponent(item.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_id: companyId,
+          user_id: userId,
+          status
+        })
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(typeof body?.message === "string" ? body.message : "Unable to update one or more conversations.");
+      }
+    }));
+
+    if (status === "archived" && selectedItems.some((item) => item.id === conversationSessionId)) {
+      resetConversationState({ preserveOpenState: true });
+    }
+
+    clearConversationSelection();
+    await loadConversationHistory();
+    setHistoryActionState({
+      type: "success",
+      conversationId: null,
+      message: status === "archived"
+        ? `Archived ${selectedItems.length} conversation${selectedItems.length === 1 ? "" : "s"}.`
+        : `Restored ${selectedItems.length} conversation${selectedItems.length === 1 ? "" : "s"}.`
+    });
+  }, [clearConversationSelection, companyId, conversationSessionId, loadConversationHistory, resetConversationState, selectedConversationIds, userId]);
+
+  const bulkDeleteConversations = useCallback(async (items: ConversationListItem[]) => {
+    const selectedItems = items.filter((item) => selectedConversationIds.has(item.id));
+    if (!companyId || !userId || selectedItems.length === 0) {
+      return;
+    }
+
+    setHistoryActionState({
+      type: "deleting",
+      conversationId: null,
+      message: `Deleting ${selectedItems.length} conversation${selectedItems.length === 1 ? "" : "s"}...`
+    });
+
+    await Promise.all(selectedItems.map(async (item) => {
+      const response = await fetch(`/conversations/${encodeURIComponent(item.id)}?company_id=${encodeURIComponent(companyId)}&user_id=${encodeURIComponent(userId)}`, {
+        method: "DELETE"
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(typeof body?.message === "string" ? body.message : "Unable to delete one or more conversations.");
+      }
+    }));
+
+    if (selectedItems.some((item) => item.id === conversationSessionId)) {
+      resetConversationState({ preserveOpenState: true });
+    }
+
+    clearConversationSelection();
+    await loadConversationHistory();
+    setHistoryActionState({
+      type: "success",
+      conversationId: null,
+      message: `Deleted ${selectedItems.length} conversation${selectedItems.length === 1 ? "" : "s"}.`
+    });
+  }, [clearConversationSelection, companyId, conversationSessionId, loadConversationHistory, resetConversationState, selectedConversationIds, userId]);
 
   function openFloatingChat() {
     setIsMinimizing(false);
@@ -394,7 +1004,7 @@ export function ScoutChatbot({
     setOpen(true);
   }
 
-  function closeFloatingChat() {
+  const closeFloatingChat = useCallback(() => {
     if (variant === "floating" && isOpen) {
       setIsMinimizing(true);
       setPanelPosition(getBottomRightChatPosition(launcherSize));
@@ -407,7 +1017,7 @@ export function ScoutChatbot({
 
     setPanelPosition(getBottomRightChatPosition(launcherSize));
     setOpen(false);
-  }
+  }, [isOpen, setOpen, variant]);
 
   function restoreFloatingLayout() {
     if (variant === "embedded") {
@@ -539,14 +1149,16 @@ export function ScoutChatbot({
     });
 
     const nextHistory = [...messages, userMessage];
+    const contextWindow = trimMessagesForLifecycle(nextHistory, resolvedLifecycleSettings);
 
     setMessages(nextHistory);
     setInput("");
     setIsTyping(true);
+    markActivity();
 
     try {
       const customReply = onSendMessage
-        ? await onSendMessage(trimmed, nextHistory)
+        ? await onSendMessage(trimmed, contextWindow)
         : await sendChatQuery(trimmed); // Always use real API, skip mock workflows
       const assistantReply = resolveReply(customReply);
 
@@ -562,6 +1174,7 @@ export function ScoutChatbot({
             })
           ]);
           setIsTyping(false);
+          markActivity();
           inputRef.current?.focus();
         },
         120 // Real API response delay
@@ -577,6 +1190,7 @@ export function ScoutChatbot({
         })
       ]);
       setIsTyping(false);
+      markActivity();
     }
   }
 
@@ -640,7 +1254,7 @@ export function ScoutChatbot({
         user_id: userId,
         question,
         target_app_id: targetAppId || undefined,
-        conversation_id: activeConversationId.current || undefined
+        conversation_id: activeConversationId.current || conversationSessionId || undefined
       })
     });
     const body = await response.json().catch(() => null);
@@ -655,6 +1269,7 @@ export function ScoutChatbot({
 
     if (typeof body?.conversation_id === "string") {
       activeConversationId.current = body.conversation_id;
+      setConversationSessionId(body.conversation_id);
       onConversationChange?.(body.conversation_id);
     }
 
@@ -805,6 +1420,12 @@ export function ScoutChatbot({
           </div>
 
           <div className="flex items-center gap-1">
+            <IconButton label="Conversation history" onClick={() => setHistoryOpen((current) => !current)}>
+              <History className="h-4 w-4" />
+            </IconButton>
+            <IconButton label="Start new conversation" onClick={() => setConfirmResetOpen(true)}>
+              <RefreshCcw className="h-4 w-4" />
+            </IconButton>
             {showHeaderActions && (variant === "floating" || variant === "embedded") && (
               <IconButton label="Restore size and position" onClick={restoreFloatingLayout}>
                 <Undo2 className="h-4 w-4" />
@@ -818,6 +1439,137 @@ export function ScoutChatbot({
       </header>
 
       <>
+          {historyOpen ? (
+            <aside className="absolute inset-y-0 left-0 z-10 flex w-[320px] flex-col border-r border-slate-200 bg-white/98 shadow-xl">
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">Conversation History</p>
+                  <p className="text-xs text-slate-500">Resume or archive previous conversations.</p>
+                </div>
+                <button className="rounded-full p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900" onClick={() => setHistoryOpen(false)} type="button">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="scrollbar-soft flex-1 overflow-y-auto px-4 py-4">
+                <div className="mb-4">
+                  <input
+                    aria-label="Search conversations"
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+                    onChange={(event) => setHistorySearchDraft(event.target.value)}
+                    placeholder="Search by title or message text"
+                    value={historySearchDraft}
+                  />
+                </div>
+                {historyActionState.message ? (
+                  <p className={cn(
+                    "mb-4 rounded-xl border px-3 py-2 text-sm",
+                    historyActionState.type === "error"
+                      ? "border-red-100 bg-red-50 text-red-700"
+                      : historyActionState.type === "success"
+                      ? "border-emerald-100 bg-emerald-50 text-emerald-700"
+                      : "border-slate-200 bg-slate-50 text-slate-600"
+                  )}>
+                    {historyActionState.message}
+                  </p>
+                ) : null}
+                {selectedConversationIds.size > 0 ? (
+                  <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-slate-800">{selectedConversationIds.size} selected</p>
+                      <button className="text-xs font-semibold text-slate-500 hover:text-slate-900" onClick={clearConversationSelection} type="button">
+                        Clear
+                      </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={historyActionState.type === "archiving" || historyActionState.type === "deleting" || historyActionState.type === "restoring"}
+                        onClick={() => void bulkUpdateConversationStatus(historyState.active, "archived")}
+                        type="button"
+                      >
+                        Archive selected
+                      </button>
+                      <button
+                        className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={historyActionState.type === "archiving" || historyActionState.type === "deleting" || historyActionState.type === "restoring"}
+                        onClick={() => void bulkUpdateConversationStatus(historyState.archived, "active")}
+                        type="button"
+                      >
+                        Restore selected
+                      </button>
+                      <button
+                        className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={historyActionState.type === "archiving" || historyActionState.type === "deleting" || historyActionState.type === "restoring"}
+                        onClick={() => setHistoryDeleteTarget({
+                          id: "__bulk__",
+                          title: `${selectedConversationIds.size} selected conversations`,
+                          status: "active",
+                          message_count: 0,
+                          last_message_at: null,
+                          created_at: new Date().toISOString()
+                        })}
+                        type="button"
+                      >
+                        Delete selected
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {historyState.loading ? <p className="text-sm text-slate-500">Loading conversations...</p> : null}
+                {historyState.error ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{historyState.error}</p> : null}
+                {!historyState.loading && !historyState.error ? (
+                  <div className="space-y-5">
+                    <ConversationHistorySection
+                      actionState={historyActionState}
+                      currentPage={historyState.activePage}
+                      emptyMessage="No active saved conversations yet."
+                      items={historyState.active}
+                      onArchive={(id) => void updateConversationStatus(id, "archived")}
+                      onDelete={(item) => setHistoryDeleteTarget(item)}
+                      onNextPage={historyState.activePage < historyState.activePageCount ? () => void loadConversationHistory({ activePage: historyState.activePage + 1 }) : undefined}
+                      onPreviousPage={historyState.activePage > 1 ? () => void loadConversationHistory({ activePage: historyState.activePage - 1 }) : undefined}
+                      onRename={(item) => {
+                        setHistoryRenameTarget(item);
+                        setHistoryRenameValue(item.title);
+                      }}
+                      onResume={(id) => void resumeConversation(id)}
+                      onSelectAll={(checked) => setSectionSelection(historyState.active, checked)}
+                      onToggleSelection={(id) => toggleConversationSelection(id)}
+                      pageCount={historyState.activePageCount}
+                      sectionStatus="active"
+                      selectedConversationIds={selectedConversationIds}
+                      title="Active"
+                      currentConversationId={conversationSessionId}
+                    />
+                    <ConversationHistorySection
+                      actionLabel="Restore"
+                      actionState={historyActionState}
+                      currentPage={historyState.archivedPage}
+                      emptyMessage="No archived conversations."
+                      items={historyState.archived}
+                      onArchive={(id) => void updateConversationStatus(id, "active")}
+                      onDelete={(item) => setHistoryDeleteTarget(item)}
+                      onNextPage={historyState.archivedPage < historyState.archivedPageCount ? () => void loadConversationHistory({ archivedPage: historyState.archivedPage + 1 }) : undefined}
+                      onPreviousPage={historyState.archivedPage > 1 ? () => void loadConversationHistory({ archivedPage: historyState.archivedPage - 1 }) : undefined}
+                      onRename={(item) => {
+                        setHistoryRenameTarget(item);
+                        setHistoryRenameValue(item.title);
+                      }}
+                      onResume={(id) => void resumeConversation(id)}
+                      onSelectAll={(checked) => setSectionSelection(historyState.archived, checked)}
+                      onToggleSelection={(id) => toggleConversationSelection(id)}
+                      pageCount={historyState.archivedPageCount}
+                      sectionStatus="archived"
+                      selectedConversationIds={selectedConversationIds}
+                      title="Archived"
+                      currentConversationId={conversationSessionId}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            </aside>
+          ) : null}
+
           <div className="grid grid-cols-2 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-500">
             <button
               aria-selected={activeTab === "qa"}
@@ -847,7 +1599,7 @@ export function ScoutChatbot({
 
           {activeTab === "qa" ? (
             <>
-              <div className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5">
+              <div ref={messagesViewportRef} className={cn("scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5", historyOpen && "pl-[340px]")}>
                 {messages.map((message) => (
                   <MessageBubble
                     key={message.id}
@@ -863,7 +1615,7 @@ export function ScoutChatbot({
                 {isTyping && <TypingIndicator />}
               </div>
 
-              <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
+              <div className={cn("border-t border-slate-100 bg-slate-50/70 px-5 py-4", historyOpen && "pl-[340px]")}>
                 <form
                   className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-sm focus-within:border-sky-300 focus-within:ring-4 focus-within:ring-[var(--scout-focus)]"
                   onSubmit={handleSubmit}
@@ -872,7 +1624,10 @@ export function ScoutChatbot({
                     ref={inputRef}
                     aria-label={`Message ${assistantName}`}
                     className="h-11 max-h-11 min-h-11 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-5 text-slate-900 outline-none placeholder:text-slate-400"
-                    onChange={(event) => setInput(event.target.value)}
+                    onChange={(event) => {
+                      setInput(event.target.value);
+                      markActivity();
+                    }}
                     onKeyDown={handleKeyDown}
                     placeholder={placeholder}
                     rows={1}
@@ -997,6 +1752,62 @@ export function ScoutChatbot({
             </button>
           )}
         </>
+
+        {confirmResetOpen ? (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+              <h3 className="text-lg font-semibold text-slate-950">Start new conversation?</h3>
+              <p className="mt-2 text-sm text-slate-600">This clears the current visible chat, active context window, cached orchestration state, and starts with a fresh conversation id.</p>
+              <div className="mt-6 flex justify-end gap-3">
+                <button className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => setConfirmResetOpen(false)} type="button">
+                  Cancel
+                </button>
+                <button className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white" onClick={() => { setConfirmResetOpen(false); resetConversationState({ preserveOpenState: true }); }} type="button">
+                  Start new
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {historyRenameTarget ? (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+              <h3 className="text-lg font-semibold text-slate-950">Rename conversation</h3>
+              <input
+                aria-label="Conversation title"
+                className="mt-4 h-11 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+                onChange={(event) => setHistoryRenameValue(event.target.value)}
+                value={historyRenameValue}
+              />
+              <div className="mt-6 flex justify-end gap-3">
+                <button className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => { setHistoryRenameTarget(null); setHistoryRenameValue(""); }} type="button">
+                  Cancel
+                </button>
+                <button className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={historyActionState.type === "renaming"} onClick={() => void renameConversation()} type="button">
+                  {historyActionState.type === "renaming" ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {historyDeleteTarget ? (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+              <h3 className="text-lg font-semibold text-slate-950">Delete conversation?</h3>
+              <p className="mt-2 text-sm text-slate-600">This removes the conversation from history and it cannot be resumed later.</p>
+              <div className="mt-6 flex justify-end gap-3">
+                <button className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => setHistoryDeleteTarget(null)} type="button">
+                  Cancel
+                </button>
+                <button className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={historyActionState.type === "deleting"} onClick={() => void deleteConversation()} type="button">
+                  {historyActionState.type === "deleting" ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
     </section>
   );
 
@@ -1466,6 +2277,19 @@ function createRenderedMessage(message: ScoutChatMessage & { id: string; time: s
   };
 }
 
+function formatTimeFromDate(value?: string) {
+  if (!value) {
+    return formatTime();
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return formatTime();
+  }
+
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function getMessageStorageKey({
   companyId,
   conversationId,
@@ -1484,6 +2308,88 @@ function getMessageStorageKey({
     userId || "user",
     conversationId || variant || "default"
   ].join(":");
+}
+
+function clearStoredMessages(key: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function clearOrchestrationState() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem("scout-orchestration-executions");
+  } catch {
+    // Ignore storage failures.
+  }
+
+  if ((window as Window & typeof globalThis & { __orchestrationExecutions?: Record<string, unknown> }).__orchestrationExecutions) {
+    delete (window as Window & typeof globalThis & { __orchestrationExecutions?: Record<string, unknown> }).__orchestrationExecutions;
+  }
+}
+
+function estimateTextTokens(text: string) {
+  const compact = text.replace(/\s+/g, " ").trim();
+  return compact ? Math.max(1, Math.ceil(compact.length / 4)) : 0;
+}
+
+function mergeLifecycleSettings(base: ChatbotLifecycleSettings, override?: ScoutChatLifecycleConfig) {
+  return {
+    maxContextMessages: Math.min(30, Math.max(10, Number(override?.maxContextMessages ?? base.maxContextMessages) || base.maxContextMessages)),
+    maxContextTokens: Math.min(8000, Math.max(3000, Number(override?.maxContextTokens ?? base.maxContextTokens) || base.maxContextTokens)),
+    inactivityTimeoutSeconds: Math.min(604800, Math.max(60, Number(override?.inactivityTimeoutSeconds ?? base.inactivityTimeoutSeconds) || base.inactivityTimeoutSeconds)),
+    resetOnLogoutEvent: override?.resetOnLogoutEvent ?? base.resetOnLogoutEvent,
+    resetOnUserChange: override?.resetOnUserChange ?? base.resetOnUserChange,
+    resetOnTargetAppChange: override?.resetOnTargetAppChange ?? base.resetOnTargetAppChange
+  } satisfies ChatbotLifecycleSettings;
+}
+
+function trimMessagesForLifecycle(messages: RenderedMessage[], settings: ChatbotLifecycleSettings): ScoutChatMessage[] {
+  const recent = messages.slice(-Math.max(1, settings.maxContextMessages));
+  const selected: RenderedMessage[] = [];
+  let totalTokens = 0;
+
+  for (let index = recent.length - 1; index >= 0; index -= 1) {
+    const message = recent[index];
+    const tokens = estimateTextTokens(message.text);
+    if (selected.length > 0 && totalTokens + tokens > settings.maxContextTokens) {
+      continue;
+    }
+
+    selected.unshift(message);
+    totalTokens += tokens;
+  }
+
+  return selected.map((message) => ({
+    id: message.id,
+    role: message.role,
+    text: message.text,
+    time: message.time,
+    queryId: message.queryId,
+    citations: message.citations,
+    noAnswer: message.noAnswer,
+    noAnswerReason: message.noAnswerReason,
+    feedback: message.feedback,
+    workflowSuggestion: message.workflowSuggestion
+  }));
+}
+
+function createConversationSessionId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `conversation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function readStoredMessages(key: string): RenderedMessage[] | null {
@@ -1539,6 +2445,140 @@ function createMockWorkflowReply(message: string, workflows: ScoutWorkflowSessio
       : "To create a rate, open the rate setup area, choose the rate type, fill in the required pricing fields, review the effective dates, and save the rate.",
     workflowSuggestion: workflow
   };
+}
+
+function ConversationHistorySection({
+  actionLabel = "Archive",
+  actionState,
+  currentPage,
+  currentConversationId,
+  emptyMessage,
+  items,
+  onArchive,
+  onDelete,
+  onNextPage,
+  onPreviousPage,
+  onRename,
+  onResume,
+  onSelectAll,
+  onToggleSelection,
+  pageCount,
+  sectionStatus,
+  selectedConversationIds,
+  title
+}: {
+  actionLabel?: string;
+  actionState: HistoryActionState;
+  currentPage: number;
+  currentConversationId: string;
+  emptyMessage: string;
+  items: ConversationListItem[];
+  onArchive: (id: string) => void;
+  onDelete: (item: ConversationListItem) => void;
+  onNextPage?: () => void;
+  onPreviousPage?: () => void;
+  onRename: (item: ConversationListItem) => void;
+  onResume: (id: string) => void;
+  onSelectAll: (checked: boolean) => void;
+  onToggleSelection: (id: string) => void;
+  pageCount: number;
+  sectionStatus: "active" | "archived";
+  selectedConversationIds: Set<string>;
+  title: string;
+}) {
+  const selectableItems = items.filter((item) => item.status === sectionStatus);
+  const selectedCount = selectableItems.filter((item) => selectedConversationIds.has(item.id)).length;
+  const allSelected = selectableItems.length > 0 && selectedCount === selectableItems.length;
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            aria-label={allSelected ? `Clear ${title} selection` : `Select all ${title} conversations`}
+            className={cn(
+              "flex h-5 w-5 items-center justify-center rounded border text-[11px] font-bold transition",
+              allSelected ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white text-slate-400"
+            )}
+            onClick={() => onSelectAll(!allSelected)}
+            type="button"
+          >
+            {allSelected ? <Check className="h-3.5 w-3.5" /> : null}
+          </button>
+          <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</h4>
+        </div>
+        <span className="text-xs text-slate-400">{items.length}{pageCount > 1 ? ` • Page ${currentPage}/${pageCount}` : ""}</span>
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">{emptyMessage}</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => {
+            const isCurrent = item.id === currentConversationId;
+            const isBusy = actionState.conversationId === item.id && ["renaming", "deleting", "archiving", "restoring"].includes(actionState.type);
+            const isSelected = selectedConversationIds.has(item.id);
+
+            return (
+              <div key={item.id} className={cn("rounded-2xl border px-3 py-3", isCurrent ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-white") }>
+                <div className="flex items-start gap-3">
+                  <button
+                    aria-label={isSelected ? `Deselect ${item.title}` : `Select ${item.title}`}
+                    className={cn(
+                      "mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[11px] font-bold transition",
+                      isSelected ? "border-sky-500 bg-sky-500 text-white" : "border-slate-300 bg-white text-slate-400"
+                    )}
+                    onClick={() => onToggleSelection(item.id)}
+                    type="button"
+                  >
+                    {isSelected ? <Check className="h-3.5 w-3.5" /> : null}
+                  </button>
+                  <button className="min-w-0 flex-1 text-left" onClick={() => onResume(item.id)} type="button">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-900">{item.title}</p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.message_count} messages
+                          {item.last_message_at ? ` • ${new Date(item.last_message_at).toLocaleString()}` : ""}
+                        </p>
+                      </div>
+                      {isCurrent ? <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Current</span> : null}
+                    </div>
+                  </button>
+                </div>
+                <div className="mt-3 flex items-center justify-end gap-2">
+                  <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={isBusy} onClick={() => onRename(item)} type="button">
+                    <Pencil className="mr-1 inline h-3.5 w-3.5" />
+                    Rename
+                  </button>
+                  <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={isBusy} onClick={() => onResume(item.id)} type="button">
+                    Resume
+                  </button>
+                  <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={isBusy} onClick={() => onArchive(item.id)} type="button">
+                    {actionLabel === "Restore" ? <RotateCcw className="mr-1 inline h-3.5 w-3.5" /> : <Archive className="mr-1 inline h-3.5 w-3.5" />}
+                    {isBusy && actionState.type === "archiving" ? "Archiving..." : isBusy && actionState.type === "restoring" ? "Restoring..." : actionLabel}
+                  </button>
+                  <button className="rounded-lg border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={isBusy} onClick={() => onDelete(item)} type="button">
+                    <Trash2 className="mr-1 inline h-3.5 w-3.5" />
+                    {isBusy && actionState.type === "deleting" ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {pageCount > 1 ? (
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40" disabled={!onPreviousPage} onClick={onPreviousPage} type="button">
+            Previous
+          </button>
+          <button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40" disabled={!onNextPage} onClick={onNextPage} type="button">
+            Next
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
 }
 
 function findWorkflowForMessage(normalizedMessage: string, workflows: ScoutWorkflowSession[]) {

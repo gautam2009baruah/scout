@@ -577,7 +577,8 @@ window.CustomerScoutChatbotConfig = {
   assistantName: "Acme Assistant",
   brandColor: "#111827",
   accentColor: "#0ea5e9",
-  position: "bottom-right"
+  position: "bottom-right",
+  autoLoadLifecycleSettings: true
 };
 ```
 
@@ -737,6 +738,8 @@ window.CustomerScoutChatbotConfig = {
 ```
 
 The browser can still inspect this file. Its purpose is deployment separation and easier rotation, not secret concealment.
+
+When `autoLoadLifecycleSettings` is omitted or set to `true`, the hosted Scout widget will automatically call `/v1/chat/settings` on the standalone chatbot API and apply the effective rolling-context and inactivity rules configured in Scout Admin for the matching company and target app. You can still override values manually by supplying `lifecycleConfig` in the install configuration.
 
 This alternative loads the Scout-hosted loader directly from HTML and then invokes it with a separate configuration file. The two-local-file pattern in section 9.1 is preferred when the implementation team wants all startup logic in a customer-owned installer.
 

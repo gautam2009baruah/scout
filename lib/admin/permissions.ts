@@ -17,7 +17,8 @@ export const MODULE_KEYS = {
   emailCredentials: 11,
   companyRoleSetup: 12,
   triggersMonitoring: 13,
-  searchAnalytics: 14
+  searchAnalytics: 14,
+  chatbotSettings: 15
 } as const;
 
 export type AdminModuleKey = number;

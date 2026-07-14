@@ -1,9 +1,11 @@
 import { getPool } from "@/lib/db/pool";
 import { getLLMProvider, INSUFFICIENT_CONTEXT_MESSAGE, type LLMContextItem } from "@/lib/llm/providers";
+import { buildConversationContextWindow } from "@/lib/chat/context-manager";
+import { getEffectiveChatbotLifecycleSettings } from "@/lib/chat/lifecycle-settings";
 import { RetrievalEngine } from "@/lib/search/retrieval-engine";
 import type { Citation } from "@/lib/search/citation-engine";
 import { isAnswerGrounded, shouldRequireCitations } from "@/lib/search/grounding";
-import { appendConversationExchange, getOrCreateConversation } from "./conversations";
+import { appendConversationExchange, getConversationLifecycleState, getOrCreateConversation } from "./conversations";
 import { matchChatbotTriggers, shouldCheckTriggers } from "@/lib/orchestrations/chatbot-trigger-matcher";
 import { createExecution } from "@/lib/orchestrations/db";
 import { buildEstimatedTokenUsage, recordChatQueryTelemetry } from "./telemetry";
@@ -104,6 +106,24 @@ function buildSystemPrompt() {
     "If evidence is weak or missing, return the insufficient-context response.",
     "Keep the answer concise and cite-ready."
   ].join(" ");
+}
+
+function buildUserPrompt(question: string, recentMessages: Array<{ role: "user" | "assistant" | "system"; content: string }>) {
+  if (recentMessages.length === 0) {
+    return question;
+  }
+
+  const transcript = recentMessages
+    .map((message) => `${message.role.toUpperCase()}: ${message.content}`)
+    .join("\n");
+
+  return [
+    "Recent conversation context:",
+    transcript,
+    "",
+    "Current user question:",
+    question
+  ].join("\n");
 }
 
 function buildLLMContext(chunks: Awaited<ReturnType<typeof RetrievalEngine.retrieve>>["chunks"]): LLMContextItem[] {
@@ -260,10 +280,25 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   await validateCompany(companyId);
   const user = await validateUserForCompany(companyId, userId);
+  const lifecycleSettings = await getEffectiveChatbotLifecycleSettings(companyId, input.target_app_id?.trim() || undefined);
+  let requestedConversationId = input.conversation_id?.trim() || undefined;
+
+  if (requestedConversationId) {
+    const lifecycleState = await getConversationLifecycleState({ companyId, userId, conversationId: requestedConversationId });
+    const referenceTime = lifecycleState?.last_message_at ?? lifecycleState?.created_at ?? null;
+
+    if (referenceTime) {
+      const ageSeconds = Math.max(0, (Date.now() - referenceTime.getTime()) / 1000);
+      if (ageSeconds >= lifecycleSettings.inactivityTimeoutSeconds) {
+        requestedConversationId = undefined;
+      }
+    }
+  }
+
   const conversationId = await getOrCreateConversation({
     companyId,
     userId,
-    conversationId: input.conversation_id?.trim() || undefined,
+    conversationId: requestedConversationId,
     firstQuestion: question
   });
 
@@ -589,8 +624,13 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   const provider = await getLLMProvider();
   const systemPrompt = buildSystemPrompt();
+  const conversationWindow = await buildConversationContextWindow({
+    companyId,
+    conversationId,
+    settings: lifecycleSettings
+  });
   const llmContext = buildLLMContext(retrieval.chunks);
-  const answer = await provider.generate_answer(systemPrompt, question, llmContext);
+  const answer = await provider.generate_answer(systemPrompt, buildUserPrompt(question, conversationWindow.messages), llmContext);
   const generatedAnswer = answer || INSUFFICIENT_CONTEXT_MESSAGE;
   const requiresCitations = shouldRequireCitations(generatedAnswer);
   const grounded = isAnswerGrounded(generatedAnswer, retrieval.chunks);
@@ -648,6 +688,11 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         topK,
         targetAppId: input.target_app_id?.trim() || undefined,
       }),
+        conversationContext: {
+          messageCount: conversationWindow.messages.length,
+          estimatedTokens: conversationWindow.estimatedTokens,
+          summarized: conversationWindow.summary !== null
+        }
     },
   });
 

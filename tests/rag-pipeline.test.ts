@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { trimConversationMessagesForContext } from "@/lib/chat/context-manager";
+import { DEFAULT_CHATBOT_LIFECYCLE_SETTINGS, mergeLifecycleSettings } from "@/lib/chat/lifecycle-settings";
 import { assessParseQuality } from "@/lib/document-processing/parse-quality";
 import { CitationEngine } from "@/lib/search/citation-engine";
 import { detectFilterExclusionRisk } from "@/lib/search/filter-diagnostics";
@@ -136,4 +138,32 @@ test("filter diagnostics flags likely exclusion when indexed docs exist but retr
 
   assert.equal(risk.targetScopeExcludedAll, true);
   assert.equal(risk.likelyFilterExclusion, true);
+});
+
+test("conversation context window keeps only recent messages within configured bounds", () => {
+  const window = trimConversationMessagesForContext([
+    { role: "user", content: "first message" },
+    { role: "assistant", content: "second message" },
+    { role: "user", content: "third message" },
+    { role: "assistant", content: "fourth message" }
+  ], {
+    ...DEFAULT_CHATBOT_LIFECYCLE_SETTINGS,
+    maxContextMessages: 2,
+    maxContextTokens: 3000
+  });
+
+  assert.equal(window.messages.length, 2);
+  assert.deepEqual(window.messages.map((message) => message.content), ["third message", "fourth message"]);
+});
+
+test("lifecycle setting merge enforces configured ranges", () => {
+  const merged = mergeLifecycleSettings(DEFAULT_CHATBOT_LIFECYCLE_SETTINGS, {
+    maxContextMessages: 200,
+    maxContextTokens: 1,
+    inactivityTimeoutSeconds: 9999999
+  });
+
+  assert.equal(merged.maxContextMessages, 30);
+  assert.equal(merged.maxContextTokens, 3000);
+  assert.equal(merged.inactivityTimeoutSeconds, 604800);
 });

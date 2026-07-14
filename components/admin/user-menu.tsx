@@ -37,6 +37,10 @@ export function UserMenu({ name }: { name: string }) {
   async function logout() {
     setLoggingOut(true);
     try {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("SCOUT_SESSION_EXPIRED"));
+      }
+
       if (typeof window !== "undefined" && window.sessionStorage) {
         const keysToRemove: string[] = [];
 

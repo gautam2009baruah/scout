@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Activity, BarChart3, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
@@ -24,7 +24,8 @@ const MODULE_KEYS = {
   emailCredentials: 11,
   companyRoleSetup: 12,
   triggersMonitoring: 13,
-  searchAnalytics: 14
+  searchAnalytics: 14,
+  chatbotSettings: 15
 } as const;
 
 type AdminShellProps = {
@@ -49,7 +50,8 @@ const moduleIcons = {
   [MODULE_KEYS.emailCredentials]: Bot,
   [MODULE_KEYS.companyRoleSetup]: TableProperties,
   [MODULE_KEYS.triggersMonitoring]: Activity,
-  [MODULE_KEYS.searchAnalytics]: BarChart3
+  [MODULE_KEYS.searchAnalytics]: BarChart3,
+  [MODULE_KEYS.chatbotSettings]: SlidersHorizontal
 } as const;
 
 const CRS_SCOUT_BASE_URL = "http://localhost:3000";
@@ -93,8 +95,10 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     }, 900);
   }
 
-  function clearClientSessionArtifacts() {
+  const clearClientSessionArtifacts = useCallback(() => {
     if (typeof window === "undefined") return;
+
+    window.dispatchEvent(new CustomEvent("SCOUT_SESSION_EXPIRED"));
 
     const keysToRemove: string[] = [];
     for (let index = 0; index < window.sessionStorage.length; index += 1) {
@@ -121,9 +125,9 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       document.cookie = `${name}=; Max-Age=0; path=/; SameSite=Lax${secureFlag}`;
       document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax${secureFlag}`;
     });
-  }
+  }, []);
 
-  function clearSessionTimers() {
+  const clearSessionTimers = useCallback(() => {
     if (warningTimerRef.current !== null) {
       window.clearTimeout(warningTimerRef.current);
       warningTimerRef.current = null;
@@ -138,9 +142,9 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       window.clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
     }
-  }
+  }, []);
 
-  async function logoutNow() {
+  const logoutNow = useCallback(async () => {
     if (logoutRequestedRef.current) return;
     logoutRequestedRef.current = true;
     clearSessionTimers();
@@ -153,9 +157,9 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     }
 
     window.location.replace("/control-panel/login");
-  }
+  }, [clearClientSessionArtifacts, clearSessionTimers]);
 
-  function scheduleSessionWarning(deadlineMs: number) {
+  const scheduleSessionWarning = useCallback((deadlineMs: number) => {
     clearSessionTimers();
     const remainingMs = deadlineMs - Date.now();
 
@@ -210,7 +214,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         void logoutNow();
       }, 30_000);
     }, remainingMs - 30_000);
-  }
+  }, [clearSessionTimers, logoutNow]);
 
   async function stayOnPage() {
     if (isExtendingSession || logoutRequestedRef.current) return;
@@ -248,7 +252,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     return () => {
       clearSessionTimers();
     };
-  }, [sessionDeadline]);
+  }, [clearSessionTimers, scheduleSessionWarning, sessionDeadline]);
 
   function toggleDesktopSidebar() {
     setIsSidebarCollapsed((current) => {

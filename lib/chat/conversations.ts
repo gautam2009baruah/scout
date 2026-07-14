@@ -34,6 +34,13 @@ export type CompactCitation = {
   download_available?: boolean;
 };
 
+export type ConversationLifecycleState = {
+  id: string;
+  status: ConversationStatus;
+  created_at: Date;
+  last_message_at: Date | null;
+};
+
 type PageInput = {
   page?: number;
   pageSize?: number;
@@ -143,7 +150,20 @@ export async function getOrCreateConversation(input: {
 
     const conversation = existing.rows[0];
 
-    if (!conversation || conversation.status === "deleted") {
+    if (!conversation) {
+      const created = await getPool().query<{ id: string }>(
+        `
+          INSERT INTO conversations (id, company_id, user_id, title)
+          VALUES ($1, $2, $3, $4)
+          RETURNING id
+        `,
+        [input.conversationId, input.companyId, input.userId, truncateTitle(input.firstQuestion)]
+      );
+
+      return created.rows[0].id;
+    }
+
+    if (conversation.status === "deleted") {
       throw new ConversationError("Conversation was not found.", 404);
     }
 
@@ -167,6 +187,29 @@ export async function getOrCreateConversation(input: {
   );
 
   return result.rows[0].id;
+}
+
+export async function getConversationLifecycleState(input: {
+  companyId: string;
+  userId: string;
+  conversationId: string;
+}) {
+  await assertCompanyAndUser(input.companyId, input.userId);
+
+  const result = await getPool().query<ConversationLifecycleState>(
+    `
+      SELECT id, status, created_at, last_message_at
+      FROM conversations
+      WHERE id = $1
+        AND company_id = $2
+        AND user_id = $3
+        AND status <> 'deleted'
+      LIMIT 1
+    `,
+    [input.conversationId, input.companyId, input.userId]
+  );
+
+  return result.rows[0] ?? null;
 }
 
 export async function appendConversationExchange(input: {
@@ -280,40 +323,60 @@ function mapMessage(row: {
 export async function listConversations(input: {
   companyId: string;
   userId: string;
+  search?: string;
   status?: string;
 } & PageInput) {
   await assertCompanyAndUser(input.companyId, input.userId);
   const { page, pageSize, offset } = normalizePage(input);
   const status = input.status?.trim() || "active";
+  const search = input.search?.trim() || "";
   assertConversationStatus(status);
 
   if (status === "deleted") {
     throw new ConversationError("Deleted conversations are not returned in normal listings.");
   }
 
-  const params = [input.companyId, input.userId, status, pageSize, offset];
+  const conditions = [
+    "company_id = $1",
+    "user_id = $2",
+    "status = $3"
+  ];
+  const params: unknown[] = [input.companyId, input.userId, status];
+
+  if (search) {
+    params.push(`%${search}%`);
+    conditions.push(`(
+      title ILIKE $${params.length}
+      OR EXISTS (
+        SELECT 1
+        FROM conversation_messages
+        WHERE conversation_messages.company_id = conversations.company_id
+          AND conversation_messages.conversation_id = conversations.id
+          AND conversation_messages.content ILIKE $${params.length}
+      )
+    )`);
+  }
+
+  const whereClause = `WHERE ${conditions.join(" AND ")}`;
+  const dataParams = [...params, pageSize, offset];
   const [rows, count] = await Promise.all([
     getPool().query(
       `
         SELECT id, title, status, message_count, last_message_at, created_at
         FROM conversations
-        WHERE company_id = $1
-          AND user_id = $2
-          AND status = $3
+        ${whereClause}
         ORDER BY COALESCE(last_message_at, created_at) DESC
-        LIMIT $4 OFFSET $5
+        LIMIT $${params.length + 1} OFFSET $${params.length + 2}
       `,
-      params
+      dataParams
     ),
     getPool().query<{ total: string }>(
       `
         SELECT COUNT(*) AS total
         FROM conversations
-        WHERE company_id = $1
-          AND user_id = $2
-          AND status = $3
+        ${whereClause}
       `,
-      params.slice(0, 3)
+      params
     )
   ]);
   const total = Number(count.rows[0]?.total ?? 0);

@@ -10,6 +10,7 @@ export async function GET(request: Request) {
     const result = await listConversations({
       companyId: url.searchParams.get("company_id") ?? "",
       userId: url.searchParams.get("user_id") ?? "",
+      search: url.searchParams.get("search") ?? undefined,
       status: url.searchParams.get("status") ?? undefined,
       page: Number(url.searchParams.get("page") ?? 1),
       pageSize: Number(url.searchParams.get("pageSize") ?? 20)

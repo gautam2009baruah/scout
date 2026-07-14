@@ -9,6 +9,7 @@ This service is intentionally separated from the Control Panel UI runtime and ca
 - `GET /health` - liveness
 - `GET /ready` - readiness (DB check)
 - `POST /v1/context/resolve` - resolve `companyName` and optional `targetAppName`
+- `POST /v1/chat/settings` - resolve effective chatbot lifecycle settings for company/target app
 - `POST /v1/chat/query` - run full chatbot query flow
 
 ## Authentication

@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
+import { getEffectiveChatbotLifecycleSettings } from "@/lib/chat/lifecycle-settings";
 import { answerChatQuery, ChatQueryError } from "@/lib/chat/query";
 import { getPool } from "@/lib/db/pool";
 import { CompanyApiKeyAuthorizer } from "./auth";
@@ -157,6 +158,33 @@ async function handleChatQuery(
   );
 }
 
+async function handleChatSettings(
+  response: ServerResponse,
+  requestId: string,
+  origin: string | undefined,
+  context: {
+    company: { id: string; name: string };
+    targetApp: { id: string; name: string } | null;
+  },
+  extraHeaders: Record<string, string>
+) {
+  const settings = await getEffectiveChatbotLifecycleSettings(context.company.id, context.targetApp?.id);
+
+  sendJson(
+    response,
+    200,
+    {
+      requestId,
+      company: { id: context.company.id, name: context.company.name },
+      targetApp: context.targetApp ? { id: context.targetApp.id, name: context.targetApp.name } : null,
+      settings
+    },
+    requestId,
+    origin,
+    extraHeaders
+  );
+}
+
 const server = createServer(async (request, response) => {
   const requestId = String(request.headers["x-request-id"] || randomUUID());
   const origin = typeof request.headers.origin === "string" ? request.headers.origin : undefined;
@@ -248,6 +276,25 @@ const server = createServer(async (request, response) => {
         },
         requestId,
         origin,
+        authHeaders
+      );
+      return;
+    }
+
+    if (url.pathname === "/v1/chat/settings" && request.method === "POST") {
+      if (!companyContext) {
+        sendJson(response, 500, { message: "Company context was not resolved." }, requestId, origin, authHeaders);
+        return;
+      }
+
+      await handleChatSettings(
+        response,
+        requestId,
+        origin,
+        {
+          company: companyContext,
+          targetApp: targetAppContext
+        },
         authHeaders
       );
       return;
