@@ -511,7 +511,22 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
 
   await assertUniqueApiKeyNamePerTargetApp(companyId, targetAppId, name, "active");
 
-  await ensureNoOtherActiveKeyInEnvironment(companyId, environment);
+  const existingActive = await getPool().query<{ id: string }>(
+    `
+      SELECT id
+      FROM chatbot_api_keys
+      WHERE company_id = $1
+        AND environment = $2
+        AND status = 'active'
+        AND is_active = true
+      LIMIT 1
+    `,
+    [companyId, environment]
+  );
+
+  const autoSuspended = (existingActive.rowCount ?? 0) > 0;
+  const initialStatus: ChatbotApiKeyStatus = autoSuspended ? "suspended" : "active";
+  const initialIsActive = !autoSuspended;
 
   const generated = generateChatbotApiKey(environment);
 
@@ -547,7 +562,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, true, 'active', $7, $8::jsonb, $9, $10, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $12)
       RETURNING
         chatbot_api_keys.id,
         chatbot_api_keys.name,
@@ -571,6 +586,8 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
       generated.keyHash,
       targetAppId,
       strictEnvironmentEnforcement,
+      initialIsActive,
+      initialStatus,
       environment,
       JSON.stringify(allowedOrigins),
       expiresAt,
@@ -580,7 +597,8 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
 
   return {
     apiKey: generated.secret,
-    record: mapChatbotApiKeyRow(result.rows[0])
+    record: mapChatbotApiKeyRow(result.rows[0]),
+    autoSuspended
   };
 }
 

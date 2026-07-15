@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Ban,
   CircleHelp,
+  Check,
   Copy,
   Download,
   KeyRound,
@@ -158,19 +159,16 @@ function IconActionButton({
       : "border-slate-200 text-slate-700";
 
   return (
-    <div className="relative group">
-      <button
-        className={`inline-flex h-8 w-8 items-center justify-center rounded-md border bg-white ${toneClass} disabled:opacity-50`}
-        onClick={onClick}
-        type="button"
-        disabled={disabled}
-      >
-        {children}
-      </button>
-      <span className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] z-50 hidden w-56 -translate-x-1/2 rounded-md border border-slate-200 bg-slate-900 px-3 py-2 text-xs leading-5 text-slate-100 shadow-lg whitespace-normal break-words group-hover:block">
-        {label}
-      </span>
-    </div>
+    <button
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border bg-white ${toneClass} disabled:opacity-50`}
+      onClick={onClick}
+      type="button"
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -196,6 +194,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   });
 
   const [rotatedApiKey, setRotatedApiKey] = useState<string | null>(null);
+  const [rotatedApiKeyCopied, setRotatedApiKeyCopied] = useState(false);
 
   const [environmentModalOpen, setEnvironmentModalOpen] = useState(false);
   const [newEnvironmentName, setNewEnvironmentName] = useState("");
@@ -371,7 +370,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   function startEditKey(key: ChatbotApiKeyRecord) {
     setEditingKeyId(key.id);
     setApiKeyForm({
-      targetAppId: key.targetAppId ?? defaultTargetAppId,
+      targetAppId: key.targetAppId ?? COMPANY_SCOPE,
       name: key.name,
       environment: key.environment,
       strictEnvironmentEnforcement: key.strictEnvironmentEnforcement,
@@ -400,7 +399,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
     const payload = {
       name: apiKeyForm.name.trim(),
-      targetAppId: canUseCompanyLevelApiKeys && apiKeyForm.targetAppId === COMPANY_SCOPE ? null : apiKeyForm.targetAppId,
+      targetAppId: apiKeyForm.targetAppId === COMPANY_SCOPE ? null : apiKeyForm.targetAppId,
       environment: apiKeyForm.environment,
       strictEnvironmentEnforcement: apiKeyForm.strictEnvironmentEnforcement,
       allowedOrigins: parseAllowedOrigins(apiKeyForm.allowedOriginsText),
@@ -424,10 +423,16 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
     if (!editingKeyId && typeof body?.apiKey === "string") {
       setRotatedApiKey(body.apiKey);
+      setRotatedApiKeyCopied(false);
     }
 
     await loadApiKeys();
     resetApiKeyForm();
+    if (!editingKeyId && body?.autoSuspended === true) {
+      showToast("API key created in suspended mode because an active key already exists in this environment.", "success");
+      return;
+    }
+
     showToast(editingKeyId ? "API key updated." : "API key created.", "success");
   }
 
@@ -482,6 +487,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
         await loadApiKeys();
         if (typeof body?.apiKey === "string") {
           setRotatedApiKey(body.apiKey);
+          setRotatedApiKeyCopied(false);
         }
         showToast("API key rotated.", "success");
       }
@@ -564,7 +570,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   function copyRotatedApiKey() {
     if (!rotatedApiKey) return;
     navigator.clipboard.writeText(rotatedApiKey).then(
-      () => showToast("API key copied to clipboard.", "success"),
+      () => setRotatedApiKeyCopied(true),
       () => showToast("Unable to copy API key. Please copy manually.", "error")
     );
   }
@@ -751,7 +757,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
           ) : null}
 
           {activeTab === "keys" ? (
-            <div className="space-y-4">
+            <div className="space-y-4 overflow-x-hidden">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-950">Chatbot API Keys</h2>
@@ -773,7 +779,9 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, targetAppId: event.target.value }))}
                       disabled={editingKeyId !== null}
                     >
-                      {canUseCompanyLevelApiKeys ? <option value={COMPANY_SCOPE}>Company level</option> : null}
+                      {canUseCompanyLevelApiKeys || (editingKeyId !== null && apiKeyForm.targetAppId === COMPANY_SCOPE)
+                        ? <option value={COMPANY_SCOPE}>Company level</option>
+                        : null}
                       {targetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
                       ))}
@@ -814,12 +822,11 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                         onClick={() => setEnvironmentModalOpen(true)}
                         type="button"
                         disabled={editingKeyId !== null}
+                        title="Create, edit, or delete environment values for this dropdown."
+                        aria-label="Manage environments"
                       >
                         <Plus className="h-4 w-4" />
                       </button>
-                      <span className="pointer-events-none absolute left-1/2 top-[calc(100%+8px)] z-50 hidden w-52 -translate-x-1/2 rounded-md border border-slate-200 bg-slate-900 px-3 py-2 text-xs leading-5 text-slate-100 shadow-lg whitespace-normal break-words group-hover:block">
-                        Create, edit, or delete environment values for this dropdown.
-                      </span>
                     </div>
                   </div>
                 </div>
@@ -867,9 +874,18 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                   />
                   Strict environment enforcement for this key
                 </label>
+
+                <details className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+                  <summary className="cursor-pointer font-semibold text-slate-800">How strict environment enforcement works</summary>
+                  <div className="mt-2 space-y-1">
+                    <p>When enabled, this key can only be used if request environment exactly matches the key environment.</p>
+                    <p>If environment header/body is missing for this key, the request is rejected.</p>
+                    <p>Sample: key environment = production, request must include environment=production (or X-Scout-Environment: production).</p>
+                  </div>
+                </details>
               </form>
 
-              <div className="overflow-x-auto overflow-y-visible">
+              <div className="w-full max-w-full overflow-x-auto overflow-y-visible overscroll-x-contain">
                 <table className="min-w-[1080px] divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                     <tr>
@@ -1141,18 +1157,18 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
             <textarea className="mt-3 min-h-[92px] w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-800" readOnly value={rotatedApiKey} />
             <div className="mt-4 flex justify-end gap-2">
               <button className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700" onClick={copyRotatedApiKey} type="button">
-                <Copy className="h-4 w-4" />
-                Copy
+                {rotatedApiKeyCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {rotatedApiKeyCopied ? "Copied" : "Copy"}
               </button>
-              <button className="inline-flex h-10 items-center rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white" onClick={() => setRotatedApiKey(null)} type="button">Close</button>
+              <button className="inline-flex h-10 items-center rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white" onClick={() => { setRotatedApiKey(null); setRotatedApiKeyCopied(false); }} type="button">Close</button>
             </div>
           </div>
         </div>
       ) : null}
 
       {toast ? (
-        <div className="fixed top-4 left-1/2 z-[9999] -translate-x-1/2">
-          <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"}`}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
+          <div className={`pointer-events-auto flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"}`}>
             <span className="text-sm font-semibold">{toast.type === "success" ? "Success" : "Error"}</span>
             <span className="text-sm">{toast.message}</span>
             <button onClick={() => setToast(null)} className="rounded p-0.5 hover:bg-black/5" type="button"><X className="h-4 w-4" /></button>

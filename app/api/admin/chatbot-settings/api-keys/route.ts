@@ -69,7 +69,7 @@ export async function POST(request: Request) {
       expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : null
     });
 
-    return NextResponse.json({ apiKey: created.apiKey, key: created.record });
+    return NextResponse.json({ apiKey: created.apiKey, key: created.record, autoSuspended: created.autoSuspended === true });
   } catch (error) {
     if (error instanceof ChatbotSettingsError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
