@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, Clock3, Download, ExternalLink, Filter, MessageSquareText, ThumbsUp, Timer } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarRange, Clock3, Download, ExternalLink, Filter, MessageSquareText, ThumbsUp, Timer } from "lucide-react";
 import { formatDateTimeForDisplay } from "@/lib/datetime";
 
 type TargetAppOption = {
@@ -35,6 +35,8 @@ type RawRow = {
   created_at: string;
   company_name: string;
   target_app_name: string;
+  user_name: string;
+  user_email: string;
   question: string;
   answer_status: "answered" | "no_answer" | "failed";
   no_answer_reason: string | null;
@@ -59,36 +61,6 @@ type RawResponse = {
   };
 };
 
-const emptySummary: SummaryResponse = {
-  summary: {
-    totalQueries: 0,
-    answeredQueries: 0,
-    noAnswerQueries: 0,
-    failedQueries: 0,
-    answerRate: 0,
-    noAnswerRate: 0,
-    avgLatencyMs: 0,
-    avgRetrievedChunks: 0,
-    avgCitations: 0,
-    totalTokens: 0,
-    totalEstimatedCostUsd: 0,
-    queriesWithFeedback: 0,
-    feedbackCoverageRate: 0,
-    positiveFeedbackRate: 0
-  },
-  noAnswerReasons: []
-};
-
-const emptyRaw: RawResponse = {
-  rows: [],
-  pagination: {
-    page: 1,
-    pageSize: 25,
-    total: 0,
-    totalPages: 1
-  }
-};
-
 type ExplainabilityResponse = {
   diagnostics: {
     totalQueries: number;
@@ -99,24 +71,6 @@ type ExplainabilityResponse = {
     noAnswerQueries: number;
     queriesWithPathData: number;
   };
-  retrievalPaths: Array<{
-    id: string;
-    created_at: string;
-    question: string;
-    answer_status: "answered" | "no_answer" | "failed";
-    no_answer_reason: string | null;
-    path_items: Array<{
-      chunk_id?: string;
-      document_id?: string;
-      document_name?: string;
-      folder_path?: string;
-      section_title?: string;
-      page_number?: number;
-      score?: number;
-      citation_type?: "text" | "visual";
-      visual_asset_type?: string;
-    }>;
-  }>;
   knowledgeQuality: {
     duplicateDocuments: Array<{
       name_key: string;
@@ -174,6 +128,53 @@ type QueryExplainabilityDetail = {
   recommendations: string[];
 };
 
+type GroupedQueryTree = Array<{
+  id: string;
+  label: string;
+  count: number;
+  apps: Array<{
+    id: string;
+    label: string;
+    count: number;
+    users: Array<{
+      id: string;
+      label: string;
+      count: number;
+      rows: RawRow[];
+    }>;
+  }>;
+}>;
+
+const emptySummary: SummaryResponse = {
+  summary: {
+    totalQueries: 0,
+    answeredQueries: 0,
+    noAnswerQueries: 0,
+    failedQueries: 0,
+    answerRate: 0,
+    noAnswerRate: 0,
+    avgLatencyMs: 0,
+    avgRetrievedChunks: 0,
+    avgCitations: 0,
+    totalTokens: 0,
+    totalEstimatedCostUsd: 0,
+    queriesWithFeedback: 0,
+    feedbackCoverageRate: 0,
+    positiveFeedbackRate: 0,
+  },
+  noAnswerReasons: [],
+};
+
+const emptyRaw: RawResponse = {
+  rows: [],
+  pagination: {
+    page: 1,
+    pageSize: 25,
+    total: 0,
+    totalPages: 1,
+  },
+};
+
 const emptyExplainability: ExplainabilityResponse = {
   diagnostics: {
     totalQueries: 0,
@@ -182,26 +183,103 @@ const emptyExplainability: ExplainabilityResponse = {
     zeroChunkQueries: 0,
     zeroCitationQueries: 0,
     noAnswerQueries: 0,
-    queriesWithPathData: 0
+    queriesWithPathData: 0,
   },
-  retrievalPaths: [],
   knowledgeQuality: {
     duplicateDocuments: [],
     staleDocuments: [],
-    brokenSources: []
+    brokenSources: [],
   },
-  recommendations: []
+  recommendations: [],
 };
+
+function startOfTodayLocal() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function toDateTimeLocalValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function toUtcIso(localValue: string) {
+  const date = new Date(localValue);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date.toISOString();
+}
+
+function applyQuickRange(days: number) {
+  const to = new Date();
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  from.setDate(from.getDate() - Math.max(days - 1, 0));
+  return {
+    from: toDateTimeLocalValue(from),
+    to: toDateTimeLocalValue(to),
+  };
+}
+
+function buildTree(rows: RawRow[]): GroupedQueryTree {
+  const sortedRows = [...rows].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+  const dateMap = new Map<string, GroupedQueryTree[number]>();
+
+  for (const row of sortedRows) {
+    const rowDate = new Date(row.created_at);
+    const dateKey = rowDate.toLocaleDateString();
+    const dateLabel = rowDate.toLocaleDateString(undefined, { weekday: "short", year: "numeric", month: "short", day: "numeric" });
+    let dateGroup = dateMap.get(dateKey);
+    if (!dateGroup) {
+      dateGroup = { id: dateKey, label: dateLabel, count: 0, apps: [] };
+      dateMap.set(dateKey, dateGroup);
+    }
+    dateGroup.count += 1;
+
+    const appLabel = row.target_app_name || "—";
+    let appGroup = dateGroup.apps.find((item) => item.label === appLabel);
+    if (!appGroup) {
+      appGroup = { id: `${dateKey}-${appLabel}`, label: appLabel, count: 0, users: [] };
+      dateGroup.apps.push(appGroup);
+    }
+    appGroup.count += 1;
+
+    const userLabel = row.user_name || row.user_email || "Unknown user";
+    let userGroup = appGroup.users.find((item) => item.label === userLabel);
+    if (!userGroup) {
+      userGroup = { id: `${dateKey}-${appLabel}-${userLabel}`, label: userLabel, count: 0, rows: [] };
+      appGroup.users.push(userGroup);
+    }
+    userGroup.count += 1;
+    userGroup.rows.push(row);
+  }
+
+  return Array.from(dateMap.values());
+}
+
+function buildPageNumbers(page: number, pageCount: number) {
+  return Array.from({ length: pageCount }, (_, index) => index + 1).filter((pageNumber) => (
+    pageNumber === 1 || pageNumber === pageCount || Math.abs(pageNumber - page) <= 1
+  ));
+}
 
 export function SearchAnalyticsDashboard({
   selectedCompanyId = "",
-  targetApps = []
+  targetApps = [],
 }: {
   selectedCompanyId?: string;
   targetApps?: TargetAppOption[];
 }) {
-  const [days, setDays] = useState("30");
-  const [appliedDays, setAppliedDays] = useState("30");
+  const [fromInput, setFromInput] = useState(() => toDateTimeLocalValue(startOfTodayLocal()));
+  const [toInput, setToInput] = useState(() => toDateTimeLocalValue(new Date()));
+  const [appliedFromUtc, setAppliedFromUtc] = useState(() => toUtcIso(toDateTimeLocalValue(startOfTodayLocal())) || new Date().toISOString());
+  const [appliedToUtc, setAppliedToUtc] = useState(() => toUtcIso(toDateTimeLocalValue(new Date())) || new Date().toISOString());
   const [targetAppId, setTargetAppId] = useState("all");
   const [appliedTargetAppId, setAppliedTargetAppId] = useState("all");
   const [answerStatus, setAnswerStatus] = useState("all");
@@ -224,6 +302,8 @@ export function SearchAnalyticsDashboard({
     () => (!selectedCompanyId ? targetApps : targetApps.filter((app) => app.companyId === selectedCompanyId)),
     [selectedCompanyId, targetApps]
   );
+  const rawTree = useMemo(() => buildTree(rawData.rows), [rawData.rows]);
+  const rawPageNumbers = useMemo(() => buildPageNumbers(rawData.pagination.page, rawData.pagination.totalPages), [rawData.pagination.page, rawData.pagination.totalPages]);
 
   useEffect(() => {
     if (targetAppId !== "all" && !availableTargetApps.some((app) => app.id === targetAppId)) {
@@ -247,7 +327,8 @@ export function SearchAnalyticsDashboard({
         setError(null);
 
         const summaryParams = new URLSearchParams();
-        summaryParams.set("days", appliedDays);
+        summaryParams.set("fromUtc", appliedFromUtc);
+        summaryParams.set("toUtc", appliedToUtc);
         if (selectedCompanyId) summaryParams.set("companyId", selectedCompanyId);
         if (appliedTargetAppId !== "all") summaryParams.set("targetAppId", appliedTargetAppId);
         if (appliedAnswerStatus !== "all") summaryParams.set("answerStatus", appliedAnswerStatus);
@@ -262,7 +343,7 @@ export function SearchAnalyticsDashboard({
         const [summaryResponse, rawResponse, explainabilityResponse] = await Promise.all([
           fetch(`/api/admin/chat-search-analytics?${summaryParams.toString()}`),
           fetch(`/api/admin/chat-search-analytics?${rawParams.toString()}`),
-          fetch(`/api/admin/chat-search-analytics/explainability?${explainabilityParams.toString()}`)
+          fetch(`/api/admin/chat-search-analytics/explainability?${explainabilityParams.toString()}`),
         ]);
 
         const summaryBody = await summaryResponse.json().catch(() => null);
@@ -270,13 +351,11 @@ export function SearchAnalyticsDashboard({
         const explainabilityBody = await explainabilityResponse.json().catch(() => null);
 
         if (!summaryResponse.ok) {
-          throw new Error(summaryBody?.message || "Unable to load search analytics.");
+          throw new Error(summaryBody?.message || "Unable to load chatbot analytics.");
         }
-
         if (!rawResponse.ok) {
-          throw new Error(rawBody?.message || "Unable to load query history.");
+          throw new Error(rawBody?.message || "Unable to load raw query history.");
         }
-
         if (!explainabilityResponse.ok) {
           throw new Error(explainabilityBody?.message || "Unable to load explainability diagnostics.");
         }
@@ -288,7 +367,7 @@ export function SearchAnalyticsDashboard({
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Unable to load search analytics.");
+          setError(err instanceof Error ? err.message : "Unable to load chatbot analytics.");
           setSummaryData(emptySummary);
           setRawData(emptyRaw);
           setExplainability(emptyExplainability);
@@ -307,13 +386,32 @@ export function SearchAnalyticsDashboard({
     return () => {
       cancelled = true;
     };
-  }, [appliedDays, appliedTargetAppId, appliedAnswerStatus, rawPage, rawPageSize, selectedCompanyId]);
+  }, [appliedFromUtc, appliedToUtc, appliedTargetAppId, appliedAnswerStatus, rawPage, rawPageSize, selectedCompanyId]);
 
   function applyFilters() {
-    setAppliedDays(days);
+    const nextFromUtc = toUtcIso(fromInput);
+    const nextToUtc = toUtcIso(toInput);
+    if (!nextFromUtc || !nextToUtc) {
+      setError("From and To datetime values are required.");
+      return;
+    }
+    if (new Date(nextFromUtc).getTime() > new Date(nextToUtc).getTime()) {
+      setError("From datetime must be earlier than To datetime.");
+      return;
+    }
+
+    setError(null);
+    setAppliedFromUtc(nextFromUtc);
+    setAppliedToUtc(nextToUtc);
     setAppliedTargetAppId(targetAppId);
     setAppliedAnswerStatus(answerStatus);
     setRawPage(1);
+  }
+
+  function setQuickRange(days: number) {
+    const range = applyQuickRange(days);
+    setFromInput(range.from);
+    setToInput(range.to);
   }
 
   function exportRows(format: "csv" | "json") {
@@ -321,6 +419,7 @@ export function SearchAnalyticsDashboard({
       timestamp: row.created_at,
       company: row.company_name,
       targetApp: row.target_app_name,
+      user: row.user_name || row.user_email,
       question: row.question,
       status: row.answer_status,
       noAnswerReason: row.no_answer_reason || "",
@@ -332,7 +431,7 @@ export function SearchAnalyticsDashboard({
       llmProvider: row.llm_provider || "",
       llmModel: row.llm_model || "",
       feedbackUp: row.feedback_up,
-      feedbackDown: row.feedback_down
+      feedbackDown: row.feedback_down,
     }));
 
     const payload = format === "json"
@@ -340,13 +439,13 @@ export function SearchAnalyticsDashboard({
       : toCsv(exportRowsData);
 
     const blob = new Blob([payload], {
-      type: format === "json" ? "application/json;charset=utf-8;" : "text/csv;charset=utf-8;"
+      type: format === "json" ? "application/json;charset=utf-8;" : "text/csv;charset=utf-8;",
     });
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `search-analytics-${appliedDays}-days.${format}`;
+    link.download = `chatbot-analytics-${rawData.pagination.page}.${format}`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -360,7 +459,8 @@ export function SearchAnalyticsDashboard({
 
       const detailParams = new URLSearchParams();
       detailParams.set("queryId", row.id);
-      detailParams.set("days", appliedDays);
+      detailParams.set("fromUtc", appliedFromUtc);
+      detailParams.set("toUtc", appliedToUtc);
       if (selectedCompanyId) detailParams.set("companyId", selectedCompanyId);
       if (appliedTargetAppId !== "all") detailParams.set("targetAppId", appliedTargetAppId);
       if (appliedAnswerStatus !== "all") detailParams.set("answerStatus", appliedAnswerStatus);
@@ -390,49 +490,65 @@ export function SearchAnalyticsDashboard({
 
   return (
     <div className="flex min-h-0 flex-col gap-3 overflow-hidden">
-      <div className="grid grid-cols-1 items-end gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-2 xl:grid-cols-[repeat(3,minmax(180px,1fr))_auto]">
-        <FilterSelect
-          label="Date range"
-          value={days}
-          onChange={setDays}
-          options={[
-            { label: "Last 7 days", value: "7" },
-            { label: "Last 30 days", value: "30" },
-            { label: "Last 90 days", value: "90" },
-            { label: "Last 365 days", value: "365" }
-          ]}
-        />
-        <FilterSelect
-          label="Target app"
-          value={targetAppId}
-          onChange={setTargetAppId}
-          options={[
-            { label: "All target apps", value: "all" },
-            ...availableTargetApps.map((app) => ({ label: app.name, value: app.id }))
-          ]}
-        />
-        <FilterSelect
-          label="Answer status"
-          value={answerStatus}
-          onChange={setAnswerStatus}
-          options={[
-            { label: "All statuses", value: "all" },
-            { label: "Answered", value: "answered" },
-            { label: "No answer", value: "no_answer" },
-            { label: "Failed", value: "failed" }
-          ]}
-        />
-        <div className="flex min-w-0 items-end sm:col-span-2 xl:col-span-1">
-          <button
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 xl:w-auto"
-            onClick={applyFilters}
-            type="button"
-          >
-            <Filter className="h-4 w-4" />
-            Filter
-          </button>
+      <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-950">Chatbot Analytics</h2>
+              <p className="mt-1 text-sm text-slate-500">Track retrieval quality, answer performance, and chatbot usage with precise local datetime filtering.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[2, 5, 7, 15, 30].map((days) => (
+                <button
+                  key={days}
+                  className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  onClick={() => setQuickRange(days)}
+                  type="button"
+                >
+                  Last {days} days
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 lg:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_minmax(180px,1fr)_minmax(160px,1fr)_auto]">
+            <label className="flex min-w-0 flex-col gap-1">
+              <span className="text-xs font-semibold uppercase text-slate-500">From datetime</span>
+              <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700" type="datetime-local" value={fromInput} onChange={(event) => setFromInput(event.target.value)} />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1">
+              <span className="text-xs font-semibold uppercase text-slate-500">To datetime</span>
+              <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700" type="datetime-local" value={toInput} onChange={(event) => setToInput(event.target.value)} />
+            </label>
+            <FilterSelect
+              label="Target app"
+              value={targetAppId}
+              onChange={setTargetAppId}
+              options={[
+                { label: "All target apps", value: "all" },
+                ...availableTargetApps.map((app) => ({ label: app.name, value: app.id })),
+              ]}
+            />
+            <FilterSelect
+              label="Answer status"
+              value={answerStatus}
+              onChange={setAnswerStatus}
+              options={[
+                { label: "All statuses", value: "all" },
+                { label: "Answered", value: "answered" },
+                { label: "No answer", value: "no_answer" },
+                { label: "Failed", value: "failed" },
+              ]}
+            />
+            <div className="flex min-w-0 items-end">
+              <button className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 xl:w-auto" onClick={applyFilters} type="button">
+                <Filter className="h-4 w-4" />
+                Apply
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
 
       {error ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
 
@@ -491,8 +607,8 @@ export function SearchAnalyticsDashboard({
 
       <div className="grid gap-2 xl:grid-cols-2">
         <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Retrieval Diagnostics</h2>
-          <p className="mt-1 text-sm text-slate-500">Explainability metrics from retrieval paths and evidence density.</p>
+          <h2 className="text-lg font-semibold text-slate-950">Retrieval diagnostics</h2>
+          <p className="mt-1 text-sm text-slate-500">Explainability metrics from retrieval evidence density.</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             <Metric label="Queries with paths" value={String(explainability.diagnostics.queriesWithPathData)} loading={explainabilityLoading} icon={<BarChart3 className="h-4 w-4" />} />
             <Metric label="Zero chunk queries" value={String(explainability.diagnostics.zeroChunkQueries)} loading={explainabilityLoading} icon={<AlertTriangle className="h-4 w-4" />} />
@@ -502,7 +618,7 @@ export function SearchAnalyticsDashboard({
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-950">Retrieval Recommendations</h2>
+          <h2 className="text-lg font-semibold text-slate-950">Retrieval recommendations</h2>
           <p className="mt-1 text-sm text-slate-500">Actionable guidance to improve answer quality and grounding.</p>
           <div className="mt-3 space-y-2">
             {explainabilityLoading ? (
@@ -522,7 +638,7 @@ export function SearchAnalyticsDashboard({
 
       <div className="grid gap-2 xl:grid-cols-3">
         <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-950">Duplicate Documents</h2>
+          <h2 className="text-base font-semibold text-slate-950">Duplicate documents</h2>
           <p className="mt-1 text-xs text-slate-500">Potential duplicate files by normalized name + size + type.</p>
           <div className="mt-2 space-y-1.5">
             {explainability.knowledgeQuality.duplicateDocuments.length === 0 ? (
@@ -530,7 +646,7 @@ export function SearchAnalyticsDashboard({
             ) : (
               explainability.knowledgeQuality.duplicateDocuments.slice(0, 5).map((item) => (
                 <div key={`${item.name_key}-${item.file_size}-${item.file_type}`} className="rounded border border-slate-200 bg-slate-50 p-2">
-                  <p className="text-sm font-medium text-slate-800 truncate">{item.name_key}</p>
+                  <p className="truncate text-sm font-medium text-slate-800">{item.name_key}</p>
                   <p className="text-xs text-slate-600">{item.duplicate_count} copies • {item.file_type} • {formatBytes(item.file_size)}</p>
                 </div>
               ))
@@ -539,7 +655,7 @@ export function SearchAnalyticsDashboard({
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-950">Stale Documents</h2>
+          <h2 className="text-base font-semibold text-slate-950">Stale documents</h2>
           <p className="mt-1 text-xs text-slate-500">Documents older than 90 days without refresh.</p>
           <div className="mt-2 space-y-1.5">
             {explainability.knowledgeQuality.staleDocuments.length === 0 ? (
@@ -547,7 +663,7 @@ export function SearchAnalyticsDashboard({
             ) : (
               explainability.knowledgeQuality.staleDocuments.slice(0, 5).map((item) => (
                 <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
-                  <p className="text-sm font-medium text-slate-800 truncate">{item.name}</p>
+                  <p className="truncate text-sm font-medium text-slate-800">{item.name}</p>
                   <p className="text-xs text-slate-600">{item.file_type} • Updated {formatDateTimeForDisplay(item.updated_at, { fallback: "-" })}</p>
                 </div>
               ))
@@ -556,7 +672,7 @@ export function SearchAnalyticsDashboard({
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-950">Broken Sources</h2>
+          <h2 className="text-base font-semibold text-slate-950">Broken sources</h2>
           <p className="mt-1 text-xs text-slate-500">External references that are failed or missing source URLs.</p>
           <div className="mt-2 space-y-1.5">
             {explainability.knowledgeQuality.brokenSources.length === 0 ? (
@@ -564,7 +680,7 @@ export function SearchAnalyticsDashboard({
             ) : (
               explainability.knowledgeQuality.brokenSources.slice(0, 5).map((item) => (
                 <div key={item.id} className="rounded border border-slate-200 bg-slate-50 p-2">
-                  <p className="text-sm font-medium text-slate-800 truncate">{item.name}</p>
+                  <p className="truncate text-sm font-medium text-slate-800">{item.name}</p>
                   <p className="text-xs text-slate-600">{item.status} • {item.storage_mode}</p>
                 </div>
               ))
@@ -573,93 +689,11 @@ export function SearchAnalyticsDashboard({
         </section>
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-950">Retrieval Path Visualization</h2>
-        <p className="mt-1 text-sm text-slate-500">Recent query-to-evidence paths used to construct answers.</p>
-        <div className="mt-3 space-y-2">
-          {explainabilityLoading ? (
-            <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-500">Loading retrieval paths...</p>
-          ) : explainability.retrievalPaths.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-500">No retrieval paths in this range.</p>
-          ) : (
-            explainability.retrievalPaths.map((entry) => (
-              <div key={entry.id} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                  <span>{formatDateTimeForDisplay(entry.created_at, { fallback: "-" })}</span>
-                  <span>•</span>
-                  <span>{entry.answer_status}</span>
-                  {entry.no_answer_reason ? (
-                    <>
-                      <span>•</span>
-                      <span>{entry.no_answer_reason}</span>
-                    </>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-sm font-medium text-slate-900">{entry.question}</p>
-                <div className="mt-2 space-y-1.5">
-                  {entry.path_items.length === 0 ? (
-                    <p className="text-xs text-slate-500">No evidence path captured.</p>
-                  ) : (
-                    entry.path_items.map((item, index) => (
-                      <div key={`${entry.id}-${item.chunk_id || index}`} className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs">
-                        <p className="font-medium text-slate-800 truncate">{item.document_name || "Unknown document"}</p>
-                        <p className="text-slate-600 truncate">
-                          {item.folder_path || "-"} • p.{item.page_number || 1} • {item.section_title || "section"}
-                        </p>
-                        <p className="text-slate-500">
-                          {item.citation_type || "text"}
-                          {item.visual_asset_type ? ` / ${item.visual_asset_type}` : ""}
-                          {typeof item.score === "number" ? ` • score ${item.score.toFixed(4)}` : ""}
-                        </p>
-                        {item.document_id ? (
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <a
-                              className="inline-flex items-center rounded border border-slate-300 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                              href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=versions`}
-                            >
-                              Open versions
-                            </a>
-                            <a
-                              aria-label="Open versions in new tab"
-                              className="inline-flex h-6 w-6 items-center justify-center rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
-                              href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=versions`}
-                              rel="noopener noreferrer"
-                              target="_blank"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                            <a
-                              className="inline-flex items-center rounded border border-slate-300 px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                              href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=compare`}
-                            >
-                              Open compare
-                            </a>
-                            <a
-                              aria-label="Open compare in new tab"
-                              className="inline-flex h-6 w-6 items-center justify-center rounded border border-slate-300 text-slate-600 hover:bg-slate-50"
-                              href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=compare`}
-                              rel="noopener noreferrer"
-                              target="_blank"
-                            >
-                              <ExternalLink className="h-3 w-3" />
-                            </a>
-                          </div>
-                        ) : null}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
-
       <section className="flex min-h-0 flex-col rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Raw query history</h2>
-            <p className="mt-1 text-sm text-slate-500">Per-query details, retrieval stats, model info, and user feedback.</p>
+            <p className="mt-1 text-sm text-slate-500">Grouped by latest date, target app, and user for faster investigation.</p>
           </div>
           <div className="flex items-center gap-2">
             <button className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" onClick={() => exportRows("csv")} type="button">
@@ -671,94 +705,120 @@ export function SearchAnalyticsDashboard({
           </div>
         </div>
 
-        <div className="mt-3 min-h-0 overflow-auto rounded-lg border border-slate-200">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-3 py-2">Time</th>
-                <th className="px-3 py-2">Question</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Target app</th>
-                <th className="px-3 py-2">Latency</th>
-                <th className="px-3 py-2">Chunks/Citations</th>
-                <th className="px-3 py-2">Feedback</th>
-                <th className="px-3 py-2">Model</th>
-                <th className="px-3 py-2">Explain</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-              {rawLoading ? (
-                <tr>
-                  <td className="px-3 py-6 text-center text-sm text-slate-500" colSpan={9}>Loading query history...</td>
-                </tr>
-              ) : rawData.rows.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-6 text-center text-sm text-slate-500" colSpan={9}>No query telemetry in this range.</td>
-                </tr>
-              ) : (
-                rawData.rows.map((row) => (
-                  <tr key={row.id}>
-                    <td className="px-3 py-2 align-top text-xs text-slate-500">{formatDateTimeForDisplay(row.created_at, { fallback: "-" })}</td>
-                    <td className="max-w-[340px] px-3 py-2 align-top">
-                      <p className="line-clamp-2 font-medium text-slate-900">{row.question}</p>
-                      {row.no_answer_reason ? <p className="mt-1 text-xs text-amber-700">Reason: {row.no_answer_reason}</p> : null}
-                    </td>
-                    <td className="px-3 py-2 align-top">{statusBadge(row.answer_status)}</td>
-                    <td className="px-3 py-2 align-top text-xs">{row.target_app_name}</td>
-                    <td className="px-3 py-2 align-top">{formatDuration(row.latency_ms)}</td>
-                    <td className="px-3 py-2 align-top text-xs">{row.retrieved_chunk_count} / {row.citation_count}</td>
-                    <td className="px-3 py-2 align-top text-xs">👍 {row.feedback_up} / 👎 {row.feedback_down}</td>
-                    <td className="px-3 py-2 align-top text-xs">{row.llm_provider && row.llm_model ? `${row.llm_provider}:${row.llm_model}` : "-"}</td>
-                    <td className="px-3 py-2 align-top">
-                      <button
-                        type="button"
-                        className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        onClick={() => {
-                          void openExplainabilityDrillDown(row);
-                        }}
-                      >
-                        Why this answer
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="mt-3 min-h-0 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+          {rawLoading ? (
+            <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-500">Loading query history...</p>
+          ) : rawTree.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-slate-300 bg-white p-3 text-sm text-slate-500">No query telemetry in this range.</p>
+          ) : (
+            <div className="space-y-3">
+              {rawTree.map((dateGroup) => (
+                <details key={dateGroup.id} className="rounded-lg border border-slate-200 bg-white" open>
+                  <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold text-slate-900">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="inline-flex items-center gap-2"><CalendarRange className="h-4 w-4 text-slate-500" />{dateGroup.label}</span>
+                      <span className="text-xs font-medium text-slate-500">{dateGroup.count} queries</span>
+                    </div>
+                  </summary>
+                  <div className="border-t border-slate-200 px-3 py-3">
+                    <div className="space-y-3">
+                      {dateGroup.apps.map((appGroup) => (
+                        <details key={appGroup.id} className="rounded-lg border border-slate-200 bg-slate-50" open>
+                          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-800">
+                            <div className="flex items-center justify-between gap-3">
+                              <span>{appGroup.label}</span>
+                              <span className="text-xs text-slate-500">{appGroup.count} queries</span>
+                            </div>
+                          </summary>
+                          <div className="border-t border-slate-200 px-3 py-3">
+                            <div className="space-y-3">
+                              {appGroup.users.map((userGroup) => (
+                                <details key={userGroup.id} className="rounded-lg border border-slate-200 bg-white" open>
+                                  <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-700">
+                                    <div className="flex items-center justify-between gap-3">
+                                      <span>{userGroup.label}</span>
+                                      <span className="text-xs text-slate-500">{userGroup.count} queries</span>
+                                    </div>
+                                  </summary>
+                                  <div className="border-t border-slate-200 px-3 py-3">
+                                    <div className="space-y-2">
+                                      {userGroup.rows.map((row) => (
+                                        <div key={row.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                          <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="min-w-0 flex-1">
+                                              <p className="text-xs text-slate-500">{formatDateTimeForDisplay(row.created_at, { fallback: "-" })}</p>
+                                              <p className="mt-1 text-sm font-medium text-slate-900">{row.question}</p>
+                                              {row.no_answer_reason ? <p className="mt-1 text-xs text-amber-700">Reason: {row.no_answer_reason}</p> : null}
+                                            </div>
+                                            <div className="flex shrink-0 items-center gap-2">{statusBadge(row.answer_status)}</div>
+                                          </div>
+                                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                                            <span>Latency: {formatDuration(row.latency_ms)}</span>
+                                            <span>Chunks/Citations: {row.retrieved_chunk_count} / {row.citation_count}</span>
+                                            <span>Feedback: 👍 {row.feedback_up} / 👎 {row.feedback_down}</span>
+                                            <span>Model: {row.llm_provider && row.llm_model ? `${row.llm_provider}:${row.llm_model}` : "-"}</span>
+                                          </div>
+                                          <div className="mt-3 flex justify-end">
+                                            <button
+                                              type="button"
+                                              className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                              onClick={() => { void openExplainabilityDrillDown(row); }}
+                                            >
+                                              Why this answer
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </details>
+                              ))}
+                            </div>
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
-          <p>
-            Showing page {rawData.pagination.page} of {rawData.pagination.totalPages} ({rawData.pagination.total.toLocaleString()} total)
-          </p>
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-semibold uppercase text-slate-500" htmlFor="raw-page-size">Rows</label>
-            <select
-              id="raw-page-size"
-              value={rawPageSize}
-              onChange={(event) => setRawPageSize(Number(event.target.value))}
-              className="h-9 rounded-lg border border-slate-300 bg-white px-2"
-            >
-              {[10, 25, 50, 100].map((size) => (
-                <option key={size} value={size}>{size}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="inline-flex h-9 items-center rounded-lg border border-slate-300 px-3 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => setRawPage((current) => Math.max(1, current - 1))}
-              disabled={rawData.pagination.page <= 1 || rawLoading}
-            >
-              Previous
-            </button>
-            <button
-              type="button"
-              className="inline-flex h-9 items-center rounded-lg border border-slate-300 px-3 disabled:cursor-not-allowed disabled:opacity-40"
-              onClick={() => setRawPage((current) => Math.min(rawData.pagination.totalPages, current + 1))}
-              disabled={rawData.pagination.page >= rawData.pagination.totalPages || rawLoading}
-            >
-              Next
-            </button>
+        <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-600">
+            <span>Page <strong className="text-slate-900">{rawData.pagination.page}</strong> of <strong className="text-slate-900">{rawData.pagination.totalPages}</strong></span>
+            <span>Total: <strong className="text-slate-900">{rawData.pagination.total}</strong> queries</span>
+            <label className="inline-flex items-center gap-2">
+              <span>Page size</span>
+              <select
+                aria-label="Queries per page"
+                className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+                value={rawPageSize}
+                onChange={(event) => {
+                  setRawPageSize(Number(event.target.value));
+                  setRawPage(1);
+                }}
+              >
+                {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={`rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium ${rawData.pagination.page <= 1 ? "pointer-events-none opacity-50" : ""}`} onClick={() => setRawPage(Math.max(rawData.pagination.page - 1, 1))} type="button">Previous</button>
+            {rawPageNumbers.map((pageNumber, index, pages) => (
+              <span className="contents" key={pageNumber}>
+                {index > 0 && pageNumber - pages[index - 1] > 1 ? <span className="px-1 text-slate-400">…</span> : null}
+                <button
+                  className={`inline-flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-semibold ${pageNumber === rawData.pagination.page ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+                  onClick={() => setRawPage(pageNumber)}
+                  type="button"
+                >
+                  {pageNumber}
+                </button>
+              </span>
+            ))}
+            <button className={`rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium ${rawData.pagination.page >= rawData.pagination.totalPages ? "pointer-events-none opacity-50" : ""}`} onClick={() => setRawPage(Math.min(rawData.pagination.page + 1, rawData.pagination.totalPages))} type="button">Next</button>
           </div>
         </div>
       </section>
@@ -768,19 +828,13 @@ export function SearchAnalyticsDashboard({
           <div className="w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div>
-                <h2 className="text-lg font-semibold text-slate-950">Answer Explainability Drill-down</h2>
+                <h2 className="text-lg font-semibold text-slate-950">Answer explainability drill-down</h2>
                 <p className="text-xs text-slate-500">Query ID: {selectedQuery.id}</p>
               </div>
-              <button
-                type="button"
-                onClick={closeExplainabilityDrillDown}
-                className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Close
-              </button>
+              <button type="button" onClick={closeExplainabilityDrillDown} className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Close</button>
             </div>
 
-            <div className="max-h-[75vh] overflow-y-auto p-4 space-y-4">
+            <div className="max-h-[75vh] space-y-4 overflow-y-auto p-4">
               {queryDetailLoading ? (
                 <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-500">Loading explainability detail...</p>
               ) : queryDetailError ? (
@@ -792,66 +846,30 @@ export function SearchAnalyticsDashboard({
                     <p className="mt-1 text-sm font-medium text-slate-900">{queryDetail.queryDetail.question}</p>
                     <p className="mt-2 text-xs text-slate-500">Answer</p>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{queryDetail.queryDetail.answer || "-"}</p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3 text-xs">
-                      <div className="rounded border border-slate-200 bg-white p-2">
-                        <span className="font-semibold text-slate-600">Status:</span> {queryDetail.queryDetail.answer_status}
-                      </div>
-                      <div className="rounded border border-slate-200 bg-white p-2">
-                        <span className="font-semibold text-slate-600">Chunks/Citations:</span> {queryDetail.queryDetail.retrieved_chunk_count} / {queryDetail.queryDetail.citation_count}
-                      </div>
-                      <div className="rounded border border-slate-200 bg-white p-2">
-                        <span className="font-semibold text-slate-600">Latency:</span> {formatDuration(queryDetail.queryDetail.latency_ms)}
-                      </div>
+                    <div className="mt-3 grid gap-2 text-xs sm:grid-cols-3">
+                      <div className="rounded border border-slate-200 bg-white p-2"><span className="font-semibold text-slate-600">Status:</span> {queryDetail.queryDetail.answer_status}</div>
+                      <div className="rounded border border-slate-200 bg-white p-2"><span className="font-semibold text-slate-600">Chunks/Citations:</span> {queryDetail.queryDetail.retrieved_chunk_count} / {queryDetail.queryDetail.citation_count}</div>
+                      <div className="rounded border border-slate-200 bg-white p-2"><span className="font-semibold text-slate-600">Latency:</span> {formatDuration(queryDetail.queryDetail.latency_ms)}</div>
                     </div>
                   </section>
 
                   <section className="rounded-lg border border-slate-200 bg-white p-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Retrieval Path</h3>
+                    <h3 className="text-sm font-semibold text-slate-900">Retrieval path</h3>
                     <div className="mt-2 space-y-2">
                       {queryDetail.queryDetail.path_items.length === 0 ? (
                         <p className="text-sm text-slate-500">No path data available for this query.</p>
                       ) : (
                         queryDetail.queryDetail.path_items.map((item, index) => (
                           <div key={`${queryDetail.queryDetail.id}-${item.chunk_id || index}`} className="rounded border border-slate-200 bg-slate-50 p-2">
-                            <p className="text-sm font-medium text-slate-900 truncate">{index + 1}. {item.document_name || "Unknown document"}</p>
-                            <p className="text-xs text-slate-600 truncate">{item.folder_path || "-"} • p.{item.page_number || 1} • {item.section_title || "section"}</p>
-                            <p className="text-xs text-slate-500">
-                              {item.citation_type || "text"}
-                              {item.visual_asset_type ? ` / ${item.visual_asset_type}` : ""}
-                              {typeof item.score === "number" ? ` • score ${item.score.toFixed(4)}` : ""}
-                            </p>
+                            <p className="truncate text-sm font-medium text-slate-900">{index + 1}. {item.document_name || "Unknown document"}</p>
+                            <p className="truncate text-xs text-slate-600">{item.folder_path || "-"} • p.{item.page_number || 1} • {item.section_title || "section"}</p>
+                            <p className="text-xs text-slate-500">{item.citation_type || "text"}{item.visual_asset_type ? ` / ${item.visual_asset_type}` : ""}{typeof item.score === "number" ? ` • score ${item.score.toFixed(4)}` : ""}</p>
                             {item.document_id ? (
                               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                                <a
-                                  className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                                  href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=versions`}
-                                >
-                                  Open versions
-                                </a>
-                                <a
-                                  aria-label="Open versions in new tab"
-                                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                                  href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=versions`}
-                                  rel="noopener noreferrer"
-                                  target="_blank"
-                                >
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
-                                <a
-                                  className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                                  href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=compare`}
-                                >
-                                  Open compare
-                                </a>
-                                <a
-                                  aria-label="Open compare in new tab"
-                                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
-                                  href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=compare`}
-                                  rel="noopener noreferrer"
-                                  target="_blank"
-                                >
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
+                                <a className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=versions`}>Open versions</a>
+                                <a aria-label="Open versions in new tab" className="inline-flex h-6 w-6 items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50" href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=versions`} rel="noopener noreferrer" target="_blank"><ExternalLink className="h-3 w-3" /></a>
+                                <a className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=compare`}>Open compare</a>
+                                <a aria-label="Open compare in new tab" className="inline-flex h-6 w-6 items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50" href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=compare`} rel="noopener noreferrer" target="_blank"><ExternalLink className="h-3 w-3" /></a>
                               </div>
                             ) : null}
                           </div>
@@ -861,15 +879,13 @@ export function SearchAnalyticsDashboard({
                   </section>
 
                   <section className="rounded-lg border border-slate-200 bg-white p-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Targeted Recommendations</h3>
+                    <h3 className="text-sm font-semibold text-slate-900">Targeted recommendations</h3>
                     <div className="mt-2 space-y-2">
                       {queryDetail.recommendations.length === 0 ? (
                         <p className="text-sm text-slate-500">No recommendations for this query.</p>
                       ) : (
                         queryDetail.recommendations.map((recommendation, index) => (
-                          <div key={`${recommendation}-${index}`} className="rounded border border-slate-200 bg-slate-50 p-2 text-sm text-slate-700">
-                            {recommendation}
-                          </div>
+                          <div key={`${recommendation}-${index}`} className="rounded border border-slate-200 bg-slate-50 p-2 text-sm text-slate-700">{recommendation}</div>
                         ))
                       )}
                     </div>
@@ -888,28 +904,14 @@ function statusBadge(status: RawRow["answer_status"]) {
   const map: Record<RawRow["answer_status"], { label: string; className: string }> = {
     answered: { label: "Answered", className: "bg-emerald-100 text-emerald-700 border-emerald-200" },
     no_answer: { label: "No answer", className: "bg-amber-100 text-amber-700 border-amber-200" },
-    failed: { label: "Failed", className: "bg-red-100 text-red-700 border-red-200" }
+    failed: { label: "Failed", className: "bg-red-100 text-red-700 border-red-200" },
   };
 
   const value = map[status];
-  return (
-    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${value.className}`}>
-      {value.label}
-    </span>
-  );
+  return <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${value.className}`}>{value.label}</span>;
 }
 
-function Metric({
-  icon,
-  label,
-  value,
-  loading
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  loading: boolean;
-}) {
+function Metric({ icon, label, value, loading }: { icon: React.ReactNode; label: string; value: string; loading: boolean }) {
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex items-center justify-between gap-3">
@@ -921,28 +923,12 @@ function Metric({
   );
 }
 
-function FilterSelect({
-  label,
-  value,
-  onChange,
-  options
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ label: string; value: string }>;
-}) {
+function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ label: string; value: string }> }) {
   return (
     <label className="flex min-w-0 flex-col gap-1">
       <span className="text-xs font-semibold uppercase text-slate-500">{label}</span>
-      <select
-        className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
+      <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700" value={value} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
   );
@@ -959,15 +945,12 @@ function formatDuration(ms: number) {
 
 function toCsv(rows: Array<Record<string, string | number>>) {
   if (rows.length === 0) return "";
-
   const headers = Object.keys(rows[0]);
   const escapeCell = (value: string | number) => `"${String(value).replaceAll("\"", "\"\"")}"`;
-
   const lines = [headers.map(escapeCell).join(",")];
   for (const row of rows) {
     lines.push(headers.map((header) => escapeCell(row[header] ?? "")).join(","));
   }
-
   return lines.join("\n");
 }
 

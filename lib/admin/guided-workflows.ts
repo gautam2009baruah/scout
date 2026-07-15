@@ -49,6 +49,7 @@ export type GuidedWorkflowTopicRow = {
   recorderConfig: { recorderToken?: string; topicId?: string } | null;
   recordingEnabled: boolean;
   title: string;
+  description: string;
   analyticsLoggingEnabled: boolean;
   status: GuideStatus;
   sortOrder: number;
@@ -408,6 +409,7 @@ function mapTopic(row: {
   recorder_config_json: { recorderToken?: string; topicId?: string } | null;
   recording_enabled: boolean;
   title: string;
+  description: string | null;
   status: GuideStatus | null;
   analytics_logging_enabled: boolean;
   sort_order: number;
@@ -423,6 +425,7 @@ function mapTopic(row: {
     recorderConfig: row.recording_enabled ? row.recorder_config_json ?? null : null,
     recordingEnabled: row.recording_enabled !== false,
     title: row.title,
+    description: row.description ?? "",
     analyticsLoggingEnabled: row.analytics_logging_enabled !== false,
     status: row.status ?? "draft",
     sortOrder: Number(row.sort_order),
@@ -643,6 +646,7 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
           guided_workflow_topics.recorder_config_json,
           guided_workflow_topics.recording_enabled,
           guided_workflow_topics.title,
+          guided_workflow_topics.description,
           guided_workflow_topics.analytics_logging_enabled,
           guided_workflow_guides.status,
           guided_workflow_topics.sort_order,
@@ -894,10 +898,12 @@ export async function getGuidedWorkflowTopicById(id: string, session: AdminSessi
 export async function createGuidedWorkflowTopic(input: {
   recordingSessionId: string;
   title: string;
+  description?: string;
   analyticsLoggingEnabled?: boolean;
 }, session: AdminSession) {
   const recordingSession = await getGuidedWorkflowRecordingSessionById(input.recordingSessionId, session);
   const title = input.title.trim();
+  const description = (input.description ?? "").trim();
 
   if (!title) {
     throw new GuidedWorkflowError("Topic title is required.");
@@ -914,6 +920,7 @@ export async function createGuidedWorkflowTopic(input: {
         company_id,
         recording_session_id,
         title,
+        description,
         analytics_logging_enabled,
         sort_order,
         recorder_token_hash,
@@ -921,13 +928,14 @@ export async function createGuidedWorkflowTopic(input: {
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
       RETURNING id
     `,
     [
       recordingSession.companyId,
       recordingSession.id,
       title,
+      description,
       input.analyticsLoggingEnabled !== false,
       orderResult.rows[0]?.next_order ?? 0,
       tokenHash(recorderToken),
@@ -949,6 +957,7 @@ export async function createGuidedWorkflowTopic(input: {
 
 export async function updateGuidedWorkflowTopic(id: string, input: {
   title?: string;
+  description?: string;
   analyticsLoggingEnabled?: boolean;
   move?: "up" | "down";
 }, session: AdminSession) {
@@ -960,6 +969,13 @@ export async function updateGuidedWorkflowTopic(id: string, input: {
     await getPool().query(
       "UPDATE guided_workflow_topics SET title = $2, updated_by = $3, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
       [id, title, session.user.id]
+    );
+  }
+
+  if (typeof input.description === "string") {
+    await getPool().query(
+      "UPDATE guided_workflow_topics SET description = $2, updated_by = $3, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+      [id, input.description.trim(), session.user.id]
     );
   }
 
@@ -1721,6 +1737,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
     session_title: string;
     topic_id: string;
     topic_title: string;
+    topic_description: string;
     guide_id: string;
     guide_description: string;
     guide_status: GuideStatus;
@@ -1738,6 +1755,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
         guided_workflow_recording_sessions.title AS session_title,
         guided_workflow_topics.id AS topic_id,
         guided_workflow_topics.title AS topic_title,
+        guided_workflow_topics.description AS topic_description,
         guided_workflow_guides.id AS guide_id,
         guided_workflow_guides.description AS guide_description,
         guided_workflow_guides.status AS guide_status,
@@ -1784,7 +1802,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
       id: row.topic_id,
       title: row.topic_title,
       guideId: row.guide_id,
-      description: row.guide_description,
+      description: row.topic_description || row.guide_description,
       status: row.guide_status,
       preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
       preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),

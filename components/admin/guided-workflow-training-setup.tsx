@@ -31,7 +31,8 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
   const [appliedSessionFilter, setAppliedSessionFilter] = useState("");
   const [appliedTopicFilter, setAppliedTopicFilter] = useState("");
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(() => new Set(recordingSessions.map((session) => session.id)));
-  const [topicDialog, setTopicDialog] = useState<{ mode: "create" | "edit"; sessionId: string; topic?: GuidedWorkflowTopicRow; title: string } | null>(null);
+  const [topicDialog, setTopicDialog] = useState<{ mode: "create" | "edit"; sessionId: string; topic?: GuidedWorkflowTopicRow; title: string; description: string } | null>(null);
+  const [sessionDialog, setSessionDialog] = useState<{ id: string; title: string } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [pluginHelpOpen, setPluginHelpOpen] = useState(false);
   const [pluginMenuOpen, setPluginMenuOpen] = useState(false);
@@ -67,6 +68,9 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
   const duplicateTopicTitle = topicDialog
     ? sessions.find((session) => session.id === topicDialog.sessionId)
         ?.topics.some((topic) => topic.id !== topicDialog.topic?.id && topic.title.trim().toLowerCase() === topicDialog.title.trim().toLowerCase()) ?? false
+    : false;
+  const duplicateSessionDialogTitle = sessionDialog
+    ? sessions.some((session) => session.id !== sessionDialog.id && session.title.trim().toLowerCase() === sessionDialog.title.trim().toLowerCase())
     : false;
 
   useEffect(() => {
@@ -245,7 +249,8 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         recordingSessionId: topicDialog.sessionId,
-        title: topicDialog.title
+        title: topicDialog.title,
+        description: topicDialog.description
       })
     });
     const body = await response.json().catch(() => null);
@@ -272,6 +277,35 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
     setTopicDialog(null);
     setState(initialState);
     showToast(isCreate ? "Topic created." : "Topic updated.", "success");
+  }
+
+  async function saveSessionTitle() {
+    if (!sessionDialog) return;
+    const trimmedTitle = sessionDialog.title.trim();
+    if (!trimmedTitle) {
+      showToast("Training session title is required.", "error");
+      return;
+    }
+    if (duplicateSessionDialogTitle) {
+      showToast("A training session with this title already exists.", "error");
+      return;
+    }
+
+    const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionDialog.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: sessionDialog.title })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      showToast(typeof body?.message === "string" ? body.message : "Unable to update training session.", "error");
+      return;
+    }
+
+    setSessions((current) => current.map((session) => session.id === body.session.id ? body.session : session));
+    setSessionDialog(null);
+    showToast("Training session updated.", "success");
   }
 
   function requestDeleteTopic(topic: GuidedWorkflowTopicRow) {
@@ -539,7 +573,8 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
                     <td className="px-4 py-4 align-top text-sm text-slate-700">{sessionTopics.length === 0 ? "No topics" : "Topics available"}</td>
                     <td className="px-4 py-4 align-top text-sm text-slate-700">{sessionTopics.length}</td>
                     <td className="px-4 py-4 align-top text-right text-sm font-medium">
-                      <button className="mr-2 inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setTopicDialog({ mode: "create", sessionId: session.id, title: "" })} title="Add topic" type="button">Add topic</button>
+                      <button className="mr-2 inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 hover:bg-slate-50" onClick={() => setTopicDialog({ mode: "create", sessionId: session.id, title: "", description: "" })} title="Add topic" type="button">Add topic</button>
+                      <button aria-label="Edit session" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50" onClick={() => setSessionDialog({ id: session.id, title: session.title })} title="Edit session" type="button"><Edit3 className="h-4 w-4" /></button>
                       <button aria-label="Delete session" className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50" onClick={() => requestDeleteRecordingSession(session.id)} title="Delete session" type="button"><Trash2 className="h-4 w-4" /></button>
                     </td>
                   </tr>
@@ -547,7 +582,10 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
                   {!isCollapsed && sessionTopics.map((topic) => (
                     <tr className="border-t border-slate-100 bg-white" key={topic.id}>
                       <td className="px-4 py-3 text-sm text-slate-700"></td>
-                      <td className="px-4 py-3 text-sm text-slate-700">{topic.title}</td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        <p className="font-medium text-slate-900">{topic.title}</p>
+                        {topic.description ? <p className="mt-1 line-clamp-2 text-xs text-slate-500">{topic.description}</p> : null}
+                      </td>
                       <td className="px-4 py-3 text-sm">
                         <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${topic.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{topic.status}</span>
                       </td>
@@ -563,7 +601,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
                           {topic.analyticsLoggingEnabled ? <ToggleRight className="h-5 w-5 text-emerald-600" /> : <ToggleLeft className="h-5 w-5 text-slate-400" />}
                         </button>
                         <button aria-label="Recorder config" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setConfigTopicId(topic.id)} title="Recorder config" type="button"><Clipboard className="h-4 w-4" /></button>
-                      <button aria-label="Edit topic" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setTopicDialog({ mode: "edit", sessionId: session.id, topic, title: topic.title })} title="Edit topic" type="button"><Edit3 className="h-4 w-4" /></button>
+                      <button aria-label="Edit topic" className="mr-2 inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:text-slate-900" onClick={() => setTopicDialog({ mode: "edit", sessionId: session.id, topic, title: topic.title, description: topic.description })} title="Edit topic" type="button"><Edit3 className="h-4 w-4" /></button>
                         <button aria-label="Delete topic" className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-red-600 hover:text-red-800" onClick={() => requestDeleteTopic(topic)} title="Delete topic" type="button"><Trash2 className="h-4 w-4" /></button>
                       </td>
                     </tr>
@@ -586,9 +624,31 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
               <input className="input" onChange={(event) => setTopicDialog((current) => current ? { ...current, title: event.target.value } : current)} value={topicDialog.title} />
               {duplicateTopicTitle ? <p className="mt-1 text-xs text-red-600">A topic with this name already exists in this training session.</p> : null}
             </Field>
+            <Field label="Description">
+              <textarea className="input min-h-[3.5rem] py-2" rows={2} onChange={(event) => setTopicDialog((current) => current ? { ...current, description: event.target.value } : current)} value={topicDialog.description} placeholder="Short description to help chatbot users understand this topic." />
+            </Field>
             <div className="mt-4 flex justify-end gap-2">
               <button className="button-secondary" onClick={() => setTopicDialog(null)} type="button">Cancel</button>
               <button className="inline-flex h-10 items-center rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" onClick={saveTopic} type="button" disabled={duplicateTopicTitle}>Save</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {sessionDialog ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4" onClick={() => setSessionDialog(null)}>
+          <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-4 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-slate-950">Edit training session</p>
+              <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-slate-100" onClick={() => setSessionDialog(null)} type="button"><X className="h-4 w-4" /></button>
+            </div>
+            <Field label="Training session title">
+              <input className="input" onChange={(event) => setSessionDialog((current) => current ? { ...current, title: event.target.value } : current)} value={sessionDialog.title} />
+              {duplicateSessionDialogTitle ? <p className="mt-1 text-xs text-red-600">A training session with this title already exists.</p> : null}
+            </Field>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="button-secondary" onClick={() => setSessionDialog(null)} type="button">Cancel</button>
+              <button className="inline-flex h-10 items-center rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" onClick={saveSessionTitle} type="button" disabled={duplicateSessionDialogTitle}>Save</button>
             </div>
           </div>
         </div>
@@ -682,5 +742,5 @@ function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWo
 }
 
 function Field({ children, label }: { children: React.ReactNode; label: string }) {
-  return <label className="block"><span className="text-sm font-medium text-slate-700">{label}</span><div className="mt-2 [&_.input]:w-full [&_.input]:rounded-lg [&_.input]:border [&_.input]:border-slate-200 [&_.input]:bg-white [&_.input]:px-3 [&_.input]:text-sm [&_.input]:outline-none [&_.input:focus]:border-slate-900 [&_input.input]:h-10 [&_select.input]:h-10">{children}</div></label>;
+  return <label className="block"><span className="text-sm font-medium text-slate-700">{label}</span><div className="mt-2 [&_.input]:w-full [&_.input]:rounded-lg [&_.input]:border [&_.input]:border-slate-200 [&_.input]:bg-white [&_.input]:px-3 [&_.input]:text-sm [&_.input]:outline-none [&_.input:focus]:border-slate-900 [&_textarea.input]:w-full [&_textarea.input]:rounded-lg [&_textarea.input]:border [&_textarea.input]:border-slate-200 [&_textarea.input]:bg-white [&_textarea.input]:px-3 [&_textarea.input]:text-sm [&_textarea.input]:outline-none [&_textarea.input:focus]:border-slate-900 [&_input.input]:h-10 [&_select.input]:h-10">{children}</div></label>;
 }

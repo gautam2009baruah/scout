@@ -61,6 +61,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         id,
         {
           title: typeof body?.title === "string" ? body.title : undefined,
+          description: typeof body?.description === "string" ? body.description : undefined,
           analyticsLoggingEnabled: typeof body?.analyticsLoggingEnabled === "boolean" ? body.analyticsLoggingEnabled : undefined,
           move: body?.move === "up" || body?.move === "down" ? body.move : undefined
         },

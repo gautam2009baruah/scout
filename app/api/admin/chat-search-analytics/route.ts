@@ -26,13 +26,30 @@ export async function GET(request: Request) {
   const companyId = params.get("companyId") || "";
   const targetAppId = params.get("targetAppId") || "";
   const answerStatus = params.get("answerStatus") || "";
+  const fromUtc = params.get("fromUtc") || "";
+  const toUtc = params.get("toUtc") || "";
   const days = Math.min(365, Math.max(1, Number(params.get("days") || "30") || 30));
   const view = params.get("view") || "summary";
   const page = Math.max(1, Number(params.get("page") || "1") || 1);
   const pageSize = Math.min(100, Math.max(1, Number(params.get("pageSize") || "25") || 25));
 
-  const sqlParams: unknown[] = [days];
-  let filter = "t.created_at >= now() - ($1::int || ' days')::interval";
+  const sqlParams: unknown[] = [];
+  let filter = "1=1";
+
+  if (fromUtc) {
+    sqlParams.push(fromUtc);
+    filter += ` AND t.created_at >= $${sqlParams.length}::timestamptz`;
+  }
+
+  if (toUtc) {
+    sqlParams.push(toUtc);
+    filter += ` AND t.created_at <= $${sqlParams.length}::timestamptz`;
+  }
+
+  if (!fromUtc && !toUtc) {
+    sqlParams.push(days);
+    filter += ` AND t.created_at >= now() - ($${sqlParams.length}::int || ' days')::interval`;
+  }
 
   if (!auth.session.user.isAdminRole) {
     sqlParams.push(auth.session.user.tenantId, auth.session.user.id);
@@ -87,12 +104,15 @@ export async function GET(request: Request) {
           t.estimated_cost_usd,
           t.llm_provider,
           t.llm_model,
+          COALESCE(users.name, t.user_id::text) AS user_name,
+          COALESCE(users.email, '') AS user_email,
           company.name AS company_name,
           COALESCE(target_app.name, '—') AS target_app_name,
           COALESCE(feedback.up_count, 0) AS feedback_up,
           COALESCE(feedback.down_count, 0) AS feedback_down
         FROM chat_query_telemetry t
         INNER JOIN companies company ON company.id = t.company_id
+        LEFT JOIN users ON users.id = t.user_id
         LEFT JOIN company_target_applications target_app ON target_app.id = t.target_app_id
         LEFT JOIN LATERAL (
           SELECT
@@ -128,6 +148,8 @@ export async function GET(request: Request) {
         estimated_cost_usd: row.estimated_cost_usd === null ? null : Number(row.estimated_cost_usd),
         llm_provider: row.llm_provider,
         llm_model: row.llm_model,
+        user_name: row.user_name,
+        user_email: row.user_email,
         feedback_up: Number(row.feedback_up ?? 0),
         feedback_down: Number(row.feedback_down ?? 0)
       })),

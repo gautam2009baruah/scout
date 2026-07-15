@@ -39,6 +39,7 @@ export async function POST(request: Request) {
       {
         recordingSessionId: String(body.recordingSessionId ?? ""),
         title: String(body.title ?? ""),
+        description: typeof body.description === "string" ? body.description : undefined,
         analyticsLoggingEnabled: typeof body.analyticsLoggingEnabled === "boolean" ? body.analyticsLoggingEnabled : undefined
       },
       auth.session

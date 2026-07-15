@@ -6,8 +6,8 @@ import { MODULE_KEYS, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export const metadata: Metadata = {
-  title: "Search Analytics | Scout Admin",
-  description: "Analytics for chat search quality, latency, and feedback."
+  title: "Chatbot Analytics | Scout Admin",
+  description: "Analytics for chatbot quality, retrieval, latency, and feedback."
 };
 
 export default async function SearchAnalyticsPage() {

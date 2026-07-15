@@ -32,13 +32,30 @@ async function requireSession() {
 
 function buildTelemetryFilter(params: {
   days: number;
+  fromUtc: string;
+  toUtc: string;
   companyId: string;
   targetAppId: string;
   answerStatus: string;
   session: Awaited<ReturnType<typeof getCurrentAdminSession>>;
 }) {
-  const sqlParams: unknown[] = [params.days];
-  let filter = "t.created_at >= now() - ($1::int || ' days')::interval";
+  const sqlParams: unknown[] = [];
+  let filter = "1=1";
+
+  if (params.fromUtc) {
+    sqlParams.push(params.fromUtc);
+    filter += ` AND t.created_at >= $${sqlParams.length}::timestamptz`;
+  }
+
+  if (params.toUtc) {
+    sqlParams.push(params.toUtc);
+    filter += ` AND t.created_at <= $${sqlParams.length}::timestamptz`;
+  }
+
+  if (!params.fromUtc && !params.toUtc) {
+    sqlParams.push(params.days);
+    filter += ` AND t.created_at >= now() - ($${sqlParams.length}::int || ' days')::interval`;
+  }
 
   if (!params.session?.user.isAdminRole) {
     sqlParams.push(params.session?.user.tenantId, params.session?.user.id);
@@ -133,10 +150,14 @@ export async function GET(request: Request) {
   const companyId = params.get("companyId") || "";
   const targetAppId = params.get("targetAppId") || "";
   const answerStatus = params.get("answerStatus") || "";
+  const fromUtc = params.get("fromUtc") || "";
+  const toUtc = params.get("toUtc") || "";
   const days = Math.min(365, Math.max(1, Number(params.get("days") || "30") || 30));
 
   const { filter: telemetryFilter, sqlParams: telemetryParams } = buildTelemetryFilter({
     days,
+    fromUtc,
+    toUtc,
     companyId,
     targetAppId,
     answerStatus,
