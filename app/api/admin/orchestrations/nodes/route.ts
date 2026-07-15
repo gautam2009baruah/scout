@@ -68,8 +68,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ node }, { status: 201 });
   } catch (error) {
-    console.error("Error creating node:", error);
-    return NextResponse.json({ message: "Failed to create node" }, { status: 500 });
+    console.error("Error creating node:", error instanceof Error ? error.message : error);
+    const message = error instanceof Error ? error.message : "Failed to create node";
+    return NextResponse.json({ message }, { status: 500 });
   }
 }
 

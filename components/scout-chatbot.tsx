@@ -14,6 +14,7 @@ import {
   Grip,
   History,
   MessageCircle,
+  Network,
   Pencil,
   Play,
   RefreshCcw,
@@ -75,6 +76,20 @@ export type ScoutWorkflowSession = {
   preWorkflowConfirmationHtml?: string;
   preWorkflowConfirmationEnabled?: boolean;
   topics?: ScoutWorkflowTopic[];
+};
+
+type ScoutOrchestrationNode = {
+  id: string;
+  label: string;
+  nodeType: string;
+  description: string;
+};
+
+type ScoutOrchestration = {
+  id: string;
+  name: string;
+  description: string;
+  nodes: ScoutOrchestrationNode[];
 };
 
 export type ScoutWorkflowTopic = {
@@ -274,23 +289,6 @@ const defaultResetEventNames = [
   "SCOUT_SESSION_EXPIRED"
 ];
 
-const mockWorkflowSessions: ScoutWorkflowSession[] = [
-  {
-    id: "create-rate",
-    title: "Create Rate",
-    description: "Open the rate setup flow and complete the required rate fields.",
-    estimatedTime: "2 min",
-    steps: 6
-  },
-  {
-    id: "update-customer",
-    title: "Update Customer",
-    description: "Find a customer profile and update saved account details.",
-    estimatedTime: "3 min",
-    steps: 5
-  }
-];
-
 export function ScoutChatbot({
   assistantName = "Scout Assistant",
   chatEndpoint = "/chat/query",
@@ -356,9 +354,16 @@ export function ScoutChatbot({
   const [activeTab, setActiveTab] = useState<ChatTab>("qa");
   const [isMinimizing, setIsMinimizing] = useState(false);
   const [activeWorkflow, setActiveWorkflow] = useState<ScoutWorkflowSession | null>(null);
-  const [workflowSessions, setWorkflowSessions] = useState<ScoutWorkflowSession[]>(mockWorkflowSessions);
+  const [workflowSessions, setWorkflowSessions] = useState<ScoutWorkflowSession[]>([]);
   const [expandedWorkflowSessions, setExpandedWorkflowSessions] = useState<Set<string>>(() => new Set());
   const [workflowsState, setWorkflowsState] = useState<{ status: "idle" | "loading" | "ready" | "error"; message: string }>({
+    status: "idle",
+    message: ""
+  });
+  const [orchestrationPanelOpen, setOrchestrationPanelOpen] = useState(false);
+  const [orchestrations, setOrchestrations] = useState<ScoutOrchestration[]>([]);
+  const [expandedOrchestrations, setExpandedOrchestrations] = useState<Set<string>>(() => new Set());
+  const [orchestrationsState, setOrchestrationsState] = useState<{ status: "idle" | "loading" | "ready" | "error"; message: string }>({
     status: "idle",
     message: ""
   });
@@ -705,13 +710,15 @@ export function ScoutChatbot({
   }, [activeTab, isOpen, isTyping, messages]);
 
   useEffect(() => {
-    if (!targetAppId) {
-      setWorkflowSessions(mockWorkflowSessions);
-      setWorkflowsState({ status: "idle", message: "" });
+    if (!targetAppId || !companyId || !userId) {
+      setWorkflowSessions([]);
+      setWorkflowsState({ status: "idle", message: "Select an authorized target application to view guided workflows." });
       return;
     }
 
     const workflowTargetAppId = targetAppId;
+    const workflowCompanyId = companyId;
+    const workflowUserId = userId;
     let ignore = false;
     const controller = new AbortController();
 
@@ -721,6 +728,8 @@ export function ScoutChatbot({
       try {
         const url = new URL("/api/guided-workflow-player/guides", scoutBaseUrl || window.location.origin);
         url.searchParams.set("targetAppId", workflowTargetAppId);
+        url.searchParams.set("companyId", workflowCompanyId);
+        url.searchParams.set("userId", workflowUserId);
         const response = await fetch(url.toString(), { signal: controller.signal });
         const body = await response.json().catch(() => null);
 
@@ -759,7 +768,56 @@ export function ScoutChatbot({
       ignore = true;
       controller.abort();
     };
-  }, [scoutBaseUrl, targetAppId, targetAppName]);
+  }, [companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
+
+  useEffect(() => {
+    if (!companyId || !userId || !targetAppId) {
+      setOrchestrations([]);
+      setOrchestrationsState({ status: "idle", message: "Select an authorized target application to view orchestrations." });
+      return;
+    }
+
+    const controller = new AbortController();
+    let ignore = false;
+
+    async function loadOrchestrations() {
+      setOrchestrationsState({ status: "loading", message: "" });
+      try {
+        const url = new URL("/api/chatbot/orchestrations", scoutBaseUrl || window.location.origin);
+        url.searchParams.set("companyId", companyId!);
+        url.searchParams.set("userId", userId!);
+        url.searchParams.set("targetAppId", targetAppId!);
+        const response = await fetch(url.toString(), { signal: controller.signal });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(typeof body?.message === "string" ? body.message : "Unable to load orchestrations.");
+        }
+        if (!ignore) {
+          const scopedOrchestrations = Array.isArray(body?.orchestrations) ? body.orchestrations as ScoutOrchestration[] : [];
+          setOrchestrations(scopedOrchestrations);
+          setExpandedOrchestrations(new Set());
+          setOrchestrationsState({
+            status: "ready",
+            message: scopedOrchestrations.length === 0 ? `No published orchestrations found${targetAppName ? ` for ${targetAppName}` : ""}.` : ""
+          });
+        }
+      } catch (error) {
+        if (!controller.signal.aborted && !ignore) {
+          setOrchestrations([]);
+          setOrchestrationsState({
+            status: "error",
+            message: error instanceof Error ? error.message : "Unable to load orchestrations."
+          });
+        }
+      }
+    }
+
+    void loadOrchestrations();
+    return () => {
+      ignore = true;
+      controller.abort();
+    };
+  }, [companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
 
   const resumeConversation = useCallback(async (targetConversationId: string) => {
     if (!companyId || !userId || !targetConversationId) {
@@ -1423,7 +1481,7 @@ export function ScoutChatbot({
           </div>
 
           <div className="flex items-center gap-1">
-            <IconButton label="Conversation history" onClick={() => setHistoryOpen((current) => !current)}>
+            <IconButton label="Conversation history" onClick={() => { setOrchestrationPanelOpen(false); setHistoryOpen((current) => !current); }}>
               <History className="h-4 w-4" />
             </IconButton>
             <IconButton label="Start new conversation" onClick={() => setConfirmResetOpen(true)}>
@@ -1579,6 +1637,76 @@ export function ScoutChatbot({
             </aside>
           ) : null}
 
+          {activeTab === "workflows" && orchestrationPanelOpen ? (
+            <aside className="absolute inset-x-0 bottom-0 top-[88px] z-20 flex min-h-0 w-full flex-col overflow-hidden bg-white shadow-[0_-1px_0_rgba(15,23,42,0.08)]">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 ring-1 ring-violet-100">
+                    <Network className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-950">Orchestrations</p>
+                    <p className="truncate text-xs text-slate-500">Published for {targetAppName || "this application"}</p>
+                  </div>
+                </div>
+                <button aria-label="Close orchestrations" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-4 focus:ring-violet-100" onClick={() => setOrchestrationPanelOpen(false)} title="Close orchestrations" type="button">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                {orchestrationsState.status === "loading" ? (
+                  <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading orchestrations...</p>
+                ) : orchestrationsState.message ? (
+                  <p className={cn(
+                    "rounded-xl border px-3 py-3 text-sm",
+                    orchestrationsState.status === "error" ? "border-red-100 bg-red-50 text-red-700" : "border-slate-100 bg-slate-50 text-slate-500"
+                  )}>{orchestrationsState.message}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {orchestrations.map((orchestration) => {
+                      const expanded = expandedOrchestrations.has(orchestration.id);
+                      return (
+                        <section className="overflow-visible rounded-xl border border-slate-200 bg-white" key={orchestration.id}>
+                          <button
+                            aria-expanded={expanded}
+                            className="flex min-h-14 w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-violet-100"
+                            onClick={() => setExpandedOrchestrations((current) => toggleSetValue(current, orchestration.id))}
+                            type="button"
+                          >
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-semibold text-slate-900">{orchestration.name}</span>
+                              <span className="mt-0.5 block truncate text-xs text-slate-500">{orchestration.description || `${orchestration.nodes.length} nodes`}</span>
+                            </span>
+                            <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-500">
+                              {orchestration.nodes.length}
+                              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </span>
+                          </button>
+                          {expanded ? (
+                            <div className="space-y-1 border-t border-slate-100 bg-slate-50/70 p-2">
+                              {orchestration.nodes.length > 0 ? orchestration.nodes.map((node, index) => (
+                                <div className="group relative flex min-h-10 items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-200" key={node.id} tabIndex={0}>
+                                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-50 text-[11px] font-bold text-violet-700">{index + 1}</span>
+                                  <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{node.label}</span>
+                                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{formatNodeType(node.nodeType)}</span>
+                                  <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 whitespace-normal break-words">
+                                    {node.description || `${node.label} (${formatNodeType(node.nodeType)})`}
+                                  </span>
+                                </div>
+                              )) : (
+                                <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500">No nodes are configured.</p>
+                              )}
+                            </div>
+                          ) : null}
+                        </section>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </aside>
+          ) : null}
+
           <div className="grid grid-cols-2 border-b border-slate-100 bg-slate-50 text-sm font-semibold text-slate-500">
             <button
               aria-selected={activeTab === "qa"}
@@ -1586,7 +1714,7 @@ export function ScoutChatbot({
                 "h-11 border-b-2 transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
                 activeTab === "qa" ? "border-[var(--scout-brand)] bg-white text-slate-950" : "border-transparent hover:bg-white/70 hover:text-slate-800"
               )}
-              onClick={() => setActiveTab("qa")}
+              onClick={() => { setOrchestrationPanelOpen(false); setActiveTab("qa"); }}
               role="tab"
               type="button"
             >
@@ -1657,6 +1785,22 @@ export function ScoutChatbot({
             </>
           ) : (
             <div className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-slate-50 px-4 py-4">
+              <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-slate-900">Guided workflows</p>
+                  <p className="truncate text-xs text-slate-500">Scoped to {targetAppName || "the selected application"}</p>
+                </div>
+                <button
+                  aria-label="View orchestrations"
+                  className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 ring-1 ring-violet-100 transition hover:bg-violet-100 focus:outline-none focus:ring-4 focus:ring-violet-100"
+                  onClick={() => { setHistoryOpen(false); setOrchestrationPanelOpen(true); }}
+                  title="View orchestrations"
+                  type="button"
+                >
+                  <Network className="h-4 w-4" />
+                  {orchestrations.length > 0 ? <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-700 px-1 text-[9px] font-bold text-white">{Math.min(orchestrations.length, 99)}</span> : null}
+                </button>
+              </div>
               {activeWorkflow && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
                   <div className="flex items-center justify-between gap-3">
@@ -1709,14 +1853,17 @@ export function ScoutChatbot({
                         <div className="border-t border-slate-100 bg-slate-50/70 p-2">
                           {topics.length > 0 ? (
                             <div className="grid gap-1.5">
-                              {topics.map((topic) => (
+                              {topics.map((topic, index) => (
                                 <button
                                   className="flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                                   key={topic.id}
                                   onClick={() => startWorkflowTopic(topic)}
                                   type="button"
                                 >
-                                  <span className="min-w-0 truncate font-medium text-slate-800">{topic.title}</span>
+                                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-50 text-[10px] font-bold text-violet-700">{index + 1}</span>
+                                    <span className="min-w-0 truncate font-medium text-slate-800">{topic.title}</span>
+                                  </div>
                                   <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
                                     <Play className="h-3 w-3 fill-current" />
                                     {topic.steps} steps
@@ -2617,6 +2764,17 @@ function HistoryActionButton({
       {children}
     </button>
   );
+}
+
+function toggleSetValue(current: Set<string>, value: string) {
+  const next = new Set(current);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
+}
+
+function formatNodeType(nodeType: string) {
+  return nodeType.replaceAll("_", " ");
 }
 
 function findWorkflowForMessage(normalizedMessage: string, workflows: ScoutWorkflowSession[]) {

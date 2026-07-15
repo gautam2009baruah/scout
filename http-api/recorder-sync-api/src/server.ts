@@ -1,9 +1,22 @@
 import http from "node:http";
 import { URL } from "node:url";
 import { appendRecordedActionByToken, GuidedWorkflowError } from "@/lib/admin/guided-workflows";
+import type { RecordedAction, RecordedActionType } from "@/shared/guideTypes";
 
 const host = process.env.RECORDER_SYNC_API_HOST || "0.0.0.0";
 const port = Number(process.env.RECORDER_SYNC_API_PORT || 4301);
+const recordedActionTypes = new Set<RecordedActionType>(["click", "input", "navigation", "submit", "change", "manual-select"]);
+
+function isRecordedAction(value: unknown): value is RecordedAction {
+  if (!value || typeof value !== "object") return false;
+  const action = value as Record<string, unknown>;
+  return typeof action.id === "string"
+    && typeof action.type === "string"
+    && recordedActionTypes.has(action.type as RecordedActionType)
+    && typeof action.url === "string"
+    && typeof action.timestamp === "number"
+    && Number.isFinite(action.timestamp);
+}
 
 function setCorsHeaders(request: http.IncomingMessage, response: http.ServerResponse) {
   const origin = request.headers.origin || "*";
@@ -68,6 +81,10 @@ const server = http.createServer(async (request, response) => {
     }
 
     const payload = body as Record<string, unknown>;
+    if (!isRecordedAction(payload.action)) {
+      return sendJson(request, response, 400, { message: "A valid recorded action is required." });
+    }
+
     const result = await appendRecordedActionByToken(
       String(payload.recorderToken ?? payload.recorder_token ?? ""),
       payload.action,

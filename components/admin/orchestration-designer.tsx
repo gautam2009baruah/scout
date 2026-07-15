@@ -566,9 +566,18 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
         });
         
         if (!nodeResponse.ok) {
-          const error = await nodeResponse.json();
-          console.error(`Failed to save node ${node.data.label}:`, error);
-          throw new Error(`Failed to save node ${node.data.label}: ${error.message || 'Unknown error'}`);
+          let errorMessage = `HTTP ${nodeResponse.status}`;
+          try {
+            const contentType = nodeResponse.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const error = await nodeResponse.json();
+              errorMessage = error?.message || errorMessage;
+            }
+          } catch (parseError) {
+            console.error(`Failed to parse error response:`, parseError);
+          }
+          console.error(`Failed to save node ${node.data.label}:`, { status: nodeResponse.status, message: errorMessage });
+          throw new Error(`Failed to save node ${node.data.label}: ${errorMessage}`);
         }
         
         const savedNode = await nodeResponse.json();
