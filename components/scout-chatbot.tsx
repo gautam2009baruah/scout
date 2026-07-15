@@ -1353,7 +1353,7 @@ export function ScoutChatbot({
       status: "resolved",
       errorMessage: undefined
     });
-    await completeChatResponse(suggestion.originalText, trimMessagesForLifecycle(nextHistory, resolvedLifecycleSettings));
+    await completeChatResponse(suggestion.originalText, nextHistory);
   }
 
   async function runWorkflowAction(messageId: string, suggestion: ScoutWorkflowActionSuggestion) {
@@ -1392,9 +1392,9 @@ export function ScoutChatbot({
                 ...message,
                 workflowActionSuggestion: {
                   ...suggestion,
-                  status: "resolved",
+                  status: "resolved" as const,
                   errorMessage: undefined
-                }
+                } as ScoutWorkflowActionSuggestion
               }
             : message
         )),
@@ -1417,9 +1417,9 @@ export function ScoutChatbot({
               ...item,
               workflowActionSuggestion: {
                 ...suggestion,
-                status: "error",
+                status: "error" as const,
                 errorMessage: message
-              }
+              } as ScoutWorkflowActionSuggestion
             }
           : item
       )));
