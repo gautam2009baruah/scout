@@ -151,7 +151,7 @@ export class CompanyApiKeyAuthorizer {
       if (cached.strictEnvironmentEnforcement) {
         const normalizedRequestedEnvironment = normalizeEnvironment(requestedEnvironment || "");
         if (!normalizedRequestedEnvironment) {
-          return { ok: false, error: "Environment is required for this company." };
+          return { ok: false, error: "Environment is required for this API key." };
         }
 
         if (normalizedRequestedEnvironment !== normalizeEnvironment(cached.keyEnvironment)) {
@@ -175,9 +175,8 @@ export class CompanyApiKeyAuthorizer {
           k.company_id,
           COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
           COALESCE(k.environment, 'production') AS environment,
-          COALESCE(c.enforce_chatbot_key_environment, false) AS strict_environment_enforcement
+          COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement
         FROM chatbot_api_keys k
-        INNER JOIN companies c ON c.id = k.company_id
         WHERE key_hash = $1
           AND status = 'active'
           AND is_active = true
@@ -210,7 +209,7 @@ export class CompanyApiKeyAuthorizer {
       if (row.strict_environment_enforcement) {
         const normalizedRequestedEnvironment = normalizeEnvironment(requestedEnvironment || "");
         if (!normalizedRequestedEnvironment) {
-          return { ok: false, error: "Environment is required for this company." };
+          return { ok: false, error: "Environment is required for this API key." };
         }
 
         if (normalizedRequestedEnvironment !== normalizeEnvironment(row.environment)) {

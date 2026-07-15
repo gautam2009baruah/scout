@@ -30,6 +30,7 @@ export default async function ChatbotSettingsPage() {
         companyName={session.tenant.name}
         defaults={payload.defaults}
         initialSettings={payload.settings}
+        canUseCompanyLevelApiKeys={payload.canUseCompanyLevelApiKeys}
         targetApps={payload.targetApps}
       />
     </AdminShell>

@@ -27,6 +27,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       name: typeof body.name === "string" ? body.name : undefined,
       targetAppId: Object.prototype.hasOwnProperty.call(body, "targetAppId") ? (typeof body.targetAppId === "string" && body.targetAppId.trim() ? body.targetAppId : null) : undefined,
       environment: typeof body.environment === "string" ? body.environment : undefined,
+      strictEnvironmentEnforcement: typeof body.strictEnvironmentEnforcement === "boolean" ? body.strictEnvironmentEnforcement : undefined,
       allowedOrigins: Array.isArray(body.allowedOrigins) ? body.allowedOrigins.map(String) : undefined,
       expiresAt: Object.prototype.hasOwnProperty.call(body, "expiresAt") ? (typeof body.expiresAt === "string" ? body.expiresAt : null) : undefined
     });

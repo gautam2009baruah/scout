@@ -68,6 +68,7 @@ export async function getChatbotLifecycleSettingsAdminPayload(session: AdminSess
     defaults: DEFAULT_CHATBOT_LIFECYCLE_SETTINGS,
     settings,
     security,
+    canUseCompanyLevelApiKeys: await canUseCompanyLevelApiKeys(session, companyId),
     targetApps: targetApps.filter((app) => app.companyId === companyId).map((app) => ({
       id: app.id,
       name: app.name,
@@ -200,6 +201,7 @@ export type ChatbotApiKeyRecord = {
   targetAppId: string | null;
   targetAppName: string | null;
   environment: string;
+  strictEnvironmentEnforcement: boolean;
   status: ChatbotApiKeyStatus;
   isActive: boolean;
   allowedOrigins: string[];
@@ -213,6 +215,7 @@ export type CreateChatbotApiKeyInput = {
   name: string;
   targetAppId?: string | null;
   environment: string;
+  strictEnvironmentEnforcement?: boolean;
   allowedOrigins?: string[];
   expiresAt?: string | null;
 };
@@ -315,6 +318,78 @@ async function ensureNoOtherActiveKeyInEnvironment(
   }
 }
 
+async function canUseCompanyLevelApiKeys(session: AdminSession, companyId: string) {
+  if (session.user.isAdminRole) {
+    return true;
+  }
+
+  const result = await getPool().query<{ allowed: boolean }>(
+    `
+      SELECT NOT EXISTS (
+        SELECT 1
+        FROM user_target_app_access uta
+        INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
+        WHERE uta.user_id = $1
+          AND gta.company_id = $2
+          AND uta.deleted_at IS NULL
+      ) AS allowed
+    `,
+    [session.user.id, companyId]
+  );
+
+  return result.rows[0]?.allowed === true;
+}
+
+async function assertCompanyLevelApiKeyScopeAllowed(
+  session: AdminSession,
+  companyId: string,
+  targetAppId?: string | null
+) {
+  if (targetAppId) {
+    return;
+  }
+
+  const allowed = await canUseCompanyLevelApiKeys(session, companyId);
+  if (!allowed) {
+    throw new ChatbotSettingsError("You can only create API keys for your allowed target applications.", 403);
+  }
+}
+
+async function assertUniqueApiKeyNamePerTargetApp(
+  companyId: string,
+  targetAppId: string | null,
+  name: string,
+  nextStatus: ChatbotApiKeyStatus,
+  excludeApiKeyId?: string
+) {
+  if (nextStatus === "revoked") {
+    return;
+  }
+
+  const normalizedName = String(name || "").trim().toLowerCase();
+  if (!normalizedName) {
+    return;
+  }
+
+  const result = await getPool().query<{ id: string }>(
+    `
+      SELECT id
+      FROM chatbot_api_keys
+      WHERE company_id = $1
+        AND (($2::uuid IS NULL AND target_app_id IS NULL) OR target_app_id = $2)
+        AND lower(trim(name)) = $3
+        AND status <> 'revoked'
+        AND ($4::uuid IS NULL OR id <> $4)
+      LIMIT 1
+    `,
+    [companyId, targetAppId, normalizedName, excludeApiKeyId ?? null]
+  );
+
+  if ((result.rowCount ?? 0) > 0) {
+    throw new ChatbotSettingsError("API key name already exists for this target app.", 409);
+  }
+}
+
 function randomKeySuffix() {
   return randomBytes(24).toString("base64url");
 }
@@ -337,6 +412,7 @@ function mapChatbotApiKeyRow(row: {
   target_app_id: string | null;
   target_app_name: string | null;
   environment: string;
+  strict_environment_enforcement: boolean;
   status: ChatbotApiKeyStatus;
   is_active: boolean;
   allowed_origins_json: string[] | null;
@@ -352,6 +428,7 @@ function mapChatbotApiKeyRow(row: {
     targetAppId: row.target_app_id,
     targetAppName: row.target_app_name,
     environment: row.environment,
+    strictEnvironmentEnforcement: row.strict_environment_enforcement === true,
     status: row.status,
     isActive: row.is_active,
     allowedOrigins: row.allowed_origins_json ?? [],
@@ -373,6 +450,7 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
     target_app_id: string | null;
     target_app_name: string | null;
     environment: string;
+    strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
     is_active: boolean;
     allowed_origins_json: string[] | null;
@@ -389,6 +467,7 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
         k.target_app_id,
         gta.name AS target_app_name,
         COALESCE(k.environment, '') AS environment,
+        COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
         k.is_active,
         COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
@@ -399,7 +478,7 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
       FROM chatbot_api_keys k
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
       WHERE k.company_id = $1
-      ORDER BY k.created_at DESC
+      ORDER BY CASE WHEN COALESCE(k.status, 'active') = 'revoked' THEN 1 ELSE 0 END ASC, k.created_at DESC
     `,
     [companyId]
   );
@@ -424,9 +503,13 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
 
   const targetAppId = input.targetAppId ?? null;
   await assertTargetAppAccess(session, companyId, targetAppId);
+  await assertCompanyLevelApiKeyScopeAllowed(session, companyId, targetAppId);
 
   const allowedOrigins = normalizeOrigins(input.allowedOrigins);
   const expiresAt = parseExpiryDate(input.expiresAt);
+  const strictEnvironmentEnforcement = input.strictEnvironmentEnforcement === true;
+
+  await assertUniqueApiKeyNamePerTargetApp(companyId, targetAppId, name, "active");
 
   await ensureNoOtherActiveKeyInEnvironment(companyId, environment);
 
@@ -439,6 +522,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
     target_app_id: string | null;
     target_app_name: string | null;
     environment: string;
+    strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
     is_active: boolean;
     allowed_origins_json: string[] | null;
@@ -454,6 +538,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         key_prefix,
         key_hash,
         target_app_id,
+        strict_environment_enforcement,
         is_active,
         status,
         environment,
@@ -462,7 +547,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, true, 'active', $6, $7::jsonb, $8, $9, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, true, 'active', $7, $8::jsonb, $9, $10, $10)
       RETURNING
         chatbot_api_keys.id,
         chatbot_api_keys.name,
@@ -470,6 +555,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         chatbot_api_keys.target_app_id,
         (SELECT name FROM guided_workflow_target_apps WHERE id = chatbot_api_keys.target_app_id) AS target_app_name,
         chatbot_api_keys.environment,
+        COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
         chatbot_api_keys.status,
         chatbot_api_keys.is_active,
         COALESCE(chatbot_api_keys.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
@@ -484,6 +570,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
       generated.keyPrefix,
       generated.keyHash,
       targetAppId,
+      strictEnvironmentEnforcement,
       environment,
       JSON.stringify(allowedOrigins),
       expiresAt,
@@ -505,6 +592,7 @@ export async function updateChatbotApiKey(
     name?: string;
     targetAppId?: string | null;
     environment?: string;
+    strictEnvironmentEnforcement?: boolean;
     allowedOrigins?: string[];
     expiresAt?: string | null;
   }
@@ -513,12 +601,19 @@ export async function updateChatbotApiKey(
   await assertCompanyAccess(session, companyId);
 
   const current = await getPool().query<{
+    name: string;
     environment: string;
     status: ChatbotApiKeyStatus;
     target_app_id: string | null;
+    strict_environment_enforcement: boolean;
   }>(
     `
-      SELECT COALESCE(environment, '') AS environment, COALESCE(status, 'active')::text AS status, target_app_id
+      SELECT
+        name,
+        COALESCE(environment, '') AS environment,
+        COALESCE(status, 'active')::text AS status,
+        target_app_id,
+        COALESCE(strict_environment_enforcement, false) AS strict_environment_enforcement
       FROM chatbot_api_keys
       WHERE id = $1
         AND company_id = $2
@@ -533,6 +628,8 @@ export async function updateChatbotApiKey(
 
   const nextEnvironment = typeof input.environment === "string" ? normalizeEnvironment(input.environment) : current.rows[0].environment;
   const nextStatus = typeof input.status === "string" ? input.status : current.rows[0].status;
+  const nextTargetAppId = Object.prototype.hasOwnProperty.call(input, "targetAppId") ? input.targetAppId ?? null : current.rows[0].target_app_id;
+  const nextName = typeof input.name === "string" ? input.name.trim() : current.rows[0].name;
 
   if (!nextEnvironment) {
     throw new ChatbotSettingsError("Environment is required.", 400);
@@ -541,12 +638,19 @@ export async function updateChatbotApiKey(
   await assertEnvironmentExists(session, companyId, nextEnvironment);
 
   if (Object.prototype.hasOwnProperty.call(input, "targetAppId")) {
-    await assertTargetAppAccess(session, companyId, input.targetAppId ?? null);
+    await assertTargetAppAccess(session, companyId, nextTargetAppId);
+    await assertCompanyLevelApiKeyScopeAllowed(session, companyId, nextTargetAppId);
+  }
+
+  if (input.status === "active" && current.rows[0].status !== "suspended") {
+    throw new ChatbotSettingsError("Only suspended API keys can be re-activated.", 400);
   }
 
   if (nextStatus === "active") {
     await ensureNoOtherActiveKeyInEnvironment(companyId, nextEnvironment, apiKeyId);
   }
+
+  await assertUniqueApiKeyNamePerTargetApp(companyId, nextTargetAppId, nextName, nextStatus, apiKeyId);
 
   const updates: string[] = [];
   const values: unknown[] = [];
@@ -596,6 +700,12 @@ export async function updateChatbotApiKey(
     index += 1;
   }
 
+  if (typeof input.strictEnvironmentEnforcement === "boolean") {
+    updates.push(`strict_environment_enforcement = $${index}`);
+    values.push(input.strictEnvironmentEnforcement === true);
+    index += 1;
+  }
+
   if (Array.isArray(input.allowedOrigins)) {
     updates.push(`allowed_origins_json = $${index}::jsonb`);
     values.push(JSON.stringify(normalizeOrigins(input.allowedOrigins)));
@@ -625,6 +735,7 @@ export async function updateChatbotApiKey(
     target_app_id: string | null;
     target_app_name: string | null;
     environment: string;
+    strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
     is_active: boolean;
     allowed_origins_json: string[] | null;
@@ -645,6 +756,7 @@ export async function updateChatbotApiKey(
         chatbot_api_keys.target_app_id,
         (SELECT name FROM guided_workflow_target_apps WHERE id = chatbot_api_keys.target_app_id) AS target_app_name,
         COALESCE(chatbot_api_keys.environment, '') AS environment,
+        COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(chatbot_api_keys.status, CASE WHEN chatbot_api_keys.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
         chatbot_api_keys.is_active,
         COALESCE(chatbot_api_keys.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
@@ -667,8 +779,8 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
 
-  const current = await getPool().query<{ environment: string }>(
-    "SELECT COALESCE(environment, 'production') AS environment FROM chatbot_api_keys WHERE id = $1 AND company_id = $2",
+  const current = await getPool().query<{ environment: string; status: ChatbotApiKeyStatus }>(
+    "SELECT COALESCE(environment, 'production') AS environment, COALESCE(status, 'active')::text AS status FROM chatbot_api_keys WHERE id = $1 AND company_id = $2",
     [apiKeyId, companyId]
   );
 
@@ -676,11 +788,13 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
     throw new ChatbotSettingsError("API key not found.", 404);
   }
 
+  if (current.rows[0].status === "revoked") {
+    throw new ChatbotSettingsError("Revoked API keys cannot be rotated.", 400);
+  }
+
   await ensureNoOtherActiveKeyInEnvironment(companyId, current.rows[0].environment, apiKeyId);
 
   const generated = generateChatbotApiKey(current.rows[0].environment);
-
-  const record = await updateChatbotApiKey(session, apiKeyId, { status: "active" });
 
   await getPool().query(
     `
@@ -698,6 +812,53 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
     `,
     [generated.keyHash, generated.keyPrefix, session.user.id, apiKeyId, companyId]
   );
+
+  const refreshed = await getPool().query<{
+    id: string;
+    name: string;
+    key_prefix: string;
+    target_app_id: string | null;
+    target_app_name: string | null;
+    environment: string;
+    strict_environment_enforcement: boolean;
+    status: ChatbotApiKeyStatus;
+    is_active: boolean;
+    allowed_origins_json: string[] | null;
+    expires_at: Date | null;
+    last_used_at: Date | null;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `
+      SELECT
+        k.id,
+        k.name,
+        k.key_prefix,
+        k.target_app_id,
+        gta.name AS target_app_name,
+        COALESCE(k.environment, '') AS environment,
+        COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement,
+        COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
+        k.is_active,
+        COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
+        k.expires_at,
+        k.last_used_at,
+        k.created_at,
+        k.updated_at
+      FROM chatbot_api_keys k
+      LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+      WHERE k.id = $1
+        AND k.company_id = $2
+      LIMIT 1
+    `,
+    [apiKeyId, companyId]
+  );
+
+  if ((refreshed.rowCount ?? 0) === 0) {
+    throw new ChatbotSettingsError("API key not found.", 404);
+  }
+
+  const record = mapChatbotApiKeyRow(refreshed.rows[0]);
 
   return {
     apiKey: generated.secret,

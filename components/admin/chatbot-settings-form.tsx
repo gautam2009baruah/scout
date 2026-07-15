@@ -30,6 +30,7 @@ type Props = {
   companyName: string;
   defaults: ChatbotLifecycleSettings;
   initialSettings: ChatbotLifecycleSettingsRecord[];
+  canUseCompanyLevelApiKeys: boolean;
   targetApps: TargetAppOption[];
 };
 
@@ -42,6 +43,7 @@ type ChatbotApiKeyRecord = {
   targetAppId: string | null;
   targetAppName: string | null;
   environment: string;
+  strictEnvironmentEnforcement: boolean;
   status: ChatbotApiKeyStatus;
   isActive: boolean;
   allowedOrigins: string[];
@@ -172,7 +174,7 @@ function IconActionButton({
   );
 }
 
-export function ChatbotSettingsForm({ companyName, defaults, initialSettings, targetApps }: Props) {
+export function ChatbotSettingsForm({ companyName, defaults, initialSettings, canUseCompanyLevelApiKeys, targetApps }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("conversation");
 
   const [settings, setSettings] = useState(initialSettings);
@@ -181,13 +183,14 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
   const [apiKeys, setApiKeys] = useState<ChatbotApiKeyRecord[]>([]);
   const [environments, setEnvironments] = useState<ChatbotEnvironment[]>([]);
-  const [strictEnvironmentEnforcement, setStrictEnvironmentEnforcement] = useState(false);
 
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
+  const defaultTargetAppId = canUseCompanyLevelApiKeys ? COMPANY_SCOPE : (targetApps[0]?.id ?? "");
   const [apiKeyForm, setApiKeyForm] = useState({
-    targetAppId: COMPANY_SCOPE,
+    targetAppId: defaultTargetAppId,
     name: "",
     environment: "",
+    strictEnvironmentEnforcement: false,
     allowedOriginsText: "",
     expiresAt: ""
   });
@@ -269,7 +272,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
     }
 
     setApiKeys(Array.isArray(body?.keys) ? body.keys : []);
-    setStrictEnvironmentEnforcement(body?.strictEnvironmentEnforcement === true);
   }
 
   async function loadEnvironments() {
@@ -357,9 +359,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   function resetApiKeyForm() {
     setEditingKeyId(null);
     setApiKeyForm({
-      targetAppId: COMPANY_SCOPE,
+      targetAppId: defaultTargetAppId,
       name: "",
       environment: "",
+      strictEnvironmentEnforcement: false,
       allowedOriginsText: "",
       expiresAt: ""
     });
@@ -368,9 +371,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   function startEditKey(key: ChatbotApiKeyRecord) {
     setEditingKeyId(key.id);
     setApiKeyForm({
-      targetAppId: key.targetAppId ?? COMPANY_SCOPE,
+      targetAppId: key.targetAppId ?? defaultTargetAppId,
       name: key.name,
       environment: key.environment,
+      strictEnvironmentEnforcement: key.strictEnvironmentEnforcement,
       allowedOriginsText: key.allowedOrigins.join(", "),
       expiresAt: key.expiresAt ? toLocalDateTimeInput(new Date(key.expiresAt)) : ""
     });
@@ -396,8 +400,9 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
     const payload = {
       name: apiKeyForm.name.trim(),
-      targetAppId: apiKeyForm.targetAppId === COMPANY_SCOPE ? null : apiKeyForm.targetAppId,
+      targetAppId: canUseCompanyLevelApiKeys && apiKeyForm.targetAppId === COMPANY_SCOPE ? null : apiKeyForm.targetAppId,
       environment: apiKeyForm.environment,
+      strictEnvironmentEnforcement: apiKeyForm.strictEnvironmentEnforcement,
       allowedOrigins: parseAllowedOrigins(apiKeyForm.allowedOriginsText),
       expiresAt: apiKeyForm.expiresAt ? new Date(apiKeyForm.expiresAt).toISOString() : null
     };
@@ -481,23 +486,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
         showToast("API key rotated.", "success");
       }
     });
-  }
-
-  async function saveStrictEnvironmentPolicy() {
-    const response = await fetch("/api/admin/chatbot-settings/api-keys", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ strictEnvironmentEnforcement })
-    });
-
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      showToast(typeof body?.message === "string" ? body.message : "Unable to save security policy.", "error");
-      return;
-    }
-
-    setStrictEnvironmentEnforcement(body?.strictEnvironmentEnforcement === true);
-    showToast("Security policy updated.", "success");
   }
 
   async function addEnvironment() {
@@ -780,11 +768,12 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     Target app
                     <select
-                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       value={apiKeyForm.targetAppId}
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, targetAppId: event.target.value }))}
+                      disabled={editingKeyId !== null}
                     >
-                      <option value={COMPANY_SCOPE}>Company level</option>
+                      {canUseCompanyLevelApiKeys ? <option value={COMPANY_SCOPE}>Company level</option> : null}
                       {targetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
                       ))}
@@ -806,9 +795,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span className="inline-flex items-center gap-1.5">Environment <HelpHint text="Create and manage your own environment names. No default values are injected." /></span>
                     <select
-                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, environment: event.target.value }))}
                       value={apiKeyForm.environment}
+                      disabled={editingKeyId !== null}
                     >
                       <option value="">Select environment</option>
                       {environments.map((env) => (
@@ -820,9 +810,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                   <div className="flex items-end">
                     <div className="relative group">
                       <button
-                        className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                        className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                         onClick={() => setEnvironmentModalOpen(true)}
                         type="button"
+                        disabled={editingKeyId !== null}
                       >
                         <Plus className="h-4 w-4" />
                       </button>
@@ -866,30 +857,17 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                     ) : null}
                   </div>
                 </div>
-              </form>
 
-              <div className="rounded-lg border border-slate-200 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Strict environment enforcement</p>
-                    <p className="mt-1 text-xs text-slate-600">When enabled, requests must send environment and it must match API key environment exactly.</p>
-                    <p className="mt-1 text-xs text-slate-500">Example: key environment = production, request includes environment=production or X-Scout-Environment: production.</p>
-                  </div>
-                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <input
-                      checked={strictEnvironmentEnforcement}
-                      onChange={(event) => setStrictEnvironmentEnforcement(event.target.checked)}
-                      type="checkbox"
-                    />
-                    Enable
-                  </label>
-                </div>
-                <div className="mt-3">
-                  <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-xs font-semibold text-slate-700" onClick={saveStrictEnvironmentPolicy} type="button">
-                    Save security policy
-                  </button>
-                </div>
-              </div>
+                <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    checked={apiKeyForm.strictEnvironmentEnforcement}
+                    onChange={(event) => setApiKeyForm((current) => ({ ...current, strictEnvironmentEnforcement: event.target.checked }))}
+                    type="checkbox"
+                    disabled={editingKeyId !== null}
+                  />
+                  Strict environment enforcement for this key
+                </label>
+              </form>
 
               <div className="overflow-x-auto overflow-y-visible">
                 <table className="min-w-[1080px] divide-y divide-slate-200 text-sm">
@@ -898,7 +876,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                       <th className="px-3 py-2 text-left">Name</th>
                       <th className="px-3 py-2 text-left">Target app</th>
                       <th className="px-3 py-2 text-left">Environment</th>
-                      <th className="px-3 py-2 text-left">Prefix</th>
+                      <th className="px-3 py-2 text-left">Strict env</th>
                       <th className="px-3 py-2 text-left">Status</th>
                       <th className="px-3 py-2 text-left">Allowed domains</th>
                       <th className="px-3 py-2 text-left">Last used</th>
@@ -911,7 +889,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                         <td className="px-3 py-3 font-medium text-slate-800">{key.name}</td>
                         <td className="px-3 py-3 text-slate-700">{key.targetAppName || "Company level"}</td>
                         <td className="px-3 py-3 text-slate-700">{key.environment}</td>
-                        <td className="px-3 py-3 font-mono text-xs text-slate-700">{key.keyPrefix}</td>
+                        <td className="px-3 py-3 text-xs text-slate-700">{key.strictEnvironmentEnforcement ? "Enabled" : "Disabled"}</td>
                         <td className="px-3 py-3">
                           <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${key.status === "active" ? "bg-emerald-100 text-emerald-700" : key.status === "suspended" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
                             {key.status}
@@ -920,29 +898,31 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                         <td className="px-3 py-3 text-xs text-slate-600">{key.allowedOrigins.length ? key.allowedOrigins.join(", ") : "Any domain"}</td>
                         <td className="px-3 py-3 text-xs text-slate-600">{formatDate(key.lastUsedAt)}</td>
                         <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-2">
-                            <IconActionButton label="Rotate key and issue a new secret. Existing integrations must switch to the new key immediately." onClick={() => requestRotateKey(key.id)}>
-                              <RotateCw className="h-3.5 w-3.5" />
-                            </IconActionButton>
-                            <IconActionButton label="Edit this key using the same key form above." onClick={() => startEditKey(key)}>
-                              <Pencil className="h-3.5 w-3.5" />
-                            </IconActionButton>
-                            {key.status !== "active" ? (
-                              <IconActionButton tone="success" label="Activate this key so requests can be authorized again." onClick={() => requestStatusChange(key.id, "active")}>
-                                <ShieldCheck className="h-3.5 w-3.5" />
+                          {key.status === "revoked" ? (
+                            <span className="text-xs text-slate-500">No actions</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              <IconActionButton label="Rotate key and issue a new secret. Existing integrations must switch to the new key immediately." onClick={() => requestRotateKey(key.id)}>
+                                <RotateCw className="h-3.5 w-3.5" />
                               </IconActionButton>
-                            ) : null}
-                            {key.status === "active" ? (
-                              <IconActionButton tone="warning" label="Suspend this key temporarily without deleting it." onClick={() => requestStatusChange(key.id, "suspended")}>
-                                <Pause className="h-3.5 w-3.5" />
+                              <IconActionButton label="Edit this key using the same key form above." onClick={() => startEditKey(key)}>
+                                <Pencil className="h-3.5 w-3.5" />
                               </IconActionButton>
-                            ) : null}
-                            {key.status !== "revoked" ? (
+                              {key.status === "suspended" ? (
+                                <IconActionButton tone="success" label="Activate this key so requests can be authorized again." onClick={() => requestStatusChange(key.id, "active")}>
+                                  <ShieldCheck className="h-3.5 w-3.5" />
+                                </IconActionButton>
+                              ) : null}
+                              {key.status === "active" ? (
+                                <IconActionButton tone="warning" label="Suspend this key temporarily without deleting it." onClick={() => requestStatusChange(key.id, "suspended")}>
+                                  <Pause className="h-3.5 w-3.5" />
+                                </IconActionButton>
+                              ) : null}
                               <IconActionButton tone="danger" label="Revoke this key permanently. It cannot be used again." onClick={() => requestStatusChange(key.id, "revoked")}>
                                 <Ban className="h-3.5 w-3.5" />
                               </IconActionButton>
-                            ) : null}
-                          </div>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
