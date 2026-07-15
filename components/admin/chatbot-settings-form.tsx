@@ -382,6 +382,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
   async function submitApiKeyForm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const isCreateMode = editingKeyId === null;
 
     if (!apiKeyForm.name.trim()) {
       showToast("Key name is required.", "error");
@@ -390,6 +391,11 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
     if (!apiKeyForm.environment.trim()) {
       showToast("Environment is required. Create an environment first.", "error");
+      return;
+    }
+
+    if (isCreateMode && parseAllowedOrigins(apiKeyForm.allowedOriginsText).length === 0) {
+      showToast("At least one allowed origin is required.", "error");
       return;
     }
 
@@ -402,7 +408,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       targetAppId: apiKeyForm.targetAppId === COMPANY_SCOPE ? null : apiKeyForm.targetAppId,
       environment: apiKeyForm.environment,
       strictEnvironmentEnforcement: apiKeyForm.strictEnvironmentEnforcement,
-      allowedOrigins: parseAllowedOrigins(apiKeyForm.allowedOriginsText),
+      allowedOrigins: isCreateMode ? parseAllowedOrigins(apiKeyForm.allowedOriginsText) : undefined,
       expiresAt: apiKeyForm.expiresAt ? new Date(apiKeyForm.expiresAt).toISOString() : null
     };
 
@@ -835,11 +841,13 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span className="inline-flex items-center gap-1.5">Allowed origins <HelpHint text="Accepts comma separated URLs/domains. Example: https://app.example.com, *.example.org" /></span>
                     <input
-                      className="h-11 rounded-lg border border-slate-200 px-3 text-sm"
+                      className="h-11 rounded-lg border border-slate-200 px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, allowedOriginsText: event.target.value }))}
                       placeholder="https://app.example.com, *.example.org"
                       type="text"
                       value={apiKeyForm.allowedOriginsText}
+                      disabled={editingKeyId !== null}
+                      required={editingKeyId === null}
                     />
                   </label>
 

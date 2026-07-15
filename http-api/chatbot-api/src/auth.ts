@@ -12,6 +12,7 @@ type AuthResult = {
 type CacheValue = {
   id: string;
   companyId: string;
+  targetAppId: string | null;
   allowedOrigins: string[];
   keyEnvironment: string;
   strictEnvironmentEnforcement: boolean;
@@ -117,6 +118,7 @@ export class CompanyApiKeyAuthorizer {
     value: {
       id: string;
       companyId: string;
+      targetAppId: string | null;
       allowedOrigins: string[];
       keyEnvironment: string;
       strictEnvironmentEnforcement: boolean;
@@ -128,7 +130,12 @@ export class CompanyApiKeyAuthorizer {
     });
   }
 
-  async authenticate(request: IncomingMessage, companyId: string, requestedEnvironment?: string): Promise<AuthResult> {
+  async authenticate(
+    request: IncomingMessage,
+    companyId: string,
+    requestedEnvironment?: string,
+    requestedTargetAppId?: string | null
+  ): Promise<AuthResult> {
     const token = extractToken(request.headers);
 
     if (!token) {
@@ -141,6 +148,16 @@ export class CompanyApiKeyAuthorizer {
     if (cached) {
       if (cached.companyId !== companyId) {
         return { ok: false, error: "API key is not allowed for this company." };
+      }
+
+      if (cached.targetAppId) {
+        if (!requestedTargetAppId) {
+          return { ok: false, error: "API key is bound to a target app and requires targetAppName." };
+        }
+
+        if (cached.targetAppId !== requestedTargetAppId) {
+          return { ok: false, error: "API key is not allowed for this target app." };
+        }
       }
 
       const requestHost = parseOriginFromRequest(request);
@@ -165,6 +182,7 @@ export class CompanyApiKeyAuthorizer {
     const result = await getPool().query<{
       id: string;
       company_id: string;
+      target_app_id: string | null;
       allowed_origins_json: string[] | null;
       environment: string;
       strict_environment_enforcement: boolean;
@@ -173,6 +191,7 @@ export class CompanyApiKeyAuthorizer {
         SELECT
           k.id,
           k.company_id,
+          k.target_app_id,
           COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
           COALESCE(k.environment, 'production') AS environment,
           COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement
@@ -193,12 +212,23 @@ export class CompanyApiKeyAuthorizer {
       this.setCached(hashed, {
         id: row.id,
         companyId: row.company_id,
+        targetAppId: row.target_app_id,
         allowedOrigins,
         keyEnvironment: row.environment,
         strictEnvironmentEnforcement: row.strict_environment_enforcement === true
       });
       if (row.company_id !== companyId) {
         return { ok: false, error: "API key is not allowed for this company." };
+      }
+
+      if (row.target_app_id) {
+        if (!requestedTargetAppId) {
+          return { ok: false, error: "API key is bound to a target app and requires targetAppName." };
+        }
+
+        if (row.target_app_id !== requestedTargetAppId) {
+          return { ok: false, error: "API key is not allowed for this target app." };
+        }
       }
 
       const requestHost = parseOriginFromRequest(request);

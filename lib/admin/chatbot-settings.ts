@@ -506,6 +506,9 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
   await assertCompanyLevelApiKeyScopeAllowed(session, companyId, targetAppId);
 
   const allowedOrigins = normalizeOrigins(input.allowedOrigins);
+  if (allowedOrigins.length === 0) {
+    throw new ChatbotSettingsError("At least one allowed origin is required.", 400);
+  }
   const expiresAt = parseExpiryDate(input.expiresAt);
   const strictEnvironmentEnforcement = input.strictEnvironmentEnforcement === true;
 
@@ -725,9 +728,7 @@ export async function updateChatbotApiKey(
   }
 
   if (Array.isArray(input.allowedOrigins)) {
-    updates.push(`allowed_origins_json = $${index}::jsonb`);
-    values.push(JSON.stringify(normalizeOrigins(input.allowedOrigins)));
-    index += 1;
+    throw new ChatbotSettingsError("Allowed origins cannot be edited after API key creation.", 400);
   }
 
   if (Object.prototype.hasOwnProperty.call(input, "expiresAt")) {

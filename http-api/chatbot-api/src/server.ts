@@ -243,7 +243,12 @@ const server = createServer(async (request, response) => {
         parsedBody.environment || request.headers["x-scout-environment"] || ""
       ).trim();
 
-      const auth = await authorizer.authenticate(request, companyContext.id, requestedEnvironment);
+      const auth = await authorizer.authenticate(
+        request,
+        companyContext.id,
+        requestedEnvironment,
+        targetAppContext?.id ?? null
+      );
       if (!auth.ok) {
         sendJson(response, 401, { message: auth.error || "Unauthorized." }, requestId, origin);
         return;
