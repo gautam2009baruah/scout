@@ -83,7 +83,8 @@ export async function POST(request: Request) {
   try {
     const created = await createChatbotApiKey(session, {
       name: String(body.name || "").trim(),
-      environment: String(body.environment || "production"),
+      targetAppId: typeof body.targetAppId === "string" && body.targetAppId.trim() ? body.targetAppId : null,
+      environment: String(body.environment || ""),
       allowedOrigins: Array.isArray(body.allowedOrigins) ? body.allowedOrigins.map(String) : [],
       expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : null
     });
