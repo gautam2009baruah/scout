@@ -234,7 +234,42 @@ type DynamicActionParams =
   | { actionType: "send_email"; to: string; subject: string; body: string; bodyIsHtml: boolean }
   | { actionType: "unknown" };
 
+function extractEmailAddress(message: string): string | null {
+  const match = message.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
+  return match?.[0]?.trim() || null;
+}
+
+function buildHeuristicEmailContent(message: string): { subject: string; body: string } {
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes("birthday")) {
+    return {
+      subject: "Happy Birthday",
+      body: "Hi,\n\nWishing you a very happy birthday and a wonderful year ahead.\n\nBest regards,\nScout Assistant",
+    };
+  }
+
+  return {
+    subject: "Notification",
+    body: `Hi,\n\n${message}\n\nBest regards,\nScout Assistant`,
+  };
+}
+
 async function extractDynamicActionParams(message: string): Promise<DynamicActionParams> {
+  const heuristicRecipient = extractEmailAddress(message);
+  const looksLikeEmailAction = /\b(send|email|mail|notify|notification|deliver|forward)\b/i.test(message);
+
+  if (heuristicRecipient && looksLikeEmailAction) {
+    const heuristicContent = buildHeuristicEmailContent(message);
+    return {
+      actionType: "send_email",
+      to: heuristicRecipient,
+      subject: heuristicContent.subject,
+      body: heuristicContent.body,
+      bodyIsHtml: false,
+    };
+  }
+
   try {
     const provider = await getLLMProvider();
     const systemPrompt = [
@@ -460,10 +495,10 @@ export async function POST(request: NextRequest) {
 
     if (body.allowDraftPlan && (handle === "dynamic_plan" || matchedIds.length === 0)) {
       const dynamicResult = await executeDynamicPlan(message);
-      if (dynamicResult.success) {
+      if (dynamicResult.answer) {
         return NextResponse.json({
           answer: dynamicResult.answer,
-          intent: "execute_plan",
+          intent: dynamicResult.success ? "execute_plan" : "fallback",
           confidence: output.confidence ?? 0.8,
           decision: output.decision,
           handle: "dynamic_plan",
@@ -473,7 +508,11 @@ export async function POST(request: NextRequest) {
           clarifyingQuestions: [],
           requireUserConfirmation: false,
           plan,
-          metadata: { ...metadata, executedDynamically: true },
+          metadata: {
+            ...metadata,
+            executedDynamically: true,
+            executionSucceeded: dynamicResult.success,
+          },
         });
       }
     }
