@@ -306,8 +306,8 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const topLevelModules = session.modules
     .filter((m) => m.parentKey === null)
     .sort((a, b) => {
-      const aPref = preferredTopLevelOrder.indexOf(a.key);
-      const bPref = preferredTopLevelOrder.indexOf(b.key);
+      const aPref = (preferredTopLevelOrder as number[]).indexOf(a.key);
+      const bPref = (preferredTopLevelOrder as number[]).indexOf(b.key);
       if (aPref !== -1 || bPref !== -1) {
         if (aPref === -1) return 1;
         if (bPref === -1) return -1;
