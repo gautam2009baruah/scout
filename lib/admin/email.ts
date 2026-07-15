@@ -33,8 +33,15 @@ export async function sendEmail(message: EmailMessage) {
   const outboxId = outboxResult.rows[0].id;
 
   if (!process.env.SMTP_HOST) {
-    console.log(`Email queued for ${message.to}: ${message.subject}`);
-    return;
+    const warning = "SMTP not configured. Email was queued but not sent.";
+    await getPool().query(
+      "UPDATE email_outbox SET status = 'queued', error = $2 WHERE id = $1",
+      [outboxId, warning]
+    );
+    console.warn(`[Email] ${warning} outboxId=${outboxId} to=${message.to} subject=${message.subject}`);
+    const queuedError = new Error(warning);
+    (queuedError as Error & { outboxId?: string }).outboxId = outboxId;
+    throw queuedError;
   }
 
   try {
@@ -66,11 +73,13 @@ export async function sendEmail(message: EmailMessage) {
     });
 
     await getPool().query("UPDATE email_outbox SET status = 'sent', sent_at = now() WHERE id = $1", [outboxId]);
+    return { outboxId };
   } catch (error) {
     await getPool().query(
       "UPDATE email_outbox SET status = 'failed', error = $2 WHERE id = $1",
       [outboxId, error instanceof Error ? error.message : "Unknown email error"]
     );
+    console.error(`[Email] Send failed outboxId=${outboxId} to=${message.to} subject=${message.subject}`, error);
     throw error;
   }
 }

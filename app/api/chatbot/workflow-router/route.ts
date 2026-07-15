@@ -234,6 +234,124 @@ type DynamicActionParams =
   | { actionType: "send_email"; to: string; subject: string; body: string; bodyIsHtml: boolean }
   | { actionType: "unknown" };
 
+type DynamicExecutionResult = {
+  success: boolean;
+  answer: string;
+  executionStatus?: "sent" | "queued_not_sent" | "failed";
+  outboxId?: string;
+  adminError?: string;
+};
+
+type ActionContextResolution = {
+  message: string;
+  confidence: number;
+  usedLLM: boolean;
+};
+
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  const cleaned = (raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function resolveFollowUpMessageHeuristic(
+  message: string,
+  history: Array<{ role?: string; text?: string }>
+): string {
+  const normalized = message.trim().toLowerCase();
+  const followUpPattern = /^(send\s+again|again|do\s+it\s+again|one\s+more|send\s+one\s+more)(\b|\s|[.!?])+/i;
+
+  if (!followUpPattern.test(normalized)) {
+    return message;
+  }
+
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (entry?.role !== "user") {
+      continue;
+    }
+
+    const previous = String(entry.text || "").trim();
+    if (!previous || previous.toLowerCase() === normalized) {
+      continue;
+    }
+
+    const looksActionable = /\b(send|email|mail|notify|notification|birthday|invoice|order|request)\b/i.test(previous);
+    if (looksActionable) {
+      return previous;
+    }
+  }
+
+  return message;
+}
+
+async function resolveActionRequestFromConversation(
+  message: string,
+  history: Array<{ role?: string; text?: string }>
+): Promise<ActionContextResolution> {
+  if (history.length === 0) {
+    return { message, confidence: 1, usedLLM: false };
+  }
+
+  try {
+    const provider = await getLLMProvider();
+    const contextText = history
+      .slice(-10)
+      .map((entry) => `${(entry.role || "unknown").toUpperCase()}: ${String(entry.text || "")}`)
+      .join("\n");
+
+    const systemPrompt = [
+      "You resolve conversational references in action requests.",
+      "Rewrite the latest user message into a standalone actionable request using conversation context.",
+      "If latest message already stands alone, keep it unchanged.",
+      "If there is not enough context, keep the latest message unchanged and use lower confidence.",
+      'Return JSON only: {"resolvedMessage":"...","confidence":0-1,"reason":"brief"}',
+    ].join(" ");
+
+    const userPrompt = [
+      "Conversation context:",
+      contextText,
+      "",
+      "Latest user message:",
+      message,
+    ].join("\n");
+
+    const response = await provider.generate_answer(systemPrompt, userPrompt, "");
+    const parsed = parseJsonObject(response || "");
+    const resolvedMessage = typeof parsed?.resolvedMessage === "string" ? parsed.resolvedMessage.trim() : "";
+    const confidence = typeof parsed?.confidence === "number"
+      ? Math.max(0, Math.min(1, parsed.confidence))
+      : 0.5;
+
+    if (resolvedMessage) {
+      return {
+        message: resolvedMessage,
+        confidence,
+        usedLLM: true,
+      };
+    }
+  } catch {
+    // Fallback below.
+  }
+
+  return {
+    message: resolveFollowUpMessageHeuristic(message, history),
+    confidence: 0.55,
+    usedLLM: false,
+  };
+}
+
 function extractEmailAddress(message: string): string | null {
   const match = message.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/);
   return match?.[0]?.trim() || null;
@@ -257,7 +375,7 @@ function buildHeuristicEmailContent(message: string): { subject: string; body: s
 
 async function extractDynamicActionParams(message: string): Promise<DynamicActionParams> {
   const heuristicRecipient = extractEmailAddress(message);
-  const looksLikeEmailAction = /\b(send|email|mail|notify|notification|deliver|forward)\b/i.test(message);
+  const looksLikeEmailAction = /\b(send|email|mail|notify|notification|deliver|forward|again|birthday)\b/i.test(message);
 
   if (heuristicRecipient && looksLikeEmailAction) {
     const heuristicContent = buildHeuristicEmailContent(message);
@@ -281,10 +399,9 @@ async function extractDynamicActionParams(message: string): Promise<DynamicActio
     ].join(" ");
 
     const raw = await provider.generate_answer(systemPrompt, `User request: ${message}`, "");
-    const cleaned = (raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
-    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+    const parsed = parseJsonObject(raw || "");
 
-    if (parsed.actionType === "send_email" && typeof parsed.to === "string" && parsed.to.trim()) {
+    if (parsed?.actionType === "send_email" && typeof parsed.to === "string" && parsed.to.trim()) {
       return {
         actionType: "send_email",
         to: String(parsed.to).trim(),
@@ -299,7 +416,7 @@ async function extractDynamicActionParams(message: string): Promise<DynamicActio
   return { actionType: "unknown" };
 }
 
-async function executeDynamicPlan(message: string): Promise<{ success: boolean; answer: string }> {
+async function executeDynamicPlan(message: string): Promise<DynamicExecutionResult> {
   const params = await extractDynamicActionParams(message);
 
   if (params.actionType === "send_email") {
@@ -317,17 +434,50 @@ async function executeDynamicPlan(message: string): Promise<{ success: boolean; 
     };
 
     const result = await executeNotificationNode(config, {});
+    const outboxId = (() => {
+      const results = Array.isArray(result.output?.channelResults)
+        ? (result.output?.channelResults as Array<Record<string, unknown>>)
+        : [];
+      const emailChannel = results.find((entry) => entry.channel === "email") || null;
+      if (!emailChannel || typeof emailChannel !== "object") {
+        return undefined;
+      }
+
+      const details = (emailChannel.details && typeof emailChannel.details === "object")
+        ? (emailChannel.details as Record<string, unknown>)
+        : null;
+
+      return typeof details?.outboxId === "string" ? details.outboxId : undefined;
+    })();
+
+    const normalizedError = String(result.error || "");
+    const queuedNotSent = /SMTP not configured/i.test(normalizedError);
 
     if (result.success) {
       return {
         success: true,
         answer: `Done! I sent the email to **${params.to}** with subject "${params.subject}".`,
+        executionStatus: "sent",
+        outboxId,
+      };
+    }
+
+    if (queuedNotSent) {
+      return {
+        success: false,
+        answer: "I could not complete that email delivery right now. The attempt is logged for administrators in Control Panel.",
+        executionStatus: "queued_not_sent",
+        outboxId,
+        adminError: normalizedError,
       };
     }
 
     return {
       success: false,
-      answer: `I tried to send the email to ${params.to} but the delivery failed: ${result.error || "unknown error"}. Please check your email credentials configuration.`,
+      answer: "I could not complete that action right now. I logged technical details for administrators, and I can continue with a draft workflow path.",
+      executionStatus: "failed",
+      outboxId,
+      adminError: normalizedError,
     };
   }
 
@@ -341,7 +491,10 @@ export async function POST(request: NextRequest) {
     const userId = body.userId || "";
     const targetAppId = body.targetAppId || "";
     const forceActionMode = body.forceActionMode === true;
-    const message = typeof body.message === "string" ? body.message.trim() : "";
+    const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
+    const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
+    const contextResolution = await resolveActionRequestFromConversation(rawMessage, history);
+    const message = contextResolution.message;
 
     if (!companyId || !userId || !message) {
       return NextResponse.json(
@@ -431,7 +584,7 @@ export async function POST(request: NextRequest) {
         companyId,
         userId,
         targetAppId: targetAppId || undefined,
-        history: Array.isArray(body.history) ? body.history.slice(-12) : [],
+        history,
         workflow: body.workflow || null,
         availableNodeCatalog: NODE_CATALOG,
         candidateWorkflows: candidates,
@@ -512,6 +665,15 @@ export async function POST(request: NextRequest) {
             ...metadata,
             executedDynamically: true,
             executionSucceeded: dynamicResult.success,
+            dynamicExecutionStatus: dynamicResult.executionStatus ?? "unknown",
+            outboxId: dynamicResult.outboxId ?? null,
+            dynamicExecutionError: dynamicResult.adminError ?? null,
+            normalizedMessage: message,
+            originalMessage: rawMessage,
+            conversationResolution: {
+              usedLLM: contextResolution.usedLLM,
+              confidence: contextResolution.confidence,
+            },
           },
         });
       }
