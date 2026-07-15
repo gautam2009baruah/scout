@@ -1575,7 +1575,7 @@ export function ScoutChatbot({
               ...message,
               intentModeSuggestion: {
                 ...suggestion,
-                status: "resolved",
+                status: "resolved" as const,
               },
             }
           : message
@@ -1612,7 +1612,7 @@ export function ScoutChatbot({
             ...message,
             intentModeSuggestion: {
               ...suggestion,
-              status: "resolved",
+              status: "resolved" as const,
             },
           }
         : message
@@ -1637,7 +1637,7 @@ export function ScoutChatbot({
 
     const nextHistory = updateWorkflowActionSuggestion(messageId, {
       ...suggestion,
-      status: "resolved",
+      status: "resolved" as const,
       errorMessage: undefined
     });
     await completeChatResponse(suggestion.originalText, nextHistory);
