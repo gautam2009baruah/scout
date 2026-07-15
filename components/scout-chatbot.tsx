@@ -1335,7 +1335,7 @@ export function ScoutChatbot({
             pending.originalText,
             pending.workflow,
             contextWindow,
-            { allowDraftPlan: true }
+            { allowDraftPlan: true, forceActionMode: true }
           );
           const assistantReply = resolveReply(workflowReply);
 
@@ -1674,7 +1674,7 @@ export function ScoutChatbot({
     try {
       const workflowReply = onRunWorkflow
         ? await onRunWorkflow(suggestion.originalText, suggestion.workflow, workflowHistory)
-        : await runWorkflowRouter(suggestion.originalText, suggestion.workflow, workflowHistory);
+        : await runWorkflowRouter(suggestion.originalText, suggestion.workflow, workflowHistory, { forceActionMode: true });
 
       const assistantReply = resolveReply(workflowReply);
 
@@ -1873,7 +1873,7 @@ export function ScoutChatbot({
     message: string,
     workflow: ScoutWorkflowSession,
     history: ScoutChatMessage[],
-    options?: { allowDraftPlan?: boolean }
+    options?: { allowDraftPlan?: boolean; forceActionMode?: boolean }
   ) {
     const endpoint = workflowRouterEndpoint || "/api/chatbot/workflow-router";
 
@@ -1885,6 +1885,7 @@ export function ScoutChatbot({
         workflow,
         history,
         allowDraftPlan: options?.allowDraftPlan === true,
+        forceActionMode: options?.forceActionMode === true,
         companyId,
         userId,
         targetAppId: targetAppId || undefined,

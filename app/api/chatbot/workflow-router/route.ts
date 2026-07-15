@@ -12,6 +12,7 @@ type WorkflowRouterRequest = {
   targetAppId?: string;
   conversationId?: string;
   allowDraftPlan?: boolean;
+  forceActionMode?: boolean;
   message?: string;
   workflow?: {
     id?: string;
@@ -233,6 +234,7 @@ export async function POST(request: NextRequest) {
     const companyId = body.companyId || "";
     const userId = body.userId || "";
     const targetAppId = body.targetAppId || "";
+    const forceActionMode = body.forceActionMode === true;
     const message = typeof body.message === "string" ? body.message.trim() : "";
 
     if (!companyId || !userId || !message) {
@@ -343,9 +345,13 @@ export async function POST(request: NextRequest) {
     const matchedIds = Array.isArray(output.matchedOrchestrationIds)
       ? output.matchedOrchestrationIds.filter((value): value is string => typeof value === "string")
       : [];
-    const matchedNames = Array.isArray(output.matchedOrchestrationNames)
+    const matchedNamesFromModel = Array.isArray(output.matchedOrchestrationNames)
       ? output.matchedOrchestrationNames.filter((value): value is string => typeof value === "string")
       : [];
+    const matchedNamesFromIds = matchedIds
+      .map((id) => candidates.find((candidate) => candidate.id === id)?.name)
+      .filter((name): name is string => typeof name === "string");
+    const matchedNames = matchedNamesFromModel.length > 0 ? matchedNamesFromModel : matchedNamesFromIds;
     const plan = Array.isArray(output.plan)
       ? output.plan.filter((value) => Boolean(value && typeof value === "object"))
       : [];
@@ -355,7 +361,8 @@ export async function POST(request: NextRequest) {
     };
 
     // Stage-gate dynamic plan generation behind explicit user confirmation.
-    if (matchedIds.length === 0 && handle === "dynamic_plan" && !body.allowDraftPlan) {
+    // In forceActionMode, any no-match/no-plan path must ask for draft permission.
+    if (matchedIds.length === 0 && plan.length === 0 && !body.allowDraftPlan && (handle === "dynamic_plan" || forceActionMode)) {
       return NextResponse.json({
         answer: "I could not find a matching orchestration. Should I prepare a draft plan from the currently available nodes?",
         intent: "need_clarification",
@@ -396,6 +403,31 @@ export async function POST(request: NextRequest) {
         metadata: {
           ...metadata,
           unsupportedByAvailableNodes: true,
+        },
+      });
+    }
+
+    if (forceActionMode && matchedIds.length === 0 && plan.length === 0) {
+      return NextResponse.json({
+        answer: "I could not route this to an orchestration yet. Should I prepare a draft plan from the available nodes?",
+        intent: "need_clarification",
+        confidence: output.confidence ?? 0,
+        decision: output.decision,
+        handle: output.handle,
+        matchedOrchestrationIds: [],
+        matchedOrchestrationNames: [],
+        needsClarification: true,
+        clarifyingQuestions: [
+          {
+            question: "Do you want me to prepare a draft plan from available nodes?",
+            required: true,
+          },
+        ],
+        requireUserConfirmation: true,
+        plan: [],
+        metadata: {
+          ...metadata,
+          awaitingDraftPlanPermission: true,
         },
       });
     }
