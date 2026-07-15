@@ -11,6 +11,7 @@ type WorkflowRouterRequest = {
   userId?: string;
   targetAppId?: string;
   conversationId?: string;
+  allowDraftPlan?: boolean;
   message?: string;
   workflow?: {
     id?: string;
@@ -245,7 +246,7 @@ export async function POST(request: NextRequest) {
 
     const candidates = await loadChatbotWorkflowCandidates(companyId, userId, targetAppId);
 
-    if (candidates.length === 0) {
+    if (candidates.length === 0 && !body.allowDraftPlan) {
       return NextResponse.json({
         answer: "I could not find any published chatbot workflows yet. Should I prepare one dynamically for you?",
         intent: "need_clarification",
@@ -262,6 +263,9 @@ export async function POST(request: NextRequest) {
         matchedOrchestrationNames: [],
         plan: [],
         options: [],
+        metadata: {
+          awaitingDraftPlanPermission: true,
+        },
       });
     }
 
@@ -336,6 +340,65 @@ export async function POST(request: NextRequest) {
     }
 
     const output = (decisionResult.output || {}) as Record<string, unknown>;
+    const matchedIds = Array.isArray(output.matchedOrchestrationIds)
+      ? output.matchedOrchestrationIds.filter((value): value is string => typeof value === "string")
+      : [];
+    const matchedNames = Array.isArray(output.matchedOrchestrationNames)
+      ? output.matchedOrchestrationNames.filter((value): value is string => typeof value === "string")
+      : [];
+    const plan = Array.isArray(output.plan)
+      ? output.plan.filter((value) => Boolean(value && typeof value === "object"))
+      : [];
+    const handle = typeof output.handle === "string" ? output.handle : "";
+    const metadata = {
+      ...(output.metadata && typeof output.metadata === "object" ? output.metadata as Record<string, unknown> : {}),
+    };
+
+    // Stage-gate dynamic plan generation behind explicit user confirmation.
+    if (matchedIds.length === 0 && handle === "dynamic_plan" && !body.allowDraftPlan) {
+      return NextResponse.json({
+        answer: "I could not find a matching orchestration. Should I prepare a draft plan from the currently available nodes?",
+        intent: "need_clarification",
+        confidence: output.confidence ?? 0,
+        decision: output.decision,
+        handle: output.handle,
+        matchedOrchestrationIds: [],
+        matchedOrchestrationNames: [],
+        needsClarification: true,
+        clarifyingQuestions: [
+          {
+            question: "Do you want me to prepare a draft plan from available nodes?",
+            required: true,
+          },
+        ],
+        requireUserConfirmation: true,
+        plan: [],
+        metadata: {
+          ...metadata,
+          awaitingDraftPlanPermission: true,
+        },
+      });
+    }
+
+    if (body.allowDraftPlan && matchedIds.length === 0 && plan.length === 0) {
+      return NextResponse.json({
+        answer: "I cannot prepare this request from the currently available nodes. Please add the required node capabilities or refine the request.",
+        intent: "fallback",
+        confidence: output.confidence ?? 0,
+        decision: output.decision,
+        handle: output.handle,
+        matchedOrchestrationIds: [],
+        matchedOrchestrationNames: [],
+        needsClarification: false,
+        clarifyingQuestions: [],
+        requireUserConfirmation: false,
+        plan: [],
+        metadata: {
+          ...metadata,
+          unsupportedByAvailableNodes: true,
+        },
+      });
+    }
 
     return NextResponse.json({
       answer: buildRouterAnswer(output, candidates),
@@ -343,13 +406,13 @@ export async function POST(request: NextRequest) {
       confidence: output.confidence ?? 0,
       decision: output.decision,
       handle: output.handle,
-      matchedOrchestrationIds: output.matchedOrchestrationIds ?? [],
-      matchedOrchestrationNames: output.matchedOrchestrationNames ?? [],
+      matchedOrchestrationIds: matchedIds,
+      matchedOrchestrationNames: matchedNames,
       needsClarification: output.needsClarification ?? false,
       clarifyingQuestions: output.clarifyingQuestions ?? [],
       requireUserConfirmation: output.requireUserConfirmation ?? false,
-      plan: output.plan ?? [],
-      metadata: output.metadata ?? {},
+      plan,
+      metadata,
     });
   } catch (error) {
     if (error instanceof ScopedTargetAppAccessError) {

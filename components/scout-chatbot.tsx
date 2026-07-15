@@ -53,6 +53,7 @@ export type ScoutChatMessage = {
   feedback?: "up" | "down";
   workflowSuggestion?: ScoutWorkflowSession;
   workflowActionSuggestion?: ScoutWorkflowActionSuggestion;
+  intentModeSuggestion?: ScoutIntentModeSuggestion;
 };
 
 export type ScoutChatCitation = {
@@ -86,6 +87,16 @@ export type ScoutWorkflowActionSuggestion = {
   confidence: number;
   status?: "pending" | "running" | "resolved" | "error";
   errorMessage?: string;
+  routedByClassifier?: boolean;
+  intentDecisionId?: string;
+};
+
+export type ScoutIntentModeSuggestion = {
+  originalText: string;
+  confidence: number;
+  intentDecisionId?: string;
+  suggestedIntent: "action" | "chat";
+  status?: "pending" | "resolved";
 };
 
 type ScoutOrchestrationNode = {
@@ -100,6 +111,20 @@ type ScoutOrchestration = {
   name: string;
   description: string;
   nodes: ScoutOrchestrationNode[];
+};
+
+type PendingRouterConfirmation = {
+  originalText: string;
+  workflow: ScoutWorkflowSession;
+};
+
+type IntentGateDecision = {
+  decisionId?: string;
+  intent: "action" | "chat";
+  confidence: number;
+  lowConfidence: boolean;
+  promptModeChoice: boolean;
+  reason?: string;
 };
 
 export type ScoutWorkflowTopic = {
@@ -198,6 +223,7 @@ export type ScoutChatbotProps = {
   position?: "bottom-right" | "bottom-left";
   quickPrompts?: string[];
   showHeaderActions?: boolean;
+  intentGateEndpoint?: string;
   workflowRouterEndpoint?: string;
   scoutBaseUrl?: string;
   subtitle?: string;
@@ -219,6 +245,7 @@ type RenderedMessage = Required<Pick<ScoutChatMessage, "id" | "role" | "text" | 
   feedback?: "up" | "down";
   workflowSuggestion?: ScoutWorkflowSession;
   workflowActionSuggestion?: ScoutWorkflowActionSuggestion;
+  intentModeSuggestion?: ScoutIntentModeSuggestion;
 };
 
 type WidgetStyle = CSSProperties & {
@@ -334,6 +361,7 @@ const workflowActionVerbs = [
 ];
 
 const workflowBusinessHints = [
+  "order",
   "workflow",
   "process",
   "approval",
@@ -353,6 +381,18 @@ const workflowBusinessHints = [
   "meeting",
   "purchase order"
 ];
+
+const ACTION_ROUTER_WORKFLOW_ID = "__action_router__";
+
+function createActionRouterWorkflow(): ScoutWorkflowSession {
+  return {
+    id: ACTION_ROUTER_WORKFLOW_ID,
+    title: "Action Router",
+    description: "Route actionable requests to the best orchestration plan.",
+    estimatedTime: "1-2 min",
+    steps: 1,
+  };
+}
 
 export function ScoutChatbot({
   assistantName = "Scout Assistant",
@@ -376,6 +416,7 @@ export function ScoutChatbot({
   placeholder = "Ask anything...",
   position = "bottom-right",
   showHeaderActions = true,
+  intentGateEndpoint = "/api/chatbot/intent-gate",
   workflowRouterEndpoint,
   scoutBaseUrl = "",
   targetAppId,
@@ -443,6 +484,7 @@ export function ScoutChatbot({
   const activeConversationId = useRef(conversationId ?? conversationSessionId);
   const lastActivityAtRef = useRef(Date.now());
   const scopeRef = useRef<string | null>(null);
+  const pendingRouterConfirmationRef = useRef<PendingRouterConfirmation | null>(null);
 
   // Generate unique message ID using timestamp + random component
   const generateMessageId = () => {
@@ -1278,23 +1320,107 @@ export function ScoutChatbot({
 
     const nextHistory = [...messages, userMessage];
     const contextWindow = trimMessagesForLifecycle(nextHistory, resolvedLifecycleSettings);
-    const workflowAction = classifyWorkflowAction(trimmed, workflowSessions);
+
+    if (pendingRouterConfirmationRef.current) {
+      const pending = pendingRouterConfirmationRef.current;
+
+      if (isAffirmativeResponse(trimmed)) {
+        setMessages(nextHistory);
+        setInput("");
+        markActivity();
+        setIsTyping(true);
+
+        try {
+          const workflowReply = await runWorkflowRouter(
+            pending.originalText,
+            pending.workflow,
+            contextWindow,
+            { allowDraftPlan: true }
+          );
+          const assistantReply = resolveReply(workflowReply);
+
+          setMessages((current) => [
+            ...current,
+            createRenderedMessage({
+              ...assistantReply,
+              id: assistantReply.id ?? generateMessageId(),
+              role: "assistant",
+              time: assistantReply.time ?? formatTime()
+            })
+          ]);
+        } catch (error) {
+          setMessages((current) => [
+            ...current,
+            createRenderedMessage({
+              id: generateMessageId(),
+              role: "assistant",
+              text: error instanceof Error ? error.message : "I could not complete that action request right now.",
+              time: formatTime()
+            })
+          ]);
+        } finally {
+          setIsTyping(false);
+          markActivity();
+          inputRef.current?.focus();
+        }
+
+        return;
+      }
+
+      if (isNegativeResponse(trimmed)) {
+        pendingRouterConfirmationRef.current = null;
+      }
+    }
+
+    const intentDecision = await classifyIntentWithHybridGate(trimmed, contextWindow);
 
     setMessages(nextHistory);
     setInput("");
     markActivity();
 
+    if (intentDecision.promptModeChoice) {
+      const modePrompt = createRenderedMessage({
+        id: generateMessageId(),
+        role: "assistant",
+        text: "I am not fully certain. Do you want Action Mode or Chat Mode for this request?",
+        time: formatTime(),
+        intentModeSuggestion: {
+          originalText: trimmed,
+          confidence: intentDecision.confidence,
+          intentDecisionId: intentDecision.decisionId,
+          suggestedIntent: intentDecision.intent,
+          status: "pending",
+        },
+      });
+
+      setMessages((current) => [...current, modePrompt]);
+      inputRef.current?.focus();
+      return;
+    }
+
+    const workflowAction = intentDecision.intent === "action"
+      ? (classifyWorkflowAction(trimmed, workflowSessions) ?? {
+          workflow: createActionRouterWorkflow(),
+          confidence: Math.max(0.55, intentDecision.confidence),
+        })
+      : null;
+
     if (workflowAction) {
+      const isGenericRouterAction = workflowAction.workflow.id === ACTION_ROUTER_WORKFLOW_ID;
       const actionMessage = createRenderedMessage({
         id: generateMessageId(),
         role: "assistant",
-        text: `I found a workflow that can perform this action: ${workflowAction.workflow.title}.`,
+        text: isGenericRouterAction
+          ? "This looks like an actionable request. I can route it to the right workflow for you."
+          : `I found a workflow that can perform this action: ${workflowAction.workflow.title}.`,
         time: formatTime(),
         workflowActionSuggestion: {
           workflow: workflowAction.workflow,
           originalText: trimmed,
           confidence: workflowAction.confidence,
-          status: "pending"
+          status: "pending",
+          routedByClassifier: isGenericRouterAction,
+          intentDecisionId: intentDecision.decisionId,
         }
       });
 
@@ -1347,7 +1473,168 @@ export function ScoutChatbot({
     }
   }
 
+  async function classifyIntentWithHybridGate(message: string, contextWindow: ScoutChatMessage[]): Promise<IntentGateDecision> {
+    const fallbackAction = classifyWorkflowAction(message, workflowSessions);
+    const fallback: IntentGateDecision = fallbackAction
+      ? {
+          intent: "action",
+          confidence: fallbackAction.confidence,
+          lowConfidence: fallbackAction.confidence < 0.66,
+          promptModeChoice: false,
+          reason: "client_fallback_action",
+        }
+      : {
+          intent: "chat",
+          confidence: 0.82,
+          lowConfidence: false,
+          promptModeChoice: false,
+          reason: "client_fallback_chat",
+        };
+
+    if (!companyId || !userId) {
+      return fallback;
+    }
+
+    try {
+      const response = await fetch(intentGateEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          userId,
+          targetAppId: targetAppId || undefined,
+          conversationId: activeConversationId.current || conversationSessionId || undefined,
+          message,
+          history: contextWindow.slice(-10).map((item) => ({ role: item.role, text: item.text })),
+        }),
+      });
+
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        return fallback;
+      }
+
+      return {
+        decisionId: typeof body?.decisionId === "string" ? body.decisionId : undefined,
+        intent: body?.intent === "action" ? "action" : "chat",
+        confidence: typeof body?.confidence === "number" ? body.confidence : fallback.confidence,
+        lowConfidence: body?.lowConfidence === true,
+        promptModeChoice: body?.promptModeChoice === true,
+        reason: typeof body?.reason === "string" ? body.reason : undefined,
+      };
+    } catch {
+      return fallback;
+    }
+  }
+
+  async function submitIntentFeedback(input: {
+    decisionId?: string;
+    feedbackType:
+      | "true_positive"
+      | "false_positive"
+      | "false_negative"
+      | "true_negative"
+      | "user_override_action"
+      | "user_override_chat";
+    userChoice: "action" | "chat" | "run_workflow" | "continue_chat";
+    notes?: string;
+  }) {
+    if (!input.decisionId || !companyId || !userId) {
+      return;
+    }
+
+    try {
+      await fetch(intentGateEndpoint, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decisionId: input.decisionId,
+          companyId,
+          userId,
+          targetAppId: targetAppId || undefined,
+          feedbackType: input.feedbackType,
+          userChoice: input.userChoice,
+          notes: input.notes,
+        }),
+      });
+    } catch {
+      // Intentionally ignore telemetry failures in user flow.
+    }
+  }
+
+  async function chooseIntentModeAction(messageId: string, suggestion: ScoutIntentModeSuggestion) {
+    const workflowAction = classifyWorkflowAction(suggestion.originalText, workflowSessions) ?? {
+      workflow: createActionRouterWorkflow(),
+      confidence: Math.max(0.55, suggestion.confidence),
+    };
+
+    setMessages((current) => [
+      ...current.map((message) => (
+        message.id === messageId
+          ? {
+              ...message,
+              intentModeSuggestion: {
+                ...suggestion,
+                status: "resolved",
+              },
+            }
+          : message
+      )),
+      createRenderedMessage({
+        id: generateMessageId(),
+        role: "assistant",
+        text: workflowAction.workflow.id === ACTION_ROUTER_WORKFLOW_ID
+          ? "Thanks. I will treat this as Action Mode and route it to the best workflow."
+          : `Thanks. I will treat this as Action Mode and use ${workflowAction.workflow.title}.`,
+        time: formatTime(),
+        workflowActionSuggestion: {
+          workflow: workflowAction.workflow,
+          originalText: suggestion.originalText,
+          confidence: workflowAction.confidence,
+          status: "pending",
+          routedByClassifier: workflowAction.workflow.id === ACTION_ROUTER_WORKFLOW_ID,
+          intentDecisionId: suggestion.intentDecisionId,
+        },
+      }),
+    ]);
+
+    await submitIntentFeedback({
+      decisionId: suggestion.intentDecisionId,
+      feedbackType: suggestion.suggestedIntent === "chat" ? "false_negative" : "true_positive",
+      userChoice: "action",
+    });
+  }
+
+  async function chooseIntentModeChat(messageId: string, suggestion: ScoutIntentModeSuggestion) {
+    setMessages((current) => current.map((message) => (
+      message.id === messageId
+        ? {
+            ...message,
+            intentModeSuggestion: {
+              ...suggestion,
+              status: "resolved",
+            },
+          }
+        : message
+    )));
+
+    await submitIntentFeedback({
+      decisionId: suggestion.intentDecisionId,
+      feedbackType: suggestion.suggestedIntent === "action" ? "false_positive" : "true_negative",
+      userChoice: "chat",
+    });
+
+    const nextHistory = trimMessagesForLifecycle(messages, resolvedLifecycleSettings);
+    await completeChatResponse(suggestion.originalText, nextHistory);
+  }
+
   async function continueAsChat(messageId: string, suggestion: ScoutWorkflowActionSuggestion) {
+    await submitIntentFeedback({
+      decisionId: suggestion.intentDecisionId,
+      feedbackType: "false_positive",
+      userChoice: "continue_chat",
+    });
+
     const nextHistory = updateWorkflowActionSuggestion(messageId, {
       ...suggestion,
       status: "resolved",
@@ -1360,6 +1647,12 @@ export function ScoutChatbot({
     if (suggestion.status === "running") {
       return;
     }
+
+    await submitIntentFeedback({
+      decisionId: suggestion.intentDecisionId,
+      feedbackType: "true_positive",
+      userChoice: "run_workflow",
+    });
 
     setMessages((current) => current.map((message) => (
       message.id === messageId
@@ -1576,7 +1869,12 @@ export function ScoutChatbot({
     };
   }
 
-  async function runWorkflowRouter(message: string, workflow: ScoutWorkflowSession, history: ScoutChatMessage[]) {
+  async function runWorkflowRouter(
+    message: string,
+    workflow: ScoutWorkflowSession,
+    history: ScoutChatMessage[],
+    options?: { allowDraftPlan?: boolean }
+  ) {
     const endpoint = workflowRouterEndpoint || "/api/chatbot/workflow-router";
 
     const response = await fetch(endpoint, {
@@ -1586,6 +1884,7 @@ export function ScoutChatbot({
         message,
         workflow,
         history,
+        allowDraftPlan: options?.allowDraftPlan === true,
         companyId,
         userId,
         targetAppId: targetAppId || undefined,
@@ -1602,6 +1901,15 @@ export function ScoutChatbot({
       activeConversationId.current = body.conversationId;
       setConversationSessionId(body.conversationId);
       onConversationChange?.(body.conversationId);
+    }
+
+    if (body?.metadata?.awaitingDraftPlanPermission === true) {
+      pendingRouterConfirmationRef.current = {
+        originalText: message,
+        workflow,
+      };
+    } else {
+      pendingRouterConfirmationRef.current = null;
     }
 
     if (typeof body?.answer === "string" || typeof body?.message === "string") {
@@ -1659,14 +1967,25 @@ export function ScoutChatbot({
     const hasBusinessHint = workflowBusinessHints.some((hint) => normalized.includes(hint));
     const hasActionVerb = workflowActionVerbs.some((verb) => new RegExp(`\\b${verb}\\b`, "i").test(normalized));
     const asksForProcess = /\b(can you|please|help me|need to|i want to|let's|lets|show me|start|run|launch)\b/.test(normalized);
-    const confidence = Math.min(0.99, (matchedWorkflow ? 0.42 : 0) + (hasActionVerb ? 0.28 : 0) + (hasBusinessHint ? 0.18 : 0) + (asksForProcess ? 0.12 : 0));
+    const hasAmount = /\b\d+(?:[.,]\d+)?\b/.test(normalized) && /\b(dollar|usd|eur|inr|amount|price|total|cost)\b/.test(normalized);
+    const hasTransactionalTarget = /\b(order|invoice|purchase|payment|shipment|booking|ticket|request|rate code|customer|vendor)\b/.test(normalized);
+    const confidence = Math.min(
+      0.99,
+      (matchedWorkflow ? 0.4 : 0)
+      + (hasActionVerb ? 0.22 : 0)
+      + (hasBusinessHint ? 0.16 : 0)
+      + (asksForProcess ? 0.1 : 0)
+      + (hasAmount ? 0.14 : 0)
+      + (hasTransactionalTarget ? 0.14 : 0)
+    );
 
-    if (!matchedWorkflow || confidence < 0.7) {
+    const actionableWithoutExactMatch = !matchedWorkflow && confidence >= 0.58;
+    if (!matchedWorkflow && !actionableWithoutExactMatch) {
       return null;
     }
 
     return {
-      workflow: matchedWorkflow,
+      workflow: matchedWorkflow ?? createActionRouterWorkflow(),
       confidence
     };
   }
@@ -1997,6 +2316,8 @@ export function ScoutChatbot({
                   <MessageBubble
                     key={message.id}
                     message={message}
+                    onChooseIntentModeAction={chooseIntentModeAction}
+                    onChooseIntentModeChat={chooseIntentModeChat}
                     onContinueAsChat={continueAsChat}
                     onRunWorkflowAction={runWorkflowAction}
                     onStartWorkflow={startWorkflow}
@@ -2426,6 +2747,8 @@ function getCitationLink(citation: ScoutChatCitation, scoutBaseUrl?: string) {
 
 function MessageBubble({
   message,
+  onChooseIntentModeAction,
+  onChooseIntentModeChat,
   onContinueAsChat,
   onRunWorkflowAction,
   onStartWorkflow,
@@ -2435,6 +2758,8 @@ function MessageBubble({
   scoutBaseUrl,
 }: {
   message: RenderedMessage;
+  onChooseIntentModeAction: (messageId: string, suggestion: ScoutIntentModeSuggestion) => void;
+  onChooseIntentModeChat: (messageId: string, suggestion: ScoutIntentModeSuggestion) => void;
   onContinueAsChat: (messageId: string, suggestion: ScoutWorkflowActionSuggestion) => void;
   onRunWorkflowAction: (messageId: string, suggestion: ScoutWorkflowActionSuggestion) => void;
   onStartWorkflow: (workflow: ScoutWorkflowSession) => void;
@@ -2597,9 +2922,15 @@ function MessageBubble({
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-slate-950">I found a workflow that can perform this action.</p>
+                  <p className="text-sm font-semibold text-slate-950">
+                    {message.workflowActionSuggestion.routedByClassifier
+                      ? "This looks actionable. I can route it to the best workflow."
+                      : "I found a workflow that can perform this action."}
+                  </p>
                   <span className="rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
-                    {message.workflowActionSuggestion.workflow.title}
+                    {message.workflowActionSuggestion.routedByClassifier
+                      ? "Action Router"
+                      : message.workflowActionSuggestion.workflow.title}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-slate-600">
@@ -2632,6 +2963,44 @@ function MessageBubble({
                   >
                     <MessageCircle className="h-4 w-4" />
                     Continue as Chat
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {isAssistant && message.intentModeSuggestion && message.intentModeSuggestion.status !== "resolved" && (
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 text-slate-900 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm">
+                <Network className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-slate-950">Do you want Action Mode or Chat Mode?</p>
+                  <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                    Low confidence
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-600">
+                  Classifier confidence: {Math.round(message.intentModeSuggestion.confidence * 100)}%.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-950 bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                    onClick={() => onChooseIntentModeAction(message.id, message.intentModeSuggestion!)}
+                    type="button"
+                  >
+                    <Zap className="h-4 w-4" />
+                    Action Mode
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                    onClick={() => onChooseIntentModeChat(message.id, message.intentModeSuggestion!)}
+                    type="button"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Chat Mode
                   </button>
                 </div>
               </div>
@@ -2741,7 +3110,8 @@ function createRenderedMessage(message: ScoutChatMessage & { id: string; time: s
     noAnswerReason: message.noAnswerReason,
     feedback: message.feedback,
     workflowSuggestion: message.workflowSuggestion,
-    workflowActionSuggestion: message.workflowActionSuggestion
+    workflowActionSuggestion: message.workflowActionSuggestion,
+    intentModeSuggestion: message.intentModeSuggestion
   };
 }
 
@@ -2849,7 +3219,8 @@ function trimMessagesForLifecycle(messages: RenderedMessage[], settings: Chatbot
     noAnswerReason: message.noAnswerReason,
     feedback: message.feedback,
     workflowSuggestion: message.workflowSuggestion,
-    workflowActionSuggestion: message.workflowActionSuggestion
+    workflowActionSuggestion: message.workflowActionSuggestion,
+    intentModeSuggestion: message.intentModeSuggestion
   }));
 }
 
@@ -3105,6 +3476,16 @@ function findWorkflowByActionKeywords(normalizedMessage: string, workflows: Scou
     return workflowBusinessHints.some((hint) => normalizedMessage.includes(hint) && combined.includes(hint))
       || workflowActionVerbs.some((verb) => new RegExp(`\\b${verb}\\b`, "i").test(normalizedMessage) && combined.includes(verb));
   });
+}
+
+function isAffirmativeResponse(message: string) {
+  const normalized = message.trim().toLowerCase();
+  return /^(yes|y|yeah|yep|sure|ok|okay|go ahead|please do|do it|proceed|continue)$/.test(normalized);
+}
+
+function isNegativeResponse(message: string) {
+  const normalized = message.trim().toLowerCase();
+  return /^(no|n|nope|nah|not now|cancel|stop)$/.test(normalized);
 }
 
 function resolveReply(reply: ScoutChatMessage | string | void): ScoutChatMessage {
