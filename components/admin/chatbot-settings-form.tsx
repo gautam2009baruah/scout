@@ -127,9 +127,9 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
   return (
     <div className="space-y-6">
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white">
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-950 text-white">
             <Settings2 className="h-5 w-5" />
           </div>
           <div>
@@ -139,12 +139,12 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
         </div>
       </div>
 
-      <form className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" onSubmit={save}>
+      <form className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm" onSubmit={save}>
         <div className="grid gap-6 lg:grid-cols-2">
           <label className="grid gap-2 text-sm font-medium text-slate-700">
             Scope
             <select
-              className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm"
+              className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
               value={scope}
               onChange={(event) => updateScope(event.target.value)}
             >
@@ -157,41 +157,41 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
           <label className="grid gap-2 text-sm font-medium text-slate-700">
             Max context messages
-            <input className="h-11 rounded-xl border border-slate-200 px-3 text-sm" min={10} max={30} type="number" value={draft.maxContextMessages} onChange={(event) => setDraft((current) => ({ ...current, maxContextMessages: event.target.value }))} />
+            <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" min={10} max={30} type="number" value={draft.maxContextMessages} onChange={(event) => setDraft((current) => ({ ...current, maxContextMessages: event.target.value }))} />
           </label>
 
           <label className="grid gap-2 text-sm font-medium text-slate-700">
             Max context tokens
-            <input className="h-11 rounded-xl border border-slate-200 px-3 text-sm" min={3000} max={8000} step={100} type="number" value={draft.maxContextTokens} onChange={(event) => setDraft((current) => ({ ...current, maxContextTokens: event.target.value }))} />
+            <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" min={3000} max={8000} step={100} type="number" value={draft.maxContextTokens} onChange={(event) => setDraft((current) => ({ ...current, maxContextTokens: event.target.value }))} />
           </label>
 
           <label className="grid gap-2 text-sm font-medium text-slate-700">
             Inactivity timeout (seconds)
-            <input className="h-11 rounded-xl border border-slate-200 px-3 text-sm" min={60} max={604800} type="number" value={draft.inactivityTimeoutSeconds} onChange={(event) => setDraft((current) => ({ ...current, inactivityTimeoutSeconds: event.target.value }))} />
+            <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" min={60} max={604800} type="number" value={draft.inactivityTimeoutSeconds} onChange={(event) => setDraft((current) => ({ ...current, inactivityTimeoutSeconds: event.target.value }))} />
           </label>
         </div>
 
         <div className="mt-6 grid gap-3 md:grid-cols-3">
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+          <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
             <input checked={draft.resetOnLogoutEvent} onChange={(event) => setDraft((current) => ({ ...current, resetOnLogoutEvent: event.target.checked }))} type="checkbox" />
             Reset on logout/session expiry event
           </label>
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+          <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
             <input checked={draft.resetOnUserChange} onChange={(event) => setDraft((current) => ({ ...current, resetOnUserChange: event.target.checked }))} type="checkbox" />
             Reset on user or tenant change
           </label>
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-700">
+          <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
             <input checked={draft.resetOnTargetAppChange} onChange={(event) => setDraft((current) => ({ ...current, resetOnTargetAppChange: event.target.checked }))} type="checkbox" />
             Reset on target app/business context change
           </label>
         </div>
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
-          <button className="inline-flex h-11 items-center gap-2 rounded-xl bg-slate-950 px-5 text-sm font-semibold text-white" type="submit">
+          <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-semibold text-white" type="submit">
             <Save className="h-4 w-4" />
             Save settings
           </button>
-          <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 px-5 text-sm font-semibold text-slate-700" onClick={resetScope} type="button">
+          <button className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-200 px-5 text-sm font-semibold text-slate-700" onClick={resetScope} type="button">
             <RefreshCw className="h-4 w-4" />
             Reset scope to defaults
           </button>

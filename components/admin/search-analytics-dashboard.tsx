@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarRange, Clock3, Download, ExternalLink, Filter, MessageSquareText, ThumbsUp, Timer } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarRange, CircleHelp, Clock3, Download, ExternalLink, Filter, MessageSquareText, ThumbsUp, Timer } from "lucide-react";
 import { formatDateTimeForDisplay } from "@/lib/datetime";
 
 type TargetAppOption = {
@@ -770,10 +770,11 @@ export function SearchAnalyticsDashboard({
                                       </button>
                                       {expandedUserKeys.has(userGroup.id) ? (
                                         <div className="border-t border-slate-200 px-3 py-3">
-                                          <div className="overflow-x-auto">
-                                            <table className="min-w-[1000px] table-auto border-collapse text-left text-xs text-slate-700">
+                                          <div className="overflow-x-auto pb-1">
+                                            <table className="min-w-[1160px] table-auto border-collapse text-left text-xs text-slate-700">
                                               <thead>
                                                 <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                                                  <th className="px-2 py-2 font-semibold">Action</th>
                                                   <th className="px-2 py-2 font-semibold">Time</th>
                                                   <th className="px-2 py-2 font-semibold">Question</th>
                                                   <th className="px-2 py-2 font-semibold">Status</th>
@@ -782,12 +783,22 @@ export function SearchAnalyticsDashboard({
                                                   <th className="px-2 py-2 font-semibold">Chunks/Citations</th>
                                                   <th className="px-2 py-2 font-semibold">Feedback</th>
                                                   <th className="px-2 py-2 font-semibold">Model</th>
-                                                  <th className="px-2 py-2 font-semibold text-right">Action</th>
                                                 </tr>
                                               </thead>
                                               <tbody>
                                                 {userGroup.rows.map((row) => (
                                                   <tr key={row.id} className="border-b border-slate-100 align-top">
+                                                    <td className="px-2 py-2 whitespace-nowrap">
+                                                      <button
+                                                        type="button"
+                                                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+                                                        onClick={() => { void openExplainabilityDrillDown(row); }}
+                                                        title="Click to understand why this answer was generated and what evidence was used."
+                                                        aria-label="Why this answer"
+                                                      >
+                                                        <CircleHelp className="h-4 w-4" />
+                                                      </button>
+                                                    </td>
                                                     <td className="px-2 py-2 whitespace-nowrap">{formatDateTimeForDisplay(row.created_at, { fallback: "-" })}</td>
                                                     <td className="px-2 py-2">
                                                       <p className="max-w-[360px] whitespace-pre-wrap break-words text-sm text-slate-900">{row.question}</p>
@@ -798,15 +809,6 @@ export function SearchAnalyticsDashboard({
                                                     <td className="px-2 py-2 whitespace-nowrap">{row.retrieved_chunk_count} / {row.citation_count}</td>
                                                     <td className="px-2 py-2 whitespace-nowrap">👍 {row.feedback_up} / 👎 {row.feedback_down}</td>
                                                     <td className="px-2 py-2 whitespace-nowrap">{row.llm_provider && row.llm_model ? `${row.llm_provider}:${row.llm_model}` : "-"}</td>
-                                                    <td className="px-2 py-2 text-right">
-                                                      <button
-                                                        type="button"
-                                                        className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                                        onClick={() => { void openExplainabilityDrillDown(row); }}
-                                                      >
-                                                        Why this answer
-                                                      </button>
-                                                    </td>
                                                   </tr>
                                                 ))}
                                               </tbody>

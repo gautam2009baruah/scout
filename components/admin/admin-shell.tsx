@@ -71,6 +71,14 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const sidebarScrollTimerRef = useRef<number | null>(null);
   const logoutRequestedRef = useRef(false);
 
+  const preferredTopLevelOrder = [
+    MODULE_KEYS.overview,
+    MODULE_KEYS.guidedWorkflows,
+    MODULE_KEYS.contentStructure,
+    MODULE_KEYS.orchestrationDesigner,
+    MODULE_KEYS.administration
+  ];
+
   useEffect(() => {
     const saved = window.localStorage.getItem("scout-admin-sidebar-collapsed");
     if (saved === "true") {
@@ -159,62 +167,54 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     window.location.replace("/control-panel/login");
   }, [clearClientSessionArtifacts, clearSessionTimers]);
 
+  const beginWarningCountdown = useCallback((remainingMs: number) => {
+    const clampedMs = Math.max(0, Math.min(30_000, remainingMs));
+    setShowSessionWarning(true);
+    setWarningCountdownSeconds(Math.max(0, Math.ceil(clampedMs / 1000)));
+    const startedAt = Date.now();
+
+    countdownTimerRef.current = window.setInterval(() => {
+      const elapsedMs = Date.now() - startedAt;
+      const remainingCountdownMs = Math.max(0, clampedMs - elapsedMs);
+      setWarningCountdownSeconds(Math.max(0, Math.ceil(remainingCountdownMs / 1000)));
+
+      if (remainingCountdownMs <= 0) {
+        clearSessionTimers();
+        void logoutNow();
+      }
+    }, 250);
+
+    logoutTimerRef.current = window.setTimeout(() => {
+      clearSessionTimers();
+      void logoutNow();
+    }, clampedMs);
+  }, [clearSessionTimers, logoutNow]);
+
   const scheduleSessionWarning = useCallback((deadlineMs: number) => {
     clearSessionTimers();
+    if (!Number.isFinite(deadlineMs)) {
+      const fallbackDeadline = Date.now() + 15 * 60 * 1000;
+      setSessionDeadline(fallbackDeadline);
+      deadlineMs = fallbackDeadline;
+    }
+
     const remainingMs = deadlineMs - Date.now();
 
     if (remainingMs <= 0) {
-      setShowSessionWarning(true);
-      setWarningCountdownSeconds(0);
+      beginWarningCountdown(0);
       void logoutNow();
       return;
     }
 
     if (remainingMs <= 30_000) {
-      setShowSessionWarning(true);
-      setWarningCountdownSeconds(30);
-      const startedAt = Date.now();
-
-      countdownTimerRef.current = window.setInterval(() => {
-        const elapsedMs = Date.now() - startedAt;
-        const remainingCountdownMs = Math.max(0, 30_000 - elapsedMs);
-        setWarningCountdownSeconds(Math.max(0, Math.ceil(remainingCountdownMs / 1000)));
-
-        if (remainingCountdownMs <= 0) {
-          clearSessionTimers();
-          void logoutNow();
-        }
-      }, 250);
-
-      logoutTimerRef.current = window.setTimeout(() => {
-        clearSessionTimers();
-        void logoutNow();
-      }, 30_000);
+      beginWarningCountdown(remainingMs);
       return;
     }
 
     warningTimerRef.current = window.setTimeout(() => {
-      setShowSessionWarning(true);
-      setWarningCountdownSeconds(30);
-      const startedAt = Date.now();
-
-      countdownTimerRef.current = window.setInterval(() => {
-        const elapsedMs = Date.now() - startedAt;
-        const remainingCountdownMs = Math.max(0, 30_000 - elapsedMs);
-        setWarningCountdownSeconds(Math.max(0, Math.ceil(remainingCountdownMs / 1000)));
-
-        if (remainingCountdownMs <= 0) {
-          clearSessionTimers();
-          void logoutNow();
-        }
-      }, 250);
-
-      logoutTimerRef.current = window.setTimeout(() => {
-        clearSessionTimers();
-        void logoutNow();
-      }, 30_000);
+      beginWarningCountdown(30_000);
     }, remainingMs - 30_000);
-  }, [clearSessionTimers, logoutNow]);
+  }, [beginWarningCountdown, clearSessionTimers, logoutNow]);
 
   async function stayOnPage() {
     if (isExtendingSession || logoutRequestedRef.current) return;
@@ -254,6 +254,38 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     };
   }, [clearSessionTimers, scheduleSessionWarning, sessionDeadline]);
 
+  useEffect(() => {
+    const monitor = window.setInterval(() => {
+      if (logoutRequestedRef.current) {
+        return;
+      }
+
+      const remainingMs = sessionDeadline - Date.now();
+      if (remainingMs <= 0) {
+        beginWarningCountdown(0);
+        void logoutNow();
+        return;
+      }
+
+      if (remainingMs <= 30_000 && !showSessionWarning) {
+        scheduleSessionWarning(sessionDeadline);
+      }
+    }, 1000);
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        scheduleSessionWarning(sessionDeadline);
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearInterval(monitor);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [beginWarningCountdown, logoutNow, scheduleSessionWarning, sessionDeadline, showSessionWarning]);
+
   function toggleDesktopSidebar() {
     setIsSidebarCollapsed((current) => {
       const next = !current;
@@ -271,7 +303,18 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     "Control Panel";
   
   // Group modules by parent-child relationship
-  const topLevelModules = session.modules.filter(m => m.parentKey === null);
+  const topLevelModules = session.modules
+    .filter((m) => m.parentKey === null)
+    .sort((a, b) => {
+      const aPref = preferredTopLevelOrder.indexOf(a.key);
+      const bPref = preferredTopLevelOrder.indexOf(b.key);
+      if (aPref !== -1 || bPref !== -1) {
+        if (aPref === -1) return 1;
+        if (bPref === -1) return -1;
+        return aPref - bPref;
+      }
+      return a.sortOrder - b.sortOrder;
+    });
   const modulesByParent = new Map<number, typeof session.modules>();
   
   // Build a map of parent_key -> children modules
