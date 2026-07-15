@@ -19,6 +19,13 @@ The service hashes incoming keys and validates them against that table.
 
 Optional fallback mode uses `CHATBOT_API_KEY` as a legacy global key.
 
+When company policy `strict environment enforcement` is enabled from Admin Chatbot Settings,
+requests must include the environment and it must match the API key environment.
+Pass environment in either:
+
+- JSON body field: `environment`
+- Header: `X-Scout-Environment`
+
 Send key in either:
 
 - `X-API-Key: <key>`

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
 import { getNodes, getOrchestrationPage, getConnections } from "@/lib/orchestrations/db";
+import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 
 export const runtime = "nodejs";
 
@@ -61,9 +62,19 @@ function topologicalSort(
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
-  const companyId = params.get("companyId") || "";
+  const companyIdentifier = params.get("companyId") || "";
   const userId = params.get("userId") || "";
-  const targetAppId = params.get("targetAppId") || "";
+  const targetAppIdentifier = params.get("targetAppId") || "";
+
+  let companyId = "";
+  let targetAppId = "";
+
+  try {
+    companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
+    targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
+  } catch (error) {
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Invalid scoped identifier." }, { status: 400 });
+  }
 
   try {
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });

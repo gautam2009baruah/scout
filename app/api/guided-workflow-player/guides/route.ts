@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPublishedGuidesForPlayer, getPublishedTrainingSessionsForPlayer, GuidedWorkflowError } from "@/lib/admin/guided-workflows";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
+import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 
 export const runtime = "nodejs";
 
@@ -8,11 +9,15 @@ export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
 
   try {
+    const companyIdentifier = searchParams.get("companyId") || searchParams.get("company_id") || "";
+    const targetAppIdentifier = searchParams.get("targetAppId") || searchParams.get("target_app_id") || "";
+    const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
+    const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
+
     const input = {
-      targetAppId: searchParams.get("targetAppId") || searchParams.get("target_app_id") || "",
+      targetAppId,
       origin: request.headers.get("origin") ?? undefined
     };
-    const companyId = searchParams.get("companyId") || searchParams.get("company_id") || "";
     const userId = searchParams.get("userId") || searchParams.get("user_id") || "";
     if (companyId || userId) {
       await assertScopedTargetAppAccess({ companyId, userId, targetAppId: input.targetAppId });

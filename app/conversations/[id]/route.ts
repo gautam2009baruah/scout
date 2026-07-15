@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ConversationError, getConversation, softDeleteConversation, updateConversation } from "@/lib/chat/conversations";
+import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 
 export const runtime = "nodejs";
 
@@ -12,10 +13,12 @@ type RouteContext = {
 export async function GET(request: Request, context: RouteContext) {
   const url = new URL(request.url);
   const { id } = await context.params;
+  const companyIdentifier = url.searchParams.get("company_id") ?? "";
+  const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
 
   try {
     const result = await getConversation({
-      companyId: url.searchParams.get("company_id") ?? "",
+      companyId,
       userId: url.searchParams.get("user_id") ?? "",
       conversationId: id,
       page: Number(url.searchParams.get("page") ?? 1),
@@ -35,10 +38,12 @@ export async function GET(request: Request, context: RouteContext) {
 export async function PATCH(request: Request, context: RouteContext) {
   const body = await request.json().catch(() => null);
   const { id } = await context.params;
+  const companyIdentifier = typeof body?.company_id === "string" ? body.company_id : "";
+  const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
 
   try {
     await updateConversation({
-      companyId: typeof body?.company_id === "string" ? body.company_id : "",
+      companyId,
       userId: typeof body?.user_id === "string" ? body.user_id : "",
       conversationId: id,
       title: typeof body?.title === "string" ? body.title : undefined,
@@ -58,10 +63,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 export async function DELETE(request: Request, context: RouteContext) {
   const url = new URL(request.url);
   const { id } = await context.params;
+  const companyIdentifier = url.searchParams.get("company_id") ?? "";
+  const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
 
   try {
     await softDeleteConversation({
-      companyId: url.searchParams.get("company_id") ?? "",
+      companyId,
       userId: url.searchParams.get("user_id") ?? "",
       conversationId: id
     });

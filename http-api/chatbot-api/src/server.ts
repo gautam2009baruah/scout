@@ -12,6 +12,7 @@ import { TenantResolver } from "./tenant-resolution";
 type ChatQueryBody = {
   companyName?: string;
   targetAppName?: string;
+  environment?: string;
   userId?: string;
   question?: string;
   conversationId?: string;
@@ -238,7 +239,11 @@ const server = createServer(async (request, response) => {
       companyContext = await tenantResolver.resolveCompanyByName(companyName);
       targetAppContext = await tenantResolver.resolveTargetAppByName(companyContext.id, targetAppName);
 
-      const auth = await authorizer.authenticate(request, companyContext.id);
+      const requestedEnvironment = String(
+        parsedBody.environment || request.headers["x-scout-environment"] || ""
+      ).trim();
+
+      const auth = await authorizer.authenticate(request, companyContext.id, requestedEnvironment);
       if (!auth.ok) {
         sendJson(response, 401, { message: auth.error || "Unauthorized." }, requestId, origin);
         return;

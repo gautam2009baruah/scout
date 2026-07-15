@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { RefreshCw, Save, Settings2 } from "lucide-react";
+import { FormEvent, Fragment, useEffect, useMemo, useState } from "react";
+import { Ban, Download, KeyRound, RefreshCw, RotateCw, Save, Settings2, ShieldCheck } from "lucide-react";
 import type { ChatbotLifecycleSettings, ChatbotLifecycleSettingsRecord } from "@/lib/chat/lifecycle-settings";
 
 type TargetAppOption = {
@@ -15,6 +15,31 @@ type Props = {
   defaults: ChatbotLifecycleSettings;
   initialSettings: ChatbotLifecycleSettingsRecord[];
   targetApps: TargetAppOption[];
+};
+
+type ChatbotApiKeyStatus = "active" | "suspended" | "revoked";
+
+type ChatbotApiKeyRecord = {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  environment: string;
+  status: ChatbotApiKeyStatus;
+  isActive: boolean;
+  allowedOrigins: string[];
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type EmbedPackageResponse = {
+  configSnippet: string;
+  installSnippet: string;
+  htmlSample: string;
+  reactSample: string;
+  obfuscatedCompanyId: string;
+  obfuscatedTargetAppId: string;
 };
 
 type ScopeValue = "global" | string;
@@ -45,6 +70,32 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   const [settings, setSettings] = useState(initialSettings);
   const [scope, setScope] = useState<ScopeValue>("global");
   const [status, setStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
+  const [apiKeys, setApiKeys] = useState<ChatbotApiKeyRecord[]>([]);
+  const [strictEnvironmentEnforcement, setStrictEnvironmentEnforcement] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
+  const [revealedApiKey, setRevealedApiKey] = useState<string>("");
+  const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
+  const [editAllowedOrigins, setEditAllowedOrigins] = useState<string>("");
+  const [editExpiresAt, setEditExpiresAt] = useState<string>("");
+  const [apiKeyForm, setApiKeyForm] = useState({
+    name: "",
+    environment: "test",
+    allowedOrigins: "",
+    expiresAt: ""
+  });
+  const [embedModalOpen, setEmbedModalOpen] = useState(false);
+  const [embedStatus, setEmbedStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
+  const [embedForm, setEmbedForm] = useState({
+    targetAppId: targetApps[0]?.id ?? "",
+    userId: "scout-client-user",
+    apiKey: "",
+    scoutUrl: typeof window === "undefined" ? "http://localhost:3000" : window.location.origin,
+    apiUrl: "http://localhost:4200",
+    assistantName: "Scout Assistant",
+    brandColor: "#111827",
+    accentColor: "#0ea5e9"
+  });
+  const [embedResult, setEmbedResult] = useState<EmbedPackageResponse | null>(null);
 
   const byScope = useMemo(() => {
     const map = new Map<ScopeValue, ChatbotLifecycleSettingsRecord>();
@@ -62,6 +113,23 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   };
 
   const [draft, setDraft] = useState<Draft>(toDraft(scope, activeSettings));
+
+  async function loadApiKeys() {
+    const response = await fetch("/api/admin/chatbot-settings/api-keys", { method: "GET" });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(typeof body?.message === "string" ? body.message : "Unable to load API keys.");
+    }
+
+    setApiKeys(Array.isArray(body?.keys) ? body.keys : []);
+    setStrictEnvironmentEnforcement(body?.strictEnvironmentEnforcement === true);
+  }
+
+  useEffect(() => {
+    loadApiKeys().catch((error) => {
+      setApiKeyStatus({ type: "error", message: error instanceof Error ? error.message : "Unable to load API keys." });
+    });
+  }, []);
 
   function updateScope(nextScope: ScopeValue) {
     setScope(nextScope);
@@ -125,6 +193,149 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
     setStatus({ type: "success", message: "Scope reset to defaults." });
   }
 
+  function parseAllowedOrigins(input: string) {
+    return Array.from(new Set(input.split(/\r?\n|,/g).map((value) => value.trim()).filter(Boolean)));
+  }
+
+  async function createApiKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setApiKeyStatus({ type: "saving", message: "Creating API key..." });
+    setRevealedApiKey("");
+
+    const response = await fetch("/api/admin/chatbot-settings/api-keys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: apiKeyForm.name,
+        environment: apiKeyForm.environment,
+        allowedOrigins: parseAllowedOrigins(apiKeyForm.allowedOrigins),
+        expiresAt: apiKeyForm.expiresAt || null
+      })
+    });
+
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setApiKeyStatus({ type: "error", message: typeof body?.message === "string" ? body.message : "Unable to create API key." });
+      return;
+    }
+
+    setRevealedApiKey(typeof body?.apiKey === "string" ? body.apiKey : "");
+    setApiKeyForm((current) => ({ ...current, name: "" }));
+    await loadApiKeys();
+    setApiKeyStatus({ type: "success", message: "API key created. Copy it now, it is shown only once." });
+  }
+
+  async function updateApiKey(id: string, next: Partial<{ status: ChatbotApiKeyStatus; allowedOrigins: string[]; expiresAt: string | null }>) {
+    setApiKeyStatus({ type: "saving", message: "Updating API key..." });
+
+    const response = await fetch(`/api/admin/chatbot-settings/api-keys/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(next)
+    });
+
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setApiKeyStatus({ type: "error", message: typeof body?.message === "string" ? body.message : "Unable to update API key." });
+      return;
+    }
+
+    await loadApiKeys();
+    setApiKeyStatus({ type: "success", message: "API key updated." });
+  }
+
+  async function saveStrictEnvironmentEnforcement() {
+    setApiKeyStatus({ type: "saving", message: "Saving security policy..." });
+
+    const response = await fetch("/api/admin/chatbot-settings/api-keys", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ strictEnvironmentEnforcement })
+    });
+
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setApiKeyStatus({ type: "error", message: typeof body?.message === "string" ? body.message : "Unable to update strict environment enforcement." });
+      return;
+    }
+
+    setStrictEnvironmentEnforcement(body?.strictEnvironmentEnforcement === true);
+    setApiKeyStatus({ type: "success", message: "Security policy updated." });
+  }
+
+  function beginEditKey(key: ChatbotApiKeyRecord) {
+    setEditingKeyId(key.id);
+    setEditAllowedOrigins(key.allowedOrigins.join("\n"));
+    setEditExpiresAt(key.expiresAt ? new Date(key.expiresAt).toISOString().slice(0, 16) : "");
+  }
+
+  async function saveKeyPolicy(keyId: string) {
+    await updateApiKey(keyId, {
+      allowedOrigins: parseAllowedOrigins(editAllowedOrigins),
+      expiresAt: editExpiresAt ? new Date(editExpiresAt).toISOString() : null
+    });
+    setEditingKeyId(null);
+    setEditAllowedOrigins("");
+    setEditExpiresAt("");
+  }
+
+  async function rotateApiKey(id: string) {
+    setApiKeyStatus({ type: "saving", message: "Rotating API key..." });
+    setRevealedApiKey("");
+
+    const response = await fetch(`/api/admin/chatbot-settings/api-keys/${id}/rotate`, {
+      method: "POST"
+    });
+
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setApiKeyStatus({ type: "error", message: typeof body?.message === "string" ? body.message : "Unable to rotate API key." });
+      return;
+    }
+
+    setRevealedApiKey(typeof body?.apiKey === "string" ? body.apiKey : "");
+    await loadApiKeys();
+    setApiKeyStatus({ type: "success", message: "API key rotated. Copy the new key now." });
+  }
+
+  function downloadTextFile(fileName: string, content: string) {
+    const blob = new Blob([content], { type: "text/javascript;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function generateEmbedPackage() {
+    setEmbedStatus({ type: "saving", message: "Generating package snippets..." });
+    setEmbedResult(null);
+
+    const response = await fetch("/api/admin/chatbot-settings/embed-package", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(embedForm)
+    });
+
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setEmbedStatus({ type: "error", message: typeof body?.message === "string" ? body.message : "Unable to generate snippets." });
+      return;
+    }
+
+    setEmbedResult(body as EmbedPackageResponse);
+    setEmbedStatus({ type: "success", message: "Embed package ready. Download both files and include them in your client app." });
+  }
+
+  function formatDate(value: string | null) {
+    if (!value) return "-";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
@@ -136,6 +347,23 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
             <h1 className="text-2xl font-semibold text-slate-950">Chatbot Conversation Settings</h1>
             <p className="mt-1 text-sm text-slate-600">Manage rolling context, inactivity resets, and lifecycle rules for {companyName} globally or per target application.</p>
           </div>
+        </div>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button
+            className="inline-flex h-11 items-center gap-2 rounded-lg bg-sky-600 px-5 text-sm font-semibold text-white"
+            onClick={() => {
+              setEmbedModalOpen(true);
+              setEmbedStatus({ type: "idle", message: "" });
+              if (revealedApiKey && !embedForm.apiKey) {
+                setEmbedForm((current) => ({ ...current, apiKey: revealedApiKey }));
+              }
+            }}
+            type="button"
+          >
+            <Download className="h-4 w-4" />
+            Chatbot settings package
+          </button>
+          <span className="text-sm text-slate-500">Generates scout-chatbot-config.local.js and scout-chatbot-install.js with obfuscated identifiers.</span>
         </div>
       </div>
 
@@ -198,6 +426,338 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
           {status.message ? <span className={`text-sm ${status.type === "error" ? "text-red-600" : "text-slate-600"}`}>{status.message}</span> : null}
         </div>
       </form>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-950">Chatbot API Keys</h2>
+            <p className="mt-1 text-sm text-slate-600">Create environment-specific keys, suspend/revoke keys, rotate secrets, and optionally restrict key usage by domain origin.</p>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+            <ShieldCheck className="h-4 w-4" />
+            Lifecycle enabled
+          </div>
+        </div>
+
+        <form className="mt-5 grid gap-4 rounded-lg border border-slate-200 p-4 md:grid-cols-2" onSubmit={createApiKey}>
+          <label className="grid gap-2 text-sm font-medium text-slate-700">
+            Key name
+            <input
+              className="h-11 rounded-lg border border-slate-200 px-3 text-sm"
+              onChange={(event) => setApiKeyForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Portal widget production"
+              required
+              type="text"
+              value={apiKeyForm.name}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium text-slate-700">
+            Environment
+            <select
+              className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+              onChange={(event) => setApiKeyForm((current) => ({ ...current, environment: event.target.value }))}
+              value={apiKeyForm.environment}
+            >
+              <option value="test">Test</option>
+              <option value="certification">Certification</option>
+              <option value="production">Production</option>
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-2">
+            Allowed origins (optional)
+            <textarea
+              className="min-h-[90px] rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              onChange={(event) => setApiKeyForm((current) => ({ ...current, allowedOrigins: event.target.value }))}
+              placeholder="https://app.example.com\n*.example.org"
+              value={apiKeyForm.allowedOrigins}
+            />
+          </label>
+          <label className="grid gap-2 text-sm font-medium text-slate-700">
+            Expiry (optional)
+            <input
+              className="h-11 rounded-lg border border-slate-200 px-3 text-sm"
+              onChange={(event) => setApiKeyForm((current) => ({ ...current, expiresAt: event.target.value }))}
+              type="datetime-local"
+              value={apiKeyForm.expiresAt}
+            />
+          </label>
+          <div className="flex items-end">
+            <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-semibold text-white" type="submit">
+              <KeyRound className="h-4 w-4" />
+              Create API key
+            </button>
+          </div>
+        </form>
+
+        <div className="mt-4 rounded-lg border border-slate-200 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Strict environment enforcement</p>
+              <p className="mt-1 text-xs text-slate-600">When enabled, chatbot API requests must include environment, and the key environment must match exactly.</p>
+            </div>
+            <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input
+                checked={strictEnvironmentEnforcement}
+                onChange={(event) => setStrictEnvironmentEnforcement(event.target.checked)}
+                type="checkbox"
+              />
+              Enable
+            </label>
+          </div>
+          <div className="mt-3">
+            <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 px-3 text-xs font-semibold text-slate-700" onClick={saveStrictEnvironmentEnforcement} type="button">
+              Save security policy
+            </button>
+          </div>
+        </div>
+
+        {revealedApiKey ? (
+          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-sm font-medium text-emerald-800">Copy this API key now. It will not be shown again.</p>
+            <textarea
+              className="mt-2 min-h-[76px] w-full rounded-lg border border-emerald-200 bg-white px-3 py-2 font-mono text-xs text-slate-800"
+              readOnly
+              value={revealedApiKey}
+            />
+          </div>
+        ) : null}
+
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-[980px] divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-3 py-2 text-left">Name</th>
+                <th className="px-3 py-2 text-left">Environment</th>
+                <th className="px-3 py-2 text-left">Prefix</th>
+                <th className="px-3 py-2 text-left">Status</th>
+                <th className="px-3 py-2 text-left">Allowed domains</th>
+                <th className="px-3 py-2 text-left">Last used</th>
+                <th className="px-3 py-2 text-left">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {apiKeys.map((key) => (
+                <Fragment key={key.id}>
+                  <tr>
+                    <td className="px-3 py-3 font-medium text-slate-800">{key.name}</td>
+                    <td className="px-3 py-3 text-slate-700">{key.environment}</td>
+                    <td className="px-3 py-3 font-mono text-xs text-slate-700">{key.keyPrefix}</td>
+                    <td className="px-3 py-3">
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${key.status === "active" ? "bg-emerald-100 text-emerald-700" : key.status === "suspended" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                        {key.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-3 text-xs text-slate-600">{key.allowedOrigins.length ? key.allowedOrigins.join(", ") : "Any domain"}</td>
+                    <td className="px-3 py-3 text-xs text-slate-600">{formatDate(key.lastUsedAt)}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <button className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2 text-xs font-medium text-slate-700" onClick={() => rotateApiKey(key.id)} type="button">
+                          <RotateCw className="h-3.5 w-3.5" />
+                          Rotate
+                        </button>
+                        <button className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2 text-xs font-medium text-slate-700" onClick={() => beginEditKey(key)} type="button">
+                          Edit policy
+                        </button>
+                        {key.status !== "active" ? (
+                          <button className="inline-flex h-8 items-center gap-1 rounded-md border border-emerald-200 px-2 text-xs font-medium text-emerald-700" onClick={() => updateApiKey(key.id, { status: "active" })} type="button">
+                            Activate
+                          </button>
+                        ) : null}
+                        {key.status === "active" ? (
+                          <button className="inline-flex h-8 items-center gap-1 rounded-md border border-amber-200 px-2 text-xs font-medium text-amber-700" onClick={() => updateApiKey(key.id, { status: "suspended" })} type="button">
+                            Suspend
+                          </button>
+                        ) : null}
+                        {key.status !== "revoked" ? (
+                          <button className="inline-flex h-8 items-center gap-1 rounded-md border border-red-200 px-2 text-xs font-medium text-red-700" onClick={() => updateApiKey(key.id, { status: "revoked" })} type="button">
+                            <Ban className="h-3.5 w-3.5" />
+                            Revoke
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                  {editingKeyId === key.id ? (
+                    <tr>
+                      <td className="bg-slate-50 px-3 py-3" colSpan={7}>
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <label className="grid gap-1 text-xs font-medium text-slate-700 md:col-span-2">
+                            Allowed origins (optional)
+                            <textarea
+                              className="min-h-[90px] rounded-md border border-slate-200 px-2 py-2 text-xs"
+                              onChange={(event) => setEditAllowedOrigins(event.target.value)}
+                              placeholder="https://app.example.com\n*.example.org"
+                              value={editAllowedOrigins}
+                            />
+                          </label>
+                          <label className="grid gap-1 text-xs font-medium text-slate-700">
+                            Expiry (optional)
+                            <input
+                              className="h-9 rounded-md border border-slate-200 px-2 text-xs"
+                              onChange={(event) => setEditExpiresAt(event.target.value)}
+                              type="datetime-local"
+                              value={editExpiresAt}
+                            />
+                          </label>
+                          <div className="flex items-end gap-2">
+                            <button className="inline-flex h-9 items-center rounded-md bg-slate-900 px-3 text-xs font-semibold text-white" onClick={() => saveKeyPolicy(key.id)} type="button">Save</button>
+                            <button className="inline-flex h-9 items-center rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700" onClick={() => setEditingKeyId(null)} type="button">Cancel</button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              ))}
+              {apiKeys.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-8 text-center text-sm text-slate-500" colSpan={7}>No API keys created yet.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+
+        {apiKeyStatus.message ? <p className={`mt-3 text-sm ${apiKeyStatus.type === "error" ? "text-red-600" : "text-slate-600"}`}>{apiKeyStatus.message}</p> : null}
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-semibold text-slate-950">Integration Help</h2>
+        <p className="mt-1 text-sm text-slate-600">Use these collapsible notes for onboarding external teams quickly.</p>
+
+        <div className="mt-4 space-y-3">
+          <details className="rounded-lg border border-slate-200 p-4" open>
+            <summary className="cursor-pointer text-sm font-semibold text-slate-800">1) Package installation flow</summary>
+            <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-slate-600">
+              <li>Create or rotate an API key for the target environment.</li>
+              <li>Use Chatbot settings package to generate both JS files with obfuscated IDs.</li>
+              <li>Distribute the files to the client application and include them in HTML or React bootstrap.</li>
+            </ol>
+          </details>
+
+          <details className="rounded-lg border border-slate-200 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-800">2) Domain-aware key policy</summary>
+            <div className="mt-3 space-y-2 text-sm text-slate-600">
+              <p>Add allowed origins when creating the key to restrict usage to specific hostnames or origins.</p>
+              <p>Examples: https://app.company.com, *.partner.company.com</p>
+              <p>Target app level key policies can be handled by issuing separate keys per app/environment.</p>
+            </div>
+          </details>
+
+          <details className="rounded-lg border border-slate-200 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-800">3) Code samples</summary>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">HTML client</p>
+                <pre className="overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">{embedResult?.htmlSample || `<script src="./scout-chatbot-config.local.js"></script>\n<script src="./scout-chatbot-install.js"></script>`}</pre>
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">React client</p>
+                <pre className="overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">{embedResult?.reactSample || `import { useEffect } from "react";\n\nexport function ScoutChatbotLoader() {\n  useEffect(() => {\n    // Load config + install scripts from public path\n  }, []);\n  return null;\n}`}</pre>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      {embedModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-semibold text-slate-950">Chatbot Settings Package</h3>
+                <p className="mt-1 text-sm text-slate-600">Generate two distributable files with encrypted identifiers for the target app.</p>
+              </div>
+              <button className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700" onClick={() => setEmbedModalOpen(false)} type="button">Close</button>
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Target app
+                <select className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, targetAppId: event.target.value }))} value={embedForm.targetAppId}>
+                  {targetApps.map((app) => (
+                    <option key={app.id} value={app.id}>{app.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                User ID placeholder
+                <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, userId: event.target.value }))} value={embedForm.userId} />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-2">
+                API key (plaintext)
+                <textarea className="min-h-[92px] rounded-lg border border-slate-200 px-3 py-2 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, apiKey: event.target.value }))} placeholder="Paste newly created or rotated API key" value={embedForm.apiKey} />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Scout URL
+                <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, scoutUrl: event.target.value }))} value={embedForm.scoutUrl} />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                API URL
+                <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, apiUrl: event.target.value }))} value={embedForm.apiUrl} />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Assistant name
+                <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, assistantName: event.target.value }))} value={embedForm.assistantName} />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Brand color
+                <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, brandColor: event.target.value }))} value={embedForm.brandColor} />
+              </label>
+
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                Accent color
+                <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, accentColor: event.target.value }))} value={embedForm.accentColor} />
+              </label>
+            </div>
+
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-semibold text-white" onClick={generateEmbedPackage} type="button">
+                <Download className="h-4 w-4" />
+                Generate snippets
+              </button>
+              {embedStatus.message ? <span className={`text-sm ${embedStatus.type === "error" ? "text-red-600" : "text-slate-600"}`}>{embedStatus.message}</span> : null}
+            </div>
+
+            {embedResult ? (
+              <div className="mt-6 grid gap-4">
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-800">scout-chatbot-config.local.js</p>
+                    <button className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2 text-xs font-medium text-slate-700" onClick={() => downloadTextFile("scout-chatbot-config.local.js", embedResult.configSnippet)} type="button">
+                      <Download className="h-3.5 w-3.5" />
+                      Download
+                    </button>
+                  </div>
+                  <textarea className="mt-2 min-h-[220px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700" readOnly value={embedResult.configSnippet} />
+                </div>
+
+                <div className="rounded-lg border border-slate-200 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-800">scout-chatbot-install.js</p>
+                    <button className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-2 text-xs font-medium text-slate-700" onClick={() => downloadTextFile("scout-chatbot-install.js", embedResult.installSnippet)} type="button">
+                      <Download className="h-3.5 w-3.5" />
+                      Download
+                    </button>
+                  </div>
+                  <textarea className="mt-2 min-h-[220px] w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-700" readOnly value={embedResult.installSnippet} />
+                </div>
+
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
+                  <p>Obfuscated company ID: <span className="font-mono text-slate-800">{embedResult.obfuscatedCompanyId}</span></p>
+                  <p className="mt-1">Obfuscated target app ID: <span className="font-mono text-slate-800">{embedResult.obfuscatedTargetAppId}</span></p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { executeAIDecisionNode } from "@/lib/orchestrations/nodes/ai-decision-no
 import { executeNotificationNode } from "@/lib/orchestrations/nodes/notification-node";
 import { getConnections, getNodes, getOrchestrationPage } from "@/lib/orchestrations/db";
 import { getLLMProvider } from "@/lib/llm/providers";
+import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import type { AIDecisionNodeConfig, NotificationNodeConfig } from "@/shared/orchestrationTypes";
 
 export const runtime = "nodejs";
@@ -487,9 +488,11 @@ async function executeDynamicPlan(message: string): Promise<DynamicExecutionResu
 export async function POST(request: NextRequest) {
   try {
     const body: WorkflowRouterRequest = await request.json();
-    const companyId = body.companyId || "";
+    const companyIdentifier = body.companyId || "";
     const userId = body.userId || "";
-    const targetAppId = body.targetAppId || "";
+    const targetAppIdentifier = body.targetAppId || "";
+    const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
+    const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
     const forceActionMode = body.forceActionMode === true;
     const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
     const history = Array.isArray(body.history) ? body.history.slice(-12) : [];

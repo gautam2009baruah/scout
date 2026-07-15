@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 import { ConversationError, searchConversations } from "@/lib/chat/conversations";
+import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const companyIdentifier = url.searchParams.get("company_id") ?? "";
+  const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
 
   try {
     const result = await searchConversations({
-      companyId: url.searchParams.get("company_id") ?? "",
+      companyId,
       userId: url.searchParams.get("user_id") ?? "",
       query: url.searchParams.get("q") ?? "",
       page: Number(url.searchParams.get("page") ?? 1),

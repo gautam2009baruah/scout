@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { getLLMProvider } from "@/lib/llm/providers";
+import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 
 export const runtime = "nodejs";
 
@@ -168,9 +169,11 @@ async function assertUserCompanyAccess(input: { companyId: string; userId: strin
 export async function POST(request: NextRequest) {
   try {
     const body: IntentGateRequest = await request.json();
-    const companyId = (body.companyId || "").trim();
+    const companyIdentifier = (body.companyId || "").trim();
     const userId = (body.userId || "").trim();
-    const targetAppId = (body.targetAppId || "").trim();
+    const targetAppIdentifier = (body.targetAppId || "").trim();
+    const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
+    const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
     const conversationId = (body.conversationId || "").trim();
     const message = typeof body.message === "string" ? body.message.trim() : "";
 
@@ -284,9 +287,11 @@ export async function PATCH(request: NextRequest) {
   try {
     const body: IntentGateFeedbackRequest = await request.json();
     const decisionId = (body.decisionId || "").trim();
-    const companyId = (body.companyId || "").trim();
+    const companyIdentifier = (body.companyId || "").trim();
     const userId = (body.userId || "").trim();
-    const targetAppId = (body.targetAppId || "").trim();
+    const targetAppIdentifier = (body.targetAppId || "").trim();
+    const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
+    const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
 
     if (!decisionId || !companyId || !userId || !body.feedbackType || !body.userChoice) {
       return NextResponse.json(
