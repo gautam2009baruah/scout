@@ -357,7 +357,18 @@ const workflowActionVerbs = [
   "request",
   "escalate",
   "approve",
-  "deploy"
+  "deploy",
+  "send",
+  "notify",
+  "email",
+  "message",
+  "alert",
+  "forward",
+  "reply",
+  "compose",
+  "dispatch",
+  "deliver",
+  "share"
 ];
 
 const workflowBusinessHints = [
@@ -379,7 +390,15 @@ const workflowBusinessHints = [
   "invoice",
   "contract",
   "meeting",
-  "purchase order"
+  "purchase order",
+  "email",
+  "notification",
+  "send email",
+  "send message",
+  "send notification",
+  "greeting",
+  "reminder",
+  "alert"
 ];
 
 const ACTION_ROUTER_WORKFLOW_ID = "__action_router__";
@@ -1963,32 +1982,27 @@ export function ScoutChatbot({
   }
 
   function classifyWorkflowAction(message: string, workflows: ScoutWorkflowSession[]) {
+    // This function runs client-side as a fallback when the server intent gate is unavailable.
+    // It finds a matching workflow OR produces a generic action router result.
+    // Heavy domain classification is intentionally left to the server-side LLM.
     const normalized = message.toLowerCase();
     const matchedWorkflow = findWorkflowForMessage(normalized, workflows) ?? findWorkflowByActionKeywords(normalized, workflows);
-    const hasBusinessHint = workflowBusinessHints.some((hint) => normalized.includes(hint));
-    const hasActionVerb = workflowActionVerbs.some((verb) => new RegExp(`\\b${verb}\\b`, "i").test(normalized));
-    const asksForProcess = /\b(can you|please|help me|need to|i want to|let's|lets|show me|start|run|launch)\b/.test(normalized);
-    const hasAmount = /\b\d+(?:[.,]\d+)?\b/.test(normalized) && /\b(dollar|usd|eur|inr|amount|price|total|cost)\b/.test(normalized);
-    const hasTransactionalTarget = /\b(order|invoice|purchase|payment|shipment|booking|ticket|request|rate code|customer|vendor)\b/.test(normalized);
-    const confidence = Math.min(
-      0.99,
-      (matchedWorkflow ? 0.4 : 0)
-      + (hasActionVerb ? 0.22 : 0)
-      + (hasBusinessHint ? 0.16 : 0)
-      + (asksForProcess ? 0.1 : 0)
-      + (hasAmount ? 0.14 : 0)
-      + (hasTransactionalTarget ? 0.14 : 0)
-    );
 
-    const actionableWithoutExactMatch = !matchedWorkflow && confidence >= 0.58;
-    if (!matchedWorkflow && !actionableWithoutExactMatch) {
-      return null;
+    if (matchedWorkflow) {
+      return { workflow: matchedWorkflow, confidence: 0.85 };
     }
 
-    return {
-      workflow: matchedWorkflow ?? createActionRouterWorkflow(),
-      confidence
-    };
+    // Generic signals only — no domain-specific keyword lists.
+    const hasActionVerb = /\b(create|add|update|change|edit|submit|approve|reject|start|run|launch|assign|cancel|schedule|trigger|process|send|notify|email|message|forward|reply|draft|book|register|delete|remove|archive|publish|generate)\b/i.test(normalized);
+    const asksQuestion = /^(what|how|why|where|when|who|tell me|explain|describe)\b/i.test(normalized);
+    const hasSpecificTarget = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/.test(normalized)
+      || /\b\w[\s#\-]?\d{4,}\b/.test(normalized);
+
+    if (asksQuestion && !hasActionVerb) return null;
+    if (!hasActionVerb && !hasSpecificTarget) return null;
+
+    const confidence = Math.min(0.99, 0.55 + (hasSpecificTarget ? 0.25 : 0) + (hasActionVerb ? 0.15 : 0));
+    return { workflow: createActionRouterWorkflow(), confidence };
   }
 
   const launcher = (

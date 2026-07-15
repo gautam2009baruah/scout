@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
 import { executeAIDecisionNode } from "@/lib/orchestrations/nodes/ai-decision-node";
+import { executeNotificationNode } from "@/lib/orchestrations/nodes/notification-node";
 import { getConnections, getNodes, getOrchestrationPage } from "@/lib/orchestrations/db";
-import type { AIDecisionNodeConfig } from "@/shared/orchestrationTypes";
+import { getLLMProvider } from "@/lib/llm/providers";
+import type { AIDecisionNodeConfig, NotificationNodeConfig } from "@/shared/orchestrationTypes";
 
 export const runtime = "nodejs";
 
@@ -228,6 +230,75 @@ async function loadChatbotWorkflowCandidates(
   return candidates.filter((candidate): candidate is ChatbotWorkflowCandidate => candidate !== null);
 }
 
+type DynamicActionParams =
+  | { actionType: "send_email"; to: string; subject: string; body: string; bodyIsHtml: boolean }
+  | { actionType: "unknown" };
+
+async function extractDynamicActionParams(message: string): Promise<DynamicActionParams> {
+  try {
+    const provider = await getLLMProvider();
+    const systemPrompt = [
+      "You extract structured action parameters from user requests. Return JSON only, no markdown.",
+      "Identify what action to perform and extract parameters.",
+      'Return this exact shape: {"actionType":"send_email|unknown","to":"","subject":"","body":"","bodyIsHtml":false}',
+      "For send_email: extract recipient email address, infer a subject, and compose a professional message body based on user intent.",
+      "If the action is not a notification/email, set actionType to unknown.",
+    ].join(" ");
+
+    const raw = await provider.generate_answer(systemPrompt, `User request: ${message}`, "");
+    const cleaned = (raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+    const parsed = JSON.parse(cleaned) as Record<string, unknown>;
+
+    if (parsed.actionType === "send_email" && typeof parsed.to === "string" && parsed.to.trim()) {
+      return {
+        actionType: "send_email",
+        to: String(parsed.to).trim(),
+        subject: typeof parsed.subject === "string" ? parsed.subject : "Notification",
+        body: typeof parsed.body === "string" ? parsed.body : message,
+        bodyIsHtml: parsed.bodyIsHtml === true,
+      };
+    }
+  } catch {
+    // Fall through to unknown
+  }
+  return { actionType: "unknown" };
+}
+
+async function executeDynamicPlan(message: string): Promise<{ success: boolean; answer: string }> {
+  const params = await extractDynamicActionParams(message);
+
+  if (params.actionType === "send_email") {
+    const config: NotificationNodeConfig = {
+      type: "notification",
+      channels: {
+        email: {
+          enabled: true,
+          to: params.to,
+          subject: params.subject,
+          body: params.body,
+          bodyFormat: params.bodyIsHtml ? "rich_text" : "plain_text",
+        },
+      },
+    };
+
+    const result = await executeNotificationNode(config, {});
+
+    if (result.success) {
+      return {
+        success: true,
+        answer: `Done! I sent the email to **${params.to}** with subject "${params.subject}".`,
+      };
+    }
+
+    return {
+      success: false,
+      answer: `I tried to send the email to ${params.to} but the delivery failed: ${result.error || "unknown error"}. Please check your email credentials configuration.`,
+    };
+  }
+
+  return { success: false, answer: "" };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: WorkflowRouterRequest = await request.json();
@@ -385,6 +456,26 @@ export async function POST(request: NextRequest) {
           awaitingDraftPlanPermission: true,
         },
       });
+    }
+
+    if (body.allowDraftPlan && (handle === "dynamic_plan" || matchedIds.length === 0)) {
+      const dynamicResult = await executeDynamicPlan(message);
+      if (dynamicResult.success) {
+        return NextResponse.json({
+          answer: dynamicResult.answer,
+          intent: "execute_plan",
+          confidence: output.confidence ?? 0.8,
+          decision: output.decision,
+          handle: "dynamic_plan",
+          matchedOrchestrationIds: [],
+          matchedOrchestrationNames: [],
+          needsClarification: false,
+          clarifyingQuestions: [],
+          requireUserConfirmation: false,
+          plan,
+          metadata: { ...metadata, executedDynamically: true },
+        });
+      }
     }
 
     if (body.allowDraftPlan && matchedIds.length === 0 && plan.length === 0) {

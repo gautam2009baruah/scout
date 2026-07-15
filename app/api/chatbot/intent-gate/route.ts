@@ -37,32 +37,69 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
-function classifyPrefilter(message: string): { label: PrefilterLabel; score: number; reason: string } {
+/**
+ * Minimal prefilter — only bypasses LLM for trivially obvious casual messages.
+ * Anything else goes straight to the LLM. Domain knowledge belongs in the prompt.
+ */
+function isObviousCasualMessage(message: string): boolean {
+  const trimmed = message.trim();
+  if (trimmed.length < 3) return true;
+  return /^(hi|hello|hey|thanks|thank you|ok|okay|nice|great|cool|awesome|bye|good morning|good afternoon|good evening|good night|cheers|np|no problem|sure|yep|nope|yes|no|lol|haha)[.!?]*$/i.test(trimmed);
+}
+
+/**
+ * Structural fallback used ONLY when the LLM call fails or returns no result.
+ * Not a full classifier — just catches unambiguous action signals so a failed
+ * LLM call doesn't silently default everything to chat.
+ */
+function structuralFallbackIntent(message: string): { intent: IntentLabel; confidence: number } {
+  if (isObviousCasualMessage(message)) return { intent: "chat", confidence: 0.9 };
   const normalized = message.toLowerCase();
+  const hasEmailAddress = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/.test(normalized);
+  const hasActionVerb = /\b(send|create|update|submit|approve|reject|notify|schedule|cancel|process|trigger|launch|start|run|assign|email|forward|draft|book|delete|remove|generate|dispatch)\b/i.test(normalized);
+  const asksQuestion = /^(what|how|why|where|when|who)\b/i.test(normalized);
+  if (asksQuestion) return { intent: "chat", confidence: 0.75 };
+  if (hasEmailAddress || (hasActionVerb)) return { intent: "action", confidence: 0.72 };
+  return { intent: "uncertain" as IntentLabel, confidence: 0.5 };
+}
 
-  if (normalized.length < 3) {
-    return { label: "chat", score: 0.95, reason: "too_short" };
-  }
+/**
+ * Comprehensive LLM system prompt that teaches intent classification through
+ * reasoning principles and diverse examples — not hardcoded domain patterns.
+ * This is intentionally domain-agnostic so it works for any future request type.
+ */
+function buildIntentSystemPrompt(): string {
+  return `You are an intent classifier for a business chatbot. Decide whether the user wants to PERFORM AN ACTION or GET INFORMATION/HAVE A CONVERSATION.
 
-  const casual = /^(hi|hello|hey|thanks|thank you|ok|okay|nice|great|cool|awesome|bye)$/i.test(normalized);
-  if (casual) {
-    return { label: "chat", score: 0.95, reason: "casual_phrase" };
-  }
+== ACTION ==
+The user wants the system to DO something on their behalf:
+- Send, deliver, forward, or compose anything (email, message, notification, report, file, invitation)
+- Create, add, register, or submit any record (ticket, order, user, document, entry)
+- Update, edit, change, or modify something that already exists
+- Trigger, start, run, launch, or execute any process or workflow
+- Approve, reject, escalate, or make a decision on something pending
+- Contact, notify, alert, or reach out to a person or team
+- Schedule, book, or reserve something
+- Delete, cancel, deactivate, or close something
+- Generate, draft, or produce any output intended for delivery to someone
+- Process, handle, or act on a specific item (order, request, case, record)
 
-  const actionVerb = /\b(create|add|update|change|submit|approve|reject|start|run|launch|assign|cancel|schedule|trigger|initiate|process|make|build)\b/i.test(normalized);
-  const businessTarget = /\b(order|invoice|purchase|payment|shipment|ticket|request|rate code|customer|vendor|employee|contract)\b/i.test(normalized);
-  const amountSignal = /\b\d+(?:[.,]\d+)?\b/.test(normalized) && /\b(dollar|usd|eur|inr|amount|price|total|cost)\b/i.test(normalized);
-  const asksHow = /\b(what|how|why|where|when|who)\b/i.test(normalized);
+== CHAT ==
+The user wants information, explanation, or a response:
+- Questions: what is, how does, why is, when was, who handles, where can I find
+- Asking about policies, procedures, status, or facts
+- Asking for summaries, explanations, or descriptions
+- Casual conversation, acknowledgements, follow-up questions
 
-  if (actionVerb && (businessTarget || amountSignal)) {
-    return { label: "action", score: 0.88, reason: "action_and_target" };
-  }
+== KEY REASONING RULES ==
+1. Polite phrasing does NOT change the intent. "Can you send..." = action. "Please notify..." = action.
+2. If the message contains a recipient (email address, name, team), it is almost certainly an action.
+3. "What is the invoice amount?" = chat. "Process the invoice" = action.
+4. "Tell me who handles refunds" = chat. "Send the refund to John" = action.
+5. When genuinely uncertain, prefer "action" over "chat" — it is safer to surface an action choice.
 
-  if (asksHow && !actionVerb && !businessTarget) {
-    return { label: "chat", score: 0.82, reason: "informational_question" };
-  }
-
-  return { label: "uncertain", score: 0.52, reason: "mixed_or_weak_signal" };
+Return ONLY this JSON, no markdown, no extra text:
+{"intent":"action","confidence":0.92,"reason":"brief explanation"}`;
 }
 
 function parseClassifierJson(text: string): { intent: IntentLabel; confidence: number; reason: string } | null {
@@ -143,13 +180,13 @@ export async function POST(request: NextRequest) {
 
     await assertUserCompanyAccess({ companyId, userId, targetAppId: targetAppId || undefined });
 
-    const prefilter = classifyPrefilter(message);
     let aiIntent: IntentLabel | null = null;
     let aiConfidence = 0;
     let aiReason = "";
 
-    // Hybrid gate: quick rule prefilter, then AI final decision unless rule confidence is very high for chat.
-    if (!(prefilter.label === "chat" && prefilter.score >= 0.9)) {
+    // Only skip the LLM for trivially obvious one-word casual messages.
+    // Everything else — including ambiguous phrasing — goes to the LLM.
+    if (!isObviousCasualMessage(message)) {
       const provider = await getLLMProvider();
       const historyText = Array.isArray(body.history)
         ? body.history
@@ -158,22 +195,11 @@ export async function POST(request: NextRequest) {
             .join("\n")
         : "";
 
-      const systemPrompt = [
-        "You classify chat user intent into one of two modes: action or chat.",
-        "action = user is asking to do/execute/create/update a business operation.",
-        "chat = user is asking for information/explanation/question-answering.",
-        "Return JSON only: {\"intent\":\"action|chat\",\"confidence\":0-1,\"reason\":\"short\"}",
-      ].join(" ");
+      const userPrompt = historyText
+        ? `Conversation so far:\n${historyText}\n\nLatest message to classify:\n${message}`
+        : `Message to classify:\n${message}`;
 
-      const userPrompt = [
-        "Conversation context:",
-        historyText || "(none)",
-        "",
-        "Current message:",
-        message,
-      ].join("\n");
-
-      const answer = await provider.generate_answer(systemPrompt, userPrompt, "");
+      const answer = await provider.generate_answer(buildIntentSystemPrompt(), userPrompt, "");
       const parsed = parseClassifierJson(answer || "");
 
       if (parsed) {
@@ -183,58 +209,65 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const finalIntent: IntentLabel = aiIntent ?? (prefilter.label === "action" ? "action" : "chat");
-    const finalConfidence = clamp01(aiIntent ? aiConfidence : prefilter.score);
+    const fallback = structuralFallbackIntent(message);
+    // Default to action when structural fallback is uncertain — safer than defaulting to chat
+    const finalIntent: IntentLabel = aiIntent ?? (fallback.intent === "uncertain" as IntentLabel ? "action" : fallback.intent);
+    const finalConfidence = clamp01(aiIntent ? aiConfidence : fallback.confidence);
     const lowConfidence = finalConfidence < 0.66;
 
-    const insert = await getPool().query<{ id: string }>(
-      `
-        INSERT INTO chatbot_intent_gate_decisions (
-          company_id,
-          target_app_id,
-          user_id,
-          conversation_id,
+    // Persist telemetry — non-fatal if table not yet migrated
+    let decisionId: string | null = null;
+    try {
+      const insert = await getPool().query<{ id: string }>(
+        `
+          INSERT INTO chatbot_intent_gate_decisions (
+            company_id,
+            target_app_id,
+            user_id,
+            conversation_id,
+            message,
+            prefilter_label,
+            prefilter_score,
+            ai_label,
+            ai_confidence,
+            final_label,
+            low_confidence,
+            reason,
+            metadata_json
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+          RETURNING id
+        `,
+        [
+          companyId,
+          targetAppId || null,
+          userId,
+          conversationId || null,
           message,
-          prefilter_label,
-          prefilter_score,
-          ai_label,
-          ai_confidence,
-          final_label,
-          low_confidence,
-          reason,
-          metadata_json
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
-        RETURNING id
-      `,
-      [
-        companyId,
-        targetAppId || null,
-        userId,
-        conversationId || null,
-        message,
-        prefilter.label,
-        prefilter.score,
-        aiIntent,
-        aiIntent ? aiConfidence : null,
-        finalIntent,
-        lowConfidence,
-        aiReason || prefilter.reason,
-        JSON.stringify({
-          prefilterReason: prefilter.reason,
+          isObviousCasualMessage(message) ? "chat" : (aiIntent ?? fallback.intent),
+          isObviousCasualMessage(message) ? 0.95 : (aiIntent ? aiConfidence : fallback.confidence),
+          aiIntent,
+          aiIntent ? aiConfidence : null,
+          finalIntent,
+          lowConfidence,
           aiReason,
-          usedAIClassifier: Boolean(aiIntent),
-        }),
-      ]
-    );
+          JSON.stringify({
+            usedAIClassifier: Boolean(aiIntent),
+          }),
+        ]
+      );
+      decisionId = insert.rows[0].id;
+    } catch {
+      // Telemetry is non-fatal — table may not be migrated yet
+    }
 
     return NextResponse.json({
-      decisionId: insert.rows[0].id,
+      decisionId,
       intent: finalIntent,
       confidence: finalConfidence,
       lowConfidence,
       promptModeChoice: lowConfidence,
-      reason: aiReason || prefilter.reason,
+      reason: aiReason,
     });
   } catch (error) {
     return NextResponse.json(
