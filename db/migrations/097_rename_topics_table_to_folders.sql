@@ -10,5 +10,26 @@ ALTER INDEX IF EXISTS topics_company_parent_slug_idx RENAME TO folders_company_p
 ALTER INDEX IF EXISTS topics_parent_idx RENAME TO folders_parent_idx;
 ALTER INDEX IF EXISTS topics_company_idx RENAME TO folders_company_idx;
 
-ALTER TABLE IF EXISTS folders RENAME CONSTRAINT topics_company_id_fkey TO folders_company_id_fkey;
-ALTER TABLE IF EXISTS folders RENAME CONSTRAINT topics_parent_id_fkey TO folders_parent_id_fkey;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'topics_company_id_fkey'
+      AND conrelid = 'public.folders'::regclass
+  ) THEN
+    ALTER TABLE folders RENAME CONSTRAINT topics_company_id_fkey TO folders_company_id_fkey;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'topics_parent_id_fkey'
+      AND conrelid = 'public.folders'::regclass
+  ) THEN
+    ALTER TABLE folders RENAME CONSTRAINT topics_parent_id_fkey TO folders_parent_id_fkey;
+  END IF;
+END $$;
