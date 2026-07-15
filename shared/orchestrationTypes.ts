@@ -162,15 +162,63 @@ export type AIExtractionNodeConfig = {
   outputVariable: string; // where to store extracted data
 };
 
+export type AIDecisionIntent =
+  | "chat"
+  | "workflow_match"
+  | "need_clarification"
+  | "propose_plan"
+  | "execute_plan"
+  | "fallback";
+
+export type AIDecisionClarificationQuestion = {
+  question: string;
+  purpose?: string;
+  inputKey?: string;
+  required?: boolean;
+};
+
+export type AIDecisionPlanStep = {
+  id: string;
+  label: string;
+  nodeType: NodeType | string;
+  reason: string;
+  inputMapping?: Record<string, string>;
+  outputVariable?: string;
+  requiresConfirmation?: boolean;
+  confidence?: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type AIDecisionStructuredResult = {
+  intent: AIDecisionIntent;
+  confidence: number;
+  reason?: string;
+  message?: string;
+  selectedDecisionLabel?: string;
+  selectedDecisionHandle?: string;
+  matchedOrchestrationIds?: string[];
+  matchedOrchestrationNames?: string[];
+  needsClarification?: boolean;
+  clarifyingQuestions?: AIDecisionClarificationQuestion[];
+  requireUserConfirmation?: boolean;
+  plan?: AIDecisionPlanStep[];
+  metadata?: Record<string, unknown>;
+};
+
+export type AIDecisionOption = {
+  label: string;
+  description?: string;
+  outputHandle: string;
+  aliases?: string[];
+  keywords?: string[];
+  metadata?: Record<string, unknown>;
+};
+
 export type AIDecisionNodeConfig = {
   type: "ai_decision";
   inputSource: string; // variable expression
   prompt: string;
-  decisions: Array<{
-    label: string;
-    description?: string;
-    outputHandle: string;
-  }>;
+  decisions: AIDecisionOption[];
   defaultDecision?: string;
 };
 

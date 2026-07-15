@@ -19,6 +19,7 @@ type EmbedConfig = {
   lifecycleConfig?: ScoutChatLifecycleConfig;
   placeholder?: string;
   quickPrompts?: string[];
+  workflowRouterEndpoint?: string;
 };
 
 export default function EmbeddedScoutChatbotPage() {
@@ -162,6 +163,7 @@ export default function EmbeddedScoutChatbotPage() {
             onSendMessage={sendMessage}
             onSizeChange={notifySize}
             onStartWorkflow={startWorkflow}
+            workflowRouterEndpoint={config.workflowRouterEndpoint}
             placeholder={config.placeholder || "Ask or request a workflow..."}
             quickPrompts={config.quickPrompts}
             scoutBaseUrl={config.scoutUrl}

@@ -19,6 +19,7 @@ import {
   Play,
   RefreshCcw,
   RotateCcw,
+  Zap,
   ThumbsDown,
   ThumbsUp,
   Trash2,
@@ -51,6 +52,7 @@ export type ScoutChatMessage = {
   noAnswerReason?: string;
   feedback?: "up" | "down";
   workflowSuggestion?: ScoutWorkflowSession;
+  workflowActionSuggestion?: ScoutWorkflowActionSuggestion;
 };
 
 export type ScoutChatCitation = {
@@ -76,6 +78,14 @@ export type ScoutWorkflowSession = {
   preWorkflowConfirmationHtml?: string;
   preWorkflowConfirmationEnabled?: boolean;
   topics?: ScoutWorkflowTopic[];
+};
+
+export type ScoutWorkflowActionSuggestion = {
+  workflow: ScoutWorkflowSession;
+  originalText: string;
+  confidence: number;
+  status?: "pending" | "running" | "resolved" | "error";
+  errorMessage?: string;
 };
 
 type ScoutOrchestrationNode = {
@@ -178,11 +188,17 @@ export type ScoutChatbotProps = {
   onRestoreLayout?: () => void;
   onSizeChange?: (size: { width: number; height: number }) => void;
   onSendMessage?: (message: string, history: ScoutChatMessage[]) => Promise<ScoutChatMessage | string | void>;
+  onRunWorkflow?: (
+    message: string,
+    workflow: ScoutWorkflowSession,
+    history: ScoutChatMessage[]
+  ) => Promise<ScoutChatMessage | string | void>;
   onStartWorkflow?: (workflow: ScoutWorkflowSession) => Promise<void> | void;
   placeholder?: string;
   position?: "bottom-right" | "bottom-left";
   quickPrompts?: string[];
   showHeaderActions?: boolean;
+  workflowRouterEndpoint?: string;
   scoutBaseUrl?: string;
   subtitle?: string;
   targetAppId?: string;
@@ -202,6 +218,7 @@ type RenderedMessage = Required<Pick<ScoutChatMessage, "id" | "role" | "text" | 
   noAnswerReason?: string;
   feedback?: "up" | "down";
   workflowSuggestion?: ScoutWorkflowSession;
+  workflowActionSuggestion?: ScoutWorkflowActionSuggestion;
 };
 
 type WidgetStyle = CSSProperties & {
@@ -289,6 +306,54 @@ const defaultResetEventNames = [
   "SCOUT_SESSION_EXPIRED"
 ];
 
+const workflowActionVerbs = [
+  "create",
+  "add",
+  "update",
+  "change",
+  "edit",
+  "submit",
+  "approve",
+  "reject",
+  "start",
+  "run",
+  "launch",
+  "open",
+  "assign",
+  "move",
+  "close",
+  "cancel",
+  "reset",
+  "invite",
+  "onboard",
+  "offboard",
+  "request",
+  "escalate",
+  "approve",
+  "deploy"
+];
+
+const workflowBusinessHints = [
+  "workflow",
+  "process",
+  "approval",
+  "request",
+  "ticket",
+  "case",
+  "task",
+  "onboarding",
+  "offboarding",
+  "reset password",
+  "change password",
+  "create rate",
+  "vendor",
+  "employee",
+  "invoice",
+  "contract",
+  "meeting",
+  "purchase order"
+];
+
 export function ScoutChatbot({
   assistantName = "Scout Assistant",
   chatEndpoint = "/chat/query",
@@ -306,10 +371,12 @@ export function ScoutChatbot({
   onRestoreLayout,
   onSizeChange,
   onSendMessage,
+  onRunWorkflow,
   onStartWorkflow,
   placeholder = "Ask anything...",
   position = "bottom-right",
   showHeaderActions = true,
+  workflowRouterEndpoint,
   scoutBaseUrl = "",
   targetAppId,
   targetAppName,
@@ -1211,16 +1278,41 @@ export function ScoutChatbot({
 
     const nextHistory = [...messages, userMessage];
     const contextWindow = trimMessagesForLifecycle(nextHistory, resolvedLifecycleSettings);
+    const workflowAction = classifyWorkflowAction(trimmed, workflowSessions);
 
     setMessages(nextHistory);
     setInput("");
-    setIsTyping(true);
     markActivity();
+
+    if (workflowAction) {
+      const actionMessage = createRenderedMessage({
+        id: generateMessageId(),
+        role: "assistant",
+        text: `I found a workflow that can perform this action: ${workflowAction.workflow.title}.`,
+        time: formatTime(),
+        workflowActionSuggestion: {
+          workflow: workflowAction.workflow,
+          originalText: trimmed,
+          confidence: workflowAction.confidence,
+          status: "pending"
+        }
+      });
+
+      setMessages((current) => [...current, actionMessage]);
+      inputRef.current?.focus();
+      return;
+    }
+
+    await completeChatResponse(trimmed, contextWindow);
+  }
+
+  async function completeChatResponse(question: string, contextWindow: ScoutChatMessage[]) {
+    setIsTyping(true);
 
     try {
       const customReply = onSendMessage
-        ? await onSendMessage(trimmed, contextWindow)
-        : await sendChatQuery(trimmed); // Always use real API, skip mock workflows
+        ? await onSendMessage(question, contextWindow)
+        : await sendChatQuery(question); // Always use real API, skip mock workflows
       const assistantReply = resolveReply(customReply);
 
       window.setTimeout(
@@ -1250,6 +1342,87 @@ export function ScoutChatbot({
           time: formatTime()
         })
       ]);
+      setIsTyping(false);
+      markActivity();
+    }
+  }
+
+  async function continueAsChat(messageId: string, suggestion: ScoutWorkflowActionSuggestion) {
+    const nextHistory = updateWorkflowActionSuggestion(messageId, {
+      ...suggestion,
+      status: "resolved",
+      errorMessage: undefined
+    });
+    await completeChatResponse(suggestion.originalText, trimMessagesForLifecycle(nextHistory, resolvedLifecycleSettings));
+  }
+
+  async function runWorkflowAction(messageId: string, suggestion: ScoutWorkflowActionSuggestion) {
+    if (suggestion.status === "running") {
+      return;
+    }
+
+    setMessages((current) => current.map((message) => (
+      message.id === messageId
+        ? {
+            ...message,
+            workflowActionSuggestion: {
+              ...suggestion,
+              status: "running",
+              errorMessage: undefined
+            }
+          }
+        : message
+    )));
+    setIsTyping(true);
+    markActivity();
+
+    const workflowHistory = trimMessagesForLifecycle([...messages], resolvedLifecycleSettings);
+
+    try {
+      const workflowReply = onRunWorkflow
+        ? await onRunWorkflow(suggestion.originalText, suggestion.workflow, workflowHistory)
+        : await runWorkflowRouter(suggestion.originalText, suggestion.workflow, workflowHistory);
+
+      const assistantReply = resolveReply(workflowReply);
+
+      setMessages((current) => [
+        ...current.map((message) => (
+          message.id === messageId
+            ? {
+                ...message,
+                workflowActionSuggestion: {
+                  ...suggestion,
+                  status: "resolved",
+                  errorMessage: undefined
+                }
+              }
+            : message
+        )),
+        createRenderedMessage({
+          ...assistantReply,
+          id: assistantReply.id ?? generateMessageId(),
+          role: "assistant",
+          time: assistantReply.time ?? formatTime()
+        })
+      ]);
+
+      setIsTyping(false);
+      markActivity();
+      inputRef.current?.focus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "I could not start the workflow right now.";
+      setMessages((current) => current.map((item) => (
+        item.id === messageId
+          ? {
+              ...item,
+              workflowActionSuggestion: {
+                ...suggestion,
+                status: "error",
+                errorMessage: message
+              }
+            }
+          : item
+      )));
       setIsTyping(false);
       markActivity();
     }
@@ -1403,6 +1576,52 @@ export function ScoutChatbot({
     };
   }
 
+  async function runWorkflowRouter(message: string, workflow: ScoutWorkflowSession, history: ScoutChatMessage[]) {
+    const endpoint = workflowRouterEndpoint || "/api/chatbot/workflow-router";
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        workflow,
+        history,
+        companyId,
+        userId,
+        targetAppId: targetAppId || undefined,
+        conversationId: activeConversationId.current || conversationSessionId || undefined
+      })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(typeof body?.message === "string" ? body.message : "Workflow router request failed.");
+    }
+
+    if (typeof body?.conversationId === "string") {
+      activeConversationId.current = body.conversationId;
+      setConversationSessionId(body.conversationId);
+      onConversationChange?.(body.conversationId);
+    }
+
+    if (typeof body?.answer === "string" || typeof body?.message === "string") {
+      return {
+        role: "assistant",
+        text: typeof body?.answer === "string" ? body.answer : String(body.message),
+        queryId: typeof body?.queryId === "string" ? body.queryId : undefined,
+        citations: Array.isArray(body?.citations) ? body.citations : [],
+        noAnswer: body?.noAnswer === true,
+        noAnswerReason: typeof body?.noAnswerReason === "string" ? body.noAnswerReason : undefined
+      } satisfies ScoutChatMessage;
+    }
+
+    return {
+      role: "assistant",
+      text: `I started the workflow router flow for ${workflow.title}.`,
+      time: formatTime()
+    } satisfies ScoutChatMessage;
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     sendMessage(input);
@@ -1413,6 +1632,43 @@ export function ScoutChatbot({
       event.preventDefault();
       sendMessage(input);
     }
+  }
+
+  function updateWorkflowActionSuggestion(messageId: string, suggestion: ScoutWorkflowActionSuggestion) {
+    setMessages((current) => current.map((message) => (
+      message.id === messageId
+        ? {
+            ...message,
+            workflowActionSuggestion: suggestion
+          }
+        : message
+    )));
+    return trimMessagesForLifecycle(messages.map((message) => (
+      message.id === messageId
+        ? {
+            ...message,
+            workflowActionSuggestion: suggestion
+          }
+        : message
+    )), resolvedLifecycleSettings);
+  }
+
+  function classifyWorkflowAction(message: string, workflows: ScoutWorkflowSession[]) {
+    const normalized = message.toLowerCase();
+    const matchedWorkflow = findWorkflowForMessage(normalized, workflows) ?? findWorkflowByActionKeywords(normalized, workflows);
+    const hasBusinessHint = workflowBusinessHints.some((hint) => normalized.includes(hint));
+    const hasActionVerb = workflowActionVerbs.some((verb) => new RegExp(`\\b${verb}\\b`, "i").test(normalized));
+    const asksForProcess = /\b(can you|please|help me|need to|i want to|let's|lets|show me|start|run|launch)\b/.test(normalized);
+    const confidence = Math.min(0.99, (matchedWorkflow ? 0.42 : 0) + (hasActionVerb ? 0.28 : 0) + (hasBusinessHint ? 0.18 : 0) + (asksForProcess ? 0.12 : 0));
+
+    if (!matchedWorkflow || confidence < 0.7) {
+      return null;
+    }
+
+    return {
+      workflow: matchedWorkflow,
+      confidence
+    };
   }
 
   const launcher = (
@@ -1741,6 +1997,8 @@ export function ScoutChatbot({
                   <MessageBubble
                     key={message.id}
                     message={message}
+                    onContinueAsChat={continueAsChat}
+                    onRunWorkflowAction={runWorkflowAction}
                     onStartWorkflow={startWorkflow}
                     userLabel={userLabel}
                     companyId={companyId}
@@ -2168,6 +2426,8 @@ function getCitationLink(citation: ScoutChatCitation, scoutBaseUrl?: string) {
 
 function MessageBubble({
   message,
+  onContinueAsChat,
+  onRunWorkflowAction,
   onStartWorkflow,
   userLabel,
   companyId,
@@ -2175,6 +2435,8 @@ function MessageBubble({
   scoutBaseUrl,
 }: {
   message: RenderedMessage;
+  onContinueAsChat: (messageId: string, suggestion: ScoutWorkflowActionSuggestion) => void;
+  onRunWorkflowAction: (messageId: string, suggestion: ScoutWorkflowActionSuggestion) => void;
   onStartWorkflow: (workflow: ScoutWorkflowSession) => void;
   userLabel: string;
   companyId?: string;
@@ -2327,6 +2589,55 @@ function MessageBubble({
             <WorkflowCard compact onStart={onStartWorkflow} workflow={message.workflowSuggestion} />
           </div>
         )}
+        {isAssistant && message.workflowActionSuggestion && message.workflowActionSuggestion.status !== "resolved" && (
+          <div className="mt-3 rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-3 text-slate-900 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm">
+                <Zap className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-slate-950">I found a workflow that can perform this action.</p>
+                  <span className="rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+                    {message.workflowActionSuggestion.workflow.title}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-600">
+                  Classifier confidence: {Math.round(message.workflowActionSuggestion.confidence * 100)}%.
+                </p>
+                {message.workflowActionSuggestion.status === "error" && message.workflowActionSuggestion.errorMessage ? (
+                  <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                    {message.workflowActionSuggestion.errorMessage}
+                  </p>
+                ) : null}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
+                      message.workflowActionSuggestion.status === "running"
+                        ? "cursor-wait border border-slate-200 bg-slate-100 text-slate-400"
+                        : "border border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
+                    )}
+                    disabled={message.workflowActionSuggestion.status === "running"}
+                    onClick={() => onRunWorkflowAction(message.id, message.workflowActionSuggestion!)}
+                    type="button"
+                  >
+                    <Zap className="h-4 w-4" />
+                    Run Workflow
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                    onClick={() => onContinueAsChat(message.id, message.workflowActionSuggestion!)}
+                    type="button"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Continue as Chat
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className={cn("mt-1 flex items-center gap-1.5 text-[11px] text-slate-400", isAssistant ? "justify-start" : "justify-end")}>
           {!isAssistant && <Check className="h-3 w-3" />}
           {message.time}
@@ -2429,7 +2740,8 @@ function createRenderedMessage(message: ScoutChatMessage & { id: string; time: s
     noAnswer: message.noAnswer,
     noAnswerReason: message.noAnswerReason,
     feedback: message.feedback,
-    workflowSuggestion: message.workflowSuggestion
+    workflowSuggestion: message.workflowSuggestion,
+    workflowActionSuggestion: message.workflowActionSuggestion
   };
 }
 
@@ -2536,7 +2848,8 @@ function trimMessagesForLifecycle(messages: RenderedMessage[], settings: Chatbot
     noAnswer: message.noAnswer,
     noAnswerReason: message.noAnswerReason,
     feedback: message.feedback,
-    workflowSuggestion: message.workflowSuggestion
+    workflowSuggestion: message.workflowSuggestion,
+    workflowActionSuggestion: message.workflowActionSuggestion
   }));
 }
 
@@ -2781,6 +3094,16 @@ function findWorkflowForMessage(normalizedMessage: string, workflows: ScoutWorkf
   return workflows.find((workflow) => {
     const words = workflow.title.toLowerCase().split(/\s+/).filter((word) => word.length > 2);
     return words.length > 0 && words.every((word) => normalizedMessage.includes(word));
+  });
+}
+
+function findWorkflowByActionKeywords(normalizedMessage: string, workflows: ScoutWorkflowSession[]) {
+  return workflows.find((workflow) => {
+    const title = workflow.title.toLowerCase();
+    const description = workflow.description.toLowerCase();
+    const combined = `${title} ${description}`;
+    return workflowBusinessHints.some((hint) => normalizedMessage.includes(hint) && combined.includes(hint))
+      || workflowActionVerbs.some((verb) => new RegExp(`\\b${verb}\\b`, "i").test(normalizedMessage) && combined.includes(verb));
   });
 }
 
