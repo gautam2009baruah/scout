@@ -97,6 +97,7 @@ type ConfirmDialog = {
 
 const COMPANY_SCOPE = "__company__";
 const MIN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
+const EMBED_PACKAGE_STORAGE_KEY = "chatbot-settings-package-v1";
 
 function toDraft(scope: ScopeValue, settings: ChatbotLifecycleSettings): Draft {
   return {
@@ -216,6 +217,56 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     accentColor: "#0ea5e9"
   });
   const [embedResult, setEmbedResult] = useState<EmbedPackageResponse | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const raw = window.localStorage.getItem(EMBED_PACKAGE_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as {
+        embedForm?: Partial<typeof embedForm>;
+        embedResult?: EmbedPackageResponse;
+      };
+
+      if (parsed.embedForm && typeof parsed.embedForm === "object") {
+        setEmbedForm((current) => ({
+          ...current,
+          ...parsed.embedForm
+        }));
+      }
+
+      if (parsed.embedResult && typeof parsed.embedResult === "object") {
+        setEmbedResult(parsed.embedResult);
+        setEmbedStatus({ type: "success", message: "Previously generated package loaded." });
+      }
+    } catch {
+      window.localStorage.removeItem(EMBED_PACKAGE_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!embedResult) {
+      return;
+    }
+
+    window.localStorage.setItem(
+      EMBED_PACKAGE_STORAGE_KEY,
+      JSON.stringify({
+        embedForm,
+        embedResult
+      })
+    );
+  }, [embedForm, embedResult]);
 
   const byScope = useMemo(() => {
     const map = new Map<ScopeValue, ChatbotLifecycleSettingsRecord>();
@@ -785,9 +836,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, targetAppId: event.target.value }))}
                       disabled={editingKeyId !== null}
                     >
-                      {canUseCompanyLevelApiKeys || (editingKeyId !== null && apiKeyForm.targetAppId === COMPANY_SCOPE)
-                        ? <option value={COMPANY_SCOPE}>Company level</option>
-                        : null}
+                      {canUseCompanyLevelApiKeys ? <option value={COMPANY_SCOPE}>Company level</option> : null}
                       {targetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
                       ))}
@@ -1016,8 +1065,14 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                 <div className="mt-5 flex flex-wrap items-center gap-3">
                   <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-semibold text-white" onClick={generateEmbedPackage} type="button">
                     <Download className="h-4 w-4" />
-                    Generate snippets
+                    {embedResult ? "Regenerate snippets" : "Generate snippets"}
                   </button>
+                  {embedResult ? (
+                    <button className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-300 px-5 text-sm font-semibold text-slate-700" onClick={generateEmbedPackage} type="button">
+                      <RefreshCw className="h-4 w-4" />
+                      Refresh
+                    </button>
+                  ) : null}
                   {embedStatus.message ? <span className={`text-sm ${embedStatus.type === "error" ? "text-red-600" : "text-slate-600"}`}>{embedStatus.message}</span> : null}
                 </div>
 
