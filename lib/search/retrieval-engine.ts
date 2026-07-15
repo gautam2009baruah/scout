@@ -140,18 +140,18 @@ async function getAllowedFolderIds(companyId: string, targetAppId?: string) {
 
   const allowed = await getPool().query<{ id: string }>(
     `
-      SELECT topics.id
-      FROM topics
-      WHERE topics.company_id = $1
-        AND topics.deleted_at IS NULL
+      SELECT folders.id
+      FROM folders
+      WHERE folders.company_id = $1
+        AND folders.deleted_at IS NULL
         AND (
           NOT EXISTS (
             SELECT 1 FROM folder_target_apps any_scope
-            WHERE any_scope.folder_id = topics.id AND any_scope.deleted_at IS NULL
+            WHERE any_scope.folder_id = folders.id AND any_scope.deleted_at IS NULL
           )
           OR EXISTS (
             SELECT 1 FROM folder_target_apps app_scope
-            WHERE app_scope.folder_id = topics.id
+            WHERE app_scope.folder_id = folders.id
               AND app_scope.target_app_id = $2
               AND app_scope.deleted_at IS NULL
           )

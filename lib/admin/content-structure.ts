@@ -232,23 +232,23 @@ export async function getAccessibleTopicIds(session: AdminSession) {
         FROM user_topic_permissions
         WHERE user_id = $1 AND deleted_at IS NULL
         UNION
-        SELECT topics.id AS topic_id
-        FROM topics
-        LEFT JOIN user_company_roles ON user_company_roles.company_id = topics.company_id
+        SELECT folders.id AS topic_id
+        FROM folders
+        LEFT JOIN user_company_roles ON user_company_roles.company_id = folders.company_id
           AND user_company_roles.user_id = $1
           AND user_company_roles.deleted_at IS NULL
-        WHERE topics.deleted_at IS NULL
-          AND (topics.role_access_all = true OR topics.user_access_all = true)
-          AND (topics.company_id = $3 OR user_company_roles.user_id IS NOT NULL)
+        WHERE folders.deleted_at IS NULL
+          AND (folders.role_access_all = true OR folders.user_access_all = true)
+          AND (folders.company_id = $3 OR user_company_roles.user_id IS NOT NULL)
       ),
       visible_topics AS (
-        SELECT topics.id
-        FROM topics
-        INNER JOIN seed_topics ON seed_topics.topic_id = topics.id
-        WHERE topics.deleted_at IS NULL
+        SELECT folders.id
+        FROM folders
+        INNER JOIN seed_topics ON seed_topics.topic_id = folders.id
+        WHERE folders.deleted_at IS NULL
         UNION
         SELECT child.id
-        FROM topics child
+        FROM folders child
         INNER JOIN visible_topics parent ON parent.id = child.parent_id
         WHERE child.deleted_at IS NULL
       )
@@ -312,7 +312,7 @@ async function getUserIdsForCompany(companyId: string) {
 export async function getTopicWorkspace(session: AdminSession) {
   const accessibleTopicIds = await getAccessibleTopicIds(session);
   const params: unknown[] = [];
-  const visibleFilter = accessibleTopicIds ? "AND topics.id = ANY($1::uuid[])" : "";
+  const visibleFilter = accessibleTopicIds ? "AND folders.id = ANY($1::uuid[])" : "";
 
   if (accessibleTopicIds) {
     params.push(Array.from(accessibleTopicIds));
@@ -335,41 +335,41 @@ export async function getTopicWorkspace(session: AdminSession) {
   }>(
     `
       SELECT
-        topics.id,
-        topics.company_id,
+        folders.id,
+        folders.company_id,
         companies.name AS company_name,
-        topics.parent_id,
-        topics.name,
-        topics.slug,
-        topics.description,
-        topics.role_access_all,
-        topics.user_access_all,
+        folders.parent_id,
+        folders.name,
+        folders.slug,
+        folders.description,
+        folders.role_access_all,
+        folders.user_access_all,
         (
           SELECT COUNT(*)
           FROM documents
-          WHERE documents.folder_id = topics.id
+          WHERE documents.folder_id = folders.id
             AND documents.status <> 'deleted'
         ) AS document_count,
         COALESCE((
           SELECT array_agg(folder_target_apps.target_app_id ORDER BY folder_target_apps.target_app_id)
           FROM folder_target_apps
-          WHERE folder_target_apps.folder_id = topics.id
+          WHERE folder_target_apps.folder_id = folders.id
             AND folder_target_apps.deleted_at IS NULL
         ), ARRAY[]::uuid[]) AS target_app_ids,
         COALESCE((
           SELECT array_agg(guided_workflow_target_apps.name ORDER BY guided_workflow_target_apps.name)
           FROM folder_target_apps
           INNER JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = folder_target_apps.target_app_id
-          WHERE folder_target_apps.folder_id = topics.id
+          WHERE folder_target_apps.folder_id = folders.id
             AND folder_target_apps.deleted_at IS NULL
         ), ARRAY[]::text[]) AS target_app_names,
-        topics.created_at
-      FROM topics
-      INNER JOIN companies ON companies.id = topics.company_id
-      WHERE topics.deleted_at IS NULL
+        folders.created_at
+      FROM folders
+      INNER JOIN companies ON companies.id = folders.company_id
+      WHERE folders.deleted_at IS NULL
         AND companies.deleted_at IS NULL
         ${visibleFilter}
-      ORDER BY companies.name ASC, topics.name ASC
+      ORDER BY companies.name ASC, folders.name ASC
     `,
     params
   );
@@ -416,7 +416,7 @@ export async function getTopicCompanyOptions(session: AdminSession): Promise<Top
 export async function getTopicAccessAdminData(session: AdminSession) {
   const accessibleTopicIds = await getAccessibleTopicIds(session);
   const grantParams: unknown[] = [];
-  const grantFilter = accessibleTopicIds ? "AND topics.id = ANY($1::uuid[])" : "";
+  const grantFilter = accessibleTopicIds ? "AND folders.id = ANY($1::uuid[])" : "";
 
   if (accessibleTopicIds) {
     grantParams.push(Array.from(accessibleTopicIds));
@@ -433,31 +433,31 @@ export async function getTopicAccessAdminData(session: AdminSession) {
       `
         SELECT
           role_topic_permissions.id,
-          topics.id AS topic_id,
-          topics.name AS topic_name,
+          folders.id AS topic_id,
+          folders.name AS topic_name,
           roles.id AS assignee_id,
           roles.name AS assignee_name,
           'role'::text AS type
         FROM role_topic_permissions
-        INNER JOIN topics ON topics.id = role_topic_permissions.topic_id
+        INNER JOIN folders ON folders.id = role_topic_permissions.topic_id
         INNER JOIN roles ON roles.id = role_topic_permissions.role_id
         WHERE role_topic_permissions.deleted_at IS NULL
-          AND topics.deleted_at IS NULL
+          AND folders.deleted_at IS NULL
           AND roles.deleted_at IS NULL
           ${grantFilter}
         UNION ALL
         SELECT
           user_topic_permissions.id,
-          topics.id AS topic_id,
-          topics.name AS topic_name,
+          folders.id AS topic_id,
+          folders.name AS topic_name,
           users.id AS assignee_id,
           users.name AS assignee_name,
           'user'::text AS type
         FROM user_topic_permissions
-        INNER JOIN topics ON topics.id = user_topic_permissions.topic_id
+        INNER JOIN folders ON folders.id = user_topic_permissions.topic_id
         INNER JOIN users ON users.id = user_topic_permissions.user_id
         WHERE user_topic_permissions.deleted_at IS NULL
-          AND topics.deleted_at IS NULL
+          AND folders.deleted_at IS NULL
           AND users.deleted_at IS NULL
           ${grantFilter}
         ORDER BY topic_name ASC, type ASC, assignee_name ASC
@@ -526,7 +526,7 @@ export async function createTopic(input: CreateTopicInput, session: AdminSession
 
   if (parentId) {
     const parentResult = await getPool().query<{ company_id: string }>(
-      "SELECT company_id FROM topics WHERE id = $1 AND deleted_at IS NULL",
+      "SELECT company_id FROM folders WHERE id = $1 AND deleted_at IS NULL",
       [parentId]
     );
 
@@ -545,7 +545,7 @@ export async function createTopic(input: CreateTopicInput, session: AdminSession
     const allUsers = input.allUsers !== false;
     const result = await getPool().query<{ id: string }>(
       `
-        INSERT INTO topics (
+        INSERT INTO folders (
           company_id,
           parent_id,
           name,
@@ -612,7 +612,7 @@ export async function updateTopic(topicId: string, input: UpdateTopicInput, sess
     const result = isAdmin(session)
       ? await getPool().query(
         `
-          UPDATE topics
+          UPDATE folders
           SET
             name = $2,
             slug = $3,
@@ -626,7 +626,7 @@ export async function updateTopic(topicId: string, input: UpdateTopicInput, sess
       )
       : await getPool().query(
         `
-          UPDATE topics
+          UPDATE folders
           SET name = $2, slug = $3, updated_by = $4, updated_at = now()
           WHERE id = $1 AND deleted_at IS NULL
         `,
@@ -660,7 +660,7 @@ export async function updateTopic(topicId: string, input: UpdateTopicInput, sess
 
 async function getTopicCompanyId(topicId: string) {
   const result = await getPool().query<{ company_id: string }>(
-    "SELECT company_id FROM topics WHERE id = $1 AND deleted_at IS NULL",
+    "SELECT company_id FROM folders WHERE id = $1 AND deleted_at IS NULL",
     [topicId]
   );
 
@@ -822,9 +822,9 @@ export async function deleteTopic(topicId: string, session: AdminSession) {
     await client.query("BEGIN");
     const branchResult = await client.query<{ id: string }>(`
       WITH RECURSIVE topic_branch AS (
-        SELECT id FROM topics WHERE id = $1 AND deleted_at IS NULL
+        SELECT id FROM folders WHERE id = $1 AND deleted_at IS NULL
         UNION ALL
-        SELECT child.id FROM topics child
+        SELECT child.id FROM folders child
         INNER JOIN topic_branch parent ON parent.id = child.parent_id
         WHERE child.deleted_at IS NULL
       )
@@ -868,7 +868,7 @@ export async function deleteTopic(topicId: string, session: AdminSession) {
     await client.query("DELETE FROM role_topic_permissions WHERE topic_id = ANY($1::uuid[])", [topicIds]);
     await client.query("DELETE FROM user_topic_permissions WHERE topic_id = ANY($1::uuid[])", [topicIds]);
     await client.query(`
-      UPDATE topics
+      UPDATE folders
       SET deleted_at = now(), updated_by = $2, updated_at = now()
       WHERE id = ANY($1::uuid[])
     `, [topicIds, session.user.id]);

@@ -297,6 +297,9 @@ export function SearchAnalyticsDashboard({
   const [selectedQuery, setSelectedQuery] = useState<RawRow | null>(null);
   const [queryDetail, setQueryDetail] = useState<QueryExplainabilityDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expandedDateKeys, setExpandedDateKeys] = useState<Set<string>>(new Set());
+  const [expandedAppKeys, setExpandedAppKeys] = useState<Set<string>>(new Set());
+  const [expandedUserKeys, setExpandedUserKeys] = useState<Set<string>>(new Set());
 
   const availableTargetApps = useMemo(
     () => (!selectedCompanyId ? targetApps : targetApps.filter((app) => app.companyId === selectedCompanyId)),
@@ -315,6 +318,12 @@ export function SearchAnalyticsDashboard({
   useEffect(() => {
     setRawPage(1);
   }, [rawPageSize]);
+
+  useEffect(() => {
+    setExpandedDateKeys(new Set());
+    setExpandedAppKeys(new Set());
+    setExpandedUserKeys(new Set());
+  }, [rawData.rows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -486,6 +495,18 @@ export function SearchAnalyticsDashboard({
     setQueryDetailLoading(false);
   }
 
+  function toggleExpanded(setter: React.Dispatch<React.SetStateAction<Set<string>>>, key: string) {
+    setter((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
   const summary = summaryData.summary;
 
   return (
@@ -494,8 +515,7 @@ export function SearchAnalyticsDashboard({
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-slate-950">Chatbot Analytics</h2>
-              <p className="mt-1 text-sm text-slate-500">Track retrieval quality, answer performance, and chatbot usage with precise local datetime filtering.</p>
+              <p className="text-sm text-slate-500">Track retrieval quality, answer performance, and chatbot usage with precise local datetime filtering.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               {[2, 5, 7, 15, 30].map((days) => (
@@ -713,73 +733,98 @@ export function SearchAnalyticsDashboard({
           ) : (
             <div className="space-y-3">
               {rawTree.map((dateGroup) => (
-                <details key={dateGroup.id} className="rounded-lg border border-slate-200 bg-white" open>
-                  <summary className="cursor-pointer list-none px-3 py-2 text-sm font-semibold text-slate-900">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="inline-flex items-center gap-2"><CalendarRange className="h-4 w-4 text-slate-500" />{dateGroup.label}</span>
-                      <span className="text-xs font-medium text-slate-500">{dateGroup.count} queries</span>
-                    </div>
-                  </summary>
-                  <div className="border-t border-slate-200 px-3 py-3">
-                    <div className="space-y-3">
-                      {dateGroup.apps.map((appGroup) => (
-                        <details key={appGroup.id} className="rounded-lg border border-slate-200 bg-slate-50" open>
-                          <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-800">
-                            <div className="flex items-center justify-between gap-3">
-                              <span>{appGroup.label}</span>
+                <div key={dateGroup.id} className="rounded-lg border border-slate-200 bg-white">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+                    onClick={() => toggleExpanded(setExpandedDateKeys, dateGroup.id)}
+                  >
+                    <span className="inline-flex items-center gap-2"><span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-xs font-bold text-slate-700">{expandedDateKeys.has(dateGroup.id) ? "-" : "+"}</span><CalendarRange className="h-4 w-4 text-slate-500" />{dateGroup.label}</span>
+                    <span className="text-xs font-medium text-slate-500">{dateGroup.count} queries</span>
+                  </button>
+                  {expandedDateKeys.has(dateGroup.id) ? (
+                    <div className="border-t border-slate-200 px-3 py-3">
+                      <div className="space-y-3">
+                        {dateGroup.apps.map((appGroup) => (
+                          <div key={appGroup.id} className="rounded-lg border border-slate-200 bg-slate-50">
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-medium text-slate-800 hover:bg-slate-100"
+                              onClick={() => toggleExpanded(setExpandedAppKeys, appGroup.id)}
+                            >
+                              <span className="inline-flex items-center gap-2"><span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-xs font-bold text-slate-700">{expandedAppKeys.has(appGroup.id) ? "-" : "+"}</span>{appGroup.label}</span>
                               <span className="text-xs text-slate-500">{appGroup.count} queries</span>
-                            </div>
-                          </summary>
-                          <div className="border-t border-slate-200 px-3 py-3">
-                            <div className="space-y-3">
-                              {appGroup.users.map((userGroup) => (
-                                <details key={userGroup.id} className="rounded-lg border border-slate-200 bg-white" open>
-                                  <summary className="cursor-pointer list-none px-3 py-2 text-sm font-medium text-slate-700">
-                                    <div className="flex items-center justify-between gap-3">
-                                      <span>{userGroup.label}</span>
-                                      <span className="text-xs text-slate-500">{userGroup.count} queries</span>
-                                    </div>
-                                  </summary>
-                                  <div className="border-t border-slate-200 px-3 py-3">
-                                    <div className="space-y-2">
-                                      {userGroup.rows.map((row) => (
-                                        <div key={row.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                                          <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <div className="min-w-0 flex-1">
-                                              <p className="text-xs text-slate-500">{formatDateTimeForDisplay(row.created_at, { fallback: "-" })}</p>
-                                              <p className="mt-1 text-sm font-medium text-slate-900">{row.question}</p>
-                                              {row.no_answer_reason ? <p className="mt-1 text-xs text-amber-700">Reason: {row.no_answer_reason}</p> : null}
-                                            </div>
-                                            <div className="flex shrink-0 items-center gap-2">{statusBadge(row.answer_status)}</div>
-                                          </div>
-                                          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                                            <span>Latency: {formatDuration(row.latency_ms)}</span>
-                                            <span>Chunks/Citations: {row.retrieved_chunk_count} / {row.citation_count}</span>
-                                            <span>Feedback: 👍 {row.feedback_up} / 👎 {row.feedback_down}</span>
-                                            <span>Model: {row.llm_provider && row.llm_model ? `${row.llm_provider}:${row.llm_model}` : "-"}</span>
-                                          </div>
-                                          <div className="mt-3 flex justify-end">
-                                            <button
-                                              type="button"
-                                              className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                                              onClick={() => { void openExplainabilityDrillDown(row); }}
-                                            >
-                                              Why this answer
-                                            </button>
+                            </button>
+                            {expandedAppKeys.has(appGroup.id) ? (
+                              <div className="border-t border-slate-200 px-3 py-3">
+                                <div className="space-y-3">
+                                  {appGroup.users.map((userGroup) => (
+                                    <div key={userGroup.id} className="rounded-lg border border-slate-200 bg-white">
+                                      <button
+                                        type="button"
+                                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50"
+                                        onClick={() => toggleExpanded(setExpandedUserKeys, userGroup.id)}
+                                      >
+                                        <span className="inline-flex items-center gap-2"><span className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 bg-white text-xs font-bold text-slate-700">{expandedUserKeys.has(userGroup.id) ? "-" : "+"}</span>{userGroup.label}</span>
+                                        <span className="text-xs text-slate-500">{userGroup.count} queries</span>
+                                      </button>
+                                      {expandedUserKeys.has(userGroup.id) ? (
+                                        <div className="border-t border-slate-200 px-3 py-3">
+                                          <div className="overflow-x-auto">
+                                            <table className="min-w-[1000px] table-auto border-collapse text-left text-xs text-slate-700">
+                                              <thead>
+                                                <tr className="border-b border-slate-200 bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
+                                                  <th className="px-2 py-2 font-semibold">Time</th>
+                                                  <th className="px-2 py-2 font-semibold">Question</th>
+                                                  <th className="px-2 py-2 font-semibold">Status</th>
+                                                  <th className="px-2 py-2 font-semibold">Reason</th>
+                                                  <th className="px-2 py-2 font-semibold">Latency</th>
+                                                  <th className="px-2 py-2 font-semibold">Chunks/Citations</th>
+                                                  <th className="px-2 py-2 font-semibold">Feedback</th>
+                                                  <th className="px-2 py-2 font-semibold">Model</th>
+                                                  <th className="px-2 py-2 font-semibold text-right">Action</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {userGroup.rows.map((row) => (
+                                                  <tr key={row.id} className="border-b border-slate-100 align-top">
+                                                    <td className="px-2 py-2 whitespace-nowrap">{formatDateTimeForDisplay(row.created_at, { fallback: "-" })}</td>
+                                                    <td className="px-2 py-2">
+                                                      <p className="max-w-[360px] whitespace-pre-wrap break-words text-sm text-slate-900">{row.question}</p>
+                                                    </td>
+                                                    <td className="px-2 py-2 whitespace-nowrap">{statusBadge(row.answer_status)}</td>
+                                                    <td className="px-2 py-2">{row.no_answer_reason || "-"}</td>
+                                                    <td className="px-2 py-2 whitespace-nowrap">{formatDuration(row.latency_ms)}</td>
+                                                    <td className="px-2 py-2 whitespace-nowrap">{row.retrieved_chunk_count} / {row.citation_count}</td>
+                                                    <td className="px-2 py-2 whitespace-nowrap">👍 {row.feedback_up} / 👎 {row.feedback_down}</td>
+                                                    <td className="px-2 py-2 whitespace-nowrap">{row.llm_provider && row.llm_model ? `${row.llm_provider}:${row.llm_model}` : "-"}</td>
+                                                    <td className="px-2 py-2 text-right">
+                                                      <button
+                                                        type="button"
+                                                        className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                                                        onClick={() => { void openExplainabilityDrillDown(row); }}
+                                                      >
+                                                        Why this answer
+                                                      </button>
+                                                    </td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
                                           </div>
                                         </div>
-                                      ))}
+                                      ) : null}
                                     </div>
-                                  </div>
-                                </details>
-                              ))}
-                            </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
-                        </details>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </details>
+                  ) : null}
+                </div>
               ))}
             </div>
           )}
@@ -829,7 +874,6 @@ export function SearchAnalyticsDashboard({
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">Answer explainability drill-down</h2>
-                <p className="text-xs text-slate-500">Query ID: {selectedQuery.id}</p>
               </div>
               <button type="button" onClick={closeExplainabilityDrillDown} className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Close</button>
             </div>

@@ -146,7 +146,7 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
   if (hasModuleAccess(session, MODULE_KEYS.contentStructure)) {
     const accessibleTopicIds = await getAccessibleTopicIds(session);
     const params: unknown[] = [];
-    const topicFilter = accessibleTopicIds ? "AND topics.id = ANY($1::uuid[])" : "";
+    const topicFilter = accessibleTopicIds ? "AND folders.id = ANY($1::uuid[])" : "";
     const documentFilter = accessibleTopicIds ? "AND documents.folder_id = ANY($1::uuid[])" : "";
 
     if (accessibleTopicIds) {
@@ -157,7 +157,7 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
       getPool().query<{ folders: string }>(
         `
           SELECT COUNT(*) AS folders
-          FROM topics
+          FROM folders
           WHERE deleted_at IS NULL
             ${topicFilter}
         `,

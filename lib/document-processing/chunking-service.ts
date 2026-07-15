@@ -139,11 +139,11 @@ function folderPathExpression() {
   return `
     WITH RECURSIVE folder_tree AS (
       SELECT id, parent_id, name, 0 AS depth
-      FROM topics
+      FROM folders
       WHERE id = $1 AND deleted_at IS NULL
       UNION ALL
       SELECT parent.id, parent.parent_id, parent.name, folder_tree.depth + 1
-      FROM topics parent
+      FROM folders parent
       INNER JOIN folder_tree ON folder_tree.parent_id = parent.id
       WHERE parent.deleted_at IS NULL
     )

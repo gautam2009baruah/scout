@@ -392,7 +392,7 @@ export async function discoverExternalFolder(folderReference: string): Promise<E
 
 async function assertFolderAccess(companyId: string, folderId: string, session: AdminSession) {
   const result = await getPool().query<{ company_id: string }>(
-    "SELECT company_id FROM topics WHERE id = $1 AND deleted_at IS NULL",
+    "SELECT company_id FROM folders WHERE id = $1 AND deleted_at IS NULL",
     [folderId]
   );
   const folderCompanyId = result.rows[0]?.company_id;
@@ -660,7 +660,7 @@ const documentSelect = `
     documents.id,
     documents.company_id,
     documents.folder_id,
-    topics.name AS folder_name,
+    folders.name AS folder_name,
     documents.name,
     documents.original_filename,
     documents.file_type,
@@ -692,7 +692,7 @@ const documentSelect = `
     documents.created_at,
     documents.updated_at
   FROM documents
-  INNER JOIN topics ON topics.id = documents.folder_id
+  INNER JOIN folders ON folders.id = documents.folder_id
   INNER JOIN users ON users.id = documents.uploaded_by
 `;
 
