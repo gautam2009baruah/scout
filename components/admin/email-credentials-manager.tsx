@@ -482,35 +482,58 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm text-slate-600">Company scope: <span className="font-semibold text-slate-800">{selectedCompanyName || "Selected company"}</span></p>
-            <p className="mt-1 text-xs text-slate-500">Use separate tabs for inbound mailbox monitoring and outbound email delivery identities.</p>
-          </div>
-          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab("inbox")}
-              className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold ${activeTab === "inbox" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
-            >
-              <Inbox className="h-4 w-4" />
-              Email Trigger Inbox Credentials
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("sender")}
-              className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold ${activeTab === "sender" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"}`}
-            >
-              <Send className="h-4 w-4" />
-              Outbound Sender Credentials
-            </button>
+      <section className="grid gap-0">
+        <div className="rounded-t-lg border border-slate-200 border-b-0 bg-white px-4 pt-3">
+          <p className="text-xs font-medium text-slate-500">Company scope: {selectedCompanyName || "Selected company"}</p>
+          <p className="mt-1 text-xs text-slate-500">Use separate tabs for inbound mailbox monitoring and outbound email delivery identities.</p>
+
+          <div className="mt-2 border-b border-slate-200">
+            <div aria-label="Email credential sections" className="flex items-end gap-2" role="tablist">
+              <button
+                aria-controls="email-inbox-panel"
+                aria-selected={activeTab === "inbox"}
+                className={`inline-flex items-center gap-2 rounded-t-lg border border-b-0 px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === "inbox"
+                    ? "border-slate-300 bg-white text-slate-900"
+                    : "border-transparent bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+                id="email-inbox-tab"
+                onClick={() => setActiveTab("inbox")}
+                role="tab"
+                type="button"
+              >
+                <Inbox className="h-4 w-4" />
+                Email Trigger Inbox Credentials
+              </button>
+              <button
+                aria-controls="email-sender-panel"
+                aria-selected={activeTab === "sender"}
+                className={`inline-flex items-center gap-2 rounded-t-lg border border-b-0 px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === "sender"
+                    ? "border-slate-300 bg-white text-slate-900"
+                    : "border-transparent bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+                id="email-sender-tab"
+                onClick={() => setActiveTab("sender")}
+                role="tab"
+                type="button"
+              >
+                <Send className="h-4 w-4" />
+                Outbound Sender Credentials
+              </button>
+            </div>
           </div>
         </div>
-      </div>
 
-      {activeTab === "inbox" ? (
-        <>
+        <div
+          aria-labelledby={activeTab === "inbox" ? "email-inbox-tab" : "email-sender-tab"}
+          className="rounded-b-lg border border-slate-200 border-t-0 bg-white shadow-sm"
+          id={activeTab === "inbox" ? "email-inbox-panel" : "email-sender-panel"}
+          role="tabpanel"
+        >
+          <div className="space-y-6 p-4 md:p-5">
+            {activeTab === "inbox" ? (
+              <>
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Inbox credentials for Email Triggers</h3>
@@ -655,9 +678,9 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               <li>After setup, always run Test to verify mailbox connectivity.</li>
             </ul>
           </div>
-        </>
-      ) : (
-        <>
+              </>
+            ) : (
+              <>
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Outbound sender credentials</h3>
@@ -837,8 +860,11 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
             </ul>
             <p className="mt-2 text-xs text-indigo-700 inline-flex items-center gap-1"><Mail className="h-3.5 w-3.5" />Scope precedence: Target app primary &gt; Company primary.</p>
           </div>
-        </>
-      )}
+              </>
+            )}
+          </div>
+        </div>
+      </section>
 
       {toast ? (
         <div className="fixed top-4 left-1/2 z-[9999] -translate-x-1/2">
