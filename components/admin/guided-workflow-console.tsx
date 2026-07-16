@@ -208,7 +208,7 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
       targetAppId,
       appName: app?.name ?? "",
       baseUrl: app?.baseUrl ?? "",
-      allowedOrigins: app?.allowedOrigins.join("\n") ?? ""
+      allowedOrigins: app?.allowedOrigins.join("\n") ?? "",
     }));
   }
 
@@ -221,7 +221,7 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
         companyId: selectedCompanyId,
         name: setupForm.appName,
         baseUrl: setupForm.baseUrl,
-        allowedOrigins: splitLines(setupForm.allowedOrigins)
+        allowedOrigins: splitLines(setupForm.allowedOrigins),
       })
     });
     const body = await response.json().catch(() => null);
@@ -239,7 +239,7 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
       targetAppId: body.targetApp.id,
       appName: body.targetApp.name,
       baseUrl: body.targetApp.baseUrl,
-      allowedOrigins: body.targetApp.allowedOrigins.join("\n")
+      allowedOrigins: body.targetApp.allowedOrigins.join("\n"),
     }));
     return body.targetApp.id as string;
   }

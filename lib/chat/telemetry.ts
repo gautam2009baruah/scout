@@ -1,5 +1,6 @@
 import { getPool } from "@/lib/db/pool";
 import type { Citation } from "@/lib/search/citation-engine";
+import { randomUUID } from "node:crypto";
 
 export type ChatTokenUsage = {
   prompt_tokens: number | null;
@@ -27,63 +28,97 @@ export type RecordChatQueryTelemetryInput = {
   error_message?: string;
 };
 
-export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryInput): Promise<string> {
-  const result = await getPool().query<{ id: string }>(
-    `
-      INSERT INTO chat_query_telemetry (
-        company_id,
-        target_app_id,
-        user_id,
-        conversation_id,
-        question,
-        answer,
-        answer_status,
-        no_answer_reason,
-        retrieved_chunk_count,
-        citation_count,
-        citations_json,
-        llm_provider,
-        llm_model,
-        latency_ms,
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-        estimated_cost_usd,
-        metadata_json,
-        error_message
-      )
-      VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8,
-        $9, $10, $11::jsonb, $12, $13, $14,
-        $15, $16, $17, $18, $19::jsonb, $20
-      )
-      RETURNING id
-    `,
-    [
-      input.company_id,
-      input.target_app_id || null,
-      input.user_id,
-      input.conversation_id || null,
-      input.question,
-      input.answer,
-      input.answer_status,
-      input.no_answer_reason || null,
-      Math.max(0, Number(input.retrieved_chunk_count || 0)),
-      Array.isArray(input.citations) ? input.citations.length : 0,
-      JSON.stringify(input.citations || []),
-      input.llm_provider || null,
-      input.llm_model || null,
-      Math.max(0, Number(input.latency_ms || 0)),
-      input.token_usage?.prompt_tokens ?? null,
-      input.token_usage?.completion_tokens ?? null,
-      input.token_usage?.total_tokens ?? null,
-      input.token_usage?.estimated_cost_usd ?? null,
-      JSON.stringify(input.metadata || {}),
-      input.error_message || null,
-    ]
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+async function canPersistTelemetryUser(userId: string) {
+  if (!isUuid(userId)) {
+    return false;
+  }
+
+  const result = await getPool().query<{ allowed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM users
+       WHERE id = $1
+         AND deleted_at IS NULL
+     ) AS allowed`,
+    [userId]
   );
 
-  return result.rows[0].id;
+  return result.rows[0]?.allowed === true;
+}
+
+export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryInput): Promise<string> {
+  const userCanPersist = await canPersistTelemetryUser(input.user_id);
+
+  if (!userCanPersist) {
+    return randomUUID();
+  }
+
+  try {
+    const result = await getPool().query<{ id: string }>(
+      `
+        INSERT INTO chat_query_telemetry (
+          company_id,
+          target_app_id,
+          user_id,
+          conversation_id,
+          question,
+          answer,
+          answer_status,
+          no_answer_reason,
+          retrieved_chunk_count,
+          citation_count,
+          citations_json,
+          llm_provider,
+          llm_model,
+          latency_ms,
+          prompt_tokens,
+          completion_tokens,
+          total_tokens,
+          estimated_cost_usd,
+          metadata_json,
+          error_message
+        )
+        VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11::jsonb, $12, $13, $14,
+          $15, $16, $17, $18, $19::jsonb, $20
+        )
+        RETURNING id
+      `,
+      [
+        input.company_id,
+        input.target_app_id || null,
+        input.user_id,
+        input.conversation_id || null,
+        input.question,
+        input.answer,
+        input.answer_status,
+        input.no_answer_reason || null,
+        Math.max(0, Number(input.retrieved_chunk_count || 0)),
+        Array.isArray(input.citations) ? input.citations.length : 0,
+        JSON.stringify(input.citations || []),
+        input.llm_provider || null,
+        input.llm_model || null,
+        Math.max(0, Number(input.latency_ms || 0)),
+        input.token_usage?.prompt_tokens ?? null,
+        input.token_usage?.completion_tokens ?? null,
+        input.token_usage?.total_tokens ?? null,
+        input.token_usage?.estimated_cost_usd ?? null,
+        JSON.stringify(input.metadata || {}),
+        input.error_message || null,
+      ]
+    );
+
+    return result.rows[0].id;
+  } catch (error) {
+    // Telemetry must not break chat responses.
+    console.warn("Skipping chat_query_telemetry insert:", error);
+    return randomUUID();
+  }
 }
 
 export async function upsertChatQueryFeedback(input: {

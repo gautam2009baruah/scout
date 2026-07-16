@@ -14,6 +14,7 @@ type ChatQueryBody = {
   targetAppName?: string;
   environment?: string;
   userId?: string;
+  clientTraceId?: string;
   question?: string;
   conversationId?: string;
   topK?: number;
@@ -118,6 +119,7 @@ async function handleChatQuery(
   extraHeaders: Record<string, string>
 ) {
   const userId = String(body.userId || "").trim();
+  const clientTraceId = String(body.clientTraceId || "").trim();
   const question = String(body.question || "").trim();
   const conversationId = String(body.conversationId || "").trim();
 
@@ -137,6 +139,7 @@ async function handleChatQuery(
   const result = await answerChatQuery({
     company_id: context.company.id,
     user_id: userId,
+    external_user_trace_id: clientTraceId || undefined,
     target_app_id: context.targetApp?.id,
     question,
     conversation_id: conversationId || undefined,

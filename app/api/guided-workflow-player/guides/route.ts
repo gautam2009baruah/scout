@@ -20,7 +20,12 @@ export async function GET(request: Request) {
     };
     const userId = searchParams.get("userId") || searchParams.get("user_id") || "";
     if (companyId || userId) {
-      await assertScopedTargetAppAccess({ companyId, userId, targetAppId: input.targetAppId });
+      await assertScopedTargetAppAccess({
+        companyId,
+        userId,
+        targetAppId: input.targetAppId,
+        allowAnonymousGuest: true,
+      });
     }
     const [guides, sessions] = await Promise.all([
       getPublishedGuidesForPlayer(input),

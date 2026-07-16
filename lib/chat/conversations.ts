@@ -92,9 +92,29 @@ function assertConversationStatus(status: string): asserts status is Conversatio
   }
 }
 
-async function assertCompanyAndUser(companyId: string, userId: string) {
+async function assertCompanyAndUser(companyId: string, userId: string, options?: { skipUserValidation?: boolean }) {
   if (!companyId || !userId) {
     throw new ConversationError("Company and user are required.");
+  }
+
+  if (options?.skipUserValidation) {
+    const company = await getPool().query<{ id: string }>(
+      `
+        SELECT id
+        FROM companies
+        WHERE id = $1
+          AND deleted_at IS NULL
+          AND status = 'active'
+        LIMIT 1
+      `,
+      [companyId]
+    );
+
+    if (!company.rows[0]) {
+      throw new ConversationError("Company was not found or is not active.", 404);
+    }
+
+    return;
   }
 
   const result = await getPool().query<{ id: string; status: string }>(
@@ -132,8 +152,9 @@ export async function getOrCreateConversation(input: {
   userId: string;
   conversationId?: string;
   firstQuestion: string;
+  skipUserValidation?: boolean;
 }) {
-  await assertCompanyAndUser(input.companyId, input.userId);
+  await assertCompanyAndUser(input.companyId, input.userId, { skipUserValidation: input.skipUserValidation === true });
 
   if (input.conversationId) {
     const existing = await getPool().query<{ id: string; status: ConversationStatus }>(
@@ -193,8 +214,9 @@ export async function getConversationLifecycleState(input: {
   companyId: string;
   userId: string;
   conversationId: string;
+  skipUserValidation?: boolean;
 }) {
-  await assertCompanyAndUser(input.companyId, input.userId);
+  await assertCompanyAndUser(input.companyId, input.userId, { skipUserValidation: input.skipUserValidation === true });
 
   const result = await getPool().query<ConversationLifecycleState>(
     `

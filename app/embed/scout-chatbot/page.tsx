@@ -9,7 +9,8 @@ type EmbedConfig = {
   apiKey: string;
   companyId: string;
   companyName: string;
-  userId: string;
+  userId?: string;
+  requireUserGuid?: boolean;
   targetAppId?: string;
   targetAppName?: string;
   assistantName?: string;
@@ -28,12 +29,81 @@ export default function EmbeddedScoutChatbotPage() {
   const [conversationId, setConversationId] = useState("");
   const [lifecycleConfig, setLifecycleConfig] = useState<ScoutChatLifecycleConfig | undefined>(undefined);
   const parentOriginRef = useRef("*");
+  const guestUserIdRef = useRef<string | null>(null);
+  const clientTraceIdRef = useRef<string | null>(null);
+
+  function isGuid(value: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+  }
+
+  function getGuestUserId() {
+    if (guestUserIdRef.current) {
+      return guestUserIdRef.current;
+    }
+
+    const storageKey = "scout-chatbot:embed-guest-user-guid";
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored && stored.trim()) {
+        guestUserIdRef.current = stored.trim();
+        return guestUserIdRef.current;
+      }
+    } catch {
+      // Ignore storage access errors and use a runtime fallback.
+    }
+
+    const generated = typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `${Date.now().toString(16).padEnd(8, "0")}-0000-4000-8000-${Math.random().toString(16).slice(2, 14).padEnd(12, "0")}`;
+    guestUserIdRef.current = generated;
+
+    try {
+      window.localStorage.setItem(storageKey, generated);
+    } catch {
+      // Ignore storage write errors; generated ID still works for this runtime.
+    }
+
+    return generated;
+  }
+
+  function getClientTraceId() {
+    if (clientTraceIdRef.current) {
+      return clientTraceIdRef.current;
+    }
+
+    const storageKey = "scout-chatbot:embed-client-trace-id";
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored && stored.trim()) {
+        clientTraceIdRef.current = stored.trim();
+        return clientTraceIdRef.current;
+      }
+    } catch {
+      // Ignore storage access errors and use a runtime fallback.
+    }
+
+    const browserHint = `${window.location.hostname}|${window.navigator.userAgent}|${window.navigator.language}`;
+    const encodedHint = window.btoa(browserHint).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20) || "browser";
+    const uniquePart = typeof window.crypto?.randomUUID === "function"
+      ? window.crypto.randomUUID()
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+    const traceId = `${encodedHint}:${uniquePart}`;
+    clientTraceIdRef.current = traceId;
+
+    try {
+      window.localStorage.setItem(storageKey, traceId);
+    } catch {
+      // Ignore storage write errors; trace ID still works for this runtime.
+    }
+
+    return traceId;
+  }
 
   useEffect(() => {
     function receiveConfig(event: MessageEvent) {
       if (event.source !== window.parent || event.data?.type !== "scout-chatbot:configure") return;
       const next = event.data.config as EmbedConfig;
-      if (!next?.apiUrl || !next.apiKey || !next.companyId || !next.companyName || !next.userId) return;
+      if (!next?.apiUrl || !next.apiKey || !next.companyId || !next.companyName) return;
       parentOriginRef.current = event.origin || "*";
       setConfig(next);
     }
@@ -121,13 +191,21 @@ export default function EmbeddedScoutChatbotPage() {
 
   async function sendMessage(message: string): Promise<ScoutChatMessage> {
     if (!config) throw new Error("Chatbot configuration is unavailable.");
+    const configuredUserId = String(config.userId || "").trim();
+    if (config.requireUserGuid === true && !isGuid(configuredUserId)) {
+      throw new Error("Client user GUID is required by this package policy.");
+    }
+
+    const effectiveUserId = isGuid(configuredUserId) ? configuredUserId : getGuestUserId();
+    const clientTraceId = getClientTraceId();
     const response = await fetch(`${config.apiUrl.replace(/\/$/, "")}/v1/chat/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": config.apiKey },
       body: JSON.stringify({
         companyName: config.companyName,
         targetAppName: config.targetAppName || undefined,
-        userId: config.userId,
+        userId: effectiveUserId,
+        clientTraceId,
         question: message,
         conversationId: conversationId || undefined,
         topK: 8
@@ -176,7 +254,14 @@ export default function EmbeddedScoutChatbotPage() {
               accentColor: config.accentColor || "#0ea5e9",
               surfaceColor: "#ffffff"
             }}
-            userId={config.userId}
+            userId={(() => {
+              const configuredUserId = String(config.userId || "").trim();
+              if (config.requireUserGuid === true) {
+                return isGuid(configuredUserId) ? configuredUserId : undefined;
+              }
+
+              return isGuid(configuredUserId) ? configuredUserId : getGuestUserId();
+            })()}
             variant="embedded"
           />
         ) : null}

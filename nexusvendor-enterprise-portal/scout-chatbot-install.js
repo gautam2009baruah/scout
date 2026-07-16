@@ -1,5 +1,4 @@
-const config = window.NexusVendorScoutChatbotConfig;
-
+const config = window.NexusvendorEnterprisePortalScoutChatbotConfig;
 if (config) {
   const loader = document.createElement("script");
   loader.id = "nv-scout-chatbot-loader";

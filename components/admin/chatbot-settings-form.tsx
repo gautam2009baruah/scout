@@ -77,6 +77,7 @@ type EmbedPackageRecord = {
   targetAppName: string;
   environment: string;
   userId: string;
+  requireUserGuid: boolean;
   scoutUrl: string;
   apiUrl: string;
   assistantName: string;
@@ -225,7 +226,8 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     id: "",
     targetAppId: targetApps[0]?.id ?? "",
     environment: "",
-    userId: "scout-client-user",
+    userId: "",
+    requireUserGuid: true,
     apiKey: "",
     scoutUrl: typeof window === "undefined" ? "http://localhost:3000" : window.location.origin,
     apiUrl: "http://localhost:4200",
@@ -664,6 +666,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       targetAppId: record.targetAppId,
       environment: record.environment,
       userId: record.userId,
+      requireUserGuid: record.requireUserGuid === true,
       apiKey: typeof body?.apiKey === "string" ? body.apiKey : "",
       scoutUrl: record.scoutUrl,
       apiUrl: record.apiUrl,
@@ -693,6 +696,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
           id: matchingRecord.id,
           apiKey: body.apiKey,
           userId: matchingRecord.userId,
+          requireUserGuid: matchingRecord.requireUserGuid === true,
           scoutUrl: matchingRecord.scoutUrl,
           apiUrl: matchingRecord.apiUrl,
           assistantName: matchingRecord.assistantName,
@@ -747,13 +751,20 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       return;
     }
 
+    const userIdPlaceholder = embedForm.requireUserGuid
+      ? "passing proper logged in user's guid is mandatory"
+      : "passing proper logged in user's guid is not mandatory";
+
     setEmbedStatus({ type: "saving", message: "Generating package snippets..." });
     setEmbedResult(null);
 
     const response = await fetch("/api/admin/chatbot-settings/embed-package", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(embedForm)
+      body: JSON.stringify({
+        ...embedForm,
+        userId: userIdPlaceholder,
+      })
     });
 
     const body = await response.json().catch(() => null);
@@ -1148,9 +1159,16 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     </select>
                   </label>
 
-                  <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    <span className="inline-flex items-center gap-1.5">User ID placeholder <HelpHint text="Default user identifier used in client-side loader examples." /></span>
-                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, userId: event.target.value }))} value={embedForm.userId} />
+                  <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
+                    <input
+                      checked={embedForm.requireUserGuid}
+                      onChange={(event) => setEmbedForm((current) => ({ ...current, requireUserGuid: event.target.checked }))}
+                      type="checkbox"
+                    />
+                    <span className="inline-flex items-center gap-1.5">
+                      Don't allow anonymous access
+                      <HelpHint text="When enabled, anonymous access is blocked and the client app must pass a logged-in user's GUID at runtime. When disabled, GUID passing is optional." />
+                    </span>
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
@@ -1178,6 +1196,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     <span className="inline-flex items-center gap-1.5">Assistant name <HelpHint text="Display name shown in chatbot header and welcome context." /></span>
                     <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, assistantName: event.target.value }))} value={embedForm.assistantName} />
                   </label>
+
                 </div>
 
                 <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -1207,7 +1226,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                         <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                           <tr>
                             <th className="px-3 py-2 text-left">Environment</th>
-                            <th className="px-3 py-2 text-left">API key prefix</th>
+                            <th className="px-3 py-2 text-left">Target App</th>
                             <th className="px-3 py-2 text-left">Assistant</th>
                             <th className="px-3 py-2 text-left">Updated</th>
                             <th className="px-3 py-2 text-left">Actions</th>
@@ -1217,7 +1236,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                           {embedRecords.map((record) => (
                             <tr key={record.id}>
                               <td className="px-3 py-3 text-slate-700">{record.environment}</td>
-                              <td className="px-3 py-3 font-mono text-xs text-slate-700">{record.apiKeyPrefix}</td>
+                              <td className="px-3 py-3 font-mono text-xs text-slate-700">{record.targetAppName}</td>
                               <td className="px-3 py-3 text-slate-700">{record.assistantName}</td>
                               <td className="px-3 py-3 text-xs text-slate-600">{formatDate(record.updatedAt)}</td>
                               <td className="px-3 py-3">

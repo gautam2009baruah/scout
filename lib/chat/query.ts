@@ -9,6 +9,7 @@ import { appendConversationExchange, getConversationLifecycleState, getOrCreateC
 import { matchChatbotTriggers, shouldCheckTriggers } from "@/lib/orchestrations/chatbot-trigger-matcher";
 import { createExecution } from "@/lib/orchestrations/db";
 import { buildEstimatedTokenUsage, recordChatQueryTelemetry } from "./telemetry";
+import { randomUUID } from "node:crypto";
 
 export type ChatQueryInput = {
   company_id: string;
@@ -17,6 +18,7 @@ export type ChatQueryInput = {
   target_app_id?: string;
   conversation_id?: string;
   top_k?: number;
+  external_user_trace_id?: string;
 };
 
 export type ChatQueryResponse = {
@@ -67,34 +69,33 @@ async function validateCompany(companyId: string) {
   }
 }
 
-async function validateUserForCompany(companyId: string, userId: string): Promise<{ email: string }> {
-  const result = await getPool().query<{ id: string; status: string; email: string }>(
-    `
-      SELECT users.id, users.status, users.email
-      FROM users
-      INNER JOIN user_company_roles
-        ON user_company_roles.user_id = users.id
-       AND user_company_roles.company_id = $2
-       AND user_company_roles.deleted_at IS NULL
-       AND user_company_roles.status = 'active'
-      WHERE users.id = $1
-        AND users.deleted_at IS NULL
-      LIMIT 1
-    `,
-    [userId, companyId]
+function toTriggerUserEmail(userId: string) {
+  const normalized = userId.trim();
+  if (normalized.includes("@")) {
+    return normalized;
+  }
+
+  return `${normalized}@external-client.user`;
+}
+
+async function canPersistConversationForUser(companyId: string, userId: string) {
+  const result = await getPool().query<{ allowed: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM users u
+       INNER JOIN user_company_roles ucr
+         ON ucr.user_id = u.id
+        AND ucr.company_id = $1
+        AND ucr.deleted_at IS NULL
+        AND ucr.status = 'active'
+       WHERE u.id = $2
+         AND u.deleted_at IS NULL
+         AND u.status = 'active'
+     ) AS allowed`,
+    [companyId, userId]
   );
 
-  const user = result.rows[0];
-
-  if (!user) {
-    throw new ChatQueryError("User was not found for this company.", 404);
-  }
-
-  if (user.status !== "active") {
-    throw new ChatQueryError("User is not active.", 403);
-  }
-  
-  return { email: user.email };
+  return result.rows[0]?.allowed === true;
 }
 
 function buildSystemPrompt() {
@@ -265,6 +266,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const userId = input.user_id.trim();
   const question = input.question.trim();
   const topK = Math.min(8, Math.max(5, Number(input.top_k) || 8));
+  const externalUserTraceId = String(input.external_user_trace_id || "").trim();
 
   if (!companyId) {
     throw new ChatQueryError("Company is required.");
@@ -279,12 +281,18 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   }
 
   await validateCompany(companyId);
-  const user = await validateUserForCompany(companyId, userId);
+  const triggerUserEmail = toTriggerUserEmail(userId);
+  const canPersistConversation = await canPersistConversationForUser(companyId, userId);
   const lifecycleSettings = await getEffectiveChatbotLifecycleSettings(companyId, input.target_app_id?.trim() || undefined);
   let requestedConversationId = input.conversation_id?.trim() || undefined;
 
-  if (requestedConversationId) {
-    const lifecycleState = await getConversationLifecycleState({ companyId, userId, conversationId: requestedConversationId });
+  if (requestedConversationId && canPersistConversation) {
+    const lifecycleState = await getConversationLifecycleState({
+      companyId,
+      userId,
+      conversationId: requestedConversationId,
+      skipUserValidation: true,
+    });
     const referenceTime = lifecycleState?.last_message_at ?? lifecycleState?.created_at ?? null;
 
     if (referenceTime) {
@@ -295,12 +303,15 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
   }
 
-  const conversationId = await getOrCreateConversation({
-    companyId,
-    userId,
-    conversationId: requestedConversationId,
-    firstQuestion: question
-  });
+  const conversationId = canPersistConversation
+    ? await getOrCreateConversation({
+      companyId,
+      userId,
+      conversationId: requestedConversationId,
+      firstQuestion: question,
+      skipUserValidation: true,
+    })
+    : (requestedConversationId || randomUUID());
 
   const startedAt = Date.now();
 
@@ -327,7 +338,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       const triggerMatch = await matchChatbotTriggers(
         question,
         userId,
-        user.email,
+        triggerUserEmail,
         companyId
       );
 
@@ -348,7 +359,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
             matchedPhrase: triggerMatch.matchedPhrase,
             confidence: triggerMatch.confidence
           },
-          triggeredBy: user.email
+          triggeredBy: triggerUserEmail
         });
 
         // Store for later inclusion in response
@@ -377,21 +388,23 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     const greeting = "Hi. Ask me a question about the available documents, and I will answer using only the information I can find there.";
     const latencyMs = Date.now() - startedAt;
 
-    await appendConversationExchange({
-      companyId,
-      userId,
-      conversationId,
-      question,
-      answer: greeting,
-      citations: [],
-      metadata: {
-        llm_provider: "none",
-        llm_model: "greeting",
-        latency_ms: latencyMs,
-        retrieved_chunk_count: 0,
-        token_usage_summary: null
-      }
-    });
+    if (canPersistConversation) {
+      await appendConversationExchange({
+        companyId,
+        userId,
+        conversationId,
+        question,
+        answer: greeting,
+        citations: [],
+        metadata: {
+          llm_provider: "none",
+          llm_model: "greeting",
+          latency_ms: latencyMs,
+          retrieved_chunk_count: 0,
+          token_usage_summary: null
+        }
+      });
+    }
 
     const queryId = await recordChatQueryTelemetry({
       company_id: companyId,
@@ -412,7 +425,10 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         total_tokens: null,
         estimated_cost_usd: 0,
       },
-      metadata: { mode: "greeting" },
+      metadata: {
+        mode: "greeting",
+        externalUserTraceId: externalUserTraceId || undefined,
+      },
     });
 
     let modifiedGreeting = greeting;
@@ -452,21 +468,23 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   if (retrieval.chunks.length === 0) {
     const latencyMs = Date.now() - startedAt;
-    await appendConversationExchange({
-      companyId,
-      userId,
-      conversationId,
-      question,
-      answer: INSUFFICIENT_CONTEXT_MESSAGE,
-      citations: [],
-      metadata: {
-        llm_provider: "none",
-        llm_model: "none",
-        latency_ms: latencyMs,
-        retrieved_chunk_count: 0,
-        token_usage_summary: null
-      }
-    });
+    if (canPersistConversation) {
+      await appendConversationExchange({
+        companyId,
+        userId,
+        conversationId,
+        question,
+        answer: INSUFFICIENT_CONTEXT_MESSAGE,
+        citations: [],
+        metadata: {
+          llm_provider: "none",
+          llm_model: "none",
+          latency_ms: latencyMs,
+          retrieved_chunk_count: 0,
+          token_usage_summary: null
+        }
+      });
+    }
 
     const queryId = await recordChatQueryTelemetry({
       company_id: companyId,
@@ -490,6 +508,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       },
       metadata: {
         mode: "no_retrieval_chunks",
+        externalUserTraceId: externalUserTraceId || undefined,
         retrievalDiagnostics: {
           topK,
           targetAppId: input.target_app_id?.trim() || null,
@@ -544,21 +563,23 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     const extractiveNoAnswer = extractiveFinalAnswer === INSUFFICIENT_CONTEXT_MESSAGE;
     const extractiveCitations = extractiveNoAnswer ? [] : retrieval.citations;
     const latencyMs = Date.now() - startedAt;
-    await appendConversationExchange({
-      companyId,
-      userId,
-      conversationId,
-      question,
-      answer: extractiveFinalAnswer,
-      citations: extractiveCitations,
-      metadata: {
-        llm_provider: "none",
-        llm_model: "extractive",
-        latency_ms: latencyMs,
-        retrieved_chunk_count: retrieval.chunks.length,
-        token_usage_summary: null
-      }
-    });
+    if (canPersistConversation) {
+      await appendConversationExchange({
+        companyId,
+        userId,
+        conversationId,
+        question,
+        answer: extractiveFinalAnswer,
+        citations: extractiveCitations,
+        metadata: {
+          llm_provider: "none",
+          llm_model: "extractive",
+          latency_ms: latencyMs,
+          retrieved_chunk_count: retrieval.chunks.length,
+          token_usage_summary: null
+        }
+      });
+    }
 
     const queryId = await recordChatQueryTelemetry({
       company_id: companyId,
@@ -582,6 +603,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       },
       metadata: {
         mode: "extractive",
+        externalUserTraceId: externalUserTraceId || undefined,
         retrievalDiagnostics: buildRetrievalDiagnostics(retrieval, {
           topK,
           targetAppId: input.target_app_id?.trim() || undefined,
@@ -624,11 +646,13 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   const provider = await getLLMProvider();
   const systemPrompt = buildSystemPrompt();
-  const conversationWindow = await buildConversationContextWindow({
-    companyId,
-    conversationId,
-    settings: lifecycleSettings
-  });
+  const conversationWindow = canPersistConversation
+    ? await buildConversationContextWindow({
+      companyId,
+      conversationId,
+      settings: lifecycleSettings
+    })
+    : { messages: [], estimatedTokens: 0, summary: null };
   const llmContext = buildLLMContext(retrieval.chunks);
   const answer = await provider.generate_answer(systemPrompt, buildUserPrompt(question, conversationWindow.messages), llmContext);
   const generatedAnswer = answer || INSUFFICIENT_CONTEXT_MESSAGE;
@@ -651,21 +675,23 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     answerText: finalAnswer,
   });
 
-  await appendConversationExchange({
-    companyId,
-    userId,
-    conversationId,
-    question,
-    answer: finalAnswer,
-    citations: acceptedCitations,
-    metadata: {
-      llm_provider: provider.provider,
-      llm_model: provider.model,
-      latency_ms: latencyMs,
-      retrieved_chunk_count: retrieval.chunks.length,
-      token_usage_summary: tokenUsage
-    }
-  });
+  if (canPersistConversation) {
+    await appendConversationExchange({
+      companyId,
+      userId,
+      conversationId,
+      question,
+      answer: finalAnswer,
+      citations: acceptedCitations,
+      metadata: {
+        llm_provider: provider.provider,
+        llm_model: provider.model,
+        latency_ms: latencyMs,
+        retrieved_chunk_count: retrieval.chunks.length,
+        token_usage_summary: tokenUsage
+      }
+    });
+  }
 
   const queryId = await recordChatQueryTelemetry({
     company_id: companyId,
@@ -684,6 +710,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     token_usage: tokenUsage,
     metadata: {
       mode: "llm",
+      externalUserTraceId: externalUserTraceId || undefined,
       retrievalDiagnostics: buildRetrievalDiagnostics(retrieval, {
         topK,
         targetAppId: input.target_app_id?.trim() || undefined,
