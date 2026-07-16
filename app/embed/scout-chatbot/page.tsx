@@ -232,6 +232,7 @@ export default function EmbeddedScoutChatbotPage() {
         {config ? (
           <ScoutChatbot
             assistantName={config.assistantName || "Scout Assistant"}
+            apiKey={config.apiKey}
             companyId={config.companyId}
             defaultOpen={false}
             lifecycleConfig={lifecycleConfig}

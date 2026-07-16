@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
 import { getNodes, getOrchestrationPage, getConnections } from "@/lib/orchestrations/db";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
+import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 
 export const runtime = "nodejs";
 
@@ -77,6 +78,8 @@ export async function GET(request: Request) {
   }
 
   try {
+    await assertChatbotApiKeyAccess(request, { companyId, targetAppId });
+
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
     const page = await getOrchestrationPage({
       companyId,
@@ -125,6 +128,9 @@ export async function GET(request: Request) {
 
     return NextResponse.json({ orchestrations });
   } catch (error) {
+    if (error instanceof ChatbotApiKeyAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     if (error instanceof ScopedTargetAppAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }

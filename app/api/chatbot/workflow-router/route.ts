@@ -3,6 +3,7 @@ import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/c
 import { createExecution, getConnections, getNodes, getOrchestrationPage } from "@/lib/orchestrations/db";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
+import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 import type { ChatbotTriggerConfig } from "@/shared/orchestrationTypes";
 
 export const runtime = "nodejs";
@@ -521,6 +522,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    await assertChatbotApiKeyAccess(request, { companyId, targetAppId });
+
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
 
     const candidates = await loadChatbotWorkflowCandidates(companyId, userId, targetAppId);
@@ -688,6 +691,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof ChatbotApiKeyAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     if (error instanceof ScopedTargetAppAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }

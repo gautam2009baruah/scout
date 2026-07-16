@@ -35,6 +35,7 @@ import {
   ReactNode,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState
 } from "react";
@@ -196,6 +197,7 @@ export type ScoutChatLifecycleConfig = Partial<ChatbotLifecycleSettings> & {
 
 export type ScoutChatbotProps = {
   assistantName?: string;
+  apiKey?: string;
   badge?: string;
   chatEndpoint?: string;
   className?: string;
@@ -415,6 +417,7 @@ function createActionRouterWorkflow(): ScoutWorkflowSession {
 
 export function ScoutChatbot({
   assistantName = "Scout Assistant",
+  apiKey,
   chatEndpoint = "/chat/query",
   className,
   companyId,
@@ -533,6 +536,11 @@ export function ScoutChatbot({
     setWorkflowsState({ status: "error", message: userFriendlyMessage });
     setOrchestrationsState({ status: "error", message: userFriendlyMessage });
   }
+
+  const apiKeyHeaders = useMemo(() => {
+    const trimmed = String(apiKey || "").trim();
+    return trimmed ? { "X-API-Key": trimmed } : {};
+  }, [apiKey]);
 
   const cssVars: WidgetStyle = {
     "--scout-brand": theme?.brandColor ?? "#020617",
@@ -889,11 +897,18 @@ export function ScoutChatbot({
         url.searchParams.set("targetAppId", workflowTargetAppId);
         url.searchParams.set("companyId", workflowCompanyId);
         url.searchParams.set("userId", workflowUserId);
-        const response = await fetch(url.toString(), { signal: controller.signal });
+        const response = await fetch(url.toString(), {
+          signal: controller.signal,
+          headers: apiKeyHeaders,
+        });
         const body = await response.json().catch(() => null);
 
         if (!response.ok) {
-          throw new Error(typeof body?.message === "string" ? body.message : "Unable to load guided workflows.");
+          const message = typeof body?.message === "string" ? body.message : "Unable to load guided workflows.";
+          if (isApiKeyAuthFailure(response.status, message)) {
+            blockChatbotForInvalidKey();
+          }
+          throw new Error(message);
         }
 
         const guides = Array.isArray(body?.guides) ? body.guides as PlayerGuide[] : [];
@@ -927,7 +942,7 @@ export function ScoutChatbot({
       ignore = true;
       controller.abort();
     };
-  }, [authBlockedMessage, companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
+  }, [apiKeyHeaders, authBlockedMessage, companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
 
   useEffect(() => {
     if (authBlockedMessage) {
@@ -953,10 +968,17 @@ export function ScoutChatbot({
         url.searchParams.set("companyId", companyId!);
         url.searchParams.set("userId", userId!);
         url.searchParams.set("targetAppId", targetAppId!);
-        const response = await fetch(url.toString(), { signal: controller.signal });
+        const response = await fetch(url.toString(), {
+          signal: controller.signal,
+          headers: apiKeyHeaders,
+        });
         const body = await response.json().catch(() => null);
         if (!response.ok) {
-          throw new Error(typeof body?.message === "string" ? body.message : "Unable to load orchestrations.");
+          const message = typeof body?.message === "string" ? body.message : "Unable to load orchestrations.";
+          if (isApiKeyAuthFailure(response.status, message)) {
+            blockChatbotForInvalidKey();
+          }
+          throw new Error(message);
         }
         if (!ignore) {
           const scopedOrchestrations = Array.isArray(body?.orchestrations) ? body.orchestrations as ScoutOrchestration[] : [];
@@ -983,7 +1005,7 @@ export function ScoutChatbot({
       ignore = true;
       controller.abort();
     };
-  }, [authBlockedMessage, companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
+  }, [apiKeyHeaders, authBlockedMessage, companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
 
   const resumeConversation = useCallback(async (targetConversationId: string) => {
     if (!companyId || !userId || !targetConversationId) {
@@ -1529,12 +1551,16 @@ export function ScoutChatbot({
         120 // Real API response delay
       );
     } catch (error) {
+      const failureMessage = error instanceof Error ? error.message : "I could not reach the assistant service. Please try again in a moment.";
+      if (isApiKeyAuthFailure(401, failureMessage)) {
+        blockChatbotForInvalidKey();
+      }
       setMessages((current) => [
         ...current,
         createRenderedMessage({
           id: generateMessageId(),
           role: "assistant",
-          text: error instanceof Error ? error.message : "I could not reach the assistant service. Please try again in a moment.",
+          text: failureMessage,
           time: formatTime()
         })
       ]);
@@ -1974,7 +2000,10 @@ export function ScoutChatbot({
 
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...apiKeyHeaders,
+      },
       body: JSON.stringify({
         message,
         workflow,
@@ -1990,7 +2019,11 @@ export function ScoutChatbot({
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(typeof body?.message === "string" ? body.message : "Workflow router request failed.");
+      const message = typeof body?.message === "string" ? body.message : "Workflow router request failed.";
+      if (isApiKeyAuthFailure(response.status, message)) {
+        blockChatbotForInvalidKey();
+      }
+      throw new Error(message);
     }
 
     if (typeof body?.conversationId === "string") {
