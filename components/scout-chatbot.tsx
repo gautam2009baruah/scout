@@ -494,6 +494,7 @@ export function ScoutChatbot({
     status: "idle",
     message: ""
   });
+  const [authBlockedMessage, setAuthBlockedMessage] = useState<string | null>(null);
   const playerHandleRef = useRef<ScoutAdoptionPlayerHandle | null>(null);
   const [hasMounted, setHasMounted] = useState(false);
   const [panelSize, setPanelSize] = useState<ChatSize>(initialChatSize);
@@ -509,6 +510,29 @@ export function ScoutChatbot({
   const generateMessageId = () => {
     return `local-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   };
+
+  function isApiKeyAuthFailure(status: number, message: string) {
+    if (status !== 401) {
+      return false;
+    }
+
+    const normalized = String(message || "").toLowerCase();
+    return normalized.includes("api key")
+      || normalized.includes("unauthorized")
+      || normalized.includes("invalid");
+  }
+
+  function blockChatbotForInvalidKey() {
+    const userFriendlyMessage = "This chatbot is currently unavailable because API access is no longer valid. Please contact your administrator to activate a valid API key.";
+    setAuthBlockedMessage(userFriendlyMessage);
+    clearOrchestrationState();
+    setWorkflowSessions([]);
+    setExpandedWorkflowSessions(new Set());
+    setOrchestrations([]);
+    setExpandedOrchestrations(new Set());
+    setWorkflowsState({ status: "error", message: userFriendlyMessage });
+    setOrchestrationsState({ status: "error", message: userFriendlyMessage });
+  }
 
   const cssVars: WidgetStyle = {
     "--scout-brand": theme?.brandColor ?? "#020617",
@@ -838,6 +862,13 @@ export function ScoutChatbot({
   }, [activeTab, isOpen, isTyping, messages]);
 
   useEffect(() => {
+    if (authBlockedMessage) {
+      setWorkflowSessions([]);
+      setExpandedWorkflowSessions(new Set());
+      setWorkflowsState({ status: "error", message: authBlockedMessage });
+      return;
+    }
+
     if (!targetAppId || !companyId || !userId) {
       setWorkflowSessions([]);
       setWorkflowsState({ status: "idle", message: "Select an authorized target application to view guided workflows." });
@@ -896,9 +927,16 @@ export function ScoutChatbot({
       ignore = true;
       controller.abort();
     };
-  }, [companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
+  }, [authBlockedMessage, companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
 
   useEffect(() => {
+    if (authBlockedMessage) {
+      setOrchestrations([]);
+      setExpandedOrchestrations(new Set());
+      setOrchestrationsState({ status: "error", message: authBlockedMessage });
+      return;
+    }
+
     if (!companyId || !userId || !targetAppId) {
       setOrchestrations([]);
       setOrchestrationsState({ status: "idle", message: "Select an authorized target application to view orchestrations." });
@@ -945,7 +983,7 @@ export function ScoutChatbot({
       ignore = true;
       controller.abort();
     };
-  }, [companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
+  }, [authBlockedMessage, companyId, scoutBaseUrl, targetAppId, targetAppName, userId]);
 
   const resumeConversation = useCallback(async (targetConversationId: string) => {
     if (!companyId || !userId || !targetConversationId) {
@@ -1326,6 +1364,19 @@ export function ScoutChatbot({
   async function sendMessage(text: string) {
     const trimmed = text.trim();
 
+    if (authBlockedMessage) {
+      setMessages((current) => [
+        ...current,
+        createRenderedMessage({
+          id: generateMessageId(),
+          role: "assistant",
+          text: authBlockedMessage,
+          time: formatTime(),
+        }),
+      ]);
+      return;
+    }
+
     if (!trimmed || isTyping) {
       return;
     }
@@ -1663,6 +1714,22 @@ export function ScoutChatbot({
   }
 
   async function runWorkflowAction(messageId: string, suggestion: ScoutWorkflowActionSuggestion) {
+    if (authBlockedMessage) {
+      setMessages((current) => current.map((item) => (
+        item.id === messageId
+          ? {
+              ...item,
+              workflowActionSuggestion: {
+                ...suggestion,
+                status: "error" as const,
+                errorMessage: authBlockedMessage,
+              } as ScoutWorkflowActionSuggestion,
+            }
+          : item
+      )));
+      return;
+    }
+
     if (suggestion.status === "running") {
       return;
     }
@@ -1741,6 +1808,11 @@ export function ScoutChatbot({
   }
 
   async function startWorkflow(workflow: ScoutWorkflowSession) {
+    if (authBlockedMessage) {
+      setWorkflowsState({ status: "error", message: authBlockedMessage });
+      return;
+    }
+
     setActiveWorkflow(workflow);
     setActiveTab("workflows");
     const hasPreWorkflowConfirmation = Boolean(workflow.preWorkflowConfirmationEnabled && workflow.preWorkflowConfirmationHtml?.trim());
@@ -1810,7 +1882,11 @@ export function ScoutChatbot({
     console.log('🔍 Trigger data:', body?.orchestration_trigger);
 
     if (!response.ok) {
-      throw new Error(typeof body?.message === "string" ? body.message : "Chat query failed.");
+      const message = typeof body?.message === "string" ? body.message : "Chat query failed.";
+      if (isApiKeyAuthFailure(response.status, message)) {
+        blockChatbotForInvalidKey();
+      }
+      throw new Error(message);
     }
 
     if (typeof body?.conversation_id === "string") {
@@ -2244,6 +2320,12 @@ export function ScoutChatbot({
                 </button>
               </div>
               <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                {authBlockedMessage ? (
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {authBlockedMessage}
+                  </div>
+                ) : null}
+
                 {orchestrationsState.status === "loading" ? (
                   <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading orchestrations...</p>
                 ) : orchestrationsState.message ? (
@@ -2327,6 +2409,12 @@ export function ScoutChatbot({
           {activeTab === "qa" ? (
             <>
               <div ref={messagesViewportRef} className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5">
+                {authBlockedMessage ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    {authBlockedMessage}
+                  </div>
+                ) : null}
+
                 {messages.map((message) => (
                   <MessageBubble
                     key={message.id}
@@ -2355,6 +2443,7 @@ export function ScoutChatbot({
                     ref={inputRef}
                     aria-label={`Message ${assistantName}`}
                     className="h-11 max-h-11 min-h-11 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-5 text-slate-900 outline-none placeholder:text-slate-400"
+                    disabled={Boolean(authBlockedMessage)}
                     onChange={(event) => {
                       setInput(event.target.value);
                       markActivity();
@@ -2368,7 +2457,7 @@ export function ScoutChatbot({
                     <button
                       aria-label="Send message"
                       className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:translate-y-0"
-                      disabled={!input.trim() || isTyping}
+                      disabled={!input.trim() || isTyping || Boolean(authBlockedMessage)}
                       type="submit"
                     >
                       <ArrowUp className="h-4 w-4" />
@@ -2387,6 +2476,7 @@ export function ScoutChatbot({
                 <button
                   aria-label="View orchestrations"
                   className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 ring-1 ring-violet-100 transition hover:bg-violet-100 focus:outline-none focus:ring-4 focus:ring-violet-100"
+                  disabled={Boolean(authBlockedMessage)}
                   onClick={() => { setHistoryOpen(false); setOrchestrationPanelOpen(true); }}
                   title="View orchestrations"
                   type="button"
@@ -2412,6 +2502,12 @@ export function ScoutChatbot({
                   </div>
                 </div>
               )}
+
+              {authBlockedMessage ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  {authBlockedMessage}
+                </div>
+              ) : null}
 
               {workflowsState.status === "loading" ? (
                 <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500">Loading workflows...</p>

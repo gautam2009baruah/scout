@@ -130,6 +130,23 @@ export class CompanyApiKeyAuthorizer {
     });
   }
 
+  private async isCachedKeyStillActive(apiKeyId: string): Promise<boolean> {
+    const result = await getPool().query<{ id: string }>(
+      `
+        SELECT id
+        FROM chatbot_api_keys
+        WHERE id = $1
+          AND status = 'active'
+          AND is_active = true
+          AND (expires_at IS NULL OR expires_at > now())
+        LIMIT 1
+      `,
+      [apiKeyId]
+    );
+
+    return (result.rowCount ?? 0) > 0;
+  }
+
   async authenticate(
     request: IncomingMessage,
     companyId: string,
@@ -146,6 +163,12 @@ export class CompanyApiKeyAuthorizer {
     const cached = this.getCached(hashed);
 
     if (cached) {
+      const stillActive = await this.isCachedKeyStillActive(cached.id);
+      if (!stillActive) {
+        this.cache.delete(hashed);
+        return { ok: false, error: "Invalid API key." };
+      }
+
       if (cached.companyId !== companyId) {
         return { ok: false, error: "API key is not allowed for this company." };
       }
