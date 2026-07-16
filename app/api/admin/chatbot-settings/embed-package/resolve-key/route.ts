@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
-import {
-  ChatbotSettingsError,
-  upsertChatbotEmbedPackage
-} from "@/lib/admin/chatbot-settings";
+import { ChatbotSettingsError, resolveChatbotApiKeyContext } from "@/lib/admin/chatbot-settings";
 
 export const runtime = "nodejs";
 
@@ -24,26 +21,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const persisted = await upsertChatbotEmbedPackage(session, {
-      id: typeof body.id === "string" && body.id.trim() ? body.id.trim() : undefined,
-      targetAppId: String(body.targetAppId || "").trim(),
-      environment: String(body.environment || "").trim(),
+    const context = await resolveChatbotApiKeyContext(session, {
       apiKey: String(body.apiKey || "").trim(),
-      userId: String(body.userId || session.user.id).trim(),
-      scoutUrl: String(body.scoutUrl || "http://localhost:3000").trim(),
-      apiUrl: String(body.apiUrl || "http://localhost:4200").trim(),
-      assistantName: typeof body.assistantName === "string" ? body.assistantName : undefined,
+      targetAppId: typeof body.targetAppId === "string" && body.targetAppId.trim() ? body.targetAppId : undefined,
     });
 
-    return NextResponse.json({
-      ...persisted.packageData,
-      record: persisted.record,
-    });
+    return NextResponse.json({ context });
   } catch (error) {
     if (error instanceof ChatbotSettingsError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }
 
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Unable to generate embed package." }, { status: 500 });
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Unable to resolve API key context." }, { status: 500 });
   }
 }

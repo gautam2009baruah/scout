@@ -227,6 +227,31 @@ export type ChatbotKeyEnvironmentRecord = {
   updatedAt: string;
 };
 
+export type ChatbotEmbedPackageRecord = {
+  id: string;
+  targetAppId: string;
+  targetAppName: string;
+  environment: string;
+  userId: string;
+  scoutUrl: string;
+  apiUrl: string;
+  assistantName: string;
+  apiKeyPrefix: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UpsertChatbotEmbedPackageInput = {
+  id?: string;
+  targetAppId: string;
+  environment: string;
+  apiKey: string;
+  userId: string;
+  scoutUrl: string;
+  apiUrl: string;
+  assistantName?: string;
+};
+
 const MIN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 function hashSecret(value: string) {
@@ -245,6 +270,20 @@ function normalizeEnvironment(value: string) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "";
   return normalized.slice(0, 32);
+}
+
+function sanitizeConfigVarBase(value: string) {
+  return String(value || "Scout")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join("") || "Scout";
+}
+
+function normalizeUrl(value: string, fallback: string) {
+  const normalized = String(value || "").trim();
+  return normalized || fallback;
 }
 
 function parseExpiryDate(value?: string | null) {
@@ -1054,6 +1093,298 @@ export async function deleteChatbotKeyEnvironment(session: AdminSession, id: str
   return listChatbotKeyEnvironments(session);
 }
 
+function mapChatbotEmbedPackageRow(row: {
+  id: string;
+  target_app_id: string;
+  target_app_name: string;
+  environment: string;
+  user_id_placeholder: string;
+  scout_url: string;
+  api_url: string;
+  assistant_name: string;
+  api_key_prefix: string;
+  created_at: Date;
+  updated_at: Date;
+}): ChatbotEmbedPackageRecord {
+  return {
+    id: row.id,
+    targetAppId: row.target_app_id,
+    targetAppName: row.target_app_name,
+    environment: row.environment,
+    userId: row.user_id_placeholder,
+    scoutUrl: row.scout_url,
+    apiUrl: row.api_url,
+    assistantName: row.assistant_name,
+    apiKeyPrefix: row.api_key_prefix,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+  };
+}
+
+export async function listChatbotEmbedPackages(
+  session: AdminSession,
+  options?: { targetAppId?: string }
+): Promise<ChatbotEmbedPackageRecord[]> {
+  const companyId = session.user.tenantId;
+  await assertCompanyAccess(session, companyId);
+
+  const targetAppId = typeof options?.targetAppId === "string" && options.targetAppId.trim()
+    ? options.targetAppId.trim()
+    : null;
+
+  if (targetAppId) {
+    await assertTargetAppAccess(session, companyId, targetAppId);
+  }
+
+  const result = await getPool().query<{
+    id: string;
+    target_app_id: string;
+    target_app_name: string;
+    environment: string;
+    user_id_placeholder: string;
+    scout_url: string;
+    api_url: string;
+    assistant_name: string;
+    api_key_prefix: string;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `
+      SELECT
+        p.id,
+        p.target_app_id,
+        gta.name AS target_app_name,
+        p.environment,
+        p.user_id_placeholder,
+        p.scout_url,
+        p.api_url,
+        p.assistant_name,
+        p.api_key_prefix,
+        p.created_at,
+        p.updated_at
+      FROM chatbot_embed_packages p
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = p.target_app_id
+      WHERE p.company_id = $1
+        AND p.deleted_at IS NULL
+        AND ($2::uuid IS NULL OR p.target_app_id = $2)
+      ORDER BY p.updated_at DESC
+    `,
+    [companyId, targetAppId]
+  );
+
+  return result.rows.map(mapChatbotEmbedPackageRow);
+}
+
+export async function getChatbotEmbedPackageSecret(
+  session: AdminSession,
+  id: string
+): Promise<{ apiKey: string } | null> {
+  const companyId = session.user.tenantId;
+  await assertCompanyAccess(session, companyId);
+
+  const result = await getPool().query<{ api_key_plaintext: string }>(
+    `
+      SELECT api_key_plaintext
+      FROM chatbot_embed_packages
+      WHERE company_id = $1
+        AND id = $2
+        AND deleted_at IS NULL
+      LIMIT 1
+    `,
+    [companyId, id]
+  );
+
+  if ((result.rowCount ?? 0) === 0) {
+    return null;
+  }
+
+  return { apiKey: result.rows[0].api_key_plaintext };
+}
+
+export async function resolveChatbotApiKeyContext(
+  session: AdminSession,
+  input: { apiKey: string; targetAppId?: string }
+) {
+  const companyId = session.user.tenantId;
+  await assertCompanyAccess(session, companyId);
+
+  const apiKey = String(input.apiKey || "").trim();
+  if (!apiKey) {
+    throw new ChatbotSettingsError("API key is required.", 400);
+  }
+
+  const targetAppId = typeof input.targetAppId === "string" && input.targetAppId.trim()
+    ? input.targetAppId.trim()
+    : null;
+
+  if (targetAppId) {
+    await assertTargetAppAccess(session, companyId, targetAppId);
+  }
+
+  const result = await getPool().query<{
+    id: string;
+    target_app_id: string | null;
+    target_app_name: string | null;
+    environment: string;
+    name: string;
+    key_prefix: string;
+  }>(
+    `
+      SELECT
+        k.id,
+        k.target_app_id,
+        gta.name AS target_app_name,
+        COALESCE(k.environment, '') AS environment,
+        k.name,
+        k.key_prefix
+      FROM chatbot_api_keys k
+      LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+      WHERE k.company_id = $1
+        AND k.key_hash = $2
+        AND ($3::uuid IS NULL OR k.target_app_id = $3)
+      LIMIT 1
+    `,
+    [companyId, hashSecret(apiKey), targetAppId]
+  );
+
+  if ((result.rowCount ?? 0) === 0) {
+    throw new ChatbotSettingsError("API key was not found for this company.", 404);
+  }
+
+  const row = result.rows[0];
+  return {
+    id: row.id,
+    targetAppId: row.target_app_id,
+    targetAppName: row.target_app_name,
+    environment: row.environment,
+    name: row.name,
+    keyPrefix: row.key_prefix,
+  };
+}
+
+export async function upsertChatbotEmbedPackage(session: AdminSession, input: UpsertChatbotEmbedPackageInput) {
+  const companyId = session.user.tenantId;
+  await assertCompanyAccess(session, companyId);
+
+  const targetAppId = String(input.targetAppId || "").trim();
+  const environment = normalizeEnvironment(input.environment);
+  const apiKey = String(input.apiKey || "").trim();
+  const userId = String(input.userId || session.user.id).trim();
+  const scoutUrl = normalizeUrl(input.scoutUrl, "http://localhost:3000");
+  const apiUrl = normalizeUrl(input.apiUrl, "http://localhost:4200");
+  const assistantName = String(input.assistantName || "Scout Assistant").trim() || "Scout Assistant";
+
+  if (!targetAppId) {
+    throw new ChatbotSettingsError("Target app is required.", 400);
+  }
+  if (!environment) {
+    throw new ChatbotSettingsError("Environment is required.", 400);
+  }
+  if (!apiKey) {
+    throw new ChatbotSettingsError("A plaintext API key is required to generate package snippets.", 400);
+  }
+
+  await assertTargetAppAccess(session, companyId, targetAppId);
+  await assertEnvironmentExists(session, companyId, environment);
+
+  const payload = await getChatbotLifecycleSettingsAdminPayload(session);
+  const targetApp = payload.targetApps.find((item) => item.id === targetAppId);
+  if (!targetApp) {
+    throw new ChatbotSettingsError("Selected target app is invalid.", 400);
+  }
+
+  const packageData = buildChatbotEmbedPackage({
+    scoutUrl,
+    apiUrl,
+    apiKey,
+    companyId: session.user.tenantId,
+    companyName: session.tenant.name,
+    userId,
+    targetAppId: targetApp.id,
+    targetAppName: targetApp.name,
+    assistantName,
+  });
+
+  const apiKeyPrefix = apiKey.slice(0, 18);
+
+  const result = await getPool().query<{
+    id: string;
+    target_app_id: string;
+    target_app_name: string;
+    environment: string;
+    user_id_placeholder: string;
+    scout_url: string;
+    api_url: string;
+    assistant_name: string;
+    api_key_prefix: string;
+    created_at: Date;
+    updated_at: Date;
+  }>(
+    `
+      INSERT INTO chatbot_embed_packages (
+        id,
+        company_id,
+        target_app_id,
+        environment,
+        api_key_plaintext,
+        api_key_prefix,
+        user_id_placeholder,
+        scout_url,
+        api_url,
+        assistant_name,
+        created_by,
+        updated_by,
+        deleted_at
+      )
+      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11, NULL)
+      ON CONFLICT (id)
+      DO UPDATE SET
+        target_app_id = EXCLUDED.target_app_id,
+        environment = EXCLUDED.environment,
+        api_key_plaintext = EXCLUDED.api_key_plaintext,
+        api_key_prefix = EXCLUDED.api_key_prefix,
+        user_id_placeholder = EXCLUDED.user_id_placeholder,
+        scout_url = EXCLUDED.scout_url,
+        api_url = EXCLUDED.api_url,
+        assistant_name = EXCLUDED.assistant_name,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = now(),
+        deleted_at = NULL
+      WHERE chatbot_embed_packages.company_id = EXCLUDED.company_id
+      RETURNING
+        chatbot_embed_packages.id,
+        chatbot_embed_packages.target_app_id,
+        (SELECT name FROM guided_workflow_target_apps WHERE id = chatbot_embed_packages.target_app_id) AS target_app_name,
+        chatbot_embed_packages.environment,
+        chatbot_embed_packages.user_id_placeholder,
+        chatbot_embed_packages.scout_url,
+        chatbot_embed_packages.api_url,
+        chatbot_embed_packages.assistant_name,
+        chatbot_embed_packages.api_key_prefix,
+        chatbot_embed_packages.created_at,
+        chatbot_embed_packages.updated_at
+    `,
+    [
+      input.id ?? null,
+      companyId,
+      targetAppId,
+      environment,
+      apiKey,
+      apiKeyPrefix,
+      userId,
+      scoutUrl,
+      apiUrl,
+      assistantName,
+      session.user.id,
+    ]
+  );
+
+  return {
+    packageData,
+    record: mapChatbotEmbedPackageRow(result.rows[0]),
+  };
+}
+
 export function buildChatbotEmbedPackage(input: {
   scoutUrl: string;
   apiUrl: string;
@@ -1064,16 +1395,13 @@ export function buildChatbotEmbedPackage(input: {
   targetAppId: string;
   targetAppName: string;
   assistantName?: string;
-  brandColor?: string;
-  accentColor?: string;
 }) {
   const companyToken = obfuscateGuid({ id: input.companyId, type: "company" });
   const targetAppToken = obfuscateGuid({ id: input.targetAppId, type: "target_app" });
   const assistantName = input.assistantName || "Scout Assistant";
-  const brandColor = input.brandColor || "#111827";
-  const accentColor = input.accentColor || "#0ea5e9";
+  const configVarName = `${sanitizeConfigVarBase(input.targetAppName)}ScoutChatbotConfig`;
 
-  const configSnippet = `window.NexusVendorScoutChatbotConfig = ${JSON.stringify({
+  const configSnippet = `window.${configVarName} = ${JSON.stringify({
     scoutUrl: input.scoutUrl,
     apiUrl: input.apiUrl,
     apiKey: input.apiKey,
@@ -1082,12 +1410,10 @@ export function buildChatbotEmbedPackage(input: {
     userId: input.userId,
     targetAppId: targetAppToken,
     targetAppName: input.targetAppName,
-    assistantName,
-    brandColor,
-    accentColor
+    assistantName
   }, null, 2)};\n`;
 
-  const installSnippet = `const config = window.NexusVendorScoutChatbotConfig;\nif (config) {\n  const loader = document.createElement(\"script\");\n  loader.id = \"nv-scout-chatbot-loader\";\n  loader.src = \`${'${config.scoutUrl.replace(/\\\/$/, "")}'}/scout-chatbot.js?v=1.1.0\`;\n  loader.async = true;\n  loader.onload = () => window.ScoutChatbot.install(config);\n  loader.onerror = () => console.error(\"ScoutChatbot could not load. Confirm the Scout host is available.\");\n  document.head.appendChild(loader);\n}\n`;
+  const installSnippet = `const config = window.${configVarName};\nif (config) {\n  const loader = document.createElement(\"script\");\n  loader.id = \"nv-scout-chatbot-loader\";\n  loader.src = \`${'${config.scoutUrl.replace(/\\\/$/, "")}'}/scout-chatbot.js?v=1.1.0\`;\n  loader.async = true;\n  loader.onload = () => window.ScoutChatbot.install(config);\n  loader.onerror = () => console.error(\"ScoutChatbot could not load. Confirm the Scout host is available.\");\n  document.head.appendChild(loader);\n}\n`;
 
   const htmlSample = `<script src=\"./scout-chatbot-config.local.js\"></script>\n<script src=\"./scout-chatbot-install.js\"></script>`;
 

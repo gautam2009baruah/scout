@@ -68,6 +68,21 @@ type EmbedPackageResponse = {
   reactSample: string;
   obfuscatedCompanyId: string;
   obfuscatedTargetAppId: string;
+  record?: EmbedPackageRecord;
+};
+
+type EmbedPackageRecord = {
+  id: string;
+  targetAppId: string;
+  targetAppName: string;
+  environment: string;
+  userId: string;
+  scoutUrl: string;
+  apiUrl: string;
+  assistantName: string;
+  apiKeyPrefix: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type ScopeValue = "global" | string;
@@ -97,7 +112,6 @@ type ConfirmDialog = {
 
 const COMPANY_SCOPE = "__company__";
 const MIN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
-const EMBED_PACKAGE_STORAGE_KEY = "chatbot-settings-package-v1";
 
 function toDraft(scope: ScopeValue, settings: ChatbotLifecycleSettings): Draft {
   return {
@@ -208,7 +222,9 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
   const [embedStatus, setEmbedStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
   const [embedForm, setEmbedForm] = useState({
+    id: "",
     targetAppId: targetApps[0]?.id ?? "",
+    environment: "",
     userId: "scout-client-user",
     apiKey: "",
     scoutUrl: typeof window === "undefined" ? "http://localhost:3000" : window.location.origin,
@@ -216,56 +232,48 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     assistantName: "Scout Assistant"
   });
   const [embedResult, setEmbedResult] = useState<EmbedPackageResponse | null>(null);
+  const [embedRecords, setEmbedRecords] = useState<EmbedPackageRecord[]>([]);
+  const [loadingEmbedRecords, setLoadingEmbedRecords] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
+  async function loadEmbedRecords(targetAppId: string) {
+    if (!targetAppId) {
+      setEmbedRecords([]);
       return;
     }
 
-    const raw = window.localStorage.getItem(EMBED_PACKAGE_STORAGE_KEY);
-    if (!raw) {
-      return;
-    }
-
+    setLoadingEmbedRecords(true);
     try {
-      const parsed = JSON.parse(raw) as {
-        embedForm?: Partial<typeof embedForm>;
-        embedResult?: EmbedPackageResponse;
-      };
-
-      if (parsed.embedForm && typeof parsed.embedForm === "object") {
-        setEmbedForm((current) => ({
-          ...current,
-          ...parsed.embedForm
-        }));
+      const response = await fetch(`/api/admin/chatbot-settings/embed-packages?targetAppId=${encodeURIComponent(targetAppId)}`);
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(typeof body?.message === "string" ? body.message : "Unable to load generated packages.");
       }
 
-      if (parsed.embedResult && typeof parsed.embedResult === "object") {
-        setEmbedResult(parsed.embedResult);
-        setEmbedStatus({ type: "success", message: "Previously generated package loaded." });
-      }
-    } catch {
-      window.localStorage.removeItem(EMBED_PACKAGE_STORAGE_KEY);
+      setEmbedRecords(Array.isArray(body?.records) ? body.records : []);
+    } finally {
+      setLoadingEmbedRecords(false);
     }
-  }, []);
+  }
+
+  const packageEnvironmentOptions = useMemo(() => {
+    const fromEnvironments = environments.map((entry) => entry.name);
+    const fromKeys = apiKeys
+      .filter((entry) => (entry.targetAppId || "") === embedForm.targetAppId)
+      .map((entry) => entry.environment)
+      .filter(Boolean);
+    const fromRecords = embedRecords
+      .filter((entry) => entry.targetAppId === embedForm.targetAppId)
+      .map((entry) => entry.environment)
+      .filter(Boolean);
+
+    return Array.from(new Set([...fromEnvironments, ...fromKeys, ...fromRecords])).sort((a, b) => a.localeCompare(b));
+  }, [environments, apiKeys, embedRecords, embedForm.targetAppId]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (!embedResult) {
-      return;
-    }
-
-    window.localStorage.setItem(
-      EMBED_PACKAGE_STORAGE_KEY,
-      JSON.stringify({
-        embedForm,
-        embedResult
-      })
-    );
-  }, [embedForm, embedResult]);
+    void loadEmbedRecords(embedForm.targetAppId).catch((error) => {
+      showToast(error instanceof Error ? error.message : "Unable to load generated packages.", "error");
+    });
+  }, [embedForm.targetAppId]);
 
   const byScope = useMemo(() => {
     const map = new Map<ScopeValue, ChatbotLifecycleSettingsRecord>();
@@ -643,7 +651,102 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     URL.revokeObjectURL(url);
   }
 
+  async function selectGeneratedPackageForEdit(record: EmbedPackageRecord) {
+    const response = await fetch(`/api/admin/chatbot-settings/embed-packages/${record.id}/secret`);
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      showToast(typeof body?.message === "string" ? body.message : "Unable to load generated package details.", "error");
+      return;
+    }
+
+    setEmbedForm({
+      id: record.id,
+      targetAppId: record.targetAppId,
+      environment: record.environment,
+      userId: record.userId,
+      apiKey: typeof body?.apiKey === "string" ? body.apiKey : "",
+      scoutUrl: record.scoutUrl,
+      apiUrl: record.apiUrl,
+      assistantName: record.assistantName,
+    });
+
+    setActiveTab("package");
+    setEmbedStatus({ type: "success", message: "Generated package loaded in edit mode." });
+  }
+
+  async function handleEmbedEnvironmentChange(nextEnvironment: string) {
+    setEmbedForm((current) => ({ ...current, environment: nextEnvironment }));
+    if (!nextEnvironment) {
+      return;
+    }
+
+    const matchingRecord = embedRecords.find((item) => (
+      item.targetAppId === embedForm.targetAppId && item.environment === nextEnvironment
+    ));
+
+    if (matchingRecord) {
+      const response = await fetch(`/api/admin/chatbot-settings/embed-packages/${matchingRecord.id}/secret`);
+      const body = await response.json().catch(() => null);
+      if (response.ok && typeof body?.apiKey === "string") {
+        setEmbedForm((current) => ({
+          ...current,
+          id: matchingRecord.id,
+          apiKey: body.apiKey,
+          userId: matchingRecord.userId,
+          scoutUrl: matchingRecord.scoutUrl,
+          apiUrl: matchingRecord.apiUrl,
+          assistantName: matchingRecord.assistantName,
+        }));
+      }
+    }
+  }
+
+  async function resolveApiKeyContext(apiKey: string, targetAppId: string) {
+    if (!apiKey.trim()) {
+      return;
+    }
+
+    const response = await fetch("/api/admin/chatbot-settings/embed-package/resolve-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey, targetAppId }),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      return;
+    }
+
+    const resolvedEnv = typeof body?.context?.environment === "string" ? body.context.environment : "";
+    if (!resolvedEnv) {
+      return;
+    }
+
+    setEmbedForm((current) => ({
+      ...current,
+      environment: resolvedEnv,
+      targetAppId: typeof body?.context?.targetAppId === "string" && body.context.targetAppId.trim()
+        ? body.context.targetAppId
+        : current.targetAppId,
+    }));
+  }
+
+  function resetEmbedForm() {
+    setEmbedForm((current) => ({
+      ...current,
+      id: "",
+      environment: "",
+      apiKey: "",
+    }));
+    setEmbedResult(null);
+    setEmbedStatus({ type: "idle", message: "" });
+  }
+
   async function generateEmbedPackage() {
+    if (!embedForm.environment.trim()) {
+      showToast("Environment is required.", "error");
+      return;
+    }
+
     setEmbedStatus({ type: "saving", message: "Generating package snippets..." });
     setEmbedResult(null);
 
@@ -661,6 +764,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     }
 
     setEmbedResult(body as EmbedPackageResponse);
+    await loadEmbedRecords(embedForm.targetAppId);
     setEmbedStatus({ type: "success", message: "Embed package ready. Download both files and include them in your client app." });
     showToast("Embed package generated.", "success");
   }
@@ -1019,9 +1123,27 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span className="inline-flex items-center gap-1.5">Target app <HelpHint text="Target application for which the package snippets are generated." /></span>
-                    <select className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, targetAppId: event.target.value }))} value={embedForm.targetAppId}>
+                    <select
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                      onChange={(event) => setEmbedForm((current) => ({ ...current, id: "", targetAppId: event.target.value, environment: "", apiKey: "" }))}
+                      value={embedForm.targetAppId}
+                    >
                       {targetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    <span className="inline-flex items-center gap-1.5">Environment <HelpHint text="Environment is required and scoped by selected target app." /></span>
+                    <select
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                      onChange={(event) => { void handleEmbedEnvironmentChange(event.target.value); }}
+                      value={embedForm.environment}
+                    >
+                      <option value="">Select environment</option>
+                      {packageEnvironmentOptions.map((environment) => (
+                        <option key={environment} value={environment}>{environment}</option>
                       ))}
                     </select>
                   </label>
@@ -1033,7 +1155,13 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span className="inline-flex items-center gap-1.5">API key (plaintext) <HelpHint text="Paste a newly created or rotated API key used by the generated install script." /></span>
-                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, apiKey: event.target.value }))} placeholder="Paste newly created or rotated API key" value={embedForm.apiKey} />
+                    <input
+                      className="h-11 rounded-lg border border-slate-200 px-3 text-sm"
+                      onBlur={() => void resolveApiKeyContext(embedForm.apiKey, embedForm.targetAppId)}
+                      onChange={(event) => setEmbedForm((current) => ({ ...current, id: "", apiKey: event.target.value }))}
+                      placeholder="Paste newly created or rotated API key"
+                      value={embedForm.apiKey}
+                    />
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
@@ -1055,9 +1183,54 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                 <div className="mt-5 flex flex-wrap items-center gap-3">
                   <button className="inline-flex h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 text-sm font-semibold text-white" onClick={generateEmbedPackage} type="button">
                     <Download className="h-4 w-4" />
-                    {embedResult ? "Regenerate snippets" : "Generate snippets"}
+                    {embedForm.id ? "Regenerate snippets" : "Generate snippets"}
                   </button>
+                  {embedForm.id ? (
+                    <button className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-200 px-5 text-sm font-semibold text-slate-700" onClick={resetEmbedForm} type="button">
+                      <X className="h-4 w-4" />
+                      Exit edit mode
+                    </button>
+                  ) : null}
                   {embedStatus.message ? <span className={`text-sm ${embedStatus.type === "error" ? "text-red-600" : "text-slate-600"}`}>{embedStatus.message}</span> : null}
+                </div>
+
+                <div className="mt-5 rounded-lg border border-slate-200">
+                  <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                    <p className="text-sm font-semibold text-slate-800">Generated Packages</p>
+                    {loadingEmbedRecords ? <span className="text-xs text-slate-500">Loading...</span> : null}
+                  </div>
+                  {embedRecords.length === 0 ? (
+                    <p className="px-4 py-6 text-sm text-slate-500">No generated packages found for the selected target app.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-slate-200 text-sm">
+                        <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                          <tr>
+                            <th className="px-3 py-2 text-left">Environment</th>
+                            <th className="px-3 py-2 text-left">API key prefix</th>
+                            <th className="px-3 py-2 text-left">Assistant</th>
+                            <th className="px-3 py-2 text-left">Updated</th>
+                            <th className="px-3 py-2 text-left">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {embedRecords.map((record) => (
+                            <tr key={record.id}>
+                              <td className="px-3 py-3 text-slate-700">{record.environment}</td>
+                              <td className="px-3 py-3 font-mono text-xs text-slate-700">{record.apiKeyPrefix}</td>
+                              <td className="px-3 py-3 text-slate-700">{record.assistantName}</td>
+                              <td className="px-3 py-3 text-xs text-slate-600">{formatDate(record.updatedAt)}</td>
+                              <td className="px-3 py-3">
+                                <IconActionButton label="Load this generated package into edit mode." onClick={() => void selectGeneratedPackageForEdit(record)}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </IconActionButton>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
 
                 {embedResult ? (
