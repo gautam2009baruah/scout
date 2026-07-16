@@ -769,7 +769,13 @@ export async function updateChatbotApiKey(
   }
 
   if (Array.isArray(input.allowedOrigins)) {
-    throw new ChatbotSettingsError("Allowed origins cannot be edited after API key creation.", 400);
+    const normalizedOrigins = normalizeOrigins(input.allowedOrigins);
+    if (normalizedOrigins.length === 0) {
+      throw new ChatbotSettingsError("At least one allowed origin is required.", 400);
+    }
+    updates.push(`allowed_origins_json = $${index}::jsonb`);
+    values.push(JSON.stringify(normalizedOrigins));
+    index += 1;
   }
 
   if (Object.prototype.hasOwnProperty.call(input, "expiresAt")) {
@@ -1170,10 +1176,17 @@ export async function listChatbotEmbedPackages(
         p.updated_at
       FROM chatbot_embed_packages p
       INNER JOIN guided_workflow_target_apps gta ON gta.id = p.target_app_id
+      INNER JOIN chatbot_api_keys k
+        ON k.company_id = p.company_id
+       AND k.key_prefix = p.api_key_prefix
+       AND COALESCE(k.environment, '') = COALESCE(p.environment, '')
+       AND (k.target_app_id IS NULL OR k.target_app_id = p.target_app_id)
       WHERE p.company_id = $1
         AND p.deleted_at IS NULL
+        AND COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END) = 'active'
+        AND k.is_active = true
         AND ($2::uuid IS NULL OR p.target_app_id = $2)
-      ORDER BY p.updated_at DESC
+      ORDER BY p.environment ASC, p.updated_at DESC
     `,
     [companyId, targetAppId]
   );
@@ -1247,6 +1260,9 @@ export async function resolveChatbotApiKeyContext(
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
       WHERE k.company_id = $1
         AND k.key_hash = $2
+        AND k.status = 'active'
+        AND k.is_active = true
+        AND (k.expires_at IS NULL OR k.expires_at > now())
         AND ($3::uuid IS NULL OR k.target_app_id = $3)
       LIMIT 1
     `,
@@ -1293,6 +1309,40 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
 
   await assertTargetAppAccess(session, companyId, targetAppId);
   await assertEnvironmentExists(session, companyId, environment);
+
+  const matchedApiKey = await getPool().query<{
+    id: string;
+    environment: string;
+    target_app_id: string | null;
+  }>(
+    `
+      SELECT
+        k.id,
+        COALESCE(k.environment, '') AS environment,
+        k.target_app_id
+      FROM chatbot_api_keys k
+      WHERE k.company_id = $1
+        AND k.key_hash = $2
+        AND k.status = 'active'
+        AND k.is_active = true
+        AND (k.expires_at IS NULL OR k.expires_at > now())
+      LIMIT 1
+    `,
+    [companyId, hashSecret(apiKey)]
+  );
+
+  if ((matchedApiKey.rowCount ?? 0) === 0) {
+    throw new ChatbotSettingsError("Only active API keys can be used to generate snippets.", 400);
+  }
+
+  const matched = matchedApiKey.rows[0];
+  if (normalizeEnvironment(matched.environment) !== environment) {
+    throw new ChatbotSettingsError("Selected environment does not match the API key environment.", 400);
+  }
+
+  if (matched.target_app_id && matched.target_app_id !== targetAppId) {
+    throw new ChatbotSettingsError("Selected target app does not match the API key scope.", 400);
+  }
 
   const payload = await getChatbotLifecycleSettingsAdminPayload(session);
   const targetApp = payload.targetApps.find((item) => item.id === targetAppId);

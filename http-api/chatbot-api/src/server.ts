@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
 import { getEffectiveChatbotLifecycleSettings } from "@/lib/chat/lifecycle-settings";
 import { answerChatQuery, ChatQueryError } from "@/lib/chat/query";
+import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { getPool } from "@/lib/db/pool";
 import { CompanyApiKeyAuthorizer, extractToken } from "./auth";
 import { getApiConfig } from "./config";
@@ -10,7 +11,9 @@ import { InMemoryRateLimiter } from "./rate-limit";
 import { TenantResolver } from "./tenant-resolution";
 
 type ChatQueryBody = {
+  companyId?: string;
   companyName?: string;
+  targetAppId?: string;
   targetAppName?: string;
   environment?: string;
   userId?: string;
@@ -261,14 +264,49 @@ const server = createServer(async (request, response) => {
 
       const companyName = String(parsedBody.companyName || "").trim();
       const targetAppName = String(parsedBody.targetAppName || "").trim();
+      const companyToken = String(parsedBody.companyId || "").trim();
+      const targetAppToken = String(parsedBody.targetAppId || "").trim();
 
       if (!companyName) {
         sendJson(response, 400, { message: "companyName is required." }, requestId, origin);
         return;
       }
 
+      if (!companyToken) {
+        sendJson(response, 400, { message: "companyId is required." }, requestId, origin);
+        return;
+      }
+
       companyContext = await tenantResolver.resolveCompanyByName(companyName);
       targetAppContext = await tenantResolver.resolveTargetAppByName(companyContext.id, targetAppName);
+
+      let resolvedCompanyId = "";
+      try {
+        resolvedCompanyId = resolveGuidIdentifier(companyToken, "company");
+      } catch {
+        sendJson(response, 400, { message: "Invalid companyId token." }, requestId, origin);
+        return;
+      }
+
+      if (resolvedCompanyId !== companyContext.id) {
+        sendJson(response, 401, { message: "companyId token does not match companyName." }, requestId, origin);
+        return;
+      }
+
+      if (targetAppToken) {
+        let resolvedTargetAppId = "";
+        try {
+          resolvedTargetAppId = resolveGuidIdentifier(targetAppToken, "target_app");
+        } catch {
+          sendJson(response, 400, { message: "Invalid targetAppId token." }, requestId, origin);
+          return;
+        }
+
+        if (!targetAppContext || resolvedTargetAppId !== targetAppContext.id) {
+          sendJson(response, 401, { message: "targetAppId token does not match targetAppName." }, requestId, origin);
+          return;
+        }
+      }
 
       const requestedEnvironment = String(
         parsedBody.environment || request.headers["x-scout-environment"] || ""

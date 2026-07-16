@@ -98,7 +98,9 @@ export default function EmbeddedScoutChatbotPage() {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-API-Key": safeConfig.apiKey },
           body: JSON.stringify({
+            companyId: safeConfig.companyId,
             companyName: safeConfig.companyName,
+            targetAppId: safeConfig.targetAppId || undefined,
             targetAppName: safeConfig.targetAppName || undefined
           }),
           signal: controller.signal
@@ -163,7 +165,9 @@ export default function EmbeddedScoutChatbotPage() {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": config.apiKey },
       body: JSON.stringify({
+        companyId: config.companyId,
         companyName: config.companyName,
+        targetAppId: config.targetAppId || undefined,
         targetAppName: config.targetAppName || undefined,
         userId: effectiveUserId,
         clientTraceId,

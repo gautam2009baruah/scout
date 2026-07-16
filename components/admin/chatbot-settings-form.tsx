@@ -120,9 +120,9 @@ function toDraft(scope: ScopeValue, settings: ChatbotLifecycleSettings): Draft {
     maxContextMessages: String(settings.maxContextMessages),
     maxContextTokens: String(settings.maxContextTokens),
     inactivityTimeoutSeconds: String(settings.inactivityTimeoutSeconds),
-    resetOnLogoutEvent: settings.resetOnLogoutEvent,
-    resetOnUserChange: settings.resetOnUserChange,
-    resetOnTargetAppChange: settings.resetOnTargetAppChange
+    resetOnLogoutEvent: true,
+    resetOnUserChange: true,
+    resetOnTargetAppChange: true
   };
 }
 
@@ -236,6 +236,20 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   const [embedResult, setEmbedResult] = useState<EmbedPackageResponse | null>(null);
   const [embedRecords, setEmbedRecords] = useState<EmbedPackageRecord[]>([]);
   const [loadingEmbedRecords, setLoadingEmbedRecords] = useState(false);
+
+  const nonRevokedApiKeys = useMemo(
+    () => apiKeys
+      .filter((key) => key.status === "active" || key.status === "suspended")
+      .sort((a, b) => a.environment.localeCompare(b.environment) || a.name.localeCompare(b.name)),
+    [apiKeys]
+  );
+
+  const revokedApiKeys = useMemo(
+    () => apiKeys
+      .filter((key) => key.status === "revoked")
+      .sort((a, b) => a.environment.localeCompare(b.environment) || a.name.localeCompare(b.name)),
+    [apiKeys]
+  );
 
   async function loadEmbedRecords(targetAppId: string) {
     if (!targetAppId) {
@@ -373,9 +387,9 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
         maxContextMessages: Number(draft.maxContextMessages),
         maxContextTokens: Number(draft.maxContextTokens),
         inactivityTimeoutSeconds: Number(draft.inactivityTimeoutSeconds),
-        resetOnLogoutEvent: draft.resetOnLogoutEvent,
-        resetOnUserChange: draft.resetOnUserChange,
-        resetOnTargetAppChange: draft.resetOnTargetAppChange
+        resetOnLogoutEvent: true,
+        resetOnUserChange: true,
+        resetOnTargetAppChange: true
       })
     });
 
@@ -454,7 +468,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       return;
     }
 
-    if (isCreateMode && parseAllowedOrigins(apiKeyForm.allowedOriginsText).length === 0) {
+    if (parseAllowedOrigins(apiKeyForm.allowedOriginsText).length === 0) {
       showToast("At least one allowed origin is required.", "error");
       return;
     }
@@ -468,7 +482,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       targetAppId: apiKeyForm.targetAppId === COMPANY_SCOPE ? null : apiKeyForm.targetAppId,
       environment: apiKeyForm.environment,
       strictEnvironmentEnforcement: apiKeyForm.strictEnvironmentEnforcement,
-      allowedOrigins: isCreateMode ? parseAllowedOrigins(apiKeyForm.allowedOriginsText) : undefined,
+      allowedOrigins: parseAllowedOrigins(apiKeyForm.allowedOriginsText),
       expiresAt: apiKeyForm.expiresAt ? new Date(apiKeyForm.expiresAt).toISOString() : null
     };
 
@@ -900,16 +914,25 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
               <div className="mt-6 grid gap-3 md:grid-cols-3">
                 <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  <input checked={draft.resetOnLogoutEvent} onChange={(event) => setDraft((current) => ({ ...current, resetOnLogoutEvent: event.target.checked }))} type="checkbox" />
-                  Reset on logout/session expiry event
+                  <input checked disabled readOnly type="checkbox" />
+                  <span className="inline-flex items-center gap-1.5">
+                    Reset on logout/session expiry event
+                    <HelpHint text="Always enabled. Conversation context resets when logout or session expiry is detected." />
+                  </span>
                 </label>
                 <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  <input checked={draft.resetOnUserChange} onChange={(event) => setDraft((current) => ({ ...current, resetOnUserChange: event.target.checked }))} type="checkbox" />
-                  Reset on user or tenant change
+                  <input checked disabled readOnly type="checkbox" />
+                  <span className="inline-flex items-center gap-1.5">
+                    Reset on user or tenant change
+                    <HelpHint text="Always enabled. Conversation context resets whenever user identity or tenant changes." />
+                  </span>
                 </label>
                 <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                  <input checked={draft.resetOnTargetAppChange} onChange={(event) => setDraft((current) => ({ ...current, resetOnTargetAppChange: event.target.checked }))} type="checkbox" />
-                  Reset on target app/business context change
+                  <input checked disabled readOnly type="checkbox" />
+                  <span className="inline-flex items-center gap-1.5">
+                    Reset on target app/business context change
+                    <HelpHint text="Always enabled. Conversation context resets when target app/business context changes." />
+                  </span>
                 </label>
               </div>
 
@@ -1009,8 +1032,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                       placeholder="https://app.example.com, *.example.org"
                       type="text"
                       value={apiKeyForm.allowedOriginsText}
-                      disabled={editingKeyId !== null}
-                      required={editingKeyId === null}
+                      required
                     />
                   </label>
 
@@ -1072,7 +1094,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {apiKeys.map((key) => (
+                    {nonRevokedApiKeys.map((key) => (
                       <tr key={key.id}>
                         <td className="px-3 py-3 font-medium text-slate-800">{key.name}</td>
                         <td className="px-3 py-3 text-slate-700">{key.targetAppName || "Company level"}</td>
@@ -1114,14 +1136,47 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                         </td>
                       </tr>
                     ))}
-                    {apiKeys.length === 0 ? (
+                    {nonRevokedApiKeys.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-8 text-center text-sm text-slate-500" colSpan={8}>No API keys created yet.</td>
+                        <td className="px-3 py-8 text-center text-sm text-slate-500" colSpan={8}>No active or suspended API keys.</td>
                       </tr>
                     ) : null}
                   </tbody>
                 </table>
               </div>
+
+              <details className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-800">Revoked keys ({revokedApiKeys.length})</summary>
+                <div className="mt-3 w-full max-w-full overflow-x-auto">
+                  <table className="min-w-[980px] divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-100 text-xs uppercase text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 text-left">Name</th>
+                        <th className="px-3 py-2 text-left">Target app</th>
+                        <th className="px-3 py-2 text-left">Environment</th>
+                        <th className="px-3 py-2 text-left">Allowed domains</th>
+                        <th className="px-3 py-2 text-left">Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {revokedApiKeys.map((key) => (
+                        <tr key={key.id}>
+                          <td className="px-3 py-3 font-medium text-slate-700">{key.name}</td>
+                          <td className="px-3 py-3 text-slate-600">{key.targetAppName || "Company level"}</td>
+                          <td className="px-3 py-3 text-slate-600">{key.environment}</td>
+                          <td className="px-3 py-3 text-xs text-slate-500">{key.allowedOrigins.length ? key.allowedOrigins.join(", ") : "Any domain"}</td>
+                          <td className="px-3 py-3 text-xs text-slate-500">{formatDate(key.updatedAt)}</td>
+                        </tr>
+                      ))}
+                      {revokedApiKeys.length === 0 ? (
+                        <tr>
+                          <td className="px-3 py-6 text-center text-sm text-slate-500" colSpan={5}>No revoked keys.</td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </div>
           ) : null}
 
@@ -1166,7 +1221,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                       type="checkbox"
                     />
                     <span className="inline-flex items-center gap-1.5">
-                      Don't allow anonymous access
+                      Don&apos;t allow anonymous access
                       <HelpHint text="When enabled, anonymous access is blocked and the client app must pass a logged-in user's GUID at runtime. When disabled, GUID passing is optional." />
                     </span>
                   </label>
@@ -1225,6 +1280,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                       <table className="min-w-full divide-y divide-slate-200 text-sm">
                         <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                           <tr>
+                            <th className="px-3 py-2 text-left">SNo</th>
                             <th className="px-3 py-2 text-left">Environment</th>
                             <th className="px-3 py-2 text-left">Target App</th>
                             <th className="px-3 py-2 text-left">Assistant</th>
@@ -1233,8 +1289,9 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {embedRecords.map((record) => (
+                          {embedRecords.map((record, index) => (
                             <tr key={record.id}>
+                              <td className="px-3 py-3 text-slate-700">{index + 1}</td>
                               <td className="px-3 py-3 text-slate-700">{record.environment}</td>
                               <td className="px-3 py-3 font-mono text-xs text-slate-700">{record.targetAppName}</td>
                               <td className="px-3 py-3 text-slate-700">{record.assistantName}</td>
