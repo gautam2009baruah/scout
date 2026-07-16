@@ -200,7 +200,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   const [environments, setEnvironments] = useState<ChatbotEnvironment[]>([]);
 
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
-  const defaultTargetAppId = canUseCompanyLevelApiKeys ? COMPANY_SCOPE : (targetApps[0]?.id ?? "");
+  const defaultTargetAppId = targetApps[0]?.id ?? "";
   const [apiKeyForm, setApiKeyForm] = useState({
     targetAppId: defaultTargetAppId,
     name: "",
@@ -969,7 +969,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, targetAppId: event.target.value }))}
                       disabled={editingKeyId !== null}
                     >
-                      {canUseCompanyLevelApiKeys ? <option value={COMPANY_SCOPE}>Company level</option> : null}
                       {targetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
                       ))}
