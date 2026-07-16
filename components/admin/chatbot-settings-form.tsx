@@ -1185,9 +1185,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span className="inline-flex items-center gap-1.5">Target app <HelpHint text="Target application for which the package snippets are generated." /></span>
                     <select
-                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       onChange={(event) => setEmbedForm((current) => ({ ...current, id: "", targetAppId: event.target.value, environment: "", apiKey: "" }))}
                       value={embedForm.targetAppId}
+                      disabled={Boolean(embedForm.id)}
                     >
                       {targetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
@@ -1198,9 +1199,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span className="inline-flex items-center gap-1.5">Environment <HelpHint text="Environment is required and scoped by selected target app." /></span>
                     <select
-                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                      className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       onChange={(event) => { void handleEmbedEnvironmentChange(event.target.value); }}
                       value={embedForm.environment}
+                      disabled={Boolean(embedForm.id)}
                     >
                       <option value="">Select environment</option>
                       {packageEnvironmentOptions.map((environment) => (
