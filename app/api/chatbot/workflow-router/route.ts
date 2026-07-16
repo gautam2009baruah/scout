@@ -139,7 +139,11 @@ async function loadChatbotWorkflowCandidates(
         name: orchestration.name,
         description: orchestration.description || "",
         nodeSummary: sortedNodes.map((node) => `${node!.label} (${node!.nodeType})`),
-        requiredVariables: (triggerConfig?.requiredVariables || []) as ChatbotTriggerConfig["requiredVariables"] extends Array<infer T> ? T[] : [],
+        requiredVariables: (
+          Array.isArray(triggerConfig?.requiredVariables)
+            ? triggerConfig.requiredVariables
+            : []
+        ) as ChatbotWorkflowCandidate["requiredVariables"],
         triggerPhrases: Array.isArray(triggerConfig?.triggerPhrases)
           ? triggerConfig.triggerPhrases.filter((phrase): phrase is string => typeof phrase === "string")
           : [],
