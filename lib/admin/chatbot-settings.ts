@@ -1422,7 +1422,6 @@ export function buildChatbotEmbedPackage(input: {
     companyId: companyToken,
     companyName: input.companyName,
     userId: input.userId,
-    requireUserGuid: input.requireUserGuid === true,
     targetAppId: targetAppToken,
     targetAppName: input.targetAppName,
     assistantName

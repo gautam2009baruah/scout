@@ -4,7 +4,7 @@ import { URL } from "node:url";
 import { getEffectiveChatbotLifecycleSettings } from "@/lib/chat/lifecycle-settings";
 import { answerChatQuery, ChatQueryError } from "@/lib/chat/query";
 import { getPool } from "@/lib/db/pool";
-import { CompanyApiKeyAuthorizer } from "./auth";
+import { CompanyApiKeyAuthorizer, extractToken } from "./auth";
 import { getApiConfig } from "./config";
 import { InMemoryRateLimiter } from "./rate-limit";
 import { TenantResolver } from "./tenant-resolution";
@@ -105,6 +105,34 @@ function parseBody(request: IncomingMessage): Promise<ChatQueryBody> {
 
     request.on("error", reject);
   });
+}
+
+function isGuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
+async function requiresGuidUserIdForApiKey(
+  token: string,
+  companyId: string,
+  targetAppId?: string | null
+) {
+  if (!token) {
+    return false;
+  }
+
+  const result = await getPool().query<{ require_user_guid: boolean }>(
+    `
+      SELECT COALESCE(bool_or(p.require_user_guid), false) AS require_user_guid
+      FROM chatbot_embed_packages p
+      WHERE p.company_id = $1
+        AND p.deleted_at IS NULL
+        AND p.api_key_plaintext = $2
+        AND ($3::uuid IS NULL OR p.target_app_id = $3)
+    `,
+    [companyId, token, targetAppId || null]
+  );
+
+  return result.rows[0]?.require_user_guid === true;
 }
 
 async function handleChatQuery(
@@ -255,6 +283,26 @@ const server = createServer(async (request, response) => {
       if (!auth.ok) {
         sendJson(response, 401, { message: auth.error || "Unauthorized." }, requestId, origin);
         return;
+      }
+
+      if (url.pathname === "/v1/chat/query") {
+        const token = extractToken(request.headers);
+        const requireGuidUserId = await requiresGuidUserIdForApiKey(
+          token,
+          companyContext.id,
+          targetAppContext?.id ?? null
+        );
+
+        if (requireGuidUserId && !isGuid(String(parsedBody.userId || ""))) {
+          sendJson(
+            response,
+            400,
+            { message: "A valid GUID userId is required for this API key." },
+            requestId,
+            origin
+          );
+          return;
+        }
       }
 
       const rateKey = `${auth.apiKeyId || auth.source || "unknown"}:${getClientIp(request)}:${url.pathname}`;

@@ -19,13 +19,14 @@ export async function GET(request: Request) {
       targetAppId,
       origin: request.headers.get("origin") ?? undefined
     };
+    const userId = searchParams.get("userId") || searchParams.get("user_id") || "";
 
     await assertChatbotApiKeyAccess(request, {
       companyId,
       targetAppId: input.targetAppId,
+      userId,
     });
 
-    const userId = searchParams.get("userId") || searchParams.get("user_id") || "";
     if (companyId || userId) {
       await assertScopedTargetAppAccess({
         companyId,

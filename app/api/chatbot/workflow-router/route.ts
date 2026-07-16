@@ -522,7 +522,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await assertChatbotApiKeyAccess(request, { companyId, targetAppId });
+    await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
 

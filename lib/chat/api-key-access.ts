@@ -8,6 +8,10 @@ export class ChatbotApiKeyAccessError extends Error {
   }
 }
 
+function isGuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
 function extractApiKey(request: Request) {
   const apiKeyHeader = request.headers.get("x-api-key");
   if (apiKeyHeader && apiKeyHeader.trim()) {
@@ -80,7 +84,7 @@ function parseOriginHost(request: Request) {
   }
 }
 
-export async function assertChatbotApiKeyAccess(request: Request, input: { companyId: string; targetAppId?: string }) {
+export async function assertChatbotApiKeyAccess(request: Request, input: { companyId: string; targetAppId?: string; userId?: string }) {
   const apiKey = extractApiKey(request);
   if (!apiKey) {
     // Keep backward compatibility for internal first-party callers that do not use embed API keys.
@@ -132,5 +136,22 @@ export async function assertChatbotApiKeyAccess(request: Request, input: { compa
   const allowedOrigins = Array.isArray(row.allowed_origins_json) ? row.allowed_origins_json : [];
   if (!isOriginAllowed(requestHost, allowedOrigins)) {
     throw new ChatbotApiKeyAccessError("API key is not allowed for this origin.", 403);
+  }
+
+  const requireGuidPolicy = await getPool().query<{ require_user_guid: boolean }>(
+    `
+      SELECT COALESCE(bool_or(p.require_user_guid), false) AS require_user_guid
+      FROM chatbot_embed_packages p
+      WHERE p.company_id = $1
+        AND p.deleted_at IS NULL
+        AND p.api_key_plaintext = $2
+        AND ($3::uuid IS NULL OR p.target_app_id = $3)
+    `,
+    [companyId, apiKey, targetAppId || null]
+  );
+
+  const requiresGuid = requireGuidPolicy.rows[0]?.require_user_guid === true;
+  if (requiresGuid && !isGuid(String(input.userId || ""))) {
+    throw new ChatbotApiKeyAccessError("A valid GUID userId is required for this API key.", 400);
   }
 }

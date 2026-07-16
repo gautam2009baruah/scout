@@ -78,7 +78,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    await assertChatbotApiKeyAccess(request, { companyId, targetAppId });
+    await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
     const page = await getOrchestrationPage({
