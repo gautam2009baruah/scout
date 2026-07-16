@@ -29,42 +29,7 @@ export default function EmbeddedScoutChatbotPage() {
   const [conversationId, setConversationId] = useState("");
   const [lifecycleConfig, setLifecycleConfig] = useState<ScoutChatLifecycleConfig | undefined>(undefined);
   const parentOriginRef = useRef("*");
-  const guestUserIdRef = useRef<string | null>(null);
   const clientTraceIdRef = useRef<string | null>(null);
-
-  function isGuid(value: string) {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
-  }
-
-  function getGuestUserId() {
-    if (guestUserIdRef.current) {
-      return guestUserIdRef.current;
-    }
-
-    const storageKey = "scout-chatbot:embed-guest-user-guid";
-    try {
-      const stored = window.localStorage.getItem(storageKey);
-      if (stored && stored.trim()) {
-        guestUserIdRef.current = stored.trim();
-        return guestUserIdRef.current;
-      }
-    } catch {
-      // Ignore storage access errors and use a runtime fallback.
-    }
-
-    const generated = typeof window.crypto?.randomUUID === "function"
-      ? window.crypto.randomUUID()
-      : `${Date.now().toString(16).padEnd(8, "0")}-0000-4000-8000-${Math.random().toString(16).slice(2, 14).padEnd(12, "0")}`;
-    guestUserIdRef.current = generated;
-
-    try {
-      window.localStorage.setItem(storageKey, generated);
-    } catch {
-      // Ignore storage write errors; generated ID still works for this runtime.
-    }
-
-    return generated;
-  }
 
   function getClientTraceId() {
     if (clientTraceIdRef.current) {
@@ -192,7 +157,7 @@ export default function EmbeddedScoutChatbotPage() {
   async function sendMessage(message: string): Promise<ScoutChatMessage> {
     if (!config) throw new Error("Chatbot configuration is unavailable.");
     const configuredUserId = String(config.userId || "").trim();
-    const effectiveUserId = configuredUserId || getGuestUserId();
+    const effectiveUserId = configuredUserId;
     const clientTraceId = getClientTraceId();
     const response = await fetch(`${config.apiUrl.replace(/\/$/, "")}/v1/chat/query`, {
       method: "POST",
@@ -251,10 +216,7 @@ export default function EmbeddedScoutChatbotPage() {
               accentColor: config.accentColor || "#0ea5e9",
               surfaceColor: "#ffffff"
             }}
-            userId={(() => {
-              const configuredUserId = String(config.userId || "").trim();
-              return configuredUserId || getGuestUserId();
-            })()}
+            userId={String(config.userId || "").trim() || undefined}
             variant="embedded"
           />
         ) : null}
