@@ -70,6 +70,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const countdownTimerRef = useRef<number | null>(null);
   const sidebarScrollTimerRef = useRef<number | null>(null);
   const logoutRequestedRef = useRef(false);
+  const isExtendingSessionRef = useRef(false);
 
   const preferredTopLevelOrder = [
     MODULE_KEYS.overview,
@@ -225,6 +226,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     setShowSessionWarning(false);
 
     setIsExtendingSession(true);
+    isExtendingSessionRef.current = true;
     logoutRequestedRef.current = false;
 
     try {
@@ -243,6 +245,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     } catch {
       await logoutNow();
     } finally {
+      isExtendingSessionRef.current = false;
       setIsExtendingSession(false);
     }
   }
@@ -261,7 +264,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
   useEffect(() => {
     const monitor = window.setInterval(() => {
-      if (logoutRequestedRef.current) {
+      if (logoutRequestedRef.current || isExtendingSessionRef.current) {
         return;
       }
 
@@ -278,7 +281,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     }, 1000);
 
     const onVisibilityChange = () => {
-      if (!document.hidden) {
+      if (!document.hidden && !isExtendingSessionRef.current) {
         scheduleSessionWarning(sessionDeadline);
       }
     };
