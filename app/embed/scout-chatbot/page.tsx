@@ -192,11 +192,7 @@ export default function EmbeddedScoutChatbotPage() {
   async function sendMessage(message: string): Promise<ScoutChatMessage> {
     if (!config) throw new Error("Chatbot configuration is unavailable.");
     const configuredUserId = String(config.userId || "").trim();
-    if (config.requireUserGuid === true && !isGuid(configuredUserId)) {
-      throw new Error("Client user GUID is required by this package policy.");
-    }
-
-    const effectiveUserId = isGuid(configuredUserId) ? configuredUserId : getGuestUserId();
+    const effectiveUserId = configuredUserId || getGuestUserId();
     const clientTraceId = getClientTraceId();
     const response = await fetch(`${config.apiUrl.replace(/\/$/, "")}/v1/chat/query`, {
       method: "POST",
@@ -257,11 +253,7 @@ export default function EmbeddedScoutChatbotPage() {
             }}
             userId={(() => {
               const configuredUserId = String(config.userId || "").trim();
-              if (config.requireUserGuid === true) {
-                return isGuid(configuredUserId) ? configuredUserId : undefined;
-              }
-
-              return isGuid(configuredUserId) ? configuredUserId : getGuestUserId();
+              return configuredUserId || getGuestUserId();
             })()}
             variant="embedded"
           />
