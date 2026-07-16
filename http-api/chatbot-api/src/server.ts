@@ -266,6 +266,7 @@ const server = createServer(async (request, response) => {
       const targetAppName = String(parsedBody.targetAppName || "").trim();
       const companyToken = String(parsedBody.companyId || "").trim();
       const targetAppToken = String(parsedBody.targetAppId || "").trim();
+      const requiresScopedTargetApp = url.pathname === "/v1/chat/query" || url.pathname === "/v1/chat/settings";
 
       if (!companyName) {
         sendJson(response, 400, { message: "companyName is required." }, requestId, origin);
@@ -275,6 +276,18 @@ const server = createServer(async (request, response) => {
       if (!companyToken) {
         sendJson(response, 400, { message: "companyId is required." }, requestId, origin);
         return;
+      }
+
+      if (requiresScopedTargetApp) {
+        if (!targetAppName) {
+          sendJson(response, 400, { message: "targetAppName is required." }, requestId, origin);
+          return;
+        }
+
+        if (!targetAppToken) {
+          sendJson(response, 400, { message: "targetAppId is required." }, requestId, origin);
+          return;
+        }
       }
 
       companyContext = await tenantResolver.resolveCompanyByName(companyName);
@@ -306,6 +319,9 @@ const server = createServer(async (request, response) => {
           sendJson(response, 401, { message: "targetAppId token does not match targetAppName." }, requestId, origin);
           return;
         }
+      } else if (requiresScopedTargetApp) {
+        sendJson(response, 400, { message: "targetAppId is required." }, requestId, origin);
+        return;
       }
 
       const requestedEnvironment = String(

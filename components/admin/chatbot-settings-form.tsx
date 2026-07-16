@@ -145,7 +145,7 @@ function HelpHint({ text }: { text: string }) {
   return (
     <span className="relative inline-flex items-center align-middle group">
       <CircleHelp className="h-3.5 w-3.5 text-slate-400" />
-      <span className="pointer-events-none absolute left-0 top-6 z-50 hidden w-72 rounded-md border border-slate-200 bg-slate-900 px-3 py-2 text-xs leading-5 text-slate-100 shadow-lg whitespace-normal break-words group-hover:block">
+      <span className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-72 rounded-md border border-slate-200 bg-slate-900 px-3 py-2 text-xs leading-5 text-slate-100 shadow-lg whitespace-normal break-words opacity-0 invisible transition-opacity duration-150 group-hover:visible group-hover:opacity-100">
         {text}
       </span>
     </span>
@@ -251,15 +251,11 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     [apiKeys]
   );
 
-  async function loadEmbedRecords(targetAppId: string) {
-    if (!targetAppId) {
-      setEmbedRecords([]);
-      return;
-    }
-
+  async function loadEmbedRecords(targetAppId?: string) {
     setLoadingEmbedRecords(true);
     try {
-      const response = await fetch(`/api/admin/chatbot-settings/embed-packages?targetAppId=${encodeURIComponent(targetAppId)}`);
+      const query = targetAppId ? `?targetAppId=${encodeURIComponent(targetAppId)}` : "";
+      const response = await fetch(`/api/admin/chatbot-settings/embed-packages${query}`);
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(typeof body?.message === "string" ? body.message : "Unable to load generated packages.");
@@ -286,10 +282,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   }, [environments, apiKeys, embedRecords, embedForm.targetAppId]);
 
   useEffect(() => {
-    void loadEmbedRecords(embedForm.targetAppId).catch((error) => {
+    void loadEmbedRecords().catch((error) => {
       showToast(error instanceof Error ? error.message : "Unable to load generated packages.", "error");
     });
-  }, [embedForm.targetAppId]);
+  }, []);
 
   const byScope = useMemo(() => {
     const map = new Map<ScopeValue, ChatbotLifecycleSettingsRecord>();
@@ -789,7 +785,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     }
 
     setEmbedResult(body as EmbedPackageResponse);
-    await loadEmbedRecords(embedForm.targetAppId);
+    await loadEmbedRecords();
     setEmbedStatus({ type: "success", message: "Embed package ready. Download both files and include them in your client app." });
     showToast("Embed package generated.", "success");
   }
