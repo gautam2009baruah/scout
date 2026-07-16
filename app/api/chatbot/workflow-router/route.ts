@@ -1,11 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
-import { executeAIDecisionNode } from "@/lib/orchestrations/nodes/ai-decision-node";
-import { executeNotificationNode } from "@/lib/orchestrations/nodes/notification-node";
-import { getConnections, getNodes, getOrchestrationPage } from "@/lib/orchestrations/db";
+import { createExecution, getConnections, getNodes, getOrchestrationPage } from "@/lib/orchestrations/db";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
-import type { AIDecisionNodeConfig, NotificationNodeConfig } from "@/shared/orchestrationTypes";
+import type { ChatbotTriggerConfig } from "@/shared/orchestrationTypes";
 
 export const runtime = "nodejs";
 
@@ -32,23 +30,20 @@ type WorkflowRouterRequest = {
 
 type ChatbotWorkflowCandidate = {
   id: string;
+  version: number;
   name: string;
   description: string;
   nodeSummary: string[];
+  requiredVariables: Array<{
+    name: string;
+    label: string;
+    type: "text" | "number" | "boolean" | "select";
+    description?: string;
+    options?: Array<{ label: string; value: string }>;
+  }>;
+  triggerPhrases: string[];
+  examplePhrases: string[];
 };
-
-const NODE_CATALOG = [
-  { nodeType: "workflow", label: "Workflow", purpose: "Run a guided workflow and collect user input." },
-  { nodeType: "data_capture", label: "Data Capture", purpose: "Capture structured data from the current page." },
-  { nodeType: "ai_extraction", label: "AI Extraction", purpose: "Extract fields from text, email, or documents." },
-  { nodeType: "ai_decision", label: "AI Decision", purpose: "Route requests, classify intent, and propose a plan." },
-  { nodeType: "condition", label: "Condition", purpose: "Branch based on rules or field values." },
-  { nodeType: "human_approval", label: "Human Approval", purpose: "Pause for a manual approval step." },
-  { nodeType: "notification", label: "Notification", purpose: "Notify a person or system about progress." },
-  { nodeType: "variable", label: "Variable", purpose: "Set or transform orchestration variables." },
-  { nodeType: "api_call", label: "API Call", purpose: "Call an external service or client system." },
-  { nodeType: "end", label: "End", purpose: "Finish the orchestration." },
-] as const;
 
 function topologicalSort(
   nodes: Array<{ id: string; nodeType: string }>,
@@ -101,87 +96,6 @@ function topologicalSort(
   return sorted;
 }
 
-function buildCandidateSummaries(candidates: ChatbotWorkflowCandidate[]): string {
-  if (candidates.length === 0) {
-    return "No published chatbot workflows are available.";
-  }
-
-  return candidates
-    .map((candidate, index) => {
-      const steps = candidate.nodeSummary.length > 0 ? candidate.nodeSummary.join(" -> ") : "No node summary available";
-      return `${index + 1}. ${candidate.name}\n   Description: ${candidate.description || "(none)"}\n   Steps: ${steps}`;
-    })
-    .join("\n\n");
-}
-
-function buildNodeCatalogPrompt(): string {
-  return NODE_CATALOG
-    .map((node) => `- ${node.label} (${node.nodeType}): ${node.purpose}`)
-    .join("\n");
-}
-
-function buildRouterAnswer(output: Record<string, unknown>, candidates: ChatbotWorkflowCandidate[]): string {
-  const intent = typeof output.intent === "string" ? output.intent : "fallback";
-  const message = typeof output.message === "string" ? output.message : "";
-  const selectedNames = Array.isArray(output.matchedOrchestrationNames)
-    ? output.matchedOrchestrationNames.filter((value): value is string => typeof value === "string")
-    : [];
-  const clarifyingQuestions = Array.isArray(output.clarifyingQuestions)
-    ? output.clarifyingQuestions
-        .map((question) => {
-          if (!question || typeof question !== "object") {
-            return "";
-          }
-
-          return typeof (question as { question?: unknown }).question === "string"
-            ? (question as { question: string }).question
-            : "";
-        })
-        .filter(Boolean)
-    : [];
-  const plan = Array.isArray(output.plan) ? output.plan : [];
-
-  if (message) {
-    return message;
-  }
-
-  if (intent === "need_clarification" && clarifyingQuestions.length > 0) {
-    return `I need a little more information before I can route this request:\n${clarifyingQuestions.map((question) => `- ${question}`).join("\n")}`;
-  }
-
-  if ((intent === "workflow_match" || intent === "propose_plan" || intent === "execute_plan") && selectedNames.length > 0) {
-    const selected = selectedNames[0];
-    const candidate = candidates.find((item) => item.name === selected);
-    const steps = candidate?.nodeSummary.length ? `\nSuggested path: ${candidate.nodeSummary.join(" -> ")}` : "";
-    return `I found a workflow that looks relevant: ${selected}.${steps}`;
-  }
-
-  if (plan.length > 0) {
-    const stepLabels = plan
-      .map((step, index) => {
-        if (!step || typeof step !== "object") {
-          return "";
-        }
-
-        const label = typeof (step as { label?: unknown }).label === "string"
-          ? (step as { label: string }).label
-          : `Step ${index + 1}`;
-        const reason = typeof (step as { reason?: unknown }).reason === "string"
-          ? (step as { reason: string }).reason
-          : "";
-
-        return `- ${label}${reason ? `: ${reason}` : ""}`;
-      })
-      .filter(Boolean)
-      .join("\n");
-
-    if (stepLabels) {
-      return `I can prepare this as a plan:\n${stepLabels}`;
-    }
-  }
-
-  return "I reviewed the available workflows and I am ready to continue.";
-}
 
 async function loadChatbotWorkflowCandidates(
   companyId: string,
@@ -221,9 +135,17 @@ async function loadChatbotWorkflowCandidates(
 
       return {
         id: orchestration.id,
+        version: orchestration.version,
         name: orchestration.name,
         description: orchestration.description || "",
         nodeSummary: sortedNodes.map((node) => `${node!.label} (${node!.nodeType})`),
+        requiredVariables: (triggerConfig?.requiredVariables || []) as ChatbotTriggerConfig["requiredVariables"] extends Array<infer T> ? T[] : [],
+        triggerPhrases: Array.isArray(triggerConfig?.triggerPhrases)
+          ? triggerConfig.triggerPhrases.filter((phrase): phrase is string => typeof phrase === "string")
+          : [],
+        examplePhrases: Array.isArray(triggerConfig?.examplePhrases)
+          ? triggerConfig.examplePhrases.filter((phrase): phrase is string => typeof phrase === "string")
+          : [],
       } satisfies ChatbotWorkflowCandidate;
     })
   );
@@ -231,17 +153,7 @@ async function loadChatbotWorkflowCandidates(
   return candidates.filter((candidate): candidate is ChatbotWorkflowCandidate => candidate !== null);
 }
 
-type DynamicActionParams =
-  | { actionType: "send_email"; to: string; subject: string; body: string; bodyIsHtml: boolean }
-  | { actionType: "unknown" };
-
-type DynamicExecutionResult = {
-  success: boolean;
-  answer: string;
-  executionStatus?: "sent" | "queued_not_sent" | "failed";
-  outboxId?: string;
-  adminError?: string;
-};
+type RequiredVariableDefinition = NonNullable<ChatbotWorkflowCandidate["requiredVariables"]>[number];
 
 type ActionContextResolution = {
   message: string;
@@ -358,131 +270,230 @@ function extractEmailAddress(message: string): string | null {
   return match?.[0]?.trim() || null;
 }
 
-function buildHeuristicEmailContent(message: string): { subject: string; body: string } {
-  const normalized = message.toLowerCase();
+function tokenize(input: string): string[] {
+  return input
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1);
+}
 
-  if (normalized.includes("birthday")) {
+function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflowCandidate): number {
+  const messageTokens = new Set(tokenize(message));
+  if (messageTokens.size === 0) {
+    return 0;
+  }
+
+  const searchable = [
+    candidate.name,
+    candidate.description,
+    ...candidate.triggerPhrases,
+    ...candidate.examplePhrases,
+    ...candidate.nodeSummary,
+  ].join(" ");
+  const candidateTokens = new Set(tokenize(searchable));
+  let overlap = 0;
+  for (const token of messageTokens) {
+    if (candidateTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / Math.max(1, messageTokens.size);
+}
+
+async function findEligibleCandidateWithAi(
+  message: string,
+  candidates: ChatbotWorkflowCandidate[]
+): Promise<{ candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null> {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  try {
+    const provider = await getLLMProvider();
+    const compactCandidates = candidates.map((candidate, index) => ({
+      index,
+      id: candidate.id,
+      name: candidate.name,
+      description: candidate.description,
+      triggerPhrases: candidate.triggerPhrases,
+      examplePhrases: candidate.examplePhrases,
+      nodeSummary: candidate.nodeSummary,
+    }));
+
+    const systemPrompt = [
+      "You are an orchestration router.",
+      "Pick at most one best orchestration for the user ask.",
+      "If none match clearly, return null selection.",
+      'Return JSON only: {"matchedId":"string-or-empty","confidence":0-1,"reason":"short"}.',
+    ].join(" ");
+
+    const userPrompt = [
+      `User ask: ${message}`,
+      "Eligible orchestrations (chatbot-trigger only):",
+      JSON.stringify(compactCandidates),
+    ].join("\n");
+
+    const raw = await provider.generate_answer(systemPrompt, userPrompt, "");
+    const parsed = parseJsonObject(raw || "");
+    const matchedId = typeof parsed?.matchedId === "string" ? parsed.matchedId.trim() : "";
+    const confidence = typeof parsed?.confidence === "number"
+      ? Math.max(0, Math.min(1, parsed.confidence))
+      : 0;
+
+    if (!matchedId) {
+      return null;
+    }
+
+    const candidate = candidates.find((item) => item.id === matchedId);
+    if (!candidate || confidence < 0.45) {
+      return null;
+    }
+
     return {
-      subject: "Happy Birthday",
-      body: "Hi,\n\nWishing you a very happy birthday and a wonderful year ahead.\n\nBest regards,\nScout Assistant",
+      candidate,
+      confidence,
+      reason: typeof parsed?.reason === "string" ? parsed.reason : "Matched by router model",
     };
+  } catch {
+    return null;
+  }
+}
+
+async function findEligibleOrchestration(
+  message: string,
+  candidates: ChatbotWorkflowCandidate[]
+): Promise<{ candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null> {
+  const aiMatch = await findEligibleCandidateWithAi(message, candidates);
+  if (aiMatch) {
+    return aiMatch;
+  }
+
+  let best: { candidate: ChatbotWorkflowCandidate; score: number } | null = null;
+  for (const candidate of candidates) {
+    const score = scoreCandidateHeuristically(message, candidate);
+    if (!best || score > best.score) {
+      best = { candidate, score };
+    }
+  }
+
+  if (!best || best.score < 0.35) {
+    return null;
   }
 
   return {
-    subject: "Notification",
-    body: `Hi,\n\n${message}\n\nBest regards,\nScout Assistant`,
+    candidate: best.candidate,
+    confidence: Number(best.score.toFixed(2)),
+    reason: "Matched by keyword overlap",
   };
 }
 
-async function extractDynamicActionParams(message: string): Promise<DynamicActionParams> {
-  const heuristicRecipient = extractEmailAddress(message);
-  const looksLikeEmailAction = /\b(send|email|mail|notify|notification|deliver|forward|again|birthday)\b/i.test(message);
+function coerceRequiredVariableValue(definition: RequiredVariableDefinition, value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return null;
+  }
 
-  if (heuristicRecipient && looksLikeEmailAction) {
-    const heuristicContent = buildHeuristicEmailContent(message);
-    return {
-      actionType: "send_email",
-      to: heuristicRecipient,
-      subject: heuristicContent.subject,
-      body: heuristicContent.body,
-      bodyIsHtml: false,
-    };
+  if (definition.type === "number") {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  if (definition.type === "boolean") {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    const normalized = String(value).trim().toLowerCase();
+    if (["true", "yes", "y", "1"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "no", "n", "0"].includes(normalized)) {
+      return false;
+    }
+    return null;
+  }
+
+  if (definition.type === "select") {
+    const normalized = String(value).trim().toLowerCase();
+    const options = Array.isArray(definition.options) ? definition.options : [];
+    const option = options.find((item) => (
+      String(item.value).trim().toLowerCase() === normalized
+      || String(item.label).trim().toLowerCase() === normalized
+    ));
+    return option ? option.value : null;
+  }
+
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+function buildRequiredVariableQuestion(definition: RequiredVariableDefinition): string {
+  const baseLabel = definition.label || definition.name;
+  const description = definition.description ? ` (${definition.description})` : "";
+  if (definition.type === "select" && Array.isArray(definition.options) && definition.options.length > 0) {
+    const options = definition.options.map((option) => option.label || option.value).join(", ");
+    return `Please provide ${baseLabel}${description}. Options: ${options}.`;
+  }
+  return `Please provide ${baseLabel}${description}.`;
+}
+
+async function extractRequiredVariablesFromConversation(
+  requiredVariables: RequiredVariableDefinition[],
+  message: string,
+  history: Array<{ role?: string; text?: string }>
+): Promise<{ values: Record<string, unknown>; missing: RequiredVariableDefinition[] }> {
+  if (requiredVariables.length === 0) {
+    return { values: {}, missing: [] };
+  }
+
+  const conversationContext = [
+    ...history
+      .slice(-10)
+      .map((entry) => `${(entry.role || "unknown").toUpperCase()}: ${String(entry.text || "")}`),
+    `USER: ${message}`,
+  ].join("\n");
+
+  const heuristicValues: Record<string, unknown> = {};
+  const guessedEmail = extractEmailAddress(conversationContext);
+  for (const definition of requiredVariables) {
+    if (definition.type === "text" && /email/i.test(definition.name) && guessedEmail) {
+      heuristicValues[definition.name] = guessedEmail;
+    }
   }
 
   try {
     const provider = await getLLMProvider();
     const systemPrompt = [
-      "You extract structured action parameters from user requests. Return JSON only, no markdown.",
-      "Identify what action to perform and extract parameters.",
-      'Return this exact shape: {"actionType":"send_email|unknown","to":"","subject":"","body":"","bodyIsHtml":false}',
-      "For send_email: extract recipient email address, infer a subject, and compose a professional message body based on user intent.",
-      "If the action is not a notification/email, set actionType to unknown.",
+      "Extract required orchestration input values from conversation.",
+      "Return JSON only in this shape:",
+      '{"values":{"variableName":"value-or-null"}}.',
+      "Do not invent values; use null when not provided.",
     ].join(" ");
-
-    const raw = await provider.generate_answer(systemPrompt, `User request: ${message}`, "");
+    const userPrompt = [
+      `Required variables: ${JSON.stringify(requiredVariables)}`,
+      "Conversation:",
+      conversationContext,
+    ].join("\n");
+    const raw = await provider.generate_answer(systemPrompt, userPrompt, "");
     const parsed = parseJsonObject(raw || "");
+    const parsedValues = parsed?.values && typeof parsed.values === "object"
+      ? parsed.values as Record<string, unknown>
+      : {};
 
-    if (parsed?.actionType === "send_email" && typeof parsed.to === "string" && parsed.to.trim()) {
-      return {
-        actionType: "send_email",
-        to: String(parsed.to).trim(),
-        subject: typeof parsed.subject === "string" ? parsed.subject : "Notification",
-        body: typeof parsed.body === "string" ? parsed.body : message,
-        bodyIsHtml: parsed.bodyIsHtml === true,
-      };
-    }
-  } catch {
-    // Fall through to unknown
-  }
-  return { actionType: "unknown" };
-}
-
-async function executeDynamicPlan(message: string): Promise<DynamicExecutionResult> {
-  const params = await extractDynamicActionParams(message);
-
-  if (params.actionType === "send_email") {
-    const config: NotificationNodeConfig = {
-      type: "notification",
-      channels: {
-        email: {
-          enabled: true,
-          to: params.to,
-          subject: params.subject,
-          body: params.body,
-          bodyFormat: params.bodyIsHtml ? "rich_text" : "plain_text",
-        },
-      },
-    };
-
-    const result = await executeNotificationNode(config, {});
-    const outboxId = (() => {
-      const results = Array.isArray(result.output?.channelResults)
-        ? (result.output?.channelResults as Array<Record<string, unknown>>)
-        : [];
-      const emailChannel = results.find((entry) => entry.channel === "email") || null;
-      if (!emailChannel || typeof emailChannel !== "object") {
-        return undefined;
+    const values: Record<string, unknown> = { ...heuristicValues };
+    for (const definition of requiredVariables) {
+      const coerced = coerceRequiredVariableValue(definition, parsedValues[definition.name]);
+      if (coerced !== null) {
+        values[definition.name] = coerced;
       }
-
-      const details = (emailChannel.details && typeof emailChannel.details === "object")
-        ? (emailChannel.details as Record<string, unknown>)
-        : null;
-
-      return typeof details?.outboxId === "string" ? details.outboxId : undefined;
-    })();
-
-    const normalizedError = String(result.error || "");
-    const queuedNotSent = /SMTP not configured/i.test(normalizedError);
-
-    if (result.success) {
-      return {
-        success: true,
-        answer: `Done! I sent the email to **${params.to}** with subject "${params.subject}".`,
-        executionStatus: "sent",
-        outboxId,
-      };
     }
 
-    if (queuedNotSent) {
-      return {
-        success: false,
-        answer: "I could not complete that email delivery right now. The attempt is logged for administrators in Control Panel.",
-        executionStatus: "queued_not_sent",
-        outboxId,
-        adminError: normalizedError,
-      };
-    }
-
-    return {
-      success: false,
-      answer: "I could not complete that action right now. I logged technical details for administrators, and I can continue with a draft workflow path.",
-      executionStatus: "failed",
-      outboxId,
-      adminError: normalizedError,
-    };
+    const missing = requiredVariables.filter((definition) => values[definition.name] === undefined);
+    return { values, missing };
+  } catch {
+    const missing = requiredVariables.filter((definition) => heuristicValues[definition.name] === undefined);
+    return { values: heuristicValues, missing };
   }
-
-  return { success: false, answer: "" };
 }
 
 export async function POST(request: NextRequest) {
@@ -510,185 +521,11 @@ export async function POST(request: NextRequest) {
 
     const candidates = await loadChatbotWorkflowCandidates(companyId, userId, targetAppId);
 
-    if (candidates.length === 0 && !body.allowDraftPlan) {
+    if (candidates.length === 0) {
       return NextResponse.json({
-        answer: "I could not find any published chatbot workflows yet. Should I prepare one dynamically for you?",
-        intent: "need_clarification",
-        confidence: 0,
-        needsClarification: true,
-        clarifyingQuestions: [
-          {
-            question: "Should I prepare a new workflow dynamically for this request?",
-            required: true,
-          },
-        ],
-        requireUserConfirmation: true,
-        matchedOrchestrationIds: [],
-        matchedOrchestrationNames: [],
-        plan: [],
-        options: [],
-        metadata: {
-          awaitingDraftPlanPermission: true,
-        },
-      });
-    }
-
-    const decisionOptions: AIDecisionNodeConfig["decisions"] = [
-      ...candidates.map((candidate) => ({
-        label: candidate.name,
-        description: candidate.description || candidate.nodeSummary.join(" -> "),
-        outputHandle: candidate.id,
-        aliases: candidate.nodeSummary.map((step) => step.toLowerCase()),
-        keywords: candidate.nodeSummary.flatMap((step) => step.split(/[^a-zA-Z0-9]+/).filter(Boolean)),
-        metadata: { orchestrationId: candidate.id },
-      })),
-      {
-        label: "Prepare a new workflow dynamically",
-        description: "Create a new orchestration plan when nothing fits the request.",
-        outputHandle: "dynamic_plan",
-        aliases: ["create plan", "build workflow", "prepare one dynamically"],
-        keywords: ["dynamic", "new", "workflow", "plan", "prepare"],
-      },
-      {
-        label: "Ask for clarification",
-        description: "Ask follow-up questions when the request is ambiguous or underspecified.",
-        outputHandle: "clarify",
-        aliases: ["need more info", "clarify", "ask a question"],
-        keywords: ["clarify", "question", "missing", "unknown", "details"],
-      },
-      {
-        label: "Continue as chat",
-        description: "Treat the request as ordinary conversation and do not route to a workflow.",
-        outputHandle: "chat",
-        aliases: ["chat", "answer normally", "not a workflow"],
-        keywords: ["chat", "conversation", "ordinary", "talk"],
-      },
-    ];
-
-    const aiConfig: AIDecisionNodeConfig = {
-      type: "ai_decision",
-      inputSource: "routerInput",
-      prompt: [
-        "Route the user's message against the available chatbot orchestrations.",
-        "Prefer an existing workflow if it clearly matches the request.",
-        "If no workflow fits, choose 'Prepare a new workflow dynamically'.",
-        "If the request is missing information, choose 'Ask for clarification' and include questions.",
-        "If the message is ordinary conversation, choose 'Continue as chat'.",
-        "When you select a workflow or a dynamic plan, include a short executable plan with node-by-node steps.",
-      ].join(" "),
-      decisions: decisionOptions,
-      defaultDecision: "chat",
-    };
-
-    const decisionResult = await executeAIDecisionNode(aiConfig, {
-      routerInput: {
-        message,
-        conversationId: body.conversationId || undefined,
-        companyId,
-        userId,
-        targetAppId: targetAppId || undefined,
-        history,
-        workflow: body.workflow || null,
-        availableNodeCatalog: NODE_CATALOG,
-        candidateWorkflows: candidates,
-        candidateSummary: buildCandidateSummaries(candidates),
-        nodeCatalogSummary: buildNodeCatalogPrompt(),
-      },
-    });
-
-    if (!decisionResult.success) {
-      return NextResponse.json(
-        { message: decisionResult.error || "Failed to route workflow request." },
-        { status: 500 }
-      );
-    }
-
-    const output = (decisionResult.output || {}) as Record<string, unknown>;
-    const matchedIds = Array.isArray(output.matchedOrchestrationIds)
-      ? output.matchedOrchestrationIds.filter((value): value is string => typeof value === "string")
-      : [];
-    const matchedNamesFromModel = Array.isArray(output.matchedOrchestrationNames)
-      ? output.matchedOrchestrationNames.filter((value): value is string => typeof value === "string")
-      : [];
-    const matchedNamesFromIds = matchedIds
-      .map((id) => candidates.find((candidate) => candidate.id === id)?.name)
-      .filter((name): name is string => typeof name === "string");
-    const matchedNames = matchedNamesFromModel.length > 0 ? matchedNamesFromModel : matchedNamesFromIds;
-    const plan = Array.isArray(output.plan)
-      ? output.plan.filter((value) => Boolean(value && typeof value === "object"))
-      : [];
-    const handle = typeof output.handle === "string" ? output.handle : "";
-    const metadata = {
-      ...(output.metadata && typeof output.metadata === "object" ? output.metadata as Record<string, unknown> : {}),
-    };
-
-    // Stage-gate dynamic plan generation behind explicit user confirmation.
-    // In forceActionMode, any no-match/no-plan path must ask for draft permission.
-    if (matchedIds.length === 0 && plan.length === 0 && !body.allowDraftPlan && (handle === "dynamic_plan" || forceActionMode)) {
-      return NextResponse.json({
-        answer: "I could not find a matching orchestration. Should I prepare a draft plan from the currently available nodes?",
-        intent: "need_clarification",
-        confidence: output.confidence ?? 0,
-        decision: output.decision,
-        handle: output.handle,
-        matchedOrchestrationIds: [],
-        matchedOrchestrationNames: [],
-        needsClarification: true,
-        clarifyingQuestions: [
-          {
-            question: "Do you want me to prepare a draft plan from available nodes?",
-            required: true,
-          },
-        ],
-        requireUserConfirmation: true,
-        plan: [],
-        metadata: {
-          ...metadata,
-          awaitingDraftPlanPermission: true,
-        },
-      });
-    }
-
-    if (body.allowDraftPlan && (handle === "dynamic_plan" || matchedIds.length === 0)) {
-      const dynamicResult = await executeDynamicPlan(message);
-      if (dynamicResult.answer) {
-        return NextResponse.json({
-          answer: dynamicResult.answer,
-          intent: dynamicResult.success ? "execute_plan" : "fallback",
-          confidence: output.confidence ?? 0.8,
-          decision: output.decision,
-          handle: "dynamic_plan",
-          matchedOrchestrationIds: [],
-          matchedOrchestrationNames: [],
-          needsClarification: false,
-          clarifyingQuestions: [],
-          requireUserConfirmation: false,
-          plan,
-          metadata: {
-            ...metadata,
-            executedDynamically: true,
-            executionSucceeded: dynamicResult.success,
-            dynamicExecutionStatus: dynamicResult.executionStatus ?? "unknown",
-            outboxId: dynamicResult.outboxId ?? null,
-            dynamicExecutionError: dynamicResult.adminError ?? null,
-            normalizedMessage: message,
-            originalMessage: rawMessage,
-            conversationResolution: {
-              usedLLM: contextResolution.usedLLM,
-              confidence: contextResolution.confidence,
-            },
-          },
-        });
-      }
-    }
-
-    if (body.allowDraftPlan && matchedIds.length === 0 && plan.length === 0) {
-      return NextResponse.json({
-        answer: "I cannot prepare this request from the currently available nodes. Please add the required node capabilities or refine the request.",
+        answer: "I could not find any published chatbot-trigger orchestrations for this app.",
         intent: "fallback",
-        confidence: output.confidence ?? 0,
-        decision: output.decision,
-        handle: output.handle,
+        confidence: 0,
         matchedOrchestrationIds: [],
         matchedOrchestrationNames: [],
         needsClarification: false,
@@ -696,50 +533,155 @@ export async function POST(request: NextRequest) {
         requireUserConfirmation: false,
         plan: [],
         metadata: {
-          ...metadata,
-          unsupportedByAvailableNodes: true,
+          forceActionMode,
+          normalizedMessage: message,
+          originalMessage: rawMessage,
+          conversationResolution: {
+            usedLLM: contextResolution.usedLLM,
+            confidence: contextResolution.confidence,
+          },
         },
       });
     }
 
-    if (forceActionMode && matchedIds.length === 0 && plan.length === 0) {
+    const match = await findEligibleOrchestration(message, candidates);
+    if (!match) {
       return NextResponse.json({
-        answer: "I could not route this to an orchestration yet. Should I prepare a draft plan from the available nodes?",
-        intent: "need_clarification",
-        confidence: output.confidence ?? 0,
-        decision: output.decision,
-        handle: output.handle,
+        answer: "I could not find an eligible chatbot orchestration for this request.",
+        intent: "fallback",
+        confidence: 0,
         matchedOrchestrationIds: [],
         matchedOrchestrationNames: [],
+        needsClarification: false,
+        clarifyingQuestions: [],
+        requireUserConfirmation: false,
+        plan: [],
+        metadata: {
+          forceActionMode,
+          normalizedMessage: message,
+          originalMessage: rawMessage,
+          conversationResolution: {
+            usedLLM: contextResolution.usedLLM,
+            confidence: contextResolution.confidence,
+          },
+        },
+      });
+    }
+
+    const selected = match.candidate;
+    const plan = selected.nodeSummary.map((step, index) => ({
+      id: `${selected.id}:${index + 1}`,
+      label: step,
+      nodeType: "workflow_step",
+      reason: "From selected published orchestration",
+    }));
+
+    const variableExtraction = await extractRequiredVariablesFromConversation(
+      selected.requiredVariables,
+      message,
+      history
+    );
+
+    if (variableExtraction.missing.length > 0) {
+      return NextResponse.json({
+        answer: `I found orchestration \"${selected.name}\", but I still need some required inputs before execution.`,
+        intent: "need_clarification",
+        confidence: match.confidence,
+        matchedOrchestrationIds: [selected.id],
+        matchedOrchestrationNames: [selected.name],
+        needsClarification: true,
+        clarifyingQuestions: variableExtraction.missing.map((definition) => ({
+          question: buildRequiredVariableQuestion(definition),
+          required: true,
+          variableName: definition.name,
+        })),
+        requireUserConfirmation: false,
+        plan,
+        metadata: {
+          selectedOrchestrationId: selected.id,
+          selectedOrchestrationName: selected.name,
+          missingRequiredVariables: variableExtraction.missing.map((definition) => definition.name),
+          extractedVariables: variableExtraction.values,
+          matchReason: match.reason,
+          awaitingDraftPlanPermission: false,
+          normalizedMessage: message,
+          originalMessage: rawMessage,
+          conversationResolution: {
+            usedLLM: contextResolution.usedLLM,
+            confidence: contextResolution.confidence,
+          },
+        },
+      });
+    }
+
+    if (!body.allowDraftPlan) {
+      return NextResponse.json({
+        answer: `I found orchestration \"${selected.name}\" for this request. Do you approve running it now?`,
+        intent: "workflow_match",
+        confidence: match.confidence,
+        matchedOrchestrationIds: [selected.id],
+        matchedOrchestrationNames: [selected.name],
         needsClarification: true,
         clarifyingQuestions: [
           {
-            question: "Do you want me to prepare a draft plan from available nodes?",
+            question: "Do you approve running this orchestration now?",
             required: true,
           },
         ],
         requireUserConfirmation: true,
-        plan: [],
+        plan,
         metadata: {
-          ...metadata,
+          selectedOrchestrationId: selected.id,
+          selectedOrchestrationName: selected.name,
+          extractedVariables: variableExtraction.values,
+          matchReason: match.reason,
           awaitingDraftPlanPermission: true,
+          normalizedMessage: message,
+          originalMessage: rawMessage,
+          conversationResolution: {
+            usedLLM: contextResolution.usedLLM,
+            confidence: contextResolution.confidence,
+          },
         },
       });
     }
 
+    const execution = await createExecution({
+      orchestrationId: selected.id,
+      orchestrationVersion: selected.version,
+      context: variableExtraction.values,
+      triggerData: {
+        triggerType: "chatbot",
+        userMessage: message,
+        confidence: match.confidence,
+        orchestrationName: selected.name,
+      },
+      triggeredBy: userId,
+    });
+
     return NextResponse.json({
-      answer: buildRouterAnswer(output, candidates),
-      intent: output.intent ?? "fallback",
-      confidence: output.confidence ?? 0,
-      decision: output.decision,
-      handle: output.handle,
-      matchedOrchestrationIds: matchedIds,
-      matchedOrchestrationNames: matchedNames,
-      needsClarification: output.needsClarification ?? false,
-      clarifyingQuestions: output.clarifyingQuestions ?? [],
-      requireUserConfirmation: output.requireUserConfirmation ?? false,
+      answer: `Approved. I started orchestration \"${selected.name}\".`,
+      intent: "execute_plan",
+      confidence: match.confidence,
+      matchedOrchestrationIds: [selected.id],
+      matchedOrchestrationNames: [selected.name],
+      needsClarification: false,
+      clarifyingQuestions: [],
+      requireUserConfirmation: false,
       plan,
-      metadata,
+      metadata: {
+        selectedOrchestrationId: selected.id,
+        selectedOrchestrationName: selected.name,
+        executionId: execution.id,
+        extractedVariables: variableExtraction.values,
+        matchReason: match.reason,
+        normalizedMessage: message,
+        originalMessage: rawMessage,
+        conversationResolution: {
+          usedLLM: contextResolution.usedLLM,
+          confidence: contextResolution.confidence,
+        },
+      },
     });
   } catch (error) {
     if (error instanceof ScopedTargetAppAccessError) {
