@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   Ban,
   CircleHelp,
@@ -148,7 +148,7 @@ function IconActionButton({
   onClick: () => void;
   disabled?: boolean;
   tone?: "default" | "success" | "warning" | "danger";
-  children: JSX.Element;
+  children: ReactNode;
 }) {
   const toneClass =
     tone === "success"
