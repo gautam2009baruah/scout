@@ -323,52 +323,21 @@ async function canUseCompanyLevelApiKeys(session: AdminSession, companyId: strin
     return true;
   }
 
-  const result = await getPool().query<{ has_full_access: boolean }>(
+  const result = await getPool().query<{ has_restrictions: boolean }>(
     `
-      SELECT (
-        SELECT COUNT(*)
-        FROM guided_workflow_target_apps gta
-        WHERE gta.company_id = $2
-          AND gta.deleted_at IS NULL
-      ) = (
-        SELECT COUNT(*)
-        FROM guided_workflow_target_apps gta
-        WHERE gta.company_id = $2
-          AND gta.deleted_at IS NULL
-          AND (
-            gta.company_id = $3
-            OR EXISTS (
-              SELECT 1
-              FROM user_company_roles ucr
-              WHERE ucr.user_id = $1
-                AND ucr.company_id = gta.company_id
-                AND ucr.deleted_at IS NULL
-            )
-          )
-          AND (
-            NOT EXISTS (
-              SELECT 1
-              FROM user_target_app_access company_access
-              INNER JOIN guided_workflow_target_apps company_app
-                ON company_app.id = company_access.target_app_id
-              WHERE company_access.user_id = $1
-                AND company_app.company_id = gta.company_id
-                AND company_access.deleted_at IS NULL
-            )
-            OR EXISTS (
-              SELECT 1
-              FROM user_target_app_access app_access
-              WHERE app_access.user_id = $1
-                AND app_access.target_app_id = gta.id
-                AND app_access.deleted_at IS NULL
-            )
-          )
-      ) AS has_full_access
+      SELECT EXISTS (
+        SELECT 1
+        FROM user_target_app_access uta
+        INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
+        WHERE uta.user_id = $1
+          AND gta.company_id = $2
+          AND uta.deleted_at IS NULL
+      ) AS has_restrictions
     `,
-    [session.user.id, companyId, session.user.tenantId]
+    [session.user.id, companyId]
   );
 
-  return result.rows[0]?.has_full_access === true;
+  return result.rows[0]?.has_restrictions !== true;
 }
 
 async function assertCompanyLevelApiKeyScopeAllowed(

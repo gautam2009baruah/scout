@@ -219,6 +219,11 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   async function stayOnPage() {
     if (isExtendingSession || logoutRequestedRef.current) return;
 
+    // Stop the pending logout/countdown immediately to avoid race conditions
+    // while the extend-session request is in flight.
+    clearSessionTimers();
+    setShowSessionWarning(false);
+
     setIsExtendingSession(true);
     logoutRequestedRef.current = false;
 

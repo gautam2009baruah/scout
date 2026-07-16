@@ -177,7 +177,8 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   const [activeTab, setActiveTab] = useState<TabId>("conversation");
 
   const [settings, setSettings] = useState(initialSettings);
-  const [scope, setScope] = useState<ScopeValue>("global");
+  const initialScope: ScopeValue = canUseCompanyLevelApiKeys ? "global" : (targetApps[0]?.id ?? "global");
+  const [scope, setScope] = useState<ScopeValue>(initialScope);
   const [status, setStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
 
   const [apiKeys, setApiKeys] = useState<ChatbotApiKeyRecord[]>([]);
@@ -212,9 +213,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     apiKey: "",
     scoutUrl: typeof window === "undefined" ? "http://localhost:3000" : window.location.origin,
     apiUrl: "http://localhost:4200",
-    assistantName: "Scout Assistant",
-    brandColor: "#111827",
-    accentColor: "#0ea5e9"
+    assistantName: "Scout Assistant"
   });
   const [embedResult, setEmbedResult] = useState<EmbedPackageResponse | null>(null);
 
@@ -755,13 +754,13 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
               <div className="grid gap-6 lg:grid-cols-2">
                 <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  Scope
+                  <span className="inline-flex items-center gap-1.5">Scope <HelpHint text="Select where conversation settings apply. Target-app-scoped users only see their permitted apps." /></span>
                   <select
                     className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm"
                     value={scope}
                     onChange={(event) => updateScope(event.target.value)}
                   >
-                    <option value="global">Global default</option>
+                    {canUseCompanyLevelApiKeys ? <option value="global">Global default</option> : null}
                     {targetApps.map((app) => (
                       <option key={app.id} value={app.id}>{app.name}</option>
                     ))}
@@ -829,7 +828,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
               <form className="grid gap-4 rounded-lg border border-slate-200 p-4" onSubmit={submitApiKeyForm}>
                 <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Target app
+                    <span className="inline-flex items-center gap-1.5">Target app <HelpHint text="Choose which target app this key belongs to." /></span>
                     <select
                       className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       value={apiKeyForm.targetAppId}
@@ -844,7 +843,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Key name
+                    <span className="inline-flex items-center gap-1.5">Key name <HelpHint text="A readable label used in key management. Duplicate active/suspended names per target app are blocked." /></span>
                     <input
                       className="h-11 rounded-lg border border-slate-200 px-3 text-sm"
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, name: event.target.value }))}
@@ -901,7 +900,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Expiry (min 7 days)
+                    <span className="inline-flex items-center gap-1.5">Expiry (min 7 days) <HelpHint text="Optional. If set, key expires automatically. Minimum is 7 days from now." /></span>
                     <input
                       className="h-11 rounded-lg border border-slate-200 px-3 text-sm"
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, expiresAt: event.target.value }))}
@@ -930,6 +929,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     disabled={editingKeyId !== null}
                   />
                   Strict environment enforcement for this key
+                  <HelpHint text="When enabled, request environment must exactly match this key environment." />
                 </label>
 
                 <details className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
@@ -1018,7 +1018,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
 
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Target app
+                    <span className="inline-flex items-center gap-1.5">Target app <HelpHint text="Target application for which the package snippets are generated." /></span>
                     <select className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, targetAppId: event.target.value }))} value={embedForm.targetAppId}>
                       {targetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
@@ -1027,38 +1027,28 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    User ID placeholder
+                    <span className="inline-flex items-center gap-1.5">User ID placeholder <HelpHint text="Default user identifier used in client-side loader examples." /></span>
                     <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, userId: event.target.value }))} value={embedForm.userId} />
                   </label>
 
-                  <label className="grid gap-2 text-sm font-medium text-slate-700 md:col-span-2">
-                    API key (plaintext)
-                    <textarea className="min-h-[92px] rounded-lg border border-slate-200 px-3 py-2 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, apiKey: event.target.value }))} placeholder="Paste newly created or rotated API key" value={embedForm.apiKey} />
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    <span className="inline-flex items-center gap-1.5">API key (plaintext) <HelpHint text="Paste a newly created or rotated API key used by the generated install script." /></span>
+                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, apiKey: event.target.value }))} placeholder="Paste newly created or rotated API key" value={embedForm.apiKey} />
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Scout URL
+                    <span className="inline-flex items-center gap-1.5">Scout URL <HelpHint text="Base URL of your Scout web app where the chatbot loader script is hosted." /></span>
                     <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, scoutUrl: event.target.value }))} value={embedForm.scoutUrl} />
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    API URL
+                    <span className="inline-flex items-center gap-1.5">API URL <HelpHint text="Base URL for the standalone chatbot API endpoint." /></span>
                     <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, apiUrl: event.target.value }))} value={embedForm.apiUrl} />
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Assistant name
+                    <span className="inline-flex items-center gap-1.5">Assistant name <HelpHint text="Display name shown in chatbot header and welcome context." /></span>
                     <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, assistantName: event.target.value }))} value={embedForm.assistantName} />
-                  </label>
-
-                  <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Brand color
-                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, brandColor: event.target.value }))} value={embedForm.brandColor} />
-                  </label>
-
-                  <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    Accent color
-                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, accentColor: event.target.value }))} value={embedForm.accentColor} />
                   </label>
                 </div>
 
@@ -1067,12 +1057,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     <Download className="h-4 w-4" />
                     {embedResult ? "Regenerate snippets" : "Generate snippets"}
                   </button>
-                  {embedResult ? (
-                    <button className="inline-flex h-11 items-center gap-2 rounded-lg border border-slate-300 px-5 text-sm font-semibold text-slate-700" onClick={generateEmbedPackage} type="button">
-                      <RefreshCw className="h-4 w-4" />
-                      Refresh
-                    </button>
-                  ) : null}
                   {embedStatus.message ? <span className={`text-sm ${embedStatus.type === "error" ? "text-red-600" : "text-slate-600"}`}>{embedStatus.message}</span> : null}
                 </div>
 
