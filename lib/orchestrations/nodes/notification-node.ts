@@ -331,8 +331,13 @@ async function sendEmailNotification(
 
   const cc = interpolateString(channelConfig.cc || "", context);
   const bcc = interpolateString(channelConfig.bcc || "", context);
-  const replyTo = interpolateString(channelConfig.replyTo || "", context);
   const fromName = interpolateString(channelConfig.fromName || "", context);
+  const senderCredentialId = interpolateString(channelConfig.senderCredentialId || "", context);
+  if (!senderCredentialId) {
+    throw new Error("Email sender provider is required");
+  }
+  const companyId = resolveContextValue(context, ["companyId", "company_id", "trigger.input.companyId", "trigger.input.company_id", "trigger.companyId", "trigger.company_id"]);
+  const targetAppId = resolveContextValue(context, ["targetAppId", "target_app_id", "trigger.input.targetAppId", "trigger.input.target_app_id", "trigger.targetAppId", "trigger.target_app_id"]);
 
   const attachments = Array.isArray(channelConfig.attachments)
     ? channelConfig.attachments
@@ -348,10 +353,12 @@ async function sendEmailNotification(
     to,
     cc: cc || undefined,
     bcc: bcc || undefined,
-    replyTo: replyTo || undefined,
     fromName: fromName || undefined,
     subject,
     body,
+    senderCredentialId: senderCredentialId || undefined,
+    companyId: companyId || undefined,
+    targetAppId: targetAppId || undefined,
     htmlBody: channelConfig.bodyFormat === "rich_text" ? body : undefined,
     priority: channelConfig.priority || "normal",
     attachments,
@@ -368,6 +375,7 @@ async function sendEmailNotification(
     template: interpolateString(channelConfig.template || "", context) || null,
     attachmentCount: attachments.length,
     priority: channelConfig.priority || "normal",
+    senderCredentialId: senderCredentialId || null,
   };
 }
 
@@ -1006,6 +1014,16 @@ function interpolateString(template: string, context: Record<string, unknown>): 
   if (!template) return "";
   const value = evaluateExpression(template, context);
   return value == null ? "" : String(value).trim();
+}
+
+function resolveContextValue(context: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = evaluateExpression(`{{${key}}}`, context);
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return "";
 }
 
 function splitCsv(value: string): string[] {

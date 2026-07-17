@@ -234,6 +234,9 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       }
 
       if (channels.email?.enabled) {
+        if (!String(channels.email.senderCredentialId || "").trim()) {
+          return { valid: false, error: "Email: Sender provider is required" };
+        }
         if (!String(channels.email.to || "").trim()) {
           return { valid: false, error: "Email: To recipients are required" };
         }
@@ -682,7 +685,14 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "ai_decision" && <AIDecisionConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "condition" && <ConditionConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "human_approval" && <HumanApprovalConfig config={localConfig} updateConfig={updateLocalConfig} />}
-        {nodeType === "notification" && <NotificationConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "notification" && (
+          <NotificationConfig
+            config={localConfig}
+            updateConfig={updateLocalConfig}
+            companyId={companyId}
+            targetAppId={targetAppId}
+          />
+        )}
         {nodeType === "api_call" && <ApiCallConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
@@ -4264,7 +4274,7 @@ function HumanApprovalConfig({ config, updateConfig }: any) {
   );
 }
 
-function NotificationConfig({ config, updateConfig }: any) {
+function NotificationConfig({ config, updateConfig, companyId, targetAppId }: any) {
   const channelMeta: Array<{ key: string; label: string; summary: string }> = [
     { key: "email", label: "Email", summary: "Structured email notifications" },
     { key: "internal", label: "Internal Notification", summary: "In-app alerts for users and roles" },
@@ -4284,6 +4294,78 @@ function NotificationConfig({ config, updateConfig }: any) {
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ email: true });
   const [testState, setTestState] = useState<Record<string, { loading: boolean; status: "idle" | "success" | "error"; message: string }>>({});
+  const [senderProviders, setSenderProviders] = useState<Array<{ id: string; provider: string; name: string; from_name: string | null; from_email: string }>>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSenderProviders = async () => {
+      if (!companyId || !targetAppId) {
+        if (active) setSenderProviders([]);
+        return;
+      }
+
+      try {
+        const params = new URLSearchParams({
+          companyId: String(companyId),
+          targetAppId: String(targetAppId),
+          activeOnly: "true",
+        });
+        const response = await fetch(`/api/orchestrations/email-sender-credentials?${params.toString()}`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        const items = Array.isArray(payload?.credentials) ? payload.credentials : [];
+
+        if (active) {
+          setSenderProviders(
+            items.map((item: any) => ({
+              id: String(item.id),
+              provider: String(item.provider || "smtp"),
+              name: String(item.name || ""),
+              from_name: item.from_name ? String(item.from_name) : null,
+              from_email: String(item.from_email || ""),
+            }))
+          );
+        }
+      } catch {
+        if (active) setSenderProviders([]);
+      }
+    };
+
+    void loadSenderProviders();
+
+    return () => {
+      active = false;
+    };
+  }, [companyId, targetAppId]);
+
+  useEffect(() => {
+    const selectedId = String(config?.channels?.email?.senderCredentialId || "");
+    const currentFromName = String(config?.channels?.email?.fromName || "").trim();
+    if (!selectedId || currentFromName) {
+      return;
+    }
+
+    const selectedProvider = senderProviders.find((provider) => provider.id === selectedId);
+    if (!selectedProvider) {
+      return;
+    }
+
+    const autoFromName = selectedProvider.from_name || selectedProvider.name || "";
+    if (!autoFromName) {
+      return;
+    }
+
+    updateConfig({
+      channels: {
+        ...(config.channels || {}),
+        email: {
+          ...(config.channels?.email || {}),
+          fromName: autoFromName,
+        },
+      },
+    });
+  }, [config.channels, config?.channels?.email?.fromName, config?.channels?.email?.senderCredentialId, senderProviders, updateConfig]);
 
   useEffect(() => {
     if (config.channels) return;
@@ -4291,8 +4373,8 @@ function NotificationConfig({ config, updateConfig }: any) {
     const defaults: Record<string, any> = {
       email: {
         enabled: config.channel === "email",
+        senderCredentialId: "",
         fromName: "",
-        replyTo: "",
         to: config.channel === "email" ? (config.recipient || "") : "",
         cc: "",
         bcc: "",
@@ -4446,6 +4528,7 @@ function NotificationConfig({ config, updateConfig }: any) {
 
   const channelErrors = {
     email: {
+      senderCredentialId: getError(channels.email?.enabled && !String(channels.email?.senderCredentialId || "").trim(), "Sender provider is required"),
       to: getError(channels.email?.enabled && !String(channels.email?.to || "").trim(), "To recipients are required"),
       subject: getError(channels.email?.enabled && !String(channels.email?.subject || "").trim(), "Subject is required"),
       body: getError(channels.email?.enabled && !String(channels.email?.body || "").trim(), "Message body is required"),
@@ -4520,6 +4603,8 @@ function NotificationConfig({ config, updateConfig }: any) {
           },
           context: {
             testMode: true,
+            companyId: companyId || null,
+            targetAppId: targetAppId || null,
             trigger: { id: "test-trigger", timestamp: new Date().toISOString() },
             variables: { status: "test", referenceId: "TEST-001" },
             workflow: { currentNode: "notification" },
@@ -4708,6 +4793,33 @@ function NotificationConfig({ config, updateConfig }: any) {
 
                 {entry.key === "email" && (
                   <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Sender provider</label>
+                      <select
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
+                        value={channel.senderCredentialId || ""}
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          const selectedProvider = senderProviders.find((provider) => provider.id === selectedId);
+                          const autoFromName = selectedProvider?.from_name || selectedProvider?.name || "";
+
+                          setChannel("email", {
+                            senderCredentialId: selectedId,
+                            fromName: autoFromName,
+                          });
+                        }}
+                      >
+                        <option value="">Select active provider</option>
+                        {senderProviders.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.provider.toUpperCase()} - {provider.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-slate-500">Active sender providers scoped to this target app.</p>
+                      {channelErrors.email.senderCredentialId && <p className="mt-1 text-xs text-red-600">{channelErrors.email.senderCredentialId}</p>}
+                    </div>
+
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">From name</label>
@@ -4718,16 +4830,7 @@ function NotificationConfig({ config, updateConfig }: any) {
                           onChange={(e) => setChannel("email", { fromName: e.target.value })}
                           placeholder="Scout Notifications"
                         />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Reply-to email</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.replyTo || ""}
-                          onChange={(e) => setChannel("email", { replyTo: e.target.value })}
-                          placeholder="support@example.com"
-                        />
+                        <p className="mt-1 text-xs text-slate-500">Auto-filled from selected provider; you can override it.</p>
                       </div>
                     </div>
 

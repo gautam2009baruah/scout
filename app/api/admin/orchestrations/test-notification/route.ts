@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
             channels: {
               email: {
                 enabled: true,
+                senderCredentialId: "<email_sender_credentials.id>",
                 to: "user@example.com",
                 subject: "Order Confirmation for {{customerName}}",
                 body: "Hello {{customerName}}, your order {{orderId}} is confirmed.",
@@ -87,6 +88,7 @@ export async function GET(request: NextRequest) {
               channels: {
                 email: {
                   enabled: true,
+                  senderCredentialId: "0d8a4f2c-6b6b-4f25-8b56-71f50f93af92",
                   to: "user@example.com",
                   subject: "Order Confirmation for {{customerName}}",
                   body: "Hello {{customerName}},\n\nYour order {{orderId}} has been confirmed.\n\nThank you!",
@@ -96,6 +98,8 @@ export async function GET(request: NextRequest) {
               },
             },
             context: {
+              companyId: "<company-id>",
+              targetAppId: "<target-app-id>",
               customerName: "John Doe",
               orderId: "ORD-12345",
             },
@@ -153,7 +157,7 @@ export async function GET(request: NextRequest) {
         },
       },
       notes: {
-        email: "Requires SMTP_HOST environment variable configured",
+        email: "Requires channels.email.senderCredentialId mapped to an active sender credential in email_sender_credentials",
         teams: "Provide webhookUrl for Teams connector",
         slack: "Provide webhookUrl for Slack app/webhook",
         sms: "Provide channel webhookUrl or NOTIFICATION_SMS_WEBHOOK_URL",

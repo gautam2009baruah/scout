@@ -284,8 +284,8 @@ export type NotificationNodeConfig = {
   channels?: {
     email?: {
       enabled: boolean;
+      senderCredentialId?: string;
       fromName?: string;
-      replyTo?: string;
       to?: string;
       cc?: string;
       bcc?: string;

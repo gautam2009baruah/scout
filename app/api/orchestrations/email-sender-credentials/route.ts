@@ -36,6 +36,12 @@ export async function GET(request: NextRequest) {
     }
 
     const companyId = request.nextUrl.searchParams.get("companyId") || session.user.tenantId;
+    const targetAppId = request.nextUrl.searchParams.get("targetAppId");
+    const activeOnly = request.nextUrl.searchParams.get("activeOnly") === "true";
+
+    if (targetAppId) {
+      await validateTargetAppScope(companyId, targetAppId);
+    }
 
     const result = await getPool().query<{
       id: string;
@@ -79,9 +85,11 @@ export async function GET(request: NextRequest) {
         LEFT JOIN guided_workflow_target_apps ta ON ta.id = esc.target_app_id
         LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
         WHERE esc.company_id = $1
+          AND ($2::uuid IS NULL OR esc.target_app_id = $2::uuid)
+          AND ($3::boolean = false OR esc.is_active = true)
         ORDER BY esc.target_app_id NULLS FIRST, esc.is_primary DESC, esc.created_at DESC
       `,
-      [companyId]
+      [companyId, targetAppId, activeOnly]
     );
 
     return NextResponse.json({ success: true, credentials: result.rows });
