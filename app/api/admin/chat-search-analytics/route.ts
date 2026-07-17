@@ -54,11 +54,11 @@ export async function GET(request: Request) {
   if (!auth.session.user.isAdminRole) {
     sqlParams.push(auth.session.user.tenantId, auth.session.user.id);
     filter += ` AND (
-      cta.company_id = $${sqlParams.length - 1}
+      COALESCE(cta_direct.company_id, cta_via_guided.company_id) = $${sqlParams.length - 1}
       OR EXISTS (
         SELECT 1 FROM user_company_roles
         WHERE user_company_roles.user_id = $${sqlParams.length}
-          AND user_company_roles.company_id = cta.company_id
+          AND user_company_roles.company_id = COALESCE(cta_direct.company_id, cta_via_guided.company_id)
           AND user_company_roles.deleted_at IS NULL
       )
     )`;
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
 
   if (companyId) {
     sqlParams.push(companyId);
-    filter += ` AND cta.company_id = $${sqlParams.length}`;
+    filter += ` AND COALESCE(cta_direct.company_id, cta_via_guided.company_id) = $${sqlParams.length}`;
   }
 
   if (targetAppId) {
@@ -85,7 +85,8 @@ export async function GET(request: Request) {
         SELECT COUNT(*)::int AS total
         FROM chat_query_telemetry t
         LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
-        LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+        LEFT JOIN company_target_applications cta_direct ON cta_direct.id = t.target_app_id
+        LEFT JOIN company_target_applications cta_via_guided ON cta_via_guided.id = gta.target_app_id
         WHERE ${filter}
       `,
       sqlParams
@@ -109,13 +110,14 @@ export async function GET(request: Request) {
           COALESCE(users.name, t.user_id::text) AS user_name,
           COALESCE(users.email, '') AS user_email,
           company.name AS company_name,
-          COALESCE(cta.name, '—') AS target_app_name,
+          COALESCE(cta_direct.name, cta_via_guided.name, '—') AS target_app_name,
           COALESCE(feedback.up_count, 0) AS feedback_up,
           COALESCE(feedback.down_count, 0) AS feedback_down
         FROM chat_query_telemetry t
         LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
-        LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
-        LEFT JOIN companies company ON company.id = cta.company_id
+        LEFT JOIN company_target_applications cta_direct ON cta_direct.id = t.target_app_id
+        LEFT JOIN company_target_applications cta_via_guided ON cta_via_guided.id = gta.target_app_id
+        LEFT JOIN companies company ON company.id = COALESCE(cta_direct.company_id, cta_via_guided.company_id)
         LEFT JOIN users ON users.id = t.user_id
         LEFT JOIN LATERAL (
           SELECT
@@ -179,7 +181,8 @@ export async function GET(request: Request) {
         COALESCE(SUM(t.estimated_cost_usd), 0)::numeric(12, 6) AS total_estimated_cost_usd
       FROM chat_query_telemetry t
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
-      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN company_target_applications cta_direct ON cta_direct.id = t.target_app_id
+      LEFT JOIN company_target_applications cta_via_guided ON cta_via_guided.id = gta.target_app_id
       WHERE ${filter}
     `,
     sqlParams
@@ -195,7 +198,8 @@ export async function GET(request: Request) {
       FROM chat_query_feedback f
       INNER JOIN chat_query_telemetry t ON t.id = f.query_id
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
-      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN company_target_applications cta_direct ON cta_direct.id = t.target_app_id
+      LEFT JOIN company_target_applications cta_via_guided ON cta_via_guided.id = gta.target_app_id
       WHERE ${filter}
     `,
     sqlParams
@@ -208,7 +212,8 @@ export async function GET(request: Request) {
         COUNT(*)::int AS count
       FROM chat_query_telemetry t
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
-      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN company_target_applications cta_direct ON cta_direct.id = t.target_app_id
+      LEFT JOIN company_target_applications cta_via_guided ON cta_via_guided.id = gta.target_app_id
       WHERE ${filter}
         AND t.answer_status = 'no_answer'
         AND t.no_answer_reason IS NOT NULL

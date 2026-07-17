@@ -31,6 +31,44 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
+async function resolveCanonicalTargetAppId(targetAppId?: string) {
+  const normalized = String(targetAppId || "").trim();
+  if (!normalized || !isUuid(normalized)) {
+    return null;
+  }
+
+  // Newer runtime paths pass guided_workflow_target_apps.id.
+  const guided = await getPool().query<{ target_app_id: string | null }>(
+    `
+      SELECT target_app_id
+      FROM guided_workflow_target_apps
+      WHERE id = $1
+        AND deleted_at IS NULL
+      LIMIT 1
+    `,
+    [normalized]
+  );
+
+  const mappedCanonical = guided.rows[0]?.target_app_id;
+  if (mappedCanonical && isUuid(mappedCanonical)) {
+    return mappedCanonical;
+  }
+
+  // Some callers may already provide company_target_applications.id.
+  const canonical = await getPool().query<{ id: string }>(
+    `
+      SELECT id
+      FROM company_target_applications
+      WHERE id = $1
+        AND deleted_at IS NULL
+      LIMIT 1
+    `,
+    [normalized]
+  );
+
+  return canonical.rows[0]?.id ?? null;
+}
+
 async function canPersistTelemetryUser(userId: string) {
   if (!isUuid(userId)) {
     return false;
@@ -55,6 +93,8 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
   if (!userCanPersist) {
     return randomUUID();
   }
+
+  const canonicalTargetAppId = await resolveCanonicalTargetAppId(input.target_app_id);
 
   try {
     const result = await getPool().query<{ id: string }>(
@@ -88,7 +128,7 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
         RETURNING id
       `,
       [
-        input.target_app_id || null,
+        canonicalTargetAppId,
         input.user_id,
         input.conversation_id || null,
         input.question,
@@ -113,7 +153,12 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
     return result.rows[0].id;
   } catch (error) {
     // Telemetry must not break chat responses.
-    console.warn("Skipping chat_query_telemetry insert:", error);
+    console.warn("Skipping chat_query_telemetry insert:", {
+      error,
+      targetAppId: input.target_app_id || null,
+      canonicalTargetAppId,
+      userId: input.user_id,
+    });
     return randomUUID();
   }
 }
@@ -129,10 +174,11 @@ export async function upsertChatQueryFeedback(input: {
       SELECT t.id
       FROM chat_query_telemetry t
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
-      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN company_target_applications cta_direct ON cta_direct.id = t.target_app_id
+      LEFT JOIN company_target_applications cta_via_guided ON cta_via_guided.id = gta.target_app_id
       INNER JOIN user_company_roles ucr
         ON ucr.user_id = $1
-       AND ucr.company_id = cta.company_id
+       AND ucr.company_id = COALESCE(cta_direct.company_id, cta_via_guided.company_id)
        AND ucr.deleted_at IS NULL
        AND ucr.status = 'active'
       WHERE t.id = $2
