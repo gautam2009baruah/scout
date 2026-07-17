@@ -3490,7 +3490,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
           value={config.input || ""}
           onChange={(e) => updateConfig({ input: e.target.value })}
-          placeholder="{{trigger.userMessage}} or {{bodyText}}"
+          placeholder="{{trigger.input.userMessage}} or {{bodyText}}"
         />
         <CollapsibleHelp title="Examples by node type">
           <ul className="space-y-2">
@@ -3500,7 +3500,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
             </li>
             <li>
               <div className="font-semibold text-slate-700">After a Chatbot trigger</div>
-              <code className="block bg-slate-100 px-1 rounded">{`{{trigger.userMessage}}`}</code>
+              <code className="block bg-slate-100 px-1 rounded">{`{{trigger.input.userMessage}}`}</code>
             </li>
             <li>
               <div className="font-semibold text-slate-700">After an Email trigger</div>

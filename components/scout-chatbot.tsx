@@ -42,6 +42,32 @@ import {
 
 export type ScoutChatRole = "assistant" | "user";
 
+export type ScoutChatProgressStage =
+  | "understanding"
+  | "conversation_context"
+  | "knowledge_search"
+  | "workflow_lookup"
+  | "data_lookup"
+  | "planning"
+  | "workflow_execution"
+  | "external_service"
+  | "formatting"
+  | "almost_done";
+
+export type ScoutChatProgressEventDetail = {
+  message?: string;
+  requestId?: string;
+  stage?: ScoutChatProgressStage;
+};
+
+export const SCOUT_CHAT_PROGRESS_EVENT = "scout-chatbot:progress";
+
+export function reportScoutChatProgress(detail: ScoutChatProgressEventDetail) {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(SCOUT_CHAT_PROGRESS_EVENT, { detail }));
+  }
+}
+
 export type ScoutChatMessage = {
   id?: string;
   role: ScoutChatRole;
@@ -119,6 +145,11 @@ type ScoutOrchestration = {
 type PendingRouterConfirmation = {
   originalText: string;
   workflow: ScoutWorkflowSession;
+};
+
+type PendingWorkflowConfirmation = {
+  messageId: string;
+  suggestion: ScoutWorkflowActionSuggestion;
 };
 
 type PendingActionModeFallback = {
@@ -310,6 +341,29 @@ const defaultReplies = [
   "For a customer install, mount the component once near the root of their app and pass user or session context to your backend handler."
 ];
 
+const PROGRESS_MESSAGES: Record<ScoutChatProgressStage, string> = {
+  understanding: "Understanding your request...",
+  conversation_context: "Analyzing conversation context...",
+  knowledge_search: "Searching connected knowledge...",
+  workflow_lookup: "Retrieving workflow information...",
+  data_lookup: "Looking up relevant data...",
+  planning: "Planning the best response...",
+  workflow_execution: "Executing workflow...",
+  external_service: "Calling external services...",
+  formatting: "Formatting the response...",
+  almost_done: "Almost done...",
+};
+
+const FALLBACK_PROGRESS_MESSAGES = [
+  PROGRESS_MESSAGES.understanding,
+  PROGRESS_MESSAGES.conversation_context,
+  PROGRESS_MESSAGES.knowledge_search,
+  PROGRESS_MESSAGES.data_lookup,
+  PROGRESS_MESSAGES.planning,
+  PROGRESS_MESSAGES.formatting,
+  PROGRESS_MESSAGES.almost_done,
+];
+
 const initialChatSize: ChatSize = {
   width: 440,
   height: 680
@@ -488,6 +542,9 @@ export function ScoutChatbot({
   const [input, setInput] = useState("");
   const [actionModeArmed, setActionModeArmed] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const [progressMessage, setProgressMessage] = useState("Understanding your request...");
+  const progressRequestIdRef = useRef<string | null>(null);
+  const lastProgressEventAtRef = useRef(0);
   const [activeTab, setActiveTab] = useState<ChatTab>("qa");
   const [isMinimizing, setIsMinimizing] = useState(false);
   const [activeWorkflow, setActiveWorkflow] = useState<ScoutWorkflowSession | null>(null);
@@ -515,7 +572,77 @@ export function ScoutChatbot({
   const lastActivityAtRef = useRef(Date.now());
   const scopeRef = useRef<string | null>(null);
   const pendingRouterConfirmationRef = useRef<PendingRouterConfirmation | null>(null);
+  const pendingWorkflowConfirmationRef = useRef<PendingWorkflowConfirmation | null>(null);
   const pendingActionModeFallbackRef = useRef<PendingActionModeFallback | null>(null);
+
+  const showProgress = useCallback((stage: ScoutChatProgressStage, requestId?: string) => {
+    progressRequestIdRef.current = requestId || progressRequestIdRef.current || createProgressRequestId();
+    lastProgressEventAtRef.current = Date.now();
+    setProgressMessage(PROGRESS_MESSAGES[stage]);
+    setIsTyping(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isTyping) {
+      progressRequestIdRef.current = null;
+      setProgressMessage(PROGRESS_MESSAGES.understanding);
+      return;
+    }
+
+    if (!progressRequestIdRef.current) {
+      progressRequestIdRef.current = createProgressRequestId();
+    }
+
+    let messageIndex = Math.max(0, FALLBACK_PROGRESS_MESSAGES.indexOf(progressMessage));
+    let timeoutId: number | null = null;
+
+    const scheduleNext = () => {
+      const delayMs = messageIndex === 0 ? 3200 : 4300 + Math.floor(Math.random() * 1700);
+      timeoutId = window.setTimeout(() => {
+        if (Date.now() - lastProgressEventAtRef.current < 3000) {
+          scheduleNext();
+          return;
+        }
+        messageIndex = Math.min(messageIndex + 1, FALLBACK_PROGRESS_MESSAGES.length - 1);
+        setProgressMessage(FALLBACK_PROGRESS_MESSAGES[messageIndex]);
+        if (messageIndex < FALLBACK_PROGRESS_MESSAGES.length - 1) {
+          scheduleNext();
+        }
+      }, delayMs);
+    };
+
+    scheduleNext();
+    return () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [isTyping]);
+
+  useEffect(() => {
+    const receiveProgress = (event: Event) => {
+      const detail = (event as CustomEvent<ScoutChatProgressEventDetail>).detail;
+      if (!detail || !isTyping) return;
+      if (
+        detail.requestId
+        && progressRequestIdRef.current
+        && detail.requestId !== progressRequestIdRef.current
+      ) {
+        return;
+      }
+
+      if (detail.message?.trim()) {
+        lastProgressEventAtRef.current = Date.now();
+        setProgressMessage(detail.message.trim());
+      } else if (detail.stage) {
+        lastProgressEventAtRef.current = Date.now();
+        setProgressMessage(PROGRESS_MESSAGES[detail.stage]);
+      }
+    };
+
+    window.addEventListener(SCOUT_CHAT_PROGRESS_EVENT, receiveProgress);
+    return () => window.removeEventListener(SCOUT_CHAT_PROGRESS_EVENT, receiveProgress);
+  }, [isTyping]);
 
   // Generate unique message ID using timestamp + random component
   const generateMessageId = () => {
@@ -617,6 +744,9 @@ export function ScoutChatbot({
     setMessages(normalizeMessages(initialMessages ?? []));
     setInput("");
     setIsTyping(false);
+    pendingRouterConfirmationRef.current = null;
+    pendingWorkflowConfirmationRef.current = null;
+    pendingActionModeFallbackRef.current = null;
     setActiveTab("qa");
     setActiveWorkflow(null);
     setHistoryOpen(false);
@@ -1498,7 +1628,7 @@ export function ScoutChatbot({
         setMessages(nextHistory);
         setInput("");
         markActivity();
-        setIsTyping(true);
+        showProgress("workflow_execution");
 
         try {
           const workflowReply = await runWorkflowRouter(
@@ -1539,9 +1669,94 @@ export function ScoutChatbot({
 
       if (isNegativeResponse(trimmed)) {
         pendingRouterConfirmationRef.current = null;
+        setMessages([
+          ...nextHistory,
+          createRenderedMessage({
+            id: generateMessageId(),
+            role: "assistant",
+            text: `Okay, I won’t run ${pending.workflow.title}.`,
+            time: formatTime(),
+          }),
+        ]);
+        setInput("");
+        markActivity();
+        inputRef.current?.focus();
+        return;
+      }
+
+      if (isAmbiguousShortResponse(trimmed)) {
+        setMessages([
+          ...nextHistory,
+          createRenderedMessage({
+            id: generateMessageId(),
+            role: "assistant",
+            text: `Would you like me to run ${pending.workflow.title}, or cancel it?`,
+            time: formatTime(),
+          }),
+        ]);
+        setInput("");
+        markActivity();
+        inputRef.current?.focus();
+        return;
       }
     }
 
+    const pendingWorkflow = pendingWorkflowConfirmationRef.current
+      ?? findPendingWorkflowConfirmation(messages);
+    if (pendingWorkflow) {
+      pendingWorkflowConfirmationRef.current = pendingWorkflow;
+
+      if (isAffirmativeResponse(trimmed)) {
+        setMessages(nextHistory);
+        setInput("");
+        await runWorkflowAction(pendingWorkflow.messageId, pendingWorkflow.suggestion);
+        return;
+      }
+
+      if (isNegativeResponse(trimmed)) {
+        pendingWorkflowConfirmationRef.current = null;
+        setMessages([
+          ...nextHistory.map((message) => (
+            message.id === pendingWorkflow.messageId
+              ? {
+                  ...message,
+                  workflowActionSuggestion: message.workflowActionSuggestion
+                    ? { ...message.workflowActionSuggestion, status: "resolved" as const }
+                    : undefined,
+                }
+              : message
+          )),
+          createRenderedMessage({
+            id: generateMessageId(),
+            role: "assistant",
+            text: `Okay, I won’t run ${pendingWorkflow.suggestion.workflow.title}.`,
+            time: formatTime(),
+          }),
+        ]);
+        setInput("");
+        markActivity();
+        inputRef.current?.focus();
+        return;
+      }
+
+      if (isAmbiguousShortResponse(trimmed)) {
+        setMessages([
+          ...nextHistory,
+          createRenderedMessage({
+            id: generateMessageId(),
+            role: "assistant",
+            text: `Do you want me to run ${pendingWorkflow.suggestion.workflow.title}, or cancel it?`,
+            time: formatTime(),
+          }),
+        ]);
+        setInput("");
+        markActivity();
+        inputRef.current?.focus();
+        return;
+      }
+    }
+
+    showProgress("conversation_context");
     try {
       const continuationReply = await runWorkflowRouter(
         trimmed,
@@ -1551,6 +1766,7 @@ export function ScoutChatbot({
       );
 
       if (continuationReply.routerIntent && continuationReply.routerIntent !== "fallback") {
+        setIsTyping(false);
         setMessages(nextHistory);
         setInput("");
         const assistantReply = resolveReply(continuationReply);
@@ -1576,7 +1792,7 @@ export function ScoutChatbot({
       setMessages(nextHistory);
       setInput("");
       markActivity();
-      setIsTyping(true);
+      showProgress("workflow_lookup");
 
       try {
         const workflowReply = await runWorkflowRouter(
@@ -1629,6 +1845,7 @@ export function ScoutChatbot({
       return;
     }
 
+    setProgressMessage(PROGRESS_MESSAGES.understanding);
     const intentDecision = await classifyIntentWithHybridGate(trimmed, contextWindow);
 
     setMessages(nextHistory);
@@ -1636,12 +1853,17 @@ export function ScoutChatbot({
     markActivity();
 
     if (intentDecision.promptModeChoice) {
+      setIsTyping(false);
+      const contextualShortReply = isAmbiguousShortResponse(trimmed)
+        && contextWindow.some((message) => message.role === "assistant");
       const modePrompt = createRenderedMessage({
         id: generateMessageId(),
         role: "assistant",
-        text: "I am not fully certain. Do you want Action Mode or Chat Mode for this request?",
+        text: contextualShortReply
+          ? "Could you clarify what you’d like me to do next?"
+          : "I am not fully certain. Do you want Action Mode or Chat Mode for this request?",
         time: formatTime(),
-        intentModeSuggestion: {
+        intentModeSuggestion: contextualShortReply ? undefined : {
           originalText: trimmed,
           confidence: intentDecision.confidence,
           intentDecisionId: intentDecision.decisionId,
@@ -1663,6 +1885,7 @@ export function ScoutChatbot({
       : null;
 
     if (workflowAction) {
+      setIsTyping(false);
       const isGenericRouterAction = workflowAction.workflow.id === ACTION_ROUTER_WORKFLOW_ID;
       const actionMessage = createRenderedMessage({
         id: generateMessageId(),
@@ -1681,13 +1904,17 @@ export function ScoutChatbot({
         }
       });
 
+      pendingWorkflowConfirmationRef.current = {
+        messageId: actionMessage.id,
+        suggestion: actionMessage.workflowActionSuggestion!,
+      };
       setMessages((current) => [...current, actionMessage]);
       inputRef.current?.focus();
       return;
     }
 
     if (intentDecision.intent === "chat" && shouldTryWorkflowRouterForChatIntent(trimmed)) {
-      setIsTyping(true);
+      showProgress("workflow_lookup");
       try {
         const routerReply = await runWorkflowRouter(
           trimmed,
@@ -1723,7 +1950,7 @@ export function ScoutChatbot({
   }
 
   async function completeChatResponse(question: string, contextWindow: ScoutChatMessage[]) {
-    setIsTyping(true);
+    showProgress("knowledge_search");
 
     try {
       const customReply = onSendMessage
@@ -1731,23 +1958,18 @@ export function ScoutChatbot({
         : await sendChatQuery(question); // Always use real API, skip mock workflows
       const assistantReply = resolveReply(customReply);
 
-      window.setTimeout(
-        () => {
-          setMessages((current) => [
-            ...current,
-            createRenderedMessage({
-              ...assistantReply,
-              id: assistantReply.id ?? generateMessageId(),
-              role: "assistant",
-              time: assistantReply.time ?? formatTime()
-            })
-          ]);
-          setIsTyping(false);
-          markActivity();
-          inputRef.current?.focus();
-        },
-        120 // Real API response delay
-      );
+      setIsTyping(false);
+      setMessages((current) => [
+        ...current,
+        createRenderedMessage({
+          ...assistantReply,
+          id: assistantReply.id ?? generateMessageId(),
+          role: "assistant",
+          time: assistantReply.time ?? formatTime()
+        })
+      ]);
+      markActivity();
+      inputRef.current?.focus();
     } catch (error) {
       const failureMessage = error instanceof Error ? error.message : "I could not reach the assistant service. Please try again in a moment.";
       if (isApiKeyAuthFailure(401, failureMessage)) {
@@ -1923,6 +2145,7 @@ export function ScoutChatbot({
   }
 
   async function continueAsChat(messageId: string, suggestion: ScoutWorkflowActionSuggestion) {
+    pendingWorkflowConfirmationRef.current = null;
     await submitIntentFeedback({
       decisionId: suggestion.intentDecisionId,
       feedbackType: "false_positive",
@@ -1938,6 +2161,7 @@ export function ScoutChatbot({
   }
 
   async function runWorkflowAction(messageId: string, suggestion: ScoutWorkflowActionSuggestion) {
+    pendingWorkflowConfirmationRef.current = null;
     if (authBlockedMessage) {
       setMessages((current) => current.map((item) => (
         item.id === messageId
@@ -1976,7 +2200,7 @@ export function ScoutChatbot({
           }
         : message
     )));
-    setIsTyping(true);
+    showProgress("workflow_execution");
     markActivity();
 
     const workflowHistory = trimMessagesForLifecycle([...messages], resolvedLifecycleSettings);
@@ -2088,9 +2312,8 @@ export function ScoutChatbot({
       return undefined;
     }
 
-    const requestId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const requestId = progressRequestIdRef.current || createProgressRequestId();
+    progressRequestIdRef.current = requestId;
 
     const response = await fetch(chatEndpoint, {
       method: "POST",
@@ -2205,11 +2428,14 @@ export function ScoutChatbot({
     options?: { allowDraftPlan?: boolean; forceActionMode?: boolean; continuationOnly?: boolean }
   ) {
     const endpoint = workflowRouterEndpoint || "/api/chatbot/workflow-router";
+    const requestId = progressRequestIdRef.current || createProgressRequestId();
+    progressRequestIdRef.current = requestId;
 
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "X-Request-Id": requestId,
         ...apiKeyHeaders,
       },
       body: JSON.stringify({
@@ -2687,7 +2913,7 @@ export function ScoutChatbot({
                   />
                 ))}
 
-                {isTyping && <TypingIndicator />}
+                {isTyping && <TypingIndicator message={progressMessage} />}
               </div>
 
               <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
@@ -3430,16 +3656,18 @@ function WorkflowCard({
   );
 }
 
-function TypingIndicator() {
+function TypingIndicator({ message }: { message: string }) {
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3" role="status" aria-live="polite">
       <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white">
         <Bot className="h-4 w-4" />
       </div>
-      <div className="flex items-center gap-1 rounded-2xl rounded-tl-md border border-slate-100 bg-slate-50 px-4 py-4 shadow-sm">
-        <span className="h-2 w-2 animate-blink rounded-full bg-slate-400" />
-        <span className="h-2 w-2 animate-blink rounded-full bg-slate-400 [animation-delay:160ms]" />
-        <span className="h-2 w-2 animate-blink rounded-full bg-slate-400 [animation-delay:320ms]" />
+      <div className="flex min-h-11 items-center gap-3 rounded-2xl rounded-tl-md border border-slate-100 bg-slate-50 px-4 py-3 shadow-sm">
+        <span className="relative flex h-3 w-3 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-25" />
+          <span className="relative inline-flex h-3 w-3 rounded-full bg-sky-500/80" />
+        </span>
+        <span className="text-sm text-slate-600 transition-opacity duration-300">{message}</span>
       </div>
     </div>
   );
@@ -3612,6 +3840,14 @@ function createConversationSessionId() {
   }
 
   return `conversation-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createProgressRequestId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `progress-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function readStoredMessages(key: string): RenderedMessage[] | null {
@@ -3861,13 +4097,39 @@ function findWorkflowByActionKeywords(normalizedMessage: string, workflows: Scou
 }
 
 function isAffirmativeResponse(message: string) {
-  const normalized = message.trim().toLowerCase();
-  return /^(yes|y|yeah|yep|sure|ok|okay|go ahead|please do|do it|proceed|continue)$/.test(normalized);
+  const normalized = normalizeConfirmationResponse(message);
+  return /^(yes|y|yeah|ya|yup|yep|sure|okay|ok|alright|sounds good|go ahead|please do|do it|proceed|continue|that one|this one)$/.test(normalized);
 }
 
 function isNegativeResponse(message: string) {
-  const normalized = message.trim().toLowerCase();
-  return /^(no|n|nope|nah|not now|cancel|stop)$/.test(normalized);
+  const normalized = normalizeConfirmationResponse(message);
+  return /^(no|n|nope|nah|na|cancel|stop|not now|dont|do not|please dont|please do not|never mind|nevermind)$/.test(normalized);
+}
+
+function normalizeConfirmationResponse(message: string) {
+  return message
+    .trim()
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[.!?,;:]+$/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function isAmbiguousShortResponse(message: string) {
+  const normalized = normalizeConfirmationResponse(message);
+  if (!normalized) return true;
+  return normalized.length <= 40 && normalized.split(/\s+/).length <= 5;
+}
+
+function findPendingWorkflowConfirmation(messages: RenderedMessage[]): PendingWorkflowConfirmation | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    const suggestion = message.role === "assistant" ? message.workflowActionSuggestion : undefined;
+    if (suggestion?.status === "pending") {
+      return { messageId: message.id, suggestion };
+    }
+  }
+  return null;
 }
 
 function shouldTryWorkflowRouterForChatIntent(message: string) {

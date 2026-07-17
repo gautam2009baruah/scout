@@ -97,6 +97,8 @@ The user wants information, explanation, or a response:
 2. If the message contains a recipient (email address, name, team), it is almost certainly an action.
 3. "What is the invoice amount?" = chat. "Process the invoice" = action.
 4. "Tell me who handles refunds" = chat. "Send the refund to John" = action.
+6. Never interpret a short reply such as "ya", "nope", "okay", "do it", or "that one" in isolation. Resolve it against the immediately preceding assistant message and recent conversation.
+7. Confirming or rejecting a previously proposed action is ACTION because it controls pending workflow state.
 5. When genuinely uncertain, prefer "action" over "chat" — it is safer to surface an action choice.
 
 Return ONLY this JSON, no markdown, no extra text:
@@ -191,14 +193,14 @@ export async function POST(request: NextRequest) {
 
     // Only skip the LLM for trivially obvious one-word casual messages.
     // Everything else — including ambiguous phrasing — goes to the LLM.
-    if (!isObviousCasualMessage(message)) {
+    const suppliedHistory = Array.isArray(body.history) ? body.history.slice(-8) : [];
+    const hasConversationContext = suppliedHistory.some((item) => String(item.text || "").trim());
+
+    if (!isObviousCasualMessage(message) || hasConversationContext) {
       const provider = await getLLMProvider();
-      const historyText = Array.isArray(body.history)
-        ? body.history
-            .slice(-8)
-            .map((item) => `${(item.role || "unknown").toUpperCase()}: ${String(item.text || "")}`)
-            .join("\n")
-        : "";
+      const historyText = suppliedHistory
+        .map((item) => `${(item.role || "unknown").toUpperCase()}: ${String(item.text || "")}`)
+        .join("\n");
 
       const userPrompt = historyText
         ? `Conversation so far:\n${historyText}\n\nLatest message to classify:\n${message}`
