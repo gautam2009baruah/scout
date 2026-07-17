@@ -324,6 +324,10 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     requiresConfirmation: boolean;
     confidence: number;
   } | null = null;
+  let triggerClarification: {
+    orchestrationName: string;
+    missingVariables: string[];
+  } | null = null;
 
   // OPTIMIZATION: Pre-filter for orchestration triggers
   // Only check triggers for action-oriented messages (saves 70-90% of LLM calls)
@@ -346,31 +350,42 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
       if (triggerMatch) {
         console.log(`✅ Matched orchestration: ${triggerMatch.orchestrationName} (confidence: ${triggerMatch.confidence})`);
-        
-        // Create execution for matched orchestration
-        const execution = await createExecution({
-          orchestrationId: triggerMatch.orchestrationId,
-          orchestrationVersion: 1,
-          context: triggerMatch.extractedVariables,
-          triggerData: {
-            triggerType: 'chatbot',
-            triggerId: triggerMatch.triggerId,
-            userMessage: question,
-            matchedPhrase: triggerMatch.matchedPhrase,
-            confidence: triggerMatch.confidence
-          },
-          triggeredBy: triggerUserEmail
-        });
 
-        // Store for later inclusion in response
-        orchestrationMatch = {
-          triggerId: triggerMatch.triggerId,
-          orchestrationId: triggerMatch.orchestrationId,
-          orchestrationName: triggerMatch.orchestrationName,
-          executionId: execution.id,
-          requiresConfirmation: false,
-          confidence: triggerMatch.confidence
-        };
+        if (triggerMatch.missingVariables.length > 0) {
+          console.log(
+            `⚠️ Matched trigger has missing required variables: ${triggerMatch.missingVariables.join(", ")}`
+          );
+          triggerClarification = {
+            orchestrationName: triggerMatch.orchestrationName,
+            missingVariables: triggerMatch.missingVariables,
+          };
+        } else {
+        
+          // Create execution for matched orchestration
+          const execution = await createExecution({
+            orchestrationId: triggerMatch.orchestrationId,
+            orchestrationVersion: 1,
+            context: triggerMatch.extractedVariables,
+            triggerData: {
+              triggerType: 'chatbot',
+              triggerId: triggerMatch.triggerId,
+              userMessage: question,
+              matchedPhrase: triggerMatch.matchedPhrase,
+              confidence: triggerMatch.confidence
+            },
+            triggeredBy: triggerUserEmail
+          });
+
+          // Store for later inclusion in response
+          orchestrationMatch = {
+            triggerId: triggerMatch.triggerId,
+            orchestrationId: triggerMatch.orchestrationId,
+            orchestrationName: triggerMatch.orchestrationName,
+            executionId: execution.id,
+            requiresConfirmation: false,
+            confidence: triggerMatch.confidence
+          };
+        }
         
         console.log('✅ Orchestration match stored, continuing to workflow check...');
       } else {
@@ -382,6 +397,74 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
   } else {
     console.log('⏭️ Message skipped trigger check (casual chat)');
+  }
+
+  if (triggerClarification) {
+    const missingLabel = triggerClarification.missingVariables.join(", ");
+    const clarificationAnswer = `I can run \"${triggerClarification.orchestrationName}\", but I still need: ${missingLabel}. Please share that and I will continue.`;
+    const latencyMs = Date.now() - startedAt;
+
+    if (canPersistConversation) {
+      await appendConversationExchange({
+        companyId,
+        userId,
+        conversationId,
+        question,
+        answer: clarificationAnswer,
+        citations: [],
+        metadata: {
+          llm_provider: "none",
+          llm_model: "trigger_clarification",
+          latency_ms: latencyMs,
+          retrieved_chunk_count: 0,
+          token_usage_summary: null,
+          missing_required_variables: triggerClarification.missingVariables,
+          target_orchestration: triggerClarification.orchestrationName,
+        }
+      });
+    }
+
+    const queryId = await recordChatQueryTelemetry({
+      target_app_id: input.target_app_id?.trim() || undefined,
+      user_id: userId,
+      conversation_id: conversationId,
+      question,
+      answer: clarificationAnswer,
+      answer_status: "answered",
+      retrieved_chunk_count: 0,
+      citations: [],
+      llm_provider: "none",
+      llm_model: "trigger_clarification",
+      latency_ms: latencyMs,
+      token_usage: {
+        prompt_tokens: null,
+        completion_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: 0,
+      },
+      metadata: {
+        mode: "trigger_clarification",
+        externalUserTraceId: externalUserTraceId || undefined,
+        missingRequiredVariables: triggerClarification.missingVariables,
+        orchestrationName: triggerClarification.orchestrationName,
+      },
+    });
+
+    return {
+      query_id: queryId,
+      answer: clarificationAnswer,
+      citations: [],
+      conversation_id: conversationId,
+      no_answer: false,
+      latency_ms: latencyMs,
+      token_usage: {
+        prompt_tokens: null,
+        completion_tokens: null,
+        total_tokens: null,
+        estimated_cost_usd: 0,
+      },
+      retrieved_chunk_count: 0,
+    };
   }
 
   if (isGreetingOnly(question)) {
