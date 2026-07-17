@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
-import { createExecution, getConnections, getNodes, getOrchestrationPage } from "@/lib/orchestrations/db";
+import { createExecution, getConnections, getExecutionById, getActiveClarificationRequestForConversation, getNodes, getOrchestrationPage, getOrchestrationById } from "@/lib/orchestrations/db";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 import type { ChatbotTriggerConfig } from "@/shared/orchestrationTypes";
+import { OrchestrationEngine } from "@/lib/orchestrations/engine";
 
 export const runtime = "nodejs";
 
@@ -526,6 +527,48 @@ export async function POST(request: NextRequest) {
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
 
+    if (conversationId) {
+      const clarification = await getActiveClarificationRequestForConversation({
+        companyId,
+        conversationId,
+      });
+
+      if (clarification) {
+        const execution = await getExecutionById(clarification.executionId);
+        if (execution && execution.status === "paused") {
+          const orchestration = await getOrchestrationById(execution.orchestrationId);
+          if (orchestration) {
+            const nodes = await getNodes(orchestration.id);
+            const connections = await getConnections(orchestration.id);
+            const engine = new OrchestrationEngine(execution, nodes, connections);
+            const resumeResult = await engine.resumeAfterClarification({
+              clarificationId: clarification.id,
+              responseText: message,
+            });
+
+            if (resumeResult.success) {
+              return NextResponse.json({
+                answer: `Thanks. I resumed the workflow "${orchestration.name}" using your response.`,
+                intent: "execute_plan",
+                confidence: 1,
+                matchedOrchestrationIds: [orchestration.id],
+                matchedOrchestrationNames: [orchestration.name],
+                needsClarification: false,
+                clarifyingQuestions: [],
+                requireUserConfirmation: false,
+                plan: [],
+                metadata: {
+                  resumedClarificationId: clarification.id,
+                  executionId: execution.id,
+                  conversationId,
+                },
+              });
+            }
+          }
+        }
+      }
+    }
+
     const candidates = await loadChatbotWorkflowCandidates(companyId, userId, targetAppId);
 
     if (candidates.length === 0) {
@@ -659,6 +702,9 @@ export async function POST(request: NextRequest) {
       context: variableExtraction.values,
       triggerData: {
         triggerType: "chatbot",
+        companyId,
+        targetAppId: targetAppId || undefined,
+        conversationId: conversationId || undefined,
         userMessage: message,
         confidence: match.confidence,
         orchestrationName: selected.name,

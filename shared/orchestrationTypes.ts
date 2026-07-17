@@ -158,6 +158,13 @@ export type AIExtractionNodeConfig = {
   input?: string; // template text (supports {{variable}} interpolation)
   inputSource?: string; // legacy: single variable path
   prompt?: string; // optional extra instructions for the model
+  clarificationTimeoutMinutes?: number; // how long to keep a clarification request active
+  fields?: Array<{
+    key: string;
+    type: "string" | "number" | "boolean" | "array" | "object";
+    description?: string;
+    required?: boolean;
+  }>;
   schema: Record<string, unknown>; // fields to extract: { key: { type, description } }
   outputVariable: string; // where to store extracted data
 };
@@ -586,6 +593,7 @@ export type OrchestrationExecution = {
 export type NodeExecutionStatus =
   | "pending"
   | "running"
+  | "paused"
   | "completed"
   | "failed"
   | "skipped";

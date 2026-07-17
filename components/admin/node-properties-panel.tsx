@@ -3391,16 +3391,17 @@ function DataCaptureConfig({ config, updateConfig }: any) {
 }
 
 function AIExtractionConfig({ config, updateConfig }: any) {
-  const [schemaFields, setSchemaFields] = useState<Array<{ key: string; type: string; description: string }>>(
+  const [schemaFields, setSchemaFields] = useState<Array<{ key: string; type: string; description: string; required: boolean }>>(
     Object.entries(config.schema || {}).map(([key, def]) => {
       if (def && typeof def === "object") {
         return {
           key,
           type: (def as any).type || "string",
           description: (def as any).description || "",
+          required: (def as any).required === true,
         };
       }
-      return { key, type: (def as string) || "string", description: "" };
+      return { key, type: (def as string) || "string", description: "", required: false };
     })
   );
 
@@ -3427,11 +3428,11 @@ function AIExtractionConfig({ config, updateConfig }: any) {
   useEffect(() => {
     const schema = schemaFields.reduce((acc, field) => {
       if (field.key) {
-        acc[field.key] = { type: field.type, description: field.description };
+        acc[field.key] = { type: field.type, description: field.description, required: field.required };
       }
       return acc;
-    }, {} as Record<string, { type: string; description: string }>);
-    updateConfig({ schema });
+    }, {} as Record<string, { type: string; description: string; required: boolean }>);
+    updateConfig({ schema, fields: schemaFields });
   }, [schemaFields]);
 
   return (
@@ -3554,6 +3555,19 @@ function AIExtractionConfig({ config, updateConfig }: any) {
                   <Minus className="h-4 w-4" />
                 </button>
               </div>
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={field.required}
+                  onChange={(e) => {
+                    const updated = [...schemaFields];
+                    updated[index].required = e.target.checked;
+                    setSchemaFields(updated);
+                  }}
+                  className="rounded border-slate-300"
+                />
+                Mandatory field
+              </label>
               <input
                 type="text"
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -3571,7 +3585,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
             type="button"
             className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700"
             onClick={() =>
-              setSchemaFields([...schemaFields, { key: "", type: "string", description: "" }])
+              setSchemaFields([...schemaFields, { key: "", type: "string", description: "", required: false }])
             }
           >
             <Plus className="h-4 w-4" />
@@ -3591,6 +3605,23 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           onChange={(e) => updateConfig({ prompt: e.target.value })}
           placeholder="Any extra guidance for the extraction (optional)"
         />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Clarification Expiry Timeout (minutes)
+        </label>
+        <input
+          type="number"
+          min={1}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={config.clarificationTimeoutMinutes ?? 15}
+          onChange={(e) => updateConfig({ clarificationTimeoutMinutes: Number(e.target.value) || 15 })}
+          placeholder="15"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          How long a chatbot clarification stays valid before the node expires and must ask again.
+        </p>
       </div>
 
       <div>

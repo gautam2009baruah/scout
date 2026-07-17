@@ -1032,6 +1032,164 @@ export async function updateExecution(
 }
 
 // ============================================================================
+// Clarifications
+// ============================================================================
+
+export type OrchestrationClarificationRequest = {
+  id: string;
+  executionId: string;
+  nodeExecutionId: string;
+  nodeId: string;
+  conversationId: string | null;
+  companyId: string;
+  targetAppId: string | null;
+  outputVariable: string;
+  partialOutput: Record<string, unknown>;
+  missingFields: Array<{
+    key: string;
+    type: string;
+    description?: string;
+  }>;
+  prompt: string;
+  expiresAt: string;
+  status: "active" | "resolved" | "expired";
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  responseText: string | null;
+  responseData: Record<string, unknown> | null;
+};
+
+type ClarificationRow = {
+  id: string;
+  execution_id: string;
+  node_execution_id: string;
+  node_id: string;
+  conversation_id: string | null;
+  company_id: string;
+  target_app_id: string | null;
+  output_variable: string;
+  partial_output_json: Record<string, unknown>;
+  missing_fields_json: Array<{ key: string; type: string; description?: string }>;
+  prompt: string;
+  expires_at: Date;
+  status: "active" | "resolved" | "expired";
+  created_at: Date;
+  updated_at: Date;
+  resolved_at: Date | null;
+  response_text: string | null;
+  response_json: Record<string, unknown> | null;
+};
+
+function mapClarificationRow(row: ClarificationRow): OrchestrationClarificationRequest {
+  return {
+    id: row.id,
+    executionId: row.execution_id,
+    nodeExecutionId: row.node_execution_id,
+    nodeId: row.node_id,
+    conversationId: row.conversation_id,
+    companyId: row.company_id,
+    targetAppId: row.target_app_id,
+    outputVariable: row.output_variable,
+    partialOutput: row.partial_output_json ?? {},
+    missingFields: row.missing_fields_json ?? [],
+    prompt: row.prompt,
+    expiresAt: row.expires_at.toISOString(),
+    status: row.status,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    resolvedAt: row.resolved_at?.toISOString() || null,
+    responseText: row.response_text,
+    responseData: row.response_json ?? null,
+  };
+}
+
+export async function createClarificationRequest(data: {
+  executionId: string;
+  nodeExecutionId: string;
+  nodeId: string;
+  conversationId?: string | null;
+  companyId: string;
+  targetAppId?: string | null;
+  outputVariable: string;
+  partialOutput: Record<string, unknown>;
+  missingFields: Array<{
+    key: string;
+    type: string;
+    description?: string;
+  }>;
+  prompt: string;
+  expiresAt: string;
+}): Promise<OrchestrationClarificationRequest> {
+  const pool = getPool();
+  const result = await pool.query<ClarificationRow>(
+    `INSERT INTO orchestration_clarifications
+     (execution_id, node_execution_id, node_id, conversation_id, company_id, target_app_id, output_variable, partial_output_json, missing_fields_json, prompt, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     RETURNING *`,
+    [
+      data.executionId,
+      data.nodeExecutionId,
+      data.nodeId,
+      data.conversationId || null,
+      data.companyId,
+      data.targetAppId || null,
+      data.outputVariable,
+      JSON.stringify(data.partialOutput || {}),
+      JSON.stringify(data.missingFields || []),
+      data.prompt,
+      data.expiresAt,
+    ]
+  );
+
+  return mapClarificationRow(result.rows[0]);
+}
+
+export async function getActiveClarificationRequestForConversation(input: {
+  companyId: string;
+  conversationId: string;
+}): Promise<OrchestrationClarificationRequest | null> {
+  const pool = getPool();
+  const result = await pool.query<ClarificationRow>(
+    `SELECT *
+     FROM orchestration_clarifications
+     WHERE company_id = $1
+       AND conversation_id = $2
+       AND status = 'active'
+       AND expires_at > now()
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [input.companyId, input.conversationId]
+  );
+
+  return result.rows[0] ? mapClarificationRow(result.rows[0]) : null;
+}
+
+export async function resolveClarificationRequest(id: string, data: {
+  responseText: string;
+  responseData: Record<string, unknown>;
+}): Promise<OrchestrationClarificationRequest> {
+  const pool = getPool();
+  const result = await pool.query<ClarificationRow>(
+    `UPDATE orchestration_clarifications
+     SET status = 'resolved',
+         resolved_at = now(),
+         response_text = $2,
+         response_json = $3,
+         updated_at = now()
+     WHERE id = $1
+     RETURNING *`,
+    [id, data.responseText, JSON.stringify(data.responseData || {})]
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error(`Clarification ${id} not found`);
+  }
+
+  return mapClarificationRow(result.rows[0]);
+}
+
+// ============================================================================
 // Node Executions
 // ============================================================================
 

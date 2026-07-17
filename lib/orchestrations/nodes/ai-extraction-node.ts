@@ -15,6 +15,20 @@ export async function executeAIExtractionNode(
 ): Promise<{
   success: boolean;
   output?: Record<string, unknown>;
+  outputHandle?: string;
+  paused?: boolean;
+  clarification?: {
+    missingFields: string[];
+    message: string;
+    questions: string[];
+    timeoutMinutes: number;
+    expiresAt: string;
+    fieldDefinitions: Array<{
+      key: string;
+      type: string;
+      description?: string;
+    }>;
+  };
   error?: string;
 }> {
   try {
@@ -60,6 +74,33 @@ export async function executeAIExtractionNode(
     // Validate against schema if provided
     if (config.schema && Object.keys(config.schema).length > 0) {
       validateAgainstSchema(extractedData, config.schema);
+    }
+
+    const mandatoryFields = getMandatoryFields(config);
+    const missingMandatoryFields = mandatoryFields.filter((field) => !hasMeaningfulValue(extractedData[field.key]));
+
+    if (missingMandatoryFields.length > 0) {
+      const clarification = buildClarification(
+        missingMandatoryFields,
+        Math.max(1, Number(config.clarificationTimeoutMinutes) || 15)
+      );
+      const outputVariable = config.outputVariable || "extracted";
+      const output: Record<string, unknown> = {};
+      setVariablePath(outputVariable, extractedData, output);
+
+      if (!isChatbotTriggerContext(context)) {
+        throw new Error(
+          `Missing mandatory extraction fields: ${clarification.missingFields.join(", ")}. Non-chat triggers must provide all mandatory inputs before continuing.`
+        );
+      }
+
+      return {
+        success: true,
+        paused: true,
+        output,
+        outputHandle: "clarification",
+        clarification,
+      };
     }
 
     // Store extracted data in output variable (default: "extracted")
@@ -166,4 +207,75 @@ function validateAgainstSchema(
       }
     }
   }
+}
+
+function getMandatoryFields(config: AIExtractionNodeConfig) {
+  if (Array.isArray(config.fields) && config.fields.length > 0) {
+    return config.fields.filter((field) => field.required === true);
+  }
+
+  return Object.entries(config.schema || {})
+    .filter(([, field]) => typeof field === "object" && field !== null && (field as any).required === true)
+    .map(([key, field]) => ({
+      key,
+      type: (field as any).type || "string",
+      description: (field as any).description || "",
+      required: true,
+    }));
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (typeof value === "object") {
+    return Object.keys(value as Record<string, unknown>).length > 0;
+  }
+
+  return true;
+}
+
+function buildClarification(
+  missingFields: Array<{ key: string; type: string; description?: string }>,
+  timeoutMinutes: number
+) {
+  const fieldNames = missingFields.map((field) => field.key);
+  const expiresAt = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
+
+  return {
+    missingFields: fieldNames,
+    message: `I need a little more information to continue: ${fieldNames.join(", ")}.`,
+    questions: missingFields.map((field) =>
+      field.description?.trim()
+        ? `${field.key}: ${field.description.trim()}`
+        : `Please provide ${field.key}.`
+    ),
+    timeoutMinutes,
+    expiresAt,
+    fieldDefinitions: missingFields.map((field) => ({
+      key: field.key,
+      type: field.type,
+      description: field.description,
+    })),
+  };
+}
+
+function isChatbotTriggerContext(context: Record<string, unknown>): boolean {
+  const trigger = context.trigger as Record<string, unknown> | undefined;
+  const triggerInput = trigger?.input as Record<string, unknown> | undefined;
+
+  return (
+    triggerInput?.triggerType === "chatbot" ||
+    trigger?.type === "chatbot" ||
+    context.triggerType === "chatbot"
+  );
 }

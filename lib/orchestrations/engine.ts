@@ -30,11 +30,16 @@ import { executeNotificationNode } from "./nodes/notification-node";
 import { executeVariableNode } from "./nodes/variable-node";
 import { executeApiCallNode } from "./nodes/api-call-node";
 import { evaluateExpression } from "./expression-evaluator";
+import { getLLMProvider } from "@/lib/llm/providers";
+import { getPool } from "@/lib/db/pool";
 import {
   updateExecution,
   createNodeExecution,
   updateNodeExecution,
   getApprovals,
+  createClarificationRequest,
+  resolveClarificationRequest,
+  getOrchestrationById,
 } from "./db";
 import {
   isNodeCompatibleWithTrigger,
@@ -153,7 +158,42 @@ export class OrchestrationEngine {
 
       if (result.paused) {
         // Human approval or async operation
-        await this.updateNodeExecution(nodeExecutionId, "running", null, null);
+        if (result.output) {
+          Object.assign(this.context, result.output);
+        }
+
+        const triggerData = this.execution.triggerData as Record<string, unknown> | null;
+        const conversationId = typeof triggerData?.conversationId === "string" ? triggerData.conversationId : null;
+        const companyId = typeof triggerData?.companyId === "string" ? triggerData.companyId : null;
+        const targetAppId = typeof triggerData?.targetAppId === "string" ? triggerData.targetAppId : null;
+        if (result.clarification) {
+          const orchestrationCompanyId = companyId || (await getOrchestrationById(this.execution.orchestrationId))?.companyId;
+          if (!orchestrationCompanyId) {
+            throw new Error("Unable to resolve company id for clarification request");
+          }
+          const outputVariable = (node.config as AIExtractionNodeConfig).outputVariable || "extracted";
+          const partialOutput = result.output ? ((result.output[outputVariable] as Record<string, unknown>) || {}) : {};
+          await createClarificationRequest({
+            executionId: this.execution.id,
+            nodeExecutionId,
+            nodeId: node.id,
+            conversationId,
+            companyId: orchestrationCompanyId,
+            targetAppId,
+            outputVariable,
+            partialOutput,
+            missingFields: result.clarification.fieldDefinitions,
+            prompt: result.clarification.message,
+            expiresAt: result.clarification.expiresAt,
+          });
+        }
+
+        await this.updateNodeExecution(
+          nodeExecutionId,
+          "paused",
+          null,
+          result.output ?? null
+        );
         await this.updateExecutionStatus("paused", nodeId);
         return { success: true, status: "paused" };
       }
@@ -527,4 +567,236 @@ export class OrchestrationEngine {
       return { success: false, status: "failed", error: errorMessage };
     }
   }
+
+  async resumeAfterClarification(input: {
+    clarificationId: string;
+    responseText: string;
+  }): Promise<{
+    success: boolean;
+    status: "completed" | "paused" | "failed";
+    error?: string;
+  }> {
+    try {
+      const clarification = await getClarificationById(input.clarificationId);
+      if (!clarification) {
+        throw new Error(`Clarification ${input.clarificationId} not found`);
+      }
+
+      if (clarification.executionId !== this.execution.id) {
+        throw new Error("Clarification does not belong to this execution");
+      }
+
+      if (clarification.status !== "active") {
+        throw new Error(`Clarification is ${clarification.status}, not active`);
+      }
+
+      if (new Date(clarification.expiresAt).getTime() <= Date.now()) {
+        await expireClarificationRequest(clarification.id);
+        throw new Error("Clarification request expired");
+      }
+
+      const resolvedValues = await resolveClarificationValues(clarification, input.responseText);
+      const unresolvedFields = clarification.missingFields.filter((field) => !hasMeaningfulValue(resolvedValues[field.key]));
+      if (unresolvedFields.length > 0) {
+        throw new Error(
+          `Clarification response is incomplete. Missing: ${unresolvedFields.map((field) => field.key).join(", ")}`
+        );
+      }
+
+      const resolvedData = {
+        ...(clarification.partialOutput || {}),
+        ...resolvedValues,
+      };
+
+      this.context[clarification.outputVariable] = resolvedData;
+      Object.assign(this.context, {
+        [clarification.outputVariable]: resolvedData,
+      });
+
+      await resolveClarificationRequest(clarification.id, {
+        responseText: input.responseText,
+        responseData: resolvedData,
+      });
+
+      await this.updateExecutionStatus("running", clarification.nodeId);
+      await this.updateNodeExecution(
+        clarification.nodeExecutionId,
+        "completed",
+        null,
+        {
+          [clarification.outputVariable]: resolvedData,
+        }
+      );
+
+      const nextNodes = this.findNextNodes(clarification.nodeId);
+      if (nextNodes.length === 0) {
+        await this.updateExecutionStatus("completed");
+        return { success: true, status: "completed" };
+      }
+
+      for (const nextNodeId of nextNodes) {
+        const nextResult = await this.executeNode(nextNodeId);
+        if (nextResult.status !== "completed") {
+          return nextResult;
+        }
+      }
+
+      await this.updateExecutionStatus("completed");
+      return { success: true, status: "completed" };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      await this.recordExecutionError(errorMessage);
+      return { success: false, status: "failed", error: errorMessage };
+    }
+  }
+}
+
+function coerceClarificationValue(field: { key: string; type: string } | undefined, responseText: string) {
+  const trimmed = responseText.trim();
+  if (!field) {
+    return trimmed;
+  }
+
+  if (field.type === "number") {
+    const numeric = Number(trimmed);
+    return Number.isFinite(numeric) ? numeric : trimmed;
+  }
+
+  if (field.type === "boolean") {
+    return /^(true|yes|y|1)$/i.test(trimmed);
+  }
+
+  return trimmed;
+}
+
+async function resolveClarificationValues(
+  clarification: {
+    missingFields: Array<{ key: string; type: string; description?: string }>;
+  },
+  responseText: string
+): Promise<Record<string, unknown>> {
+  if (clarification.missingFields.length <= 1) {
+    const field = clarification.missingFields[0];
+    return field ? { [field.key]: coerceClarificationValue(field, responseText) } : {};
+  }
+
+  try {
+    const provider = await getLLMProvider();
+    const systemPrompt = [
+      "You map a user's follow-up reply to a set of missing structured fields.",
+      "Return only valid JSON with exactly the requested keys.",
+      "Use null for any value you cannot confidently infer.",
+    ].join(" ");
+    const userPrompt = [
+      "Missing fields:",
+      clarification.missingFields
+        .map((field) => `- ${field.key} (${field.type})${field.description ? `: ${field.description}` : ""}`)
+        .join("\n"),
+      "",
+      "User reply:",
+      responseText,
+      "",
+      "Return JSON only.",
+    ].join("\n");
+
+    const raw = await provider.generate_answer(systemPrompt, userPrompt, responseText);
+    const parsed = parseJsonObject(raw);
+    if (!parsed) {
+      throw new Error("Clarification response could not be parsed as JSON");
+    }
+
+    const resolved: Record<string, unknown> = {};
+    for (const field of clarification.missingFields) {
+      const value = parsed[field.key];
+      resolved[field.key] = value === undefined ? null : coerceClarificationValue(field, String(value ?? ""));
+    }
+
+    return resolved;
+  } catch {
+    const field = clarification.missingFields[0];
+    return field ? { [field.key]: coerceClarificationValue(field, responseText) } : {};
+  }
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  const cleaned = (raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
+  if (!cleaned) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(cleaned);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function hasMeaningfulValue(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  return true;
+}
+
+async function getClarificationById(clarificationId: string) {
+  const result = await getPool().query<{
+    id: string;
+    execution_id: string;
+    node_execution_id: string;
+    node_id: string;
+    conversation_id: string | null;
+    company_id: string;
+    target_app_id: string | null;
+    output_variable: string;
+    partial_output_json: Record<string, unknown>;
+    missing_fields_json: Array<{ key: string; type: string; description?: string }>;
+    prompt: string;
+    expires_at: Date;
+    status: "active" | "resolved" | "expired";
+    created_at: Date;
+    updated_at: Date;
+    resolved_at: Date | null;
+    response_text: string | null;
+    response_json: Record<string, unknown> | null;
+  }>(
+    `SELECT * FROM orchestration_clarifications WHERE id = $1 LIMIT 1`,
+    [clarificationId]
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    executionId: row.execution_id,
+    nodeExecutionId: row.node_execution_id,
+    nodeId: row.node_id,
+    conversationId: row.conversation_id,
+    companyId: row.company_id,
+    targetAppId: row.target_app_id,
+    outputVariable: row.output_variable,
+    partialOutput: row.partial_output_json ?? {},
+    missingFields: row.missing_fields_json ?? [],
+    prompt: row.prompt,
+    expiresAt: row.expires_at.toISOString(),
+    status: row.status,
+    createdAt: row.created_at.toISOString(),
+    updatedAt: row.updated_at.toISOString(),
+    resolvedAt: row.resolved_at?.toISOString() || null,
+    responseText: row.response_text,
+    responseData: row.response_json ?? null,
+  };
+}
+
+async function expireClarificationRequest(clarificationId: string) {
+  await getPool().query(
+    `UPDATE orchestration_clarifications SET status = 'expired', updated_at = now() WHERE id = $1`,
+    [clarificationId]
+  );
 }
