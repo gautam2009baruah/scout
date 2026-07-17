@@ -33,11 +33,11 @@ export async function GET(request: Request) {
   if (!auth.session.user.isAdminRole) {
     sqlParams.push(auth.session.user.tenantId, auth.session.user.id);
     filter += ` AND (
-      d.company_id = $${sqlParams.length - 1}
+      cta.company_id = $${sqlParams.length - 1}
       OR EXISTS (
         SELECT 1 FROM user_company_roles
         WHERE user_company_roles.user_id = $${sqlParams.length}
-          AND user_company_roles.company_id = d.company_id
+          AND user_company_roles.company_id = cta.company_id
           AND user_company_roles.deleted_at IS NULL
       )
     )`;
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
 
   if (companyId) {
     sqlParams.push(companyId);
-    filter += ` AND d.company_id = $${sqlParams.length}`;
+    filter += ` AND cta.company_id = $${sqlParams.length}`;
   }
 
   if (targetAppId) {
@@ -67,6 +67,7 @@ export async function GET(request: Request) {
         COUNT(*) FILTER (WHERE f.feedback_type = 'true_positive')::int AS true_positive_count,
         COUNT(*) FILTER (WHERE f.feedback_type = 'true_negative')::int AS true_negative_count
       FROM chatbot_intent_gate_decisions d
+      LEFT JOIN company_target_applications cta ON cta.id = d.target_app_id
       LEFT JOIN chatbot_intent_gate_feedback f ON f.decision_id = d.id
       WHERE ${filter}
     `,
@@ -88,6 +89,7 @@ export async function GET(request: Request) {
         f.user_choice,
         f.notes
       FROM chatbot_intent_gate_decisions d
+      LEFT JOIN company_target_applications cta ON cta.id = d.target_app_id
       LEFT JOIN chatbot_intent_gate_feedback f ON f.decision_id = d.id
       WHERE ${filter}
       ORDER BY d.created_at DESC

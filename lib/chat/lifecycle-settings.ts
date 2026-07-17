@@ -75,13 +75,15 @@ export async function getEffectiveChatbotLifecycleSettings(companyId: string, ta
     reset_on_target_app_change: boolean;
   }>(
     `
-      SELECT id, company_id, target_app_id, max_context_messages, max_context_tokens, inactivity_timeout_seconds,
+      SELECT settings.id, cta.company_id, settings.target_app_id, settings.max_context_messages, settings.max_context_tokens, settings.inactivity_timeout_seconds,
              reset_on_logout_event, reset_on_user_change, reset_on_target_app_change
-      FROM chatbot_lifecycle_settings
-      WHERE company_id = $1
-        AND deleted_at IS NULL
-        AND ($2::uuid IS NULL OR target_app_id = $2 OR target_app_id IS NULL)
-      ORDER BY CASE WHEN target_app_id = $2 THEN 0 WHEN target_app_id IS NULL THEN 1 ELSE 2 END
+      FROM chatbot_lifecycle_settings settings
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = settings.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      WHERE cta.company_id = $1
+        AND settings.deleted_at IS NULL
+        AND ($2::uuid IS NULL OR settings.target_app_id = $2)
+      ORDER BY CASE WHEN settings.target_app_id = $2 THEN 0 ELSE 1 END
       LIMIT 1
     `,
     [companyId, targetAppId ?? null]
@@ -107,12 +109,14 @@ export async function listChatbotLifecycleSettings(companyId: string) {
     reset_on_target_app_change: boolean;
   }>(
     `
-      SELECT id, company_id, target_app_id, max_context_messages, max_context_tokens, inactivity_timeout_seconds,
+      SELECT settings.id, cta.company_id, settings.target_app_id, settings.max_context_messages, settings.max_context_tokens, settings.inactivity_timeout_seconds,
              reset_on_logout_event, reset_on_user_change, reset_on_target_app_change
-      FROM chatbot_lifecycle_settings
-      WHERE company_id = $1
-        AND deleted_at IS NULL
-      ORDER BY CASE WHEN target_app_id IS NULL THEN 0 ELSE 1 END, updated_at DESC
+      FROM chatbot_lifecycle_settings settings
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = settings.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      WHERE cta.company_id = $1
+        AND settings.deleted_at IS NULL
+      ORDER BY settings.updated_at DESC
     `,
     [companyId]
   );

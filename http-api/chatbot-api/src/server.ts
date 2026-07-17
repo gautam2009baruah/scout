@@ -127,7 +127,9 @@ async function requiresGuidUserIdForApiKey(
     `
       SELECT COALESCE(bool_or(p.require_user_guid), false) AS require_user_guid
       FROM chatbot_embed_packages p
-      WHERE p.company_id = $1
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = p.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      WHERE cta.company_id = $1
         AND p.deleted_at IS NULL
         AND p.api_key_plaintext = $2
         AND ($3::uuid IS NULL OR p.target_app_id = $3)

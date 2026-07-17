@@ -213,12 +213,15 @@ export class CompanyApiKeyAuthorizer {
       `
         SELECT
           k.id,
-          k.company_id,
+          cta.company_id,
           k.target_app_id,
           COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
-          COALESCE(k.environment, 'production') AS environment,
+          COALESCE(env.normalized_name, 'production') AS environment,
           COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement
         FROM chatbot_api_keys k
+        INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+        INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+        LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
         WHERE key_hash = $1
           AND status = 'active'
           AND is_active = true

@@ -116,6 +116,9 @@ export async function upsertChatbotLifecycleSettings(session: AdminSession, inpu
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
   await assertTargetAppAccess(session, companyId, input.targetAppId ?? null);
+  if (!input.targetAppId) {
+    throw new ChatbotSettingsError("Target application is required for lifecycle settings.", 400);
+  }
   const normalized = normalizeInput(input);
 
   const result = await getPool().query<{
@@ -131,7 +134,6 @@ export async function upsertChatbotLifecycleSettings(session: AdminSession, inpu
   }>(
     `
       INSERT INTO chatbot_lifecycle_settings (
-        company_id,
         target_app_id,
         max_context_messages,
         max_context_tokens,
@@ -143,8 +145,8 @@ export async function upsertChatbotLifecycleSettings(session: AdminSession, inpu
         updated_by,
         deleted_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, NULL)
-      ON CONFLICT (company_id, (COALESCE(target_app_id, '00000000-0000-0000-0000-000000000000'::uuid)))
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, NULL)
+      ON CONFLICT (target_app_id)
       WHERE deleted_at IS NULL
       DO UPDATE SET
         max_context_messages = EXCLUDED.max_context_messages,
@@ -156,12 +158,13 @@ export async function upsertChatbotLifecycleSettings(session: AdminSession, inpu
         updated_by = EXCLUDED.updated_by,
         updated_at = now(),
         deleted_at = NULL
-      RETURNING id, company_id, target_app_id, max_context_messages, max_context_tokens, inactivity_timeout_seconds,
+      RETURNING id,
+                (SELECT cta.company_id FROM guided_workflow_target_apps gta INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id WHERE gta.id = chatbot_lifecycle_settings.target_app_id) AS company_id,
+                target_app_id, max_context_messages, max_context_tokens, inactivity_timeout_seconds,
                 reset_on_logout_event, reset_on_user_change, reset_on_target_app_change
     `,
     [
-      companyId,
-      input.targetAppId ?? null,
+      input.targetAppId,
       normalized.maxContextMessages,
       normalized.maxContextTokens,
       normalized.inactivityTimeoutSeconds,
@@ -179,16 +182,26 @@ export async function resetChatbotLifecycleSettings(session: AdminSession, targe
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
   await assertTargetAppAccess(session, companyId, targetAppId ?? null);
+  if (!targetAppId) {
+    throw new ChatbotSettingsError("Target application is required for lifecycle settings reset.", 400);
+  }
 
   await getPool().query(
     `
       UPDATE chatbot_lifecycle_settings
       SET deleted_at = now(), updated_by = $3, updated_at = now()
-      WHERE company_id = $1
-        AND ((target_app_id IS NULL AND $2::uuid IS NULL) OR target_app_id = $2)
+      WHERE target_app_id = $2
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = chatbot_lifecycle_settings.target_app_id
+            AND cta.company_id = $1
+            AND cta.deleted_at IS NULL
+        )
         AND deleted_at IS NULL
     `,
-    [companyId, targetAppId ?? null, session.user.id]
+    [companyId, targetAppId, session.user.id]
   );
 }
 
@@ -340,9 +353,12 @@ async function ensureNoOtherActiveKeyInEnvironment(
   const result = await getPool().query<{ id: string }>(
     `
       SELECT id
-      FROM chatbot_api_keys
-      WHERE company_id = $1
-        AND environment = $2
+      FROM chatbot_api_keys k
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      WHERE cta.company_id = $1
+        AND env.normalized_name = $2
         AND status = 'active'
         AND is_active = true
         AND ($3::uuid IS NULL OR id <> $3)
@@ -415,10 +431,12 @@ async function assertUniqueApiKeyNamePerTargetApp(
 
   const result = await getPool().query<{ id: string }>(
     `
-      SELECT id
-      FROM chatbot_api_keys
-      WHERE company_id = $1
-        AND (($2::uuid IS NULL AND target_app_id IS NULL) OR target_app_id = $2)
+      SELECT k.id
+      FROM chatbot_api_keys k
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      WHERE cta.company_id = $1
+        AND (($2::uuid IS NULL AND k.target_app_id IS NULL) OR k.target_app_id = $2)
         AND lower(trim(name)) = $3
         AND status <> 'revoked'
         AND ($4::uuid IS NULL OR id <> $4)
@@ -453,6 +471,7 @@ function mapChatbotApiKeyRow(row: {
   key_prefix: string;
   target_app_id: string | null;
   target_app_name: string | null;
+  environment_id?: string;
   environment: string;
   strict_environment_enforcement: boolean;
   status: ChatbotApiKeyStatus;
@@ -491,6 +510,7 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
     key_prefix: string;
     target_app_id: string | null;
     target_app_name: string | null;
+    environment_id: string;
     environment: string;
     strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
@@ -508,7 +528,8 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
         k.key_prefix,
         k.target_app_id,
         cta.name AS target_app_name,
-        COALESCE(k.environment, '') AS environment,
+        k.environment_id,
+        env.name AS environment,
         COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
         k.is_active,
@@ -520,7 +541,8 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
       FROM chatbot_api_keys k
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
       LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
-      WHERE k.company_id = $1
+      INNER JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      WHERE cta.company_id = $1
       ORDER BY CASE WHEN COALESCE(k.status, 'active') = 'revoked' THEN 1 ELSE 0 END ASC, k.created_at DESC
     `,
     [companyId]
@@ -559,15 +581,16 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
 
   const existingActive = await getPool().query<{ id: string }>(
     `
-      SELECT id
-      FROM chatbot_api_keys
-      WHERE company_id = $1
-        AND environment = $2
+      SELECT k.id
+      FROM chatbot_api_keys k
+      INNER JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      WHERE k.target_app_id = $1
+        AND env.normalized_name = $2
         AND status = 'active'
         AND is_active = true
       LIMIT 1
     `,
-    [companyId, environment]
+    [targetAppId, environment]
   );
 
   const autoSuspended = (existingActive.rowCount ?? 0) > 0;
@@ -594,28 +617,28 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
   }>(
     `
       INSERT INTO chatbot_api_keys (
-        company_id,
         name,
         key_prefix,
         key_hash,
         target_app_id,
+        environment_id,
         strict_environment_enforcement,
         is_active,
         status,
-        environment,
         allowed_origins_json,
         expires_at,
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $12)
+      VALUES ($1, $2, $3, $4, (SELECT id FROM chatbot_api_key_environments WHERE company_id = $13 AND normalized_name = $5 LIMIT 1), $6, $7, $8, $9::jsonb, $10, $11, $11)
       RETURNING
         chatbot_api_keys.id,
         chatbot_api_keys.name,
         chatbot_api_keys.key_prefix,
         chatbot_api_keys.target_app_id,
+        chatbot_api_keys.environment_id,
         (SELECT name FROM company_target_applications WHERE id = (SELECT target_app_id FROM guided_workflow_target_apps WHERE id = chatbot_api_keys.target_app_id)) AS target_app_name,
-        chatbot_api_keys.environment,
+        (SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_api_keys.environment_id) AS environment,
         COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
         chatbot_api_keys.status,
         chatbot_api_keys.is_active,
@@ -626,7 +649,6 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         chatbot_api_keys.updated_at
     `,
     [
-      companyId,
       name,
       generated.keyPrefix,
       generated.keyHash,
@@ -634,10 +656,10 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
       strictEnvironmentEnforcement,
       initialIsActive,
       initialStatus,
-      environment,
       JSON.stringify(allowedOrigins),
       expiresAt,
-      session.user.id
+      session.user.id,
+      companyId
     ]
   );
 
@@ -667,6 +689,7 @@ export async function updateChatbotApiKey(
   const current = await getPool().query<{
     name: string;
     environment: string;
+    environment_id: string;
     status: ChatbotApiKeyStatus;
     target_app_id: string | null;
     strict_environment_enforcement: boolean;
@@ -674,13 +697,21 @@ export async function updateChatbotApiKey(
     `
       SELECT
         name,
-        COALESCE(environment, '') AS environment,
+        COALESCE((SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_api_keys.environment_id), '') AS environment,
+        environment_id,
         COALESCE(status, 'active')::text AS status,
         target_app_id,
         COALESCE(strict_environment_enforcement, false) AS strict_environment_enforcement
       FROM chatbot_api_keys
       WHERE id = $1
-        AND company_id = $2
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = chatbot_api_keys.target_app_id
+            AND cta.company_id = $2
+            AND cta.deleted_at IS NULL
+        )
       LIMIT 1
     `,
     [apiKeyId, companyId]
@@ -753,8 +784,9 @@ export async function updateChatbotApiKey(
   }
 
   if (typeof input.environment === "string") {
-    updates.push(`environment = $${index}`);
-    values.push(nextEnvironment);
+    updates.push(`environment_id = (SELECT id FROM chatbot_api_key_environments WHERE company_id = $${index + 1} AND normalized_name = $${index} LIMIT 1)`);
+    values.push(nextEnvironment, companyId);
+    index += 1;
     index += 1;
   }
 
@@ -816,17 +848,25 @@ export async function updateChatbotApiKey(
       UPDATE chatbot_api_keys
       SET ${updates.join(", ")}, updated_at = now()
       WHERE id = $${index}
-        AND company_id = $${index + 1}
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = chatbot_api_keys.target_app_id
+            AND cta.company_id = $${index + 1}
+            AND cta.deleted_at IS NULL
+        )
       RETURNING
         chatbot_api_keys.id,
         chatbot_api_keys.name,
         chatbot_api_keys.key_prefix,
         chatbot_api_keys.target_app_id,
+        chatbot_api_keys.environment_id,
         (SELECT cta.name
          FROM guided_workflow_target_apps gta
          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
          WHERE gta.id = chatbot_api_keys.target_app_id) AS target_app_name,
-        COALESCE(chatbot_api_keys.environment, '') AS environment,
+        COALESCE((SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_api_keys.environment_id), '') AS environment,
         COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(chatbot_api_keys.status, CASE WHEN chatbot_api_keys.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
         chatbot_api_keys.is_active,
@@ -851,7 +891,23 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
   await assertCompanyAccess(session, companyId);
 
   const current = await getPool().query<{ environment: string; status: ChatbotApiKeyStatus }>(
-    "SELECT COALESCE(environment, 'production') AS environment, COALESCE(status, 'active')::text AS status FROM chatbot_api_keys WHERE id = $1 AND company_id = $2",
+    `
+      SELECT
+        COALESCE(env.normalized_name, 'production') AS environment,
+        COALESCE(k.status, 'active')::text AS status
+      FROM chatbot_api_keys k
+      LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      WHERE k.id = $1
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = k.target_app_id
+            AND cta.company_id = $2
+            AND cta.deleted_at IS NULL
+        )
+      LIMIT 1
+    `,
     [apiKeyId, companyId]
   );
 
@@ -879,7 +935,14 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
           updated_by = $3,
           updated_at = now()
       WHERE id = $4
-        AND company_id = $5
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = chatbot_api_keys.target_app_id
+            AND cta.company_id = $5
+            AND cta.deleted_at IS NULL
+        )
     `,
     [generated.keyHash, generated.keyPrefix, session.user.id, apiKeyId, companyId]
   );
@@ -890,6 +953,7 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
     key_prefix: string;
     target_app_id: string | null;
     target_app_name: string | null;
+    environment_id: string;
     environment: string;
     strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
@@ -907,7 +971,8 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
         k.key_prefix,
         k.target_app_id,
         cta.name AS target_app_name,
-        COALESCE(k.environment, '') AS environment,
+        k.environment_id,
+        COALESCE(env.name, '') AS environment,
         COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
         k.is_active,
@@ -919,8 +984,9 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
       FROM chatbot_api_keys k
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
       LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
       WHERE k.id = $1
-        AND k.company_id = $2
+        AND cta.company_id = $2
       LIMIT 1
     `,
     [apiKeyId, companyId]
@@ -1026,8 +1092,6 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
     throw new ChatbotSettingsError("Environment not found.", 404);
   }
 
-  const previousNormalized = existing.rows[0].normalized_name;
-
   await getPool().query(
     `
       UPDATE chatbot_api_key_environments
@@ -1046,17 +1110,7 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
     throw error;
   });
 
-  await getPool().query(
-    `
-      UPDATE chatbot_api_keys
-      SET environment = $1,
-          updated_by = $2,
-          updated_at = now()
-      WHERE company_id = $3
-        AND environment = $4
-    `,
-    [normalized, session.user.id, companyId, previousNormalized]
-  );
+  // No key-row update needed; keys reference environment by environment_id.
 
   return listChatbotKeyEnvironments(session);
 }
@@ -1065,9 +1119,9 @@ export async function deleteChatbotKeyEnvironment(session: AdminSession, id: str
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
 
-  const envResult = await getPool().query<{ normalized_name: string }>(
+  const envResult = await getPool().query<{ id: string }>(
     `
-      SELECT normalized_name
+      SELECT id
       FROM chatbot_api_key_environments
       WHERE id = $1
         AND company_id = $2
@@ -1084,11 +1138,18 @@ export async function deleteChatbotKeyEnvironment(session: AdminSession, id: str
     `
       SELECT id
       FROM chatbot_api_keys
-      WHERE company_id = $1
-        AND environment = $2
+      WHERE environment_id = $2
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = chatbot_api_keys.target_app_id
+            AND cta.company_id = $1
+            AND cta.deleted_at IS NULL
+        )
       LIMIT 1
     `,
-    [companyId, envResult.rows[0].normalized_name]
+    [companyId, envResult.rows[0].id]
   );
 
   if ((inUse.rowCount ?? 0) > 0) {
@@ -1111,6 +1172,7 @@ function mapChatbotEmbedPackageRow(row: {
   id: string;
   target_app_id: string;
   target_app_name: string;
+  environment_id?: string;
   environment: string;
   user_id_placeholder: string;
   require_user_guid: boolean;
@@ -1156,6 +1218,7 @@ export async function listChatbotEmbedPackages(
     id: string;
     target_app_id: string;
     target_app_name: string;
+    environment_id: string;
     environment: string;
     user_id_placeholder: string;
     require_user_guid: boolean;
@@ -1171,7 +1234,8 @@ export async function listChatbotEmbedPackages(
         p.id,
         p.target_app_id,
         cta.name AS target_app_name,
-        p.environment,
+        p.environment_id,
+        env.name AS environment,
         p.user_id_placeholder,
         p.require_user_guid,
         p.scout_url,
@@ -1184,16 +1248,17 @@ export async function listChatbotEmbedPackages(
       INNER JOIN guided_workflow_target_apps gta ON gta.id = p.target_app_id
       INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       INNER JOIN chatbot_api_keys k
-        ON k.company_id = p.company_id
+        ON k.target_app_id = p.target_app_id
+       AND k.environment_id = p.environment_id
        AND k.key_prefix = p.api_key_prefix
-       AND COALESCE(k.environment, '') = COALESCE(p.environment, '')
        AND (k.target_app_id IS NULL OR k.target_app_id = p.target_app_id)
-      WHERE p.company_id = $1
+      INNER JOIN chatbot_api_key_environments env ON env.id = p.environment_id
+      WHERE cta.company_id = $1
         AND p.deleted_at IS NULL
         AND COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END) = 'active'
         AND k.is_active = true
         AND ($2::uuid IS NULL OR p.target_app_id = $2)
-      ORDER BY p.environment ASC, p.updated_at DESC
+      ORDER BY env.name ASC, p.updated_at DESC
     `,
     [companyId, targetAppId]
   );
@@ -1212,8 +1277,15 @@ export async function getChatbotEmbedPackageSecret(
     `
       SELECT api_key_plaintext
       FROM chatbot_embed_packages
-      WHERE company_id = $1
-        AND id = $2
+      WHERE id = $2
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = chatbot_embed_packages.target_app_id
+            AND cta.company_id = $1
+            AND cta.deleted_at IS NULL
+        )
         AND deleted_at IS NULL
       LIMIT 1
     `,
@@ -1251,6 +1323,7 @@ export async function resolveChatbotApiKeyContext(
     id: string;
     target_app_id: string | null;
     target_app_name: string | null;
+    environment_id: string;
     environment: string;
     name: string;
     key_prefix: string;
@@ -1260,13 +1333,15 @@ export async function resolveChatbotApiKeyContext(
         k.id,
         k.target_app_id,
         cta.name AS target_app_name,
-        COALESCE(k.environment, '') AS environment,
+        k.environment_id,
+        COALESCE(env.name, '') AS environment,
         k.name,
         k.key_prefix
       FROM chatbot_api_keys k
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
       LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
-      WHERE k.company_id = $1
+      LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      WHERE cta.company_id = $1
         AND k.key_hash = $2
         AND k.status = 'active'
         AND k.is_active = true
@@ -1320,16 +1395,21 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
 
   const matchedApiKey = await getPool().query<{
     id: string;
+    environment_id: string;
     environment: string;
     target_app_id: string | null;
   }>(
     `
       SELECT
         k.id,
-        COALESCE(k.environment, '') AS environment,
+        k.environment_id,
+        COALESCE(env.normalized_name, '') AS environment,
         k.target_app_id
       FROM chatbot_api_keys k
-      WHERE k.company_id = $1
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      WHERE cta.company_id = $1
         AND k.key_hash = $2
         AND k.status = 'active'
         AND k.is_active = true
@@ -1390,9 +1470,8 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
     `
       INSERT INTO chatbot_embed_packages (
         id,
-        company_id,
         target_app_id,
-        environment,
+        environment_id,
         api_key_plaintext,
         api_key_prefix,
         user_id_placeholder,
@@ -1404,11 +1483,11 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         updated_by,
         deleted_at
       )
-      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, NULL)
+      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, (SELECT id FROM chatbot_api_key_environments WHERE company_id = $13 AND normalized_name = $3 LIMIT 1), $4, $5, $6, $7, $8, $9, $10, $11, $11, NULL)
       ON CONFLICT (id)
       DO UPDATE SET
         target_app_id = EXCLUDED.target_app_id,
-        environment = EXCLUDED.environment,
+        environment_id = EXCLUDED.environment_id,
         api_key_plaintext = EXCLUDED.api_key_plaintext,
         api_key_prefix = EXCLUDED.api_key_prefix,
         user_id_placeholder = EXCLUDED.user_id_placeholder,
@@ -1419,12 +1498,13 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         updated_by = EXCLUDED.updated_by,
         updated_at = now(),
         deleted_at = NULL
-      WHERE chatbot_embed_packages.company_id = EXCLUDED.company_id
+      WHERE chatbot_embed_packages.id = EXCLUDED.id
       RETURNING
         chatbot_embed_packages.id,
         chatbot_embed_packages.target_app_id,
         (SELECT name FROM company_target_applications WHERE id = (SELECT target_app_id FROM guided_workflow_target_apps WHERE id = chatbot_embed_packages.target_app_id)) AS target_app_name,
-        chatbot_embed_packages.environment,
+        chatbot_embed_packages.environment_id,
+        (SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_embed_packages.environment_id) AS environment,
         chatbot_embed_packages.user_id_placeholder,
         chatbot_embed_packages.require_user_guid,
         chatbot_embed_packages.scout_url,
@@ -1436,7 +1516,6 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
     `,
     [
       input.id ?? null,
-      companyId,
       targetAppId,
       environment,
       apiKey,
@@ -1447,6 +1526,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
       apiUrl,
       assistantName,
       session.user.id,
+      companyId,
     ]
   );
 

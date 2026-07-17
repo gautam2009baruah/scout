@@ -10,7 +10,6 @@ export type ChatTokenUsage = {
 };
 
 export type RecordChatQueryTelemetryInput = {
-  company_id: string;
   user_id: string;
   target_app_id?: string;
   conversation_id?: string;
@@ -61,7 +60,6 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
     const result = await getPool().query<{ id: string }>(
       `
         INSERT INTO chat_query_telemetry (
-          company_id,
           target_app_id,
           user_id,
           conversation_id,
@@ -83,14 +81,13 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
           error_message
         )
         VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11::jsonb, $12, $13, $14,
-          $15, $16, $17, $18, $19::jsonb, $20
+          $1, $2, $3, $4, $5, $6, $7,
+          $8, $9, $10::jsonb, $11, $12, $13,
+          $14, $15, $16, $17, $18::jsonb, $19
         )
         RETURNING id
       `,
       [
-        input.company_id,
         input.target_app_id || null,
         input.user_id,
         input.conversation_id || null,
@@ -122,7 +119,6 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
 }
 
 export async function upsertChatQueryFeedback(input: {
-  company_id: string;
   user_id: string;
   query_id: string;
   feedback: "up" | "down";
@@ -132,26 +128,26 @@ export async function upsertChatQueryFeedback(input: {
     `
       SELECT t.id
       FROM chat_query_telemetry t
+      LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       INNER JOIN user_company_roles ucr
-        ON ucr.user_id = $2
-       AND ucr.company_id = $1
+        ON ucr.user_id = $1
+       AND ucr.company_id = cta.company_id
        AND ucr.deleted_at IS NULL
        AND ucr.status = 'active'
-      WHERE t.id = $3
-        AND t.company_id = $1
+      WHERE t.id = $2
       LIMIT 1
     `,
-    [input.company_id, input.user_id, input.query_id]
+    [input.user_id, input.query_id]
   );
 
   if (!accessCheck.rows[0]) {
-    throw new Error("Query was not found for this user and company.");
+    throw new Error("Query was not found for this user.");
   }
 
   await getPool().query(
     `
       INSERT INTO chat_query_feedback (
-        company_id,
         target_app_id,
         query_id,
         user_id,
@@ -159,12 +155,11 @@ export async function upsertChatQueryFeedback(input: {
         reason
       )
       VALUES (
-        $1,
-        (SELECT target_app_id FROM chat_query_telemetry WHERE id = $3),
-        $3,
+        (SELECT target_app_id FROM chat_query_telemetry WHERE id = $2),
         $2,
-        $4,
-        $5
+        $1,
+        $3,
+        $4
       )
       ON CONFLICT (query_id, user_id)
       DO UPDATE SET
@@ -173,7 +168,6 @@ export async function upsertChatQueryFeedback(input: {
         updated_at = now()
     `,
     [
-      input.company_id,
       input.user_id,
       input.query_id,
       input.feedback,

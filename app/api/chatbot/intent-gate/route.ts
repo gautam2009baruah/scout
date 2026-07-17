@@ -226,7 +226,6 @@ export async function POST(request: NextRequest) {
       const insert = await getPool().query<{ id: string }>(
         `
           INSERT INTO chatbot_intent_gate_decisions (
-            company_id,
             target_app_id,
             user_id,
             conversation_id,
@@ -240,11 +239,10 @@ export async function POST(request: NextRequest) {
             reason,
             metadata_json
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
           RETURNING id
         `,
         [
-          companyId,
           targetAppId || null,
           userId,
           conversationId || null,
@@ -306,14 +304,13 @@ export async function PATCH(request: NextRequest) {
       `
         INSERT INTO chatbot_intent_gate_feedback (
           decision_id,
-          company_id,
           target_app_id,
           user_id,
           feedback_type,
           user_choice,
           notes
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+          VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (decision_id, user_id)
         DO UPDATE SET
           feedback_type = EXCLUDED.feedback_type,
@@ -323,7 +320,6 @@ export async function PATCH(request: NextRequest) {
       `,
       [
         decisionId,
-        companyId,
         targetAppId || null,
         userId,
         body.feedbackType,

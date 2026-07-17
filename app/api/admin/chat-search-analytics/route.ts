@@ -54,11 +54,11 @@ export async function GET(request: Request) {
   if (!auth.session.user.isAdminRole) {
     sqlParams.push(auth.session.user.tenantId, auth.session.user.id);
     filter += ` AND (
-      t.company_id = $${sqlParams.length - 1}
+      cta.company_id = $${sqlParams.length - 1}
       OR EXISTS (
         SELECT 1 FROM user_company_roles
         WHERE user_company_roles.user_id = $${sqlParams.length}
-          AND user_company_roles.company_id = t.company_id
+          AND user_company_roles.company_id = cta.company_id
           AND user_company_roles.deleted_at IS NULL
       )
     )`;
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
 
   if (companyId) {
     sqlParams.push(companyId);
-    filter += ` AND t.company_id = $${sqlParams.length}`;
+    filter += ` AND cta.company_id = $${sqlParams.length}`;
   }
 
   if (targetAppId) {
@@ -84,6 +84,8 @@ export async function GET(request: Request) {
       `
         SELECT COUNT(*)::int AS total
         FROM chat_query_telemetry t
+        LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+        LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
         WHERE ${filter}
       `,
       sqlParams
@@ -111,9 +113,10 @@ export async function GET(request: Request) {
           COALESCE(feedback.up_count, 0) AS feedback_up,
           COALESCE(feedback.down_count, 0) AS feedback_down
         FROM chat_query_telemetry t
-        INNER JOIN companies company ON company.id = t.company_id
+        LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+        LEFT JOIN company_target_applications target_app ON target_app.id = gta.target_app_id
+        LEFT JOIN companies company ON company.id = target_app.company_id
         LEFT JOIN users ON users.id = t.user_id
-        LEFT JOIN company_target_applications target_app ON target_app.id = t.target_app_id
         LEFT JOIN LATERAL (
           SELECT
             COUNT(*) FILTER (WHERE f.feedback = 'up')::int AS up_count,
@@ -175,6 +178,8 @@ export async function GET(request: Request) {
         COALESCE(SUM(t.total_tokens), 0)::bigint AS total_tokens,
         COALESCE(SUM(t.estimated_cost_usd), 0)::numeric(12, 6) AS total_estimated_cost_usd
       FROM chat_query_telemetry t
+      LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE ${filter}
     `,
     sqlParams
@@ -189,6 +194,8 @@ export async function GET(request: Request) {
         COUNT(DISTINCT f.query_id)::int AS queries_with_feedback
       FROM chat_query_feedback f
       INNER JOIN chat_query_telemetry t ON t.id = f.query_id
+      LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE ${filter}
     `,
     sqlParams
@@ -200,6 +207,8 @@ export async function GET(request: Request) {
         t.no_answer_reason,
         COUNT(*)::int AS count
       FROM chat_query_telemetry t
+      LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE ${filter}
         AND t.answer_status = 'no_answer'
         AND t.no_answer_reason IS NOT NULL

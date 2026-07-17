@@ -60,11 +60,11 @@ function buildTelemetryFilter(params: {
   if (!params.session?.user.isAdminRole) {
     sqlParams.push(params.session?.user.tenantId, params.session?.user.id);
     filter += ` AND (
-      t.company_id = $${sqlParams.length - 1}
+      cta.company_id = $${sqlParams.length - 1}
       OR EXISTS (
         SELECT 1 FROM user_company_roles
         WHERE user_company_roles.user_id = $${sqlParams.length}
-          AND user_company_roles.company_id = t.company_id
+          AND user_company_roles.company_id = cta.company_id
           AND user_company_roles.deleted_at IS NULL
       )
     )`;
@@ -72,7 +72,7 @@ function buildTelemetryFilter(params: {
 
   if (params.companyId) {
     sqlParams.push(params.companyId);
-    filter += ` AND t.company_id = $${sqlParams.length}`;
+    filter += ` AND cta.company_id = $${sqlParams.length}`;
   }
 
   if (params.targetAppId) {
@@ -182,6 +182,8 @@ export async function GET(request: Request) {
           t.llm_model,
           COALESCE(t.metadata_json -> 'retrievalDiagnostics' -> 'chunkPaths', t.citations_json, '[]'::jsonb) AS path_items
         FROM chat_query_telemetry t
+        LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+        LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
         WHERE ${telemetryFilter}
           AND t.id = $${detailParams.length}
         LIMIT 1
@@ -253,6 +255,8 @@ export async function GET(request: Request) {
           WHERE COALESCE(jsonb_array_length(t.metadata_json -> 'retrievalDiagnostics' -> 'chunkPaths'), 0) > 0
         )::int AS queries_with_path_data
       FROM chat_query_telemetry t
+      LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE ${telemetryFilter}
     `,
     telemetryParams
@@ -268,6 +272,8 @@ export async function GET(request: Request) {
         t.no_answer_reason,
         COALESCE(t.metadata_json -> 'retrievalDiagnostics' -> 'chunkPaths', t.citations_json, '[]'::jsonb) AS path_items
       FROM chat_query_telemetry t
+      LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE ${telemetryFilter}
       ORDER BY t.created_at DESC
       LIMIT 20
