@@ -227,7 +227,7 @@ export async function POST(request: NextRequest) {
         `
           INSERT INTO chatbot_intent_gate_decisions (
             target_app_id,
-            user_id,
+            external_user_id,
             conversation_id,
             message,
             prefilter_label,
@@ -305,13 +305,13 @@ export async function PATCH(request: NextRequest) {
         INSERT INTO chatbot_intent_gate_feedback (
           decision_id,
           target_app_id,
-          user_id,
+          external_user_id,
           feedback_type,
           user_choice,
           notes
         )
           VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (decision_id, user_id)
+        ON CONFLICT (decision_id, external_user_id)
         DO UPDATE SET
           feedback_type = EXCLUDED.feedback_type,
           user_choice = EXCLUDED.user_choice,

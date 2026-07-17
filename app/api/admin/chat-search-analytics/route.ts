@@ -107,7 +107,7 @@ export async function GET(request: Request) {
           t.estimated_cost_usd,
           t.llm_provider,
           t.llm_model,
-          ('external user (' || COALESCE(t.external_user_id, t.user_id::text, 'unknown') || ')') AS user_name,
+          ('external user (' || COALESCE(t.external_user_id, 'unknown') || ')') AS user_name,
           ''::text AS user_email,
           company.name AS company_name,
           COALESCE(cta_direct.name, cta_via_guided.name, '—') AS target_app_name,

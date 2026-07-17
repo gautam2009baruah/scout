@@ -87,34 +87,15 @@ async function canPersistTelemetryUser(userId: string) {
   return result.rows[0]?.allowed === true;
 }
 
-async function resolveTelemetryUserIdentity(userId: string) {
-  const normalized = String(userId || "").trim();
-  const canPersistAsInternal = await canPersistTelemetryUser(normalized);
-
-  if (canPersistAsInternal) {
-    return {
-      internalUserId: normalized,
-      externalUserId: null as string | null,
-    };
-  }
-
-  return {
-    internalUserId: null as string | null,
-    externalUserId: normalized || null,
-  };
-}
-
 export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryInput): Promise<string> {
-  const telemetryIdentity = await resolveTelemetryUserIdentity(input.user_id);
-
   const canonicalTargetAppId = await resolveCanonicalTargetAppId(input.target_app_id);
+  const externalUserId = String(input.user_id || "").trim() || null;
 
   try {
     const result = await getPool().query<{ id: string }>(
       `
         INSERT INTO chat_query_telemetry (
           target_app_id,
-          user_id,
           external_user_id,
           conversation_id,
           question,
@@ -135,16 +116,15 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
           error_message
         )
         VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8,
-          $9, $10, $11::jsonb, $12, $13, $14,
-          $15, $16, $17, $18, $19::jsonb, $20
+          $1, $2, $3, $4, $5, $6, $7,
+          $8, $9, $10::jsonb, $11, $12, $13,
+          $14, $15, $16, $17, $18::jsonb, $19
         )
         RETURNING id
       `,
       [
         canonicalTargetAppId,
-        telemetryIdentity.internalUserId,
-        telemetryIdentity.externalUserId,
+        externalUserId,
         input.conversation_id || null,
         input.question,
         input.answer,
@@ -172,9 +152,7 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
       error,
       targetAppId: input.target_app_id || null,
       canonicalTargetAppId,
-      userId: input.user_id,
-      internalUserId: telemetryIdentity.internalUserId,
-      externalUserId: telemetryIdentity.externalUserId,
+      externalUserId,
     });
     return randomUUID();
   }
@@ -186,34 +164,12 @@ export async function upsertChatQueryFeedback(input: {
   feedback: "up" | "down";
   reason?: string;
 }) {
-  const accessCheck = await getPool().query<{ id: string }>(
-    `
-      SELECT t.id
-      FROM chat_query_telemetry t
-      LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
-      LEFT JOIN company_target_applications cta_direct ON cta_direct.id = t.target_app_id
-      LEFT JOIN company_target_applications cta_via_guided ON cta_via_guided.id = gta.target_app_id
-      INNER JOIN user_company_roles ucr
-        ON ucr.user_id = $1
-       AND ucr.company_id = COALESCE(cta_direct.company_id, cta_via_guided.company_id)
-       AND ucr.deleted_at IS NULL
-       AND ucr.status = 'active'
-      WHERE t.id = $2
-      LIMIT 1
-    `,
-    [input.user_id, input.query_id]
-  );
-
-  if (!accessCheck.rows[0]) {
-    throw new Error("Query was not found for this user.");
-  }
-
   await getPool().query(
     `
       INSERT INTO chat_query_feedback (
         target_app_id,
         query_id,
-        user_id,
+        external_user_id,
         feedback,
         reason
       )
@@ -224,7 +180,7 @@ export async function upsertChatQueryFeedback(input: {
         $3,
         $4
       )
-      ON CONFLICT (query_id, user_id)
+      ON CONFLICT (query_id, external_user_id)
       DO UPDATE SET
         feedback = EXCLUDED.feedback,
         reason = EXCLUDED.reason,

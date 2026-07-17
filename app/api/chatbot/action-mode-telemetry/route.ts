@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
         INSERT INTO chatbot_action_mode_events (
           company_id,
           target_app_id,
-          user_id,
+          external_user_id,
           conversation_id,
           event_type,
           metadata_json

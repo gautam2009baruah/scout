@@ -286,10 +286,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   await validateCompany(companyId);
   const triggerUserEmail = toTriggerUserEmail(userId);
-  const canPersistConversationAsInternalUser = isGuid(userId)
-    ? await canPersistConversationForUser(companyId, userId)
-    : false;
-  const persistConversationAsExternalUser = !canPersistConversationAsInternalUser;
   const canPersistConversation = true;
   const lifecycleSettings = await getEffectiveChatbotLifecycleSettings(companyId, input.target_app_id?.trim() || undefined);
   let requestedConversationId = input.conversation_id?.trim() || undefined;
@@ -300,7 +296,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       userId,
       conversationId: requestedConversationId,
       skipUserValidation: true,
-      persistAsExternal: persistConversationAsExternalUser,
     });
     const referenceTime = lifecycleState?.last_message_at ?? lifecycleState?.created_at ?? null;
 
@@ -319,7 +314,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       conversationId: requestedConversationId,
       firstQuestion: question,
       skipUserValidation: true,
-      persistAsExternal: persistConversationAsExternalUser,
     })
     : (requestedConversationId || randomUUID());
 
@@ -422,7 +416,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         question,
         answer: clarificationAnswer,
         citations: [],
-        persistAsExternal: persistConversationAsExternalUser,
         metadata: {
           llm_provider: "none",
           llm_model: "trigger_clarification",
@@ -490,7 +483,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         question,
         answer: greeting,
         citations: [],
-        persistAsExternal: persistConversationAsExternalUser,
         metadata: {
           llm_provider: "none",
           llm_model: "greeting",
@@ -570,7 +562,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         question,
         answer: INSUFFICIENT_CONTEXT_MESSAGE,
         citations: [],
-        persistAsExternal: persistConversationAsExternalUser,
         metadata: {
           llm_provider: "none",
           llm_model: "none",
@@ -665,7 +656,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
         question,
         answer: extractiveFinalAnswer,
         citations: extractiveCitations,
-        persistAsExternal: persistConversationAsExternalUser,
         metadata: {
           llm_provider: "none",
           llm_model: "extractive",
@@ -777,7 +767,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       question,
       answer: finalAnswer,
       citations: acceptedCitations,
-      persistAsExternal: persistConversationAsExternalUser,
       metadata: {
         llm_provider: provider.provider,
         llm_model: provider.model,
