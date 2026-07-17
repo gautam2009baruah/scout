@@ -6,6 +6,25 @@ import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { fetchIMAPEmails } from "@/lib/integrations/email/imap";
 
+async function validateTargetAppScope(companyId: string, targetAppId: string | null) {
+  if (!targetAppId) {
+    return false;
+  }
+
+  const scopeCheck = await getPool().query<{ id: string }>(
+    `SELECT app.id
+     FROM guided_workflow_target_apps app
+     INNER JOIN company_target_applications cta ON cta.id = app.target_app_id
+     WHERE app.id = $1
+       AND cta.company_id = $2
+       AND cta.deleted_at IS NULL
+       AND app.deleted_at IS NULL`,
+    [targetAppId, companyId]
+  );
+
+  return (scopeCheck.rowCount ?? 0) > 0;
+}
+
 /**
  * GET /api/orchestrations/email-credentials?companyId=xxx
  * List all email credentials for specified company (or all if admin)
@@ -26,11 +45,13 @@ export async function GET(request: NextRequest) {
 
     const pool = getPool();
     
-    // Fetch credentials with their assigned target apps
+    // Fetch credentials with their assigned target app
     const result = await pool.query(
       `SELECT 
         ec.id,
         ec.company_id,
+        ec.target_app_id,
+        cta.name AS target_app_name,
         ec.provider,
         ec.name,
         ec.email_address,
@@ -38,23 +59,11 @@ export async function GET(request: NextRequest) {
         ec.last_tested_at,
         ec.last_test_status,
         ec.last_test_error,
-        ec.created_at,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', ta.id,
-              'name', cta.name
-            )
-            ORDER BY cta.name
-          ) FILTER (WHERE ta.id IS NOT NULL),
-          '[]'
-        ) as target_apps
+        ec.created_at
        FROM email_credentials ec
-       LEFT JOIN email_credential_target_apps ecta ON ec.id = ecta.email_credential_id
-       LEFT JOIN guided_workflow_target_apps ta ON ecta.target_app_id = ta.id
+       LEFT JOIN guided_workflow_target_apps ta ON ta.id = ec.target_app_id
        LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
        WHERE ($1::uuid IS NULL OR ec.company_id = $1::uuid)
-       GROUP BY ec.id
        ORDER BY ec.created_at DESC`,
       [companyId]
     );
@@ -97,7 +106,7 @@ export async function POST(request: NextRequest) {
       imapPort,
       imapPassword,
       imapTls,
-      targetAppIds,
+      targetAppId,
     } = body;
 
     if (!companyId || !provider || !name || !emailAddress) {
@@ -110,6 +119,13 @@ export async function POST(request: NextRequest) {
     if (provider === "imap" && (!imapHost || !imapPassword)) {
       return NextResponse.json(
         { success: false, error: "IMAP host and password are required" },
+        { status: 400 }
+      );
+    }
+
+    if (!targetAppId || !(await validateTargetAppScope(companyId, String(targetAppId)))) {
+      return NextResponse.json(
+        { success: false, error: "A valid target application is required" },
         { status: 400 }
       );
     }
@@ -128,11 +144,12 @@ export async function POST(request: NextRequest) {
       // Insert credential
       const result = await client.query(
         `INSERT INTO email_credentials
-         (company_id, provider, name, email_address, imap_host, imap_port, imap_password, imap_tls, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)
-         RETURNING id, provider, name, email_address, is_active`,
+         (company_id, target_app_id, provider, name, email_address, imap_host, imap_port, imap_password, imap_tls, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+         RETURNING id, target_app_id, provider, name, email_address, is_active`,
         [
           companyId,
+          targetAppId,
           provider,
           name,
           emailAddress,
@@ -143,21 +160,6 @@ export async function POST(request: NextRequest) {
           createdBy,
         ]
       );
-
-      const credentialId = result.rows[0].id;
-
-      // Insert target app assignments if provided
-      if (targetAppIds && Array.isArray(targetAppIds) && targetAppIds.length > 0) {
-        const appAssignments = targetAppIds.map((appId: string) => 
-          client.query(
-            `INSERT INTO email_credential_target_apps (email_credential_id, target_app_id, created_by)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (email_credential_id, target_app_id) DO NOTHING`,
-            [credentialId, appId, createdBy]
-          )
-        );
-        await Promise.all(appAssignments);
-      }
 
       await client.query('COMMIT');
 

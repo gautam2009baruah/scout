@@ -2,7 +2,6 @@
 
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { FlaskConical, Inbox, Mail, Pencil, Power, Send, ShieldCheck, Star, Trash2, X } from "lucide-react";
-import { MultiSelectDropdown } from "./multi-select-dropdown";
 
 type TargetApp = {
   id: string;
@@ -20,7 +19,8 @@ type EmailCredential = {
   last_test_status: "success" | "failed" | null;
   last_test_error: string | null;
   created_at: string;
-  target_apps: TargetApp[];
+  target_app_id: string | null;
+  target_app_name: string | null;
 };
 
 type NewInboxCredential = {
@@ -32,7 +32,7 @@ type NewInboxCredential = {
   imapPort?: number;
   imapPassword?: string;
   imapTls?: boolean;
-  targetAppIds: string[];
+  targetAppId: string;
 };
 
 type SenderCredential = {
@@ -57,7 +57,7 @@ type SenderCredential = {
 
 type NewSenderCredential = {
   companyId: string;
-  targetAppIds: string[];
+  targetAppId: string;
   authenticationMode: "smtp_password" | "oauth2";
   provider: "smtp" | "gmail" | "outlook";
   name: string;
@@ -128,12 +128,12 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     imapPort: 993,
     imapPassword: "",
     imapTls: true,
-    targetAppIds: [],
+    targetAppId: "",
   });
 
   const [newSenderCredential, setNewSenderCredential] = useState<NewSenderCredential>({
     companyId: selectedCompanyId,
-    targetAppIds: [],
+    targetAppId: "",
     authenticationMode: "smtp_password",
     provider: "smtp",
     name: "",
@@ -164,6 +164,10 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
   const targetAppOptions = useMemo(
     () => [...targetApps].sort((a, b) => a.name.localeCompare(b.name)),
     [targetApps]
+  );
+  const targetAppSelectOptions = useMemo(
+    () => [{ id: "", name: "Select target application" }, ...targetAppOptions],
+    [targetAppOptions]
   );
 
   const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
@@ -229,11 +233,11 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     void loadCredentials();
     void loadSenderCredentials();
 
-    setNewCredential((current) => ({ ...current, companyId: selectedCompanyId, targetAppIds: [] }));
+    setNewCredential((current) => ({ ...current, companyId: selectedCompanyId, targetAppId: "" }));
     setNewSenderCredential((current) => ({
       ...current,
       companyId: selectedCompanyId,
-      targetAppIds: [],
+      targetAppId: "",
       isPrimary: false,
     }));
   }, [loadCredentials, loadSenderCredentials, loadTargetApps, selectedCompanyId]);
@@ -249,7 +253,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
       imapPort: 993,
       imapPassword: "",
       imapTls: true,
-      targetAppIds: [],
+      targetAppId: "",
     });
   }
 
@@ -267,7 +271,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
           imap_host?: string | null;
           imap_port?: number | null;
           imap_tls?: boolean | null;
-          target_apps?: Array<{ id: string }>;
+          target_app_id?: string | null;
         };
       };
 
@@ -288,7 +292,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
         imapPort: credential.imap_port || 993,
         imapPassword: "",
         imapTls: credential.imap_tls !== false,
-        targetAppIds: Array.isArray(credential.target_apps) ? credential.target_apps.map((item) => item.id) : [],
+        targetAppId: credential.target_app_id || "",
       });
     } catch (error) {
       console.error("[Email Credentials] Load inbox credential for edit error:", error);
@@ -302,8 +306,8 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
       return;
     }
 
-    if (!newCredential.targetAppIds || newCredential.targetAppIds.length === 0) {
-      showToast("At least one target application is required", "error");
+    if (!newCredential.targetAppId) {
+      showToast("Target application is required", "error");
       return;
     }
 
@@ -334,7 +338,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               imapPort: newCredential.imapPort,
               imapPassword: newCredential.imapPassword,
               imapTls: newCredential.imapTls,
-              targetAppIds: newCredential.targetAppIds,
+              targetAppId: newCredential.targetAppId,
             }
           : newCredential),
       });
@@ -434,7 +438,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     setEditingSenderId(null);
     setNewSenderCredential((current) => ({
       ...current,
-      targetAppIds: [],
+      targetAppId: "",
       authenticationMode: "smtp_password",
       name: "",
       description: "",
@@ -483,7 +487,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
       setShowAddSenderForm(true);
       setNewSenderCredential((current) => ({
         ...current,
-        targetAppIds: credential.target_app_id ? [credential.target_app_id] : [],
+        targetAppId: credential.target_app_id || "",
         authenticationMode: "smtp_password",
         provider: credential.provider,
         name: credential.name,
@@ -530,19 +534,14 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
       return;
     }
 
-    if (!Array.isArray(newSenderCredential.targetAppIds) || newSenderCredential.targetAppIds.length === 0) {
-      showToast("At least one target application is required.", "error");
+    if (!newSenderCredential.targetAppId) {
+      showToast("Target application is required.", "error");
       return;
     }
 
-    if (editingSenderId && newSenderCredential.targetAppIds.length !== 1) {
-      showToast("Edit mode supports exactly one target application.", "error");
-      return;
-    }
-
-    const invalidSelection = newSenderCredential.targetAppIds.some((id) => !targetApps.some((app) => app.id === id));
+    const invalidSelection = !targetApps.some((app) => app.id === newSenderCredential.targetAppId);
     if (invalidSelection) {
-      showToast("Please select valid target applications.", "error");
+      showToast("Please select a valid target application.", "error");
       return;
     }
 
@@ -563,7 +562,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
         method: editingSenderId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editingSenderId ? {
-          targetAppId: newSenderCredential.targetAppIds[0],
+          targetAppId: newSenderCredential.targetAppId,
           provider: newSenderCredential.provider,
           name: newSenderCredential.name,
           description: newSenderCredential.description || null,
@@ -578,7 +577,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
           isPrimary: newSenderCredential.isPrimary,
         } : {
           companyId: selectedCompanyId,
-          targetAppIds: newSenderCredential.targetAppIds,
+          targetAppId: newSenderCredential.targetAppId,
           provider: newSenderCredential.provider,
           name: newSenderCredential.name,
           description: newSenderCredential.description || null,
@@ -777,15 +776,18 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
             <div className="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
               <h4 className="text-lg font-semibold text-slate-900">{editingInboxId ? "Edit Email Trigger Inbox Credential" : "Add Email Trigger Inbox Credential"}</h4>
 
-              <div>
-                <MultiSelectDropdown
-                  label="Target Applications *"
-                  options={targetAppOptions.map((app) => ({ label: app.name, value: app.id }))}
-                  selectedValues={newCredential.targetAppIds}
-                  onChange={(values) => setNewCredential({ ...newCredential, targetAppIds: values })}
-                  emptyLabel="Select target applications"
-                />
-              </div>
+              <label className="grid gap-1 text-sm font-medium text-slate-700">
+                Target Application *
+                <select
+                  className="h-11 rounded-lg border border-slate-300 px-3"
+                  value={newCredential.targetAppId}
+                  onChange={(event) => setNewCredential({ ...newCredential, targetAppId: event.target.value })}
+                >
+                  {targetAppSelectOptions.map((app) => (
+                    <option key={app.id || "__empty"} value={app.id}>{app.name}</option>
+                  ))}
+                </select>
+              </label>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
@@ -855,7 +857,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                         <td className="px-4 py-3 text-sm text-slate-700">{index + 1}</td>
                         <td className="px-4 py-3 text-sm text-slate-900">{cred.name}</td>
                         <td className="px-4 py-3 text-sm text-slate-700 uppercase">{cred.provider}</td>
-                        <td className="px-4 py-3 text-sm text-slate-700">{cred.target_apps?.length ? cred.target_apps.map((app) => app.name).join(", ") : "All apps"}</td>
+                        <td className="px-4 py-3 text-sm text-slate-700">{cred.target_app_name || "-"}</td>
                         <td className="px-4 py-3 text-sm">{cred.is_active ? <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">Active</span> : <span className="rounded bg-red-100 px-2 py-0.5 text-red-800">Inactive</span>}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.last_tested_at ? new Date(cred.last_tested_at).toLocaleString() : "Never tested"}</td>
                         <td className="px-4 py-3 text-sm">
@@ -904,7 +906,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-blue-800">
               <li>Used by Email Triggers to read incoming emails and start orchestrations.</li>
               <li>Not used for sending outbound emails.</li>
-              <li>You can scope one inbox credential to multiple target apps for trigger polling.</li>
+              <li>Each inbox credential is scoped to one target app for trigger polling.</li>
               <li>After setup, always run Test to verify mailbox connectivity.</li>
             </ul>
           </div>
@@ -938,15 +940,18 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               <h4 className="text-lg font-semibold text-slate-900">{editingSenderId ? "Edit Outbound Sender Credential" : "Add Outbound Sender Credential"}</h4>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <div className="md:col-span-2 xl:col-span-2">
-                  <MultiSelectDropdown
-                    label="Target Applications *"
-                    options={targetAppOptions.map((app) => ({ label: app.name, value: app.id }))}
-                    selectedValues={newSenderCredential.targetAppIds}
-                    onChange={(values) => setNewSenderCredential((current) => ({ ...current, targetAppIds: values }))}
-                    emptyLabel="Select target applications"
-                  />
-                </div>
+                  <label className="grid gap-1 text-sm font-medium text-slate-700 md:col-span-2 xl:col-span-2">
+                    Target Application *
+                    <select
+                      className="h-11 rounded-lg border border-slate-300 px-3"
+                      value={newSenderCredential.targetAppId}
+                      onChange={(event) => setNewSenderCredential((current) => ({ ...current, targetAppId: event.target.value }))}
+                    >
+                      {targetAppSelectOptions.map((app) => (
+                        <option key={app.id || "__empty"} value={app.id}>{app.name}</option>
+                      ))}
+                    </select>
+                  </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
                   Authentication Mode

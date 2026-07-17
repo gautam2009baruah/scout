@@ -5,6 +5,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
+async function validateTargetAppScope(companyId: string, targetAppId: string | null) {
+  if (!targetAppId) return false;
+
+  const scopeCheck = await getPool().query<{ id: string }>(
+    `SELECT app.id
+     FROM guided_workflow_target_apps app
+     INNER JOIN company_target_applications cta ON cta.id = app.target_app_id
+     WHERE app.id = $1
+       AND cta.company_id = $2
+       AND cta.deleted_at IS NULL
+       AND app.deleted_at IS NULL`,
+    [targetAppId, companyId]
+  );
+
+  return (scopeCheck.rowCount ?? 0) > 0;
+}
+
 /**
  * GET /api/orchestrations/email-credentials/[id]
  * Get full details of a single email credential (for editing)
@@ -28,11 +45,13 @@ export async function GET(
 
     const pool = getPool();
 
-    // Fetch credential details with target apps (excluding password for security)
+    // Fetch credential details with target app (excluding password for security)
     const result = await pool.query(
       `SELECT 
         ec.id,
         ec.company_id,
+        ec.target_app_id,
+        cta.name AS target_app_name,
         ec.provider,
         ec.name,
         ec.email_address,
@@ -42,24 +61,13 @@ export async function GET(
         ec.is_active,
         ec.last_tested_at,
         ec.last_test_status,
-        ec.created_at,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'id', ta.id,
-              'name', cta.name
-            )
-            ORDER BY cta.name
-          ) FILTER (WHERE ta.id IS NOT NULL),
-          '[]'
-        ) as target_apps
+        ec.created_at
        FROM email_credentials ec
-       LEFT JOIN email_credential_target_apps ecta ON ec.id = ecta.email_credential_id
-       LEFT JOIN guided_workflow_target_apps ta ON ecta.target_app_id = ta.id
+       LEFT JOIN guided_workflow_target_apps ta ON ta.id = ec.target_app_id
        LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
        WHERE ec.id = $1
-       GROUP BY ec.id`,
-      [credentialId]
+       AND ec.company_id = $2`,
+      [credentialId, companyId]
     );
 
     if (result.rowCount === 0) {
@@ -188,7 +196,7 @@ export async function PATCH(
       imapPassword,
       imapTls,
       isActive,
-      targetAppIds,
+      targetAppId,
     } = body;
 
     const pool = getPool();
@@ -199,7 +207,7 @@ export async function PATCH(
 
       // Check if credential exists
       const checkResult = await client.query(
-        `SELECT provider FROM email_credentials
+        `SELECT provider, company_id FROM email_credentials
          WHERE id = $1`,
         [credentialId]
       );
@@ -212,7 +220,26 @@ export async function PATCH(
         );
       }
 
+      if (checkResult.rows[0].company_id !== session.user.tenantId) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { success: false, error: "Credential not found or access denied" },
+          { status: 404 }
+        );
+      }
+
       const provider = checkResult.rows[0].provider;
+
+      if (targetAppId !== undefined) {
+        const isValidTargetApp = await validateTargetAppScope(session.user.tenantId, targetAppId ? String(targetAppId) : null);
+        if (!isValidTargetApp) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { success: false, error: "A valid target application is required" },
+            { status: 400 }
+          );
+        }
+      }
 
       // Build update query dynamically based on provided fields
     const updates: string[] = [];
@@ -258,7 +285,12 @@ export async function PATCH(
       values.push(isActive);
     }
 
-    if (updates.length === 0 && !targetAppIds) {
+    if (targetAppId !== undefined) {
+      updates.push(`target_app_id = $${paramIndex++}`);
+      values.push(String(targetAppId));
+    }
+
+    if (updates.length === 0) {
       await client.query('ROLLBACK');
       client.release();
       return NextResponse.json(
@@ -277,31 +309,9 @@ export async function PATCH(
         `UPDATE email_credentials
          SET ${updates.join(", ")}, updated_at = NOW()
          WHERE id = $${paramIndex}
-         RETURNING id, provider, name, email_address, is_active`,
+         RETURNING id, target_app_id, provider, name, email_address, is_active`,
         values
       );
-    }
-
-    // Update target app assignments if provided
-    if (targetAppIds !== undefined && Array.isArray(targetAppIds)) {
-      // Delete existing assignments
-      await client.query(
-        `DELETE FROM email_credential_target_apps WHERE email_credential_id = $1`,
-        [credentialId]
-      );
-
-      // Insert new assignments
-      if (targetAppIds.length > 0) {
-        const appAssignments = targetAppIds.map((appId: string) => 
-          client.query(
-            `INSERT INTO email_credential_target_apps (email_credential_id, target_app_id, created_by)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (email_credential_id, target_app_id) DO NOTHING`,
-            [credentialId, appId, updatedBy]
-          )
-        );
-        await Promise.all(appAssignments);
-      }
     }
 
     await client.query('COMMIT');
