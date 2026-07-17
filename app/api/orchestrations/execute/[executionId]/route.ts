@@ -3,6 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getOrchestrationById, getNodes, getConnections } from "@/lib/orchestrations/db";
+import { createTriggerLog, updateTriggerLastTriggered } from "@/lib/orchestrations/triggers";
 import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import type { OrchestrationNode } from "@/shared/orchestrationTypes";
@@ -43,6 +44,20 @@ export async function POST(
 
     // Build execution plan
     const executionPlan = await buildExecutionPlan(nodes, connections, executionContext, triggerData, session);
+
+    const triggerId = typeof triggerData?.triggerId === "string" ? triggerData.triggerId : "";
+    const triggerType = typeof triggerData?.triggerType === "string" ? triggerData.triggerType : "";
+    if (triggerType === "chatbot" && triggerId) {
+      await createTriggerLog({
+        triggerId,
+        orchestrationId,
+        executionId,
+        status: "started",
+        payload: triggerData || {},
+        triggeredBy: typeof triggerData?.userMessage === "string" ? "chatbot" : null,
+      });
+      await updateTriggerLastTriggered(triggerId);
+    }
 
     return NextResponse.json({
       success: true,

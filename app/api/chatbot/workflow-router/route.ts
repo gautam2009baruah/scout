@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
 import { createExecution, getConnections, getExecutionById, getActiveClarificationRequestForConversation, getNodes, getOrchestrationPage, getOrchestrationById } from "@/lib/orchestrations/db";
+import { createTriggerLog, getTriggers, updateTriggerLastTriggered } from "@/lib/orchestrations/triggers";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
@@ -882,6 +883,58 @@ export async function POST(request: NextRequest) {
       triggeredBy: userId,
     });
 
+    const chatbotTriggers = await getTriggers({
+      orchestrationId: selected.id,
+      triggerType: "chatbot",
+      status: "active",
+    });
+    const chatbotTrigger = chatbotTriggers[0] || null;
+
+    if (chatbotTrigger) {
+      const triggerPayload = {
+        message,
+        originalMessage: rawMessage,
+        extractedVariables: variableExtraction.values,
+        conversationId: conversationId || null,
+        companyId,
+        targetAppId: targetAppId || null,
+      };
+
+      await createTriggerLog({
+        triggerId: chatbotTrigger.id,
+        orchestrationId: selected.id,
+        executionId: execution.id,
+        status: "received",
+        payload: triggerPayload,
+        triggeredBy: userId,
+      });
+
+      await createTriggerLog({
+        triggerId: chatbotTrigger.id,
+        orchestrationId: selected.id,
+        executionId: execution.id,
+        status: "validated",
+        payload: triggerPayload,
+        triggeredBy: userId,
+      });
+
+      await createTriggerLog({
+        triggerId: chatbotTrigger.id,
+        orchestrationId: selected.id,
+        executionId: execution.id,
+        status: "started",
+        payload: triggerPayload,
+        triggeredBy: userId,
+      });
+    }
+
+    void executeChatbotExecutionInBackground({
+      execution,
+      orchestrationId: selected.id,
+      triggerId: chatbotTrigger?.id || null,
+      triggeredBy: userId,
+    });
+
     return NextResponse.json({
       answer: `Approved. I started orchestration \"${selected.name}\".`,
       intent: "execute_plan",
@@ -941,4 +994,56 @@ export async function GET() {
       },
     },
   });
+}
+
+async function executeChatbotExecutionInBackground(input: {
+  execution: Awaited<ReturnType<typeof createExecution>>;
+  orchestrationId: string;
+  triggerId: string | null;
+  triggeredBy: string;
+}) {
+  try {
+    const nodes = await getNodes(input.orchestrationId);
+    const connections = await getConnections(input.orchestrationId);
+    const engine = new OrchestrationEngine(input.execution, nodes, connections);
+    const result = await engine.execute();
+
+    if (!result.success && input.triggerId) {
+      await createTriggerLog({
+        triggerId: input.triggerId,
+        orchestrationId: input.orchestrationId,
+        executionId: input.execution.id,
+        status: "failed",
+        payload: {},
+        errorMessage: result.error,
+        triggeredBy: input.triggeredBy,
+      });
+
+      await updateTriggerLastTriggered(input.triggerId, result.error || "Unknown execution error");
+      return;
+    }
+
+    if (input.triggerId) {
+      await updateTriggerLastTriggered(input.triggerId);
+    }
+  } catch (error) {
+    if (input.triggerId) {
+      await createTriggerLog({
+        triggerId: input.triggerId,
+        orchestrationId: input.orchestrationId,
+        executionId: input.execution.id,
+        status: "failed",
+        payload: {},
+        errorMessage: error instanceof Error ? error.message : "Unknown execution error",
+        triggeredBy: input.triggeredBy,
+      });
+
+      await updateTriggerLastTriggered(
+        input.triggerId,
+        error instanceof Error ? error.message : "Unknown execution error"
+      );
+    }
+
+    console.error("[Chatbot Workflow Router] Background execution failed:", error);
+  }
 }

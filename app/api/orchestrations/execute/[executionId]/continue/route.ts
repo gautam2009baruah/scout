@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { executeConditionNode } from "@/lib/orchestrations/nodes/condition-node";
 import { executeVariableNode } from "@/lib/orchestrations/nodes/variable-node";
+import { executeNotificationNode } from "@/lib/orchestrations/nodes/notification-node";
+import { executeApiCallNode } from "@/lib/orchestrations/nodes/api-call-node";
 
 export const runtime = "nodejs";
 
@@ -56,9 +58,15 @@ export async function POST(
         break;
         
       case 'notification':
+        console.log('📧 [SERVER] Executing notification node...');
+        output = await executeNotificationNode(step.config, context);
+        console.log('✅ [SERVER] Notification result:', output);
+        break;
+
       case 'api_call':
-        console.log(`⚠️  [SERVER] ${step.nodeType} not yet implemented`);
-        output = { success: true, message: `${step.nodeType} placeholder` };
+        console.log('🌐 [SERVER] Executing API call node...');
+        output = await executeApiCallNode(step.config, context);
+        console.log('✅ [SERVER] API call result:', output);
         break;
         
       default:
