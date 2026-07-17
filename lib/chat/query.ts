@@ -407,7 +407,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
 
     const queryId = await recordChatQueryTelemetry({
-      company_id: companyId,
       target_app_id: input.target_app_id?.trim() || undefined,
       user_id: userId,
       conversation_id: conversationId,
@@ -487,7 +486,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
 
     const queryId = await recordChatQueryTelemetry({
-      company_id: companyId,
       target_app_id: input.target_app_id?.trim() || undefined,
       user_id: userId,
       conversation_id: conversationId,
@@ -582,7 +580,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     }
 
     const queryId = await recordChatQueryTelemetry({
-      company_id: companyId,
       target_app_id: input.target_app_id?.trim() || undefined,
       user_id: userId,
       conversation_id: conversationId,
@@ -694,7 +691,6 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   }
 
   const queryId = await recordChatQueryTelemetry({
-    company_id: companyId,
     target_app_id: input.target_app_id?.trim() || undefined,
     user_id: userId,
     conversation_id: conversationId,

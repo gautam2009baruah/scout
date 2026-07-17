@@ -438,9 +438,9 @@ async function assertUniqueApiKeyNamePerTargetApp(
       INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE cta.company_id = $1
         AND (($2::uuid IS NULL AND k.target_app_id IS NULL) OR k.target_app_id = $2)
-        AND lower(trim(name)) = $3
-        AND status <> 'revoked'
-        AND ($4::uuid IS NULL OR id <> $4)
+        AND lower(trim(k.name)) = $3
+        AND k.status <> 'revoked'
+        AND ($4::uuid IS NULL OR k.id <> $4)
       LIMIT 1
     `,
     [companyId, targetAppId, normalizedName, excludeApiKeyId ?? null]
@@ -655,6 +655,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
       generated.keyPrefix,
       generated.keyHash,
       targetAppId,
+      environment,
       strictEnvironmentEnforcement,
       initialIsActive,
       initialStatus,

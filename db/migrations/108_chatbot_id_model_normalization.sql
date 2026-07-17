@@ -9,15 +9,22 @@ DELETE FROM chatbot_api_keys
 WHERE target_app_id IS NULL;
 
 -- Backfill environment_id using target_app -> canonical company + normalized environment name.
+WITH key_env_matches AS (
+  SELECT
+    k.id AS key_id,
+    env.id AS environment_id
+  FROM chatbot_api_keys k
+  INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+  INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+  INNER JOIN chatbot_api_key_environments env
+    ON env.company_id = cta.company_id
+   AND env.normalized_name = lower(trim(COALESCE(k.environment, '')))
+  WHERE k.environment_id IS NULL
+)
 UPDATE chatbot_api_keys k
-SET environment_id = env.id
-FROM guided_workflow_target_apps gta
-INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-INNER JOIN chatbot_api_key_environments env
-  ON env.company_id = cta.company_id
- AND env.normalized_name = lower(trim(COALESCE(k.environment, '')))
-WHERE k.target_app_id = gta.id
-  AND k.environment_id IS NULL;
+SET environment_id = key_env_matches.environment_id
+FROM key_env_matches
+WHERE k.id = key_env_matches.key_id;
 
 -- Drop rows still unmatched after backfill.
 DELETE FROM chatbot_api_keys
@@ -64,15 +71,22 @@ CREATE INDEX IF NOT EXISTS chat_query_feedback_target_created_idx
 ALTER TABLE chatbot_embed_packages
   ADD COLUMN IF NOT EXISTS environment_id uuid REFERENCES chatbot_api_key_environments(id) ON DELETE RESTRICT;
 
+WITH package_env_matches AS (
+  SELECT
+    p.id AS package_id,
+    env.id AS environment_id
+  FROM chatbot_embed_packages p
+  INNER JOIN guided_workflow_target_apps gta ON gta.id = p.target_app_id
+  INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+  INNER JOIN chatbot_api_key_environments env
+    ON env.company_id = cta.company_id
+   AND env.normalized_name = lower(trim(COALESCE(p.environment, '')))
+  WHERE p.environment_id IS NULL
+)
 UPDATE chatbot_embed_packages p
-SET environment_id = env.id
-FROM guided_workflow_target_apps gta
-INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-INNER JOIN chatbot_api_key_environments env
-  ON env.company_id = cta.company_id
- AND env.normalized_name = lower(trim(COALESCE(p.environment, '')))
-WHERE p.target_app_id = gta.id
-  AND p.environment_id IS NULL;
+SET environment_id = package_env_matches.environment_id
+FROM package_env_matches
+WHERE p.id = package_env_matches.package_id;
 
 DELETE FROM chatbot_embed_packages
 WHERE environment_id IS NULL;

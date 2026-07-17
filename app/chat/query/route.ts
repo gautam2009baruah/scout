@@ -60,7 +60,6 @@ export async function POST(request: Request) {
     ) {
       try {
         await recordChatQueryTelemetry({
-          company_id: resolvedCompanyId || body.company_id,
           target_app_id: resolvedTargetAppId,
           user_id: body.user_id,
           conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,

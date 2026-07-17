@@ -8,20 +8,18 @@ export async function POST(request: Request) {
 
   if (
     !body
-    || typeof body.company_id !== "string"
     || typeof body.user_id !== "string"
     || typeof body.query_id !== "string"
     || (body.feedback !== "up" && body.feedback !== "down")
   ) {
     return NextResponse.json(
-      { message: "company_id, user_id, query_id, and feedback (up/down) are required." },
+      { message: "user_id, query_id, and feedback (up/down) are required." },
       { status: 400 }
     );
   }
 
   try {
     await upsertChatQueryFeedback({
-      company_id: body.company_id,
       user_id: body.user_id,
       query_id: body.query_id,
       feedback: body.feedback,
