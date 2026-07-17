@@ -260,6 +260,15 @@ export class OrchestrationEngine {
     output?: Record<string, unknown>;
     outputHandle?: string;
     paused?: boolean;
+    clarification?: {
+      message: string;
+      expiresAt: string;
+      fieldDefinitions: Array<{
+        key: string;
+        type: string;
+        description?: string;
+      }>;
+    };
     error?: string;
   }> {
     const config = node.config as NodeConfig;

@@ -545,9 +545,13 @@ export function ScoutChatbot({
     setOrchestrationsState({ status: "error", message: userFriendlyMessage });
   }
 
-  const apiKeyHeaders = useMemo(() => {
+  const apiKeyHeaders = useMemo<Record<string, string>>(() => {
     const trimmed = String(apiKey || "").trim();
-    return trimmed ? { "X-API-Key": trimmed } : {};
+    const headers: Record<string, string> = {};
+    if (trimmed) {
+      headers["X-API-Key"] = trimmed;
+    }
+    return headers;
   }, [apiKey]);
 
   async function emitActionModeTelemetry(eventType: "action_mode_invoked" | "action_mode_auto_reset", metadata?: Record<string, unknown>) {
