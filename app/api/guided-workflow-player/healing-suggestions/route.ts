@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
         s.status, s.reviewed_by, s.reviewed_at, s.created_at,
         s.playback_attempt_count, s.last_playback_attempt_at,
         w.title as workflow_title, w.target_app_id, w.topic_id,
-        t.recording_session_id, c.name as company_name, ta.name as target_app_name,
+        t.recording_session_id, c.name as company_name, cta.name as target_app_name,
         u.email as reviewed_by_email, t.title as topic_title, rs.title as session_title
     `;
     let fromWhereClause = `
@@ -82,6 +82,7 @@ export async function GET(request: NextRequest) {
       JOIN guided_workflow_guides w ON s.workflow_id = w.id
       JOIN companies c ON s.company_id = c.id
       LEFT JOIN guided_workflow_target_apps ta ON w.target_app_id = ta.id
+      LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
       LEFT JOIN users u ON s.reviewed_by = u.id
       LEFT JOIN guided_workflow_topics t ON w.topic_id = t.id AND t.deleted_at IS NULL
       LEFT JOIN guided_workflow_recording_sessions rs ON t.recording_session_id = rs.id AND rs.deleted_at IS NULL

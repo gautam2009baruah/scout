@@ -357,9 +357,10 @@ export async function getTopicWorkspace(session: AdminSession) {
             AND folder_target_apps.deleted_at IS NULL
         ), ARRAY[]::uuid[]) AS target_app_ids,
         COALESCE((
-          SELECT array_agg(guided_workflow_target_apps.name ORDER BY guided_workflow_target_apps.name)
+          SELECT array_agg(company_target_applications.name ORDER BY company_target_applications.name)
           FROM folder_target_apps
           INNER JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = folder_target_apps.target_app_id
+          INNER JOIN company_target_applications ON company_target_applications.id = guided_workflow_target_apps.target_app_id
           WHERE folder_target_apps.folder_id = folders.id
             AND folder_target_apps.deleted_at IS NULL
         ), ARRAY[]::text[]) AS target_app_names,

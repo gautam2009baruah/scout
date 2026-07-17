@@ -522,15 +522,18 @@ export async function listCompanyTargetApplications(session: AdminSession): Prom
           NOT EXISTS (
             SELECT 1 FROM user_target_app_access uta
             INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
+            INNER JOIN company_target_applications scoped_cta ON scoped_cta.id = gta.target_app_id
             WHERE uta.user_id = $2 AND uta.deleted_at IS NULL
-              AND gta.company_id = company_target_applications.company_id
+              AND scoped_cta.company_id = company_target_applications.company_id
+              AND scoped_cta.deleted_at IS NULL
           )
           OR EXISTS (
             SELECT 1 FROM user_target_app_access uta
             INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
+            INNER JOIN company_target_applications scoped_cta ON scoped_cta.id = gta.target_app_id
             WHERE uta.user_id = $2 AND uta.deleted_at IS NULL
-              AND gta.company_id = company_target_applications.company_id
-              AND lower(gta.name) = lower(company_target_applications.name)
+              AND scoped_cta.id = company_target_applications.id
+              AND scoped_cta.deleted_at IS NULL
           )
         )
       ORDER BY companies.name ASC, company_target_applications.name ASC
@@ -562,15 +565,36 @@ export async function createCompanyTargetApplication(
     throw new MasterDataError("Target application name is required.");
   }
 
+  const baseUrl = input.baseUrl?.trim() ?? "";
+  const client = await getPool().connect();
+
   try {
-    const result = await getPool().query<{ id: string }>(
+    await client.query("BEGIN");
+
+    const result = await client.query<{ id: string }>(
       `
         INSERT INTO company_target_applications (company_id, name, base_url, created_by, updated_by)
         VALUES ($1, $2, $3, $4, $4)
         RETURNING id
       `,
-      [input.companyId, name, input.baseUrl?.trim() ?? "", session.user.id]
+      [input.companyId, name, baseUrl, session.user.id]
     );
+
+    await client.query(
+      `
+        INSERT INTO guided_workflow_target_apps (
+          target_app_id,
+          allowed_origins_json,
+          player_config_json,
+          created_by,
+          updated_by
+        )
+        VALUES ($1, '[]'::jsonb, '{}'::jsonb, $2, $2)
+      `,
+      [result.rows[0].id, session.user.id]
+    );
+
+    await client.query("COMMIT");
 
     const apps = await listCompanyTargetApplications(session);
     const created = apps.find((app) => app.id === result.rows[0]?.id);
@@ -581,11 +605,14 @@ export async function createCompanyTargetApplication(
 
     return created;
   } catch (error) {
+    await client.query("ROLLBACK");
     if (typeof error === "object" && error && "code" in error && error.code === "23505") {
       throw new MasterDataError("A target application with this name already exists for the selected company.");
     }
 
     throw error;
+  } finally {
+    client.release();
   }
 }
 

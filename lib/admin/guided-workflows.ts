@@ -282,7 +282,7 @@ const guideSelect = `
     guided_workflow_guides.company_id,
     companies.name AS company_name,
     guided_workflow_guides.target_app_id,
-    guided_workflow_target_apps.name AS target_app_name,
+    target_app_source.name AS target_app_name,
     guided_workflow_topics.recording_session_id,
     guided_workflow_guides.topic_id,
     guided_workflow_guides.title,
@@ -298,6 +298,7 @@ const guideSelect = `
   FROM guided_workflow_guides
   INNER JOIN companies ON companies.id = guided_workflow_guides.company_id
   LEFT JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = guided_workflow_guides.target_app_id
+  LEFT JOIN company_target_applications target_app_source ON target_app_source.id = guided_workflow_target_apps.target_app_id
   LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
   LEFT JOIN users ON users.id = guided_workflow_guides.created_by
 `;
@@ -305,16 +306,17 @@ const guideSelect = `
 const targetAppSelect = `
   SELECT
     guided_workflow_target_apps.id,
-    guided_workflow_target_apps.company_id,
+    company_target_applications.company_id,
     companies.name AS company_name,
-    guided_workflow_target_apps.name,
-    guided_workflow_target_apps.base_url,
+    company_target_applications.name,
+    company_target_applications.base_url,
     guided_workflow_target_apps.allowed_origins_json,
     guided_workflow_target_apps.player_config_json,
     guided_workflow_target_apps.created_at,
     guided_workflow_target_apps.updated_at
   FROM guided_workflow_target_apps
-  INNER JOIN companies ON companies.id = guided_workflow_target_apps.company_id
+  INNER JOIN company_target_applications ON company_target_applications.id = guided_workflow_target_apps.target_app_id
+  INNER JOIN companies ON companies.id = company_target_applications.company_id
 `;
 
 const recordingSessionSelect = `
@@ -333,10 +335,9 @@ const recordingSessionSelect = `
   LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_recording_sessions.company_target_application_id
   LEFT JOIN companies ON companies.id = company_target_applications.company_id
   LEFT JOIN LATERAL (
-    SELECT guided_workflow_target_apps.id, guided_workflow_target_apps.name
+    SELECT guided_workflow_target_apps.id, company_target_applications.name
     FROM guided_workflow_target_apps
-    WHERE guided_workflow_target_apps.company_id = company_target_applications.company_id
-      AND lower(guided_workflow_target_apps.name) = lower(company_target_applications.name)
+    WHERE guided_workflow_target_apps.target_app_id = company_target_applications.id
     ORDER BY guided_workflow_target_apps.updated_at DESC
     LIMIT 1
   ) AS target_app_map ON true
@@ -458,12 +459,12 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
   const params: unknown[] = [];
   const access = session.user.isAdminRole ? "" : `
     AND (
-      guided_workflow_target_apps.company_id = $1
+      company_target_applications.company_id = $1
       OR EXISTS (
         SELECT 1
         FROM user_company_roles
         WHERE user_company_roles.user_id = $2
-          AND user_company_roles.company_id = guided_workflow_target_apps.company_id
+          AND user_company_roles.company_id = company_target_applications.company_id
           AND user_company_roles.deleted_at IS NULL
       )
     )
@@ -482,8 +483,10 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
         FROM user_target_app_access company_access
         INNER JOIN guided_workflow_target_apps company_app
           ON company_app.id = company_access.target_app_id
+        INNER JOIN company_target_applications company_scoped_app
+          ON company_scoped_app.id = company_app.target_app_id
         WHERE company_access.user_id = $${userIdParam}
-          AND company_app.company_id = guided_workflow_target_apps.company_id
+          AND company_scoped_app.company_id = company_target_applications.company_id
           AND company_access.deleted_at IS NULL
       )
       OR EXISTS (
@@ -501,9 +504,11 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
       `
         ${targetAppSelect}
         WHERE companies.deleted_at IS NULL
+          AND company_target_applications.deleted_at IS NULL
+          AND guided_workflow_target_apps.deleted_at IS NULL
           ${access}
           ${targetAppAccess}
-        ORDER BY companies.name ASC, guided_workflow_target_apps.name ASC
+        ORDER BY companies.name ASC, company_target_applications.name ASC
       `,
       params
     )
@@ -526,34 +531,85 @@ export async function createGuidedWorkflowTargetApp(input: {
     throw new GuidedWorkflowError("Target app name is required.");
   }
 
-  const result = await withPoolRetry(() =>
+  const baseUrl = input.baseUrl?.trim() || "";
+  const canonicalTargetApp = await withPoolRetry(() =>
     getPool().query<{ id: string }>(
       `
-        INSERT INTO guided_workflow_target_apps (
-          company_id,
-          name,
-          base_url,
-          allowed_origins_json,
-          player_config_json,
-          created_by,
-          updated_by
-        )
-        VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $6)
+        INSERT INTO company_target_applications (company_id, name, base_url, created_by, updated_by)
+        VALUES ($1, $2, $3, $4, $4)
+        ON CONFLICT (company_id, lower(name)) WHERE deleted_at IS NULL
+        DO UPDATE SET base_url = EXCLUDED.base_url, updated_by = EXCLUDED.updated_by, updated_at = now()
         RETURNING id
       `,
-      [
-        input.companyId,
-        name,
-        input.baseUrl?.trim() || "",
-        JSON.stringify(input.allowedOrigins ?? []),
-        JSON.stringify(input.playerConfig ?? {}),
-        session.user.id
-      ]
+      [input.companyId, name, baseUrl, session.user.id]
     )
   );
 
+  const canonicalTargetAppId = canonicalTargetApp.rows[0]?.id;
+  if (!canonicalTargetAppId) {
+    throw new GuidedWorkflowError("Unable to create target app.");
+  }
+
+  const existingScopedApp = await withPoolRetry(() =>
+    getPool().query<{ id: string }>(
+      `
+        SELECT id
+        FROM guided_workflow_target_apps
+        WHERE target_app_id = $1
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `,
+      [canonicalTargetAppId]
+    )
+  );
+
+  let scopedAppId = existingScopedApp.rows[0]?.id ?? null;
+  if (scopedAppId) {
+    await withPoolRetry(() =>
+      getPool().query(
+        `
+          UPDATE guided_workflow_target_apps
+          SET allowed_origins_json = $2::jsonb,
+              player_config_json = $3::jsonb,
+              updated_by = $4,
+              updated_at = now()
+          WHERE id = $1
+        `,
+        [
+          scopedAppId,
+          JSON.stringify(input.allowedOrigins ?? []),
+          JSON.stringify(input.playerConfig ?? {}),
+          session.user.id
+        ]
+      )
+    );
+  } else {
+    const createdScopedApp = await withPoolRetry(() =>
+      getPool().query<{ id: string }>(
+        `
+          INSERT INTO guided_workflow_target_apps (
+            target_app_id,
+            allowed_origins_json,
+            player_config_json,
+            created_by,
+            updated_by
+          )
+          VALUES ($1, $2::jsonb, $3::jsonb, $4, $4)
+          RETURNING id
+        `,
+        [
+          canonicalTargetAppId,
+          JSON.stringify(input.allowedOrigins ?? []),
+          JSON.stringify(input.playerConfig ?? {}),
+          session.user.id
+        ]
+      )
+    );
+    scopedAppId = createdScopedApp.rows[0]?.id ?? null;
+  }
+
   const apps = await listGuidedWorkflowTargetApps(session);
-  return apps.find((app) => app.id === result.rows[0].id)!;
+  return apps.find((app) => app.id === scopedAppId)!;
 }
 
 export async function listGuidedWorkflowRecordingSessions(session: AdminSession) {
@@ -590,8 +646,10 @@ export async function listGuidedWorkflowRecordingSessions(session: AdminSession)
             OR NOT EXISTS (
               SELECT 1 FROM user_target_app_access uta
               INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
+              INNER JOIN company_target_applications scope_cta ON scope_cta.id = scope_app.target_app_id
               WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
-                AND scope_app.company_id = company_target_applications.company_id
+                AND scope_cta.company_id = company_target_applications.company_id
+                AND scope_cta.deleted_at IS NULL
             )
             OR EXISTS (
               SELECT 1 FROM user_target_app_access uta
@@ -659,7 +717,7 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
         INNER JOIN company_target_applications cta ON cta.id = guided_workflow_recording_sessions.company_target_application_id
         LEFT JOIN LATERAL (
           SELECT gta.id FROM guided_workflow_target_apps gta
-          WHERE gta.company_id = cta.company_id AND lower(gta.name) = lower(cta.name)
+          WHERE gta.target_app_id = cta.id
           ORDER BY gta.updated_at DESC LIMIT 1
         ) topic_target_app ON true
         LEFT JOIN guided_workflow_guides ON guided_workflow_guides.id = guided_workflow_topics.guide_id
@@ -672,8 +730,10 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
             OR NOT EXISTS (
               SELECT 1 FROM user_target_app_access uta
               INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
+              INNER JOIN company_target_applications scope_cta ON scope_cta.id = scope_app.target_app_id
               WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
-                AND scope_app.company_id = guided_workflow_topics.company_id
+                AND scope_cta.company_id = guided_workflow_topics.company_id
+                AND scope_cta.deleted_at IS NULL
             )
             OR EXISTS (
               SELECT 1 FROM user_target_app_access uta
@@ -727,9 +787,7 @@ export async function createGuidedWorkflowRecordingSession(input: {
   }
 
   await ensureGuidedWorkflowTargetApp(
-    companyTargetApplication.company_id,
-    companyTargetApplication.name,
-    companyTargetApplication.base_url,
+    companyTargetApplication.id,
     session.user.id
   );
 
@@ -753,17 +811,16 @@ export async function createGuidedWorkflowRecordingSession(input: {
   };
 }
 
-async function ensureGuidedWorkflowTargetApp(companyId: string, name: string, baseUrl: string, userId: string) {
+async function ensureGuidedWorkflowTargetApp(targetAppId: string, userId: string) {
   const existing = await getPool().query<{ id: string }>(
     `
       SELECT id
       FROM guided_workflow_target_apps
-      WHERE company_id = $1
-        AND lower(name) = lower($2)
+      WHERE target_app_id = $1
       ORDER BY updated_at DESC
       LIMIT 1
     `,
-    [companyId, name]
+    [targetAppId]
   );
 
   if (existing.rows[0]?.id) {
@@ -773,18 +830,16 @@ async function ensureGuidedWorkflowTargetApp(companyId: string, name: string, ba
   const created = await getPool().query<{ id: string }>(
     `
       INSERT INTO guided_workflow_target_apps (
-        company_id,
-        name,
-        base_url,
+        target_app_id,
         allowed_origins_json,
         player_config_json,
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, '[]'::jsonb, '{}'::jsonb, $4, $4)
+      VALUES ($1, '[]'::jsonb, '{}'::jsonb, $2, $2)
       RETURNING id
     `,
-    [companyId, name.trim(), baseUrl.trim(), userId]
+    [targetAppId, userId]
   );
 
   return created.rows[0].id;
@@ -1156,8 +1211,7 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
         LEFT JOIN LATERAL (
           SELECT guided_workflow_target_apps.id, guided_workflow_target_apps.allowed_origins_json
           FROM guided_workflow_target_apps
-          WHERE guided_workflow_target_apps.company_id = company_target_applications.company_id
-            AND lower(guided_workflow_target_apps.name) = lower(company_target_applications.name)
+          WHERE guided_workflow_target_apps.target_app_id = company_target_applications.id
           ORDER BY guided_workflow_target_apps.updated_at DESC
           LIMIT 1
         ) AS target_app_map ON true

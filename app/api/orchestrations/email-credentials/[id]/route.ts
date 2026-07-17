@@ -47,15 +47,16 @@ export async function GET(
           json_agg(
             json_build_object(
               'id', ta.id,
-              'name', ta.name
+              'name', cta.name
             )
-            ORDER BY ta.name
+            ORDER BY cta.name
           ) FILTER (WHERE ta.id IS NOT NULL),
           '[]'
         ) as target_apps
        FROM email_credentials ec
        LEFT JOIN email_credential_target_apps ecta ON ec.id = ecta.email_credential_id
        LEFT JOIN guided_workflow_target_apps ta ON ecta.target_app_id = ta.id
+       LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
        WHERE ec.id = $1
        GROUP BY ec.id`,
       [credentialId]

@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
         o.status as orchestration_status,
         o.company_id,
         o.target_app_id,
-        ta.name as target_app_name,
+        cta.name as target_app_name,
         -- Email-specific fields (derived, respecting the received_at date range)
         (
           SELECT COUNT(*)::int FROM email_trigger_messages etm
@@ -113,6 +113,7 @@ export async function GET(request: NextRequest) {
       FROM orchestration_triggers ot
       INNER JOIN orchestrations o ON ot.orchestration_id = o.id
       LEFT JOIN guided_workflow_target_apps ta ON ta.id = o.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
       WHERE 1 = 1
     `;
 

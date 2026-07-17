@@ -13,7 +13,13 @@ async function validateTargetAppScope(companyId: string, targetAppId: string | n
   }
 
   const scopeCheck = await getPool().query<{ id: string }>(
-    "SELECT id FROM guided_workflow_target_apps WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+    `SELECT app.id
+     FROM guided_workflow_target_apps app
+     INNER JOIN company_target_applications cta ON cta.id = app.target_app_id
+     WHERE app.id = $1
+       AND cta.company_id = $2
+       AND cta.deleted_at IS NULL
+       AND app.deleted_at IS NULL`,
     [targetAppId, companyId]
   );
 
@@ -56,7 +62,7 @@ export async function GET(request: NextRequest) {
           esc.id,
           esc.company_id,
           esc.target_app_id,
-          ta.name AS target_app_name,
+          cta.name AS target_app_name,
           esc.provider,
           esc.name,
           esc.description,
@@ -73,6 +79,7 @@ export async function GET(request: NextRequest) {
           esc.created_at
         FROM email_sender_credentials esc
         LEFT JOIN guided_workflow_target_apps ta ON ta.id = esc.target_app_id
+        LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
         WHERE esc.company_id = $1
         ORDER BY esc.target_app_id NULLS FIRST, esc.is_primary DESC, esc.created_at DESC
       `,
