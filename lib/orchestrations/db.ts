@@ -181,8 +181,9 @@ export async function getOrchestrationPage(filters: {
       OR NOT EXISTS (
         SELECT 1 FROM user_target_app_access uta
         INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
+        INNER JOIN company_target_applications scope_cta ON scope_cta.id = scope_app.target_app_id
         WHERE uta.user_id = $${userParam} AND uta.deleted_at IS NULL
-          AND scope_app.company_id = o.company_id
+          AND scope_cta.company_id = o.company_id
       )
       OR EXISTS (
         SELECT 1 FROM user_target_app_access uta

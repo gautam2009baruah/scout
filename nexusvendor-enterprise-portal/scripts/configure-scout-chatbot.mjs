@@ -70,9 +70,10 @@ try {
   const scopedAccess = await client.query(
     `SELECT 1 FROM user_target_app_access
      INNER JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = user_target_app_access.target_app_id
+     INNER JOIN company_target_applications ON company_target_applications.id = guided_workflow_target_apps.target_app_id
      WHERE user_target_app_access.user_id = $1
        AND user_target_app_access.deleted_at IS NULL
-       AND guided_workflow_target_apps.company_id = $2
+       AND company_target_applications.company_id = $2
      LIMIT 1`,
     [userId, companyId]
   );

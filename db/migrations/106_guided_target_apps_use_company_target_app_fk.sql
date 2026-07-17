@@ -1,4 +1,7 @@
 ALTER TABLE guided_workflow_target_apps
+  ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+
+ALTER TABLE guided_workflow_target_apps
   ADD COLUMN IF NOT EXISTS target_app_id uuid REFERENCES company_target_applications(id) ON DELETE RESTRICT;
 
 -- Ensure every active guided target app has a canonical company target app row.

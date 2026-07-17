@@ -370,8 +370,9 @@ async function canUseCompanyLevelApiKeys(session: AdminSession, companyId: strin
         SELECT 1
         FROM user_target_app_access uta
         INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
+        INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
         WHERE uta.user_id = $1
-          AND gta.company_id = $2
+          AND cta.company_id = $2
           AND uta.deleted_at IS NULL
       ) AS has_restrictions
     `,
@@ -506,7 +507,7 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
         k.name,
         k.key_prefix,
         k.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         COALESCE(k.environment, '') AS environment,
         COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
@@ -518,6 +519,7 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
         k.updated_at
       FROM chatbot_api_keys k
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE k.company_id = $1
       ORDER BY CASE WHEN COALESCE(k.status, 'active') = 'revoked' THEN 1 ELSE 0 END ASC, k.created_at DESC
     `,
@@ -612,7 +614,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         chatbot_api_keys.name,
         chatbot_api_keys.key_prefix,
         chatbot_api_keys.target_app_id,
-        (SELECT name FROM guided_workflow_target_apps WHERE id = chatbot_api_keys.target_app_id) AS target_app_name,
+        (SELECT name FROM company_target_applications WHERE id = (SELECT target_app_id FROM guided_workflow_target_apps WHERE id = chatbot_api_keys.target_app_id)) AS target_app_name,
         chatbot_api_keys.environment,
         COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
         chatbot_api_keys.status,
@@ -820,7 +822,10 @@ export async function updateChatbotApiKey(
         chatbot_api_keys.name,
         chatbot_api_keys.key_prefix,
         chatbot_api_keys.target_app_id,
-        (SELECT name FROM guided_workflow_target_apps WHERE id = chatbot_api_keys.target_app_id) AS target_app_name,
+        (SELECT cta.name
+         FROM guided_workflow_target_apps gta
+         INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+         WHERE gta.id = chatbot_api_keys.target_app_id) AS target_app_name,
         COALESCE(chatbot_api_keys.environment, '') AS environment,
         COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(chatbot_api_keys.status, CASE WHEN chatbot_api_keys.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
@@ -901,7 +906,7 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
         k.name,
         k.key_prefix,
         k.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         COALESCE(k.environment, '') AS environment,
         COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
@@ -913,6 +918,7 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
         k.updated_at
       FROM chatbot_api_keys k
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE k.id = $1
         AND k.company_id = $2
       LIMIT 1
@@ -1164,7 +1170,7 @@ export async function listChatbotEmbedPackages(
       SELECT
         p.id,
         p.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         p.environment,
         p.user_id_placeholder,
         p.require_user_guid,
@@ -1176,6 +1182,7 @@ export async function listChatbotEmbedPackages(
         p.updated_at
       FROM chatbot_embed_packages p
       INNER JOIN guided_workflow_target_apps gta ON gta.id = p.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       INNER JOIN chatbot_api_keys k
         ON k.company_id = p.company_id
        AND k.key_prefix = p.api_key_prefix
@@ -1252,12 +1259,13 @@ export async function resolveChatbotApiKeyContext(
       SELECT
         k.id,
         k.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         COALESCE(k.environment, '') AS environment,
         k.name,
         k.key_prefix
       FROM chatbot_api_keys k
       LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE k.company_id = $1
         AND k.key_hash = $2
         AND k.status = 'active'
@@ -1415,7 +1423,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
       RETURNING
         chatbot_embed_packages.id,
         chatbot_embed_packages.target_app_id,
-        (SELECT name FROM guided_workflow_target_apps WHERE id = chatbot_embed_packages.target_app_id) AS target_app_name,
+        (SELECT name FROM company_target_applications WHERE id = (SELECT target_app_id FROM guided_workflow_target_apps WHERE id = chatbot_embed_packages.target_app_id)) AS target_app_name,
         chatbot_embed_packages.environment,
         chatbot_embed_packages.user_id_placeholder,
         chatbot_embed_packages.require_user_guid,
