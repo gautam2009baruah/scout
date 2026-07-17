@@ -107,8 +107,8 @@ export async function GET(request: Request) {
           t.estimated_cost_usd,
           t.llm_provider,
           t.llm_model,
-          COALESCE(users.name, t.user_id::text) AS user_name,
-          COALESCE(users.email, '') AS user_email,
+          ('external user (' || t.user_id::text || ')') AS user_name,
+          ''::text AS user_email,
           company.name AS company_name,
           COALESCE(cta_direct.name, cta_via_guided.name, '—') AS target_app_name,
           COALESCE(feedback.up_count, 0) AS feedback_up,
@@ -118,7 +118,6 @@ export async function GET(request: Request) {
         LEFT JOIN company_target_applications cta_direct ON cta_direct.id = t.target_app_id
         LEFT JOIN company_target_applications cta_via_guided ON cta_via_guided.id = gta.target_app_id
         LEFT JOIN companies company ON company.id = COALESCE(cta_direct.company_id, cta_via_guided.company_id)
-        LEFT JOIN users ON users.id = t.user_id
         LEFT JOIN LATERAL (
           SELECT
             COUNT(*) FILTER (WHERE f.feedback = 'up')::int AS up_count,
