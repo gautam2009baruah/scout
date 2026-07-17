@@ -48,6 +48,42 @@ export class VectorSearchService {
   }
 }
 
+let cachedDocumentNameExpression: string | null = null;
+let documentNameExpressionTimestamp = 0;
+const DOCUMENT_NAME_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export async function resolveDocumentNameExpression(tableAlias = "documents") {
+  const now = Date.now();
+  if (cachedDocumentNameExpression && (now - documentNameExpressionTimestamp) < DOCUMENT_NAME_CACHE_TTL_MS) {
+    return cachedDocumentNameExpression.replaceAll("documents.", `${tableAlias}.`);
+  }
+
+  const columns = await getPool().query<{ column_name: string }>(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name = 'documents'
+       AND column_name IN ('name', 'original_filename', 'title', 'file_name')`
+  );
+
+  const names = new Set(columns.rows.map((row) => row.column_name));
+
+  let expression = "documents.id::text";
+  if (names.has("name")) {
+    expression = "documents.name";
+  } else if (names.has("original_filename")) {
+    expression = "documents.original_filename";
+  } else if (names.has("title")) {
+    expression = "documents.title";
+  } else if (names.has("file_name")) {
+    expression = "documents.file_name";
+  }
+
+  cachedDocumentNameExpression = expression;
+  documentNameExpressionTimestamp = now;
+  return expression.replaceAll("documents.", `${tableAlias}.`);
+}
+
 async function getEmbeddingColumnMode() {
   const result = await getPool().query<{ udt_name: string }>(
     `
@@ -154,12 +190,13 @@ export function documentPermissionClause(userIdParam: number, roleIdsParam: numb
 }
 
 async function searchVector(companyId: string, queryEmbedding: number[], roleIds: string[], provider: string, model: string, limit: number, userId = "00000000-0000-0000-0000-000000000000") {
+  const documentNameExpression = await resolveDocumentNameExpression("documents");
   const result = await getPool().query(
     `
       SELECT
         document_chunks.id AS chunk_id,
         document_chunks.document_id,
-        documents.name AS document_name,
+        ${documentNameExpression} AS document_name,
         document_chunks.folder_id,
         COALESCE(document_chunks.metadata_json ->> 'folder_path', '') AS folder_path,
         document_chunks.content,
@@ -192,12 +229,13 @@ async function searchVector(companyId: string, queryEmbedding: number[], roleIds
 }
 
 async function searchJson(companyId: string, queryEmbedding: number[], roleIds: string[], provider: string, model: string, limit: number, userId = "00000000-0000-0000-0000-000000000000") {
+  const documentNameExpression = await resolveDocumentNameExpression("documents");
   const result = await getPool().query(
     `
       SELECT
         document_chunks.id AS chunk_id,
         document_chunks.document_id,
-        documents.name AS document_name,
+        ${documentNameExpression} AS document_name,
         document_chunks.folder_id,
         COALESCE(document_chunks.metadata_json ->> 'folder_path', '') AS folder_path,
         document_chunks.content,

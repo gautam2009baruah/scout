@@ -50,6 +50,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json(response);
   } catch (error) {
+    console.error("[ChatQueryRoute] answerChatQuery failed", {
+      company_id: body?.company_id,
+      user_id: body?.user_id,
+      target_app_id: body?.target_app_id ?? body?.targetAppId,
+      conversation_id: body?.conversation_id,
+      question_preview: typeof body?.question === "string" ? body.question.slice(0, 160) : null,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
     if (
       typeof body.company_id === "string"
       && typeof body.user_id === "string"

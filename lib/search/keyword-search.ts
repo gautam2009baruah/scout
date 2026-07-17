@@ -1,5 +1,5 @@
 import { getPool } from "@/lib/db/pool";
-import { documentPermissionClause, mapSearchRow, type VectorSearchResult } from "./vector-search";
+import { documentPermissionClause, mapSearchRow, resolveDocumentNameExpression, type VectorSearchResult } from "./vector-search";
 
 export class KeywordSearchService {
   static async search(company_id: string, query: string, user_role_ids: string[], top_k = 10, user_id?: string): Promise<VectorSearchResult[]> {
@@ -18,6 +18,8 @@ export class KeywordSearchService {
       return [];
     }
 
+    const documentNameExpression = await resolveDocumentNameExpression("documents");
+
     const result = await getPool().query(
       `
         WITH search_query AS (
@@ -26,7 +28,7 @@ export class KeywordSearchService {
         SELECT
           document_chunks.id AS chunk_id,
           document_chunks.document_id,
-          documents.name AS document_name,
+          ${documentNameExpression} AS document_name,
           document_chunks.folder_id,
           COALESCE(document_chunks.metadata_json ->> 'folder_path', '') AS folder_path,
           document_chunks.content,

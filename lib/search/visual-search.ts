@@ -1,5 +1,5 @@
 import { getPool } from "@/lib/db/pool";
-import { documentPermissionClause } from "./vector-search";
+import { documentPermissionClause, resolveDocumentNameExpression } from "./vector-search";
 
 export type VisualSearchResult = {
   insight_id: string;
@@ -32,6 +32,8 @@ export class VisualSearchService {
       return [];
     }
 
+    const documentNameExpression = await resolveDocumentNameExpression("documents");
+
     const result = await getPool().query(
       `
         WITH search_query AS (
@@ -42,7 +44,7 @@ export class VisualSearchService {
           document_visual_assets.id AS asset_id,
           document_visual_assets.asset_type,
           documents.id AS document_id,
-          documents.name AS document_name,
+          ${documentNameExpression} AS document_name,
           documents.folder_id,
           COALESCE(document_chunks.metadata_json ->> 'folder_path', '') AS folder_path,
           document_visual_assets.page_number,
