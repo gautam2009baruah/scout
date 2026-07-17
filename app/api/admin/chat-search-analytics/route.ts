@@ -109,13 +109,13 @@ export async function GET(request: Request) {
           COALESCE(users.name, t.user_id::text) AS user_name,
           COALESCE(users.email, '') AS user_email,
           company.name AS company_name,
-          COALESCE(target_app.name, '—') AS target_app_name,
+          COALESCE(cta.name, '—') AS target_app_name,
           COALESCE(feedback.up_count, 0) AS feedback_up,
           COALESCE(feedback.down_count, 0) AS feedback_down
         FROM chat_query_telemetry t
         LEFT JOIN guided_workflow_target_apps gta ON gta.id = t.target_app_id
-        LEFT JOIN company_target_applications target_app ON target_app.id = gta.target_app_id
-        LEFT JOIN companies company ON company.id = target_app.company_id
+        LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+        LEFT JOIN companies company ON company.id = cta.company_id
         LEFT JOIN users ON users.id = t.user_id
         LEFT JOIN LATERAL (
           SELECT

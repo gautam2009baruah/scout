@@ -1830,8 +1830,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
       WHERE EXISTS (
           SELECT 1
           FROM guided_workflow_target_apps rs_app
-          WHERE rs_app.company_id = company_target_applications.company_id
-            AND lower(rs_app.name) = lower(company_target_applications.name)
+          WHERE rs_app.target_app_id = company_target_applications.id
             AND rs_app.id = $1
         )
         AND guided_workflow_guides.target_app_id = $1
