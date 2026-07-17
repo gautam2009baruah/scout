@@ -23,7 +23,7 @@ export async function POST(request: Request) {
 
   try {
     const roleIds = await getSearchRoleIds(companyId, session.user.id, session.user.roleId, session.user.isAdminRole);
-    const results = await KeywordSearchService.search(companyId, body.query, roleIds, topK, session.user.id);
+    const results = await KeywordSearchService.search(companyId, body.query, roleIds, topK, session.user.id, { enforceAccess: true });
 
     return NextResponse.json(results);
   } catch (error) {

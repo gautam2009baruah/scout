@@ -1,10 +1,18 @@
 import { getPool } from "@/lib/db/pool";
-import { documentPermissionClause, mapSearchRow, resolveDocumentNameExpression, type VectorSearchResult } from "./vector-search";
+import { documentPermissionClause, mapSearchRow, resolveDocumentNameExpression, type SearchAccessOptions, type VectorSearchResult } from "./vector-search";
 
 export class KeywordSearchService {
-  static async search(company_id: string, query: string, user_role_ids: string[], top_k = 10, user_id?: string): Promise<VectorSearchResult[]> {
+  static async search(
+    company_id: string,
+    query: string,
+    user_role_ids: string[],
+    top_k = 10,
+    user_id?: string,
+    options?: SearchAccessOptions
+  ): Promise<VectorSearchResult[]> {
     const normalizedQuery = query.trim();
     const limit = Math.min(50, Math.max(1, Number(top_k) || 10));
+    const enforceAccess = options?.enforceAccess === true;
 
     if (!company_id) {
       throw new Error("Company is required.");
@@ -14,11 +22,11 @@ export class KeywordSearchService {
       throw new Error("Search query is required.");
     }
 
-    if (user_role_ids.length === 0) {
-      return [];
-    }
-
     const documentNameExpression = await resolveDocumentNameExpression("documents");
+    const permissionSql = enforceAccess ? documentPermissionClause(5, 4) : "";
+    const params = enforceAccess
+      ? [company_id, normalizedQuery, limit, user_role_ids, user_id ?? "00000000-0000-0000-0000-000000000000"]
+      : [company_id, normalizedQuery, limit];
 
     const result = await getPool().query(
       `
@@ -55,11 +63,11 @@ export class KeywordSearchService {
             to_tsvector('simple', document_chunks.content) @@ search_query.query
             OR document_chunks.content ILIKE '%' || $2 || '%'
           )
-          ${documentPermissionClause(5, 3)}
+          ${permissionSql}
         ORDER BY score DESC, document_chunks.chunk_index ASC
-        LIMIT $4
+        LIMIT $3
       `,
-      [company_id, normalizedQuery, user_role_ids, limit, user_id ?? "00000000-0000-0000-0000-000000000000"]
+      params
     );
 
     return result.rows.map(mapSearchRow);

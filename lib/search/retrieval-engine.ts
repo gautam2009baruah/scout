@@ -6,7 +6,7 @@ import { getRetrievalConfig } from "./retrieval-config";
 import { detectFilterExclusionRisk } from "./filter-diagnostics";
 import { buildRetrievalFallbackPlan } from "./retrieval-fallback";
 import { reciprocalRankFusion, rerankCandidates, selectDiverseChunks } from "./retrieval-ranking";
-import { VectorSearchService, documentPermissionClause, type VectorSearchResult } from "./vector-search";
+import { VectorSearchService, type VectorSearchResult } from "./vector-search";
 import { VisualSearchService } from "./visual-search";
 
 export type RetrievalChunk = {
@@ -62,32 +62,6 @@ type SearchMetadataHints = {
   department?: string;
   process_stage?: string;
 };
-
-async function getUserRoleIds(companyId: string, userId: string) {
-  const result = await getPool().query<{ role_id: string; is_admin_role: boolean }>(
-    `
-      SELECT roles.id AS role_id, roles.is_admin_role
-      FROM user_company_roles
-      INNER JOIN roles ON roles.id = user_company_roles.role_id
-      WHERE user_company_roles.user_id = $1
-        AND user_company_roles.company_id = $2
-        AND user_company_roles.deleted_at IS NULL
-        AND user_company_roles.status = 'active'
-        AND roles.deleted_at IS NULL
-    `,
-    [userId, companyId]
-  );
-
-  if (result.rows.some((row) => row.is_admin_role)) {
-    const adminRoles = await getPool().query<{ id: string }>(
-      "SELECT id FROM roles WHERE company_id = $1 AND deleted_at IS NULL",
-      [companyId]
-    );
-    return adminRoles.rows.map((row) => row.id);
-  }
-
-  return Array.from(new Set(result.rows.map((row) => row.role_id)));
-}
 
 function parseMetadataHints(query: string): SearchMetadataHints {
   const normalized = query.toLowerCase();
@@ -218,7 +192,7 @@ async function getDocumentSources(documentIds: string[]) {
   }));
 }
 
-async function countAccessibleIndexedDocuments(companyId: string, roleIds: string[], userId: string) {
+async function countAccessibleIndexedDocuments(companyId: string) {
   const result = await getPool().query<{ count: string }>(
     `
       SELECT COUNT(DISTINCT documents.id)::text AS count
@@ -226,9 +200,8 @@ async function countAccessibleIndexedDocuments(companyId: string, roleIds: strin
       INNER JOIN document_chunks ON document_chunks.document_id = documents.id
       WHERE documents.company_id = $1
         AND documents.status IN ('embedded', 'indexed')
-        ${documentPermissionClause(3, 2)}
     `,
-    [companyId, roleIds, userId]
+    [companyId]
   );
 
   return Number(result.rows[0]?.count ?? 0);
@@ -267,11 +240,7 @@ export class RetrievalEngine {
       throw new Error("Search query is required.");
     }
 
-    const roleIds = await getUserRoleIds(company_id, user_id);
-
-    if (roleIds.length === 0) {
-      return { query: normalizedQuery, chunks: [], citations: [] };
-    }
+    const roleIds: string[] = [];
 
     const config = getRetrievalConfig();
     const normalized = normalizeAndExpandProcurementQuery(normalizedQuery);
@@ -379,7 +348,7 @@ export class RetrievalEngine {
       }
     }
 
-    const accessibleIndexedDocuments = await countAccessibleIndexedDocuments(company_id, roleIds, user_id);
+    const accessibleIndexedDocuments = await countAccessibleIndexedDocuments(company_id);
     const targetScopedAccessibleDocuments = allowedFolderIds
       ? attempts[0]
         ? attempts[0].rawVectorCount + attempts[0].rawBm25Count

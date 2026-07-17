@@ -1,5 +1,5 @@
 import { getPool } from "@/lib/db/pool";
-import { documentPermissionClause, resolveDocumentNameExpression } from "./vector-search";
+import { documentPermissionClause, resolveDocumentNameExpression, type SearchAccessOptions } from "./vector-search";
 
 export type VisualSearchResult = {
   insight_id: string;
@@ -16,9 +16,17 @@ export type VisualSearchResult = {
 };
 
 export class VisualSearchService {
-  static async search(companyId: string, query: string, roleIds: string[], topK = 10, userId?: string): Promise<VisualSearchResult[]> {
+  static async search(
+    companyId: string,
+    query: string,
+    roleIds: string[],
+    topK = 10,
+    userId?: string,
+    options?: SearchAccessOptions
+  ): Promise<VisualSearchResult[]> {
     const normalizedQuery = query.trim();
     const limit = Math.min(50, Math.max(1, Number(topK) || 10));
+    const enforceAccess = options?.enforceAccess === true;
 
     if (!companyId) {
       throw new Error("Company is required.");
@@ -28,11 +36,11 @@ export class VisualSearchService {
       throw new Error("Search query is required.");
     }
 
-    if (roleIds.length === 0) {
-      return [];
-    }
-
     const documentNameExpression = await resolveDocumentNameExpression("documents");
+    const permissionSql = enforceAccess ? documentPermissionClause(5, 4) : "";
+    const params = enforceAccess
+      ? [companyId, normalizedQuery, limit, roleIds, userId ?? "00000000-0000-0000-0000-000000000000"]
+      : [companyId, normalizedQuery, limit];
 
     const result = await getPool().query(
       `
@@ -72,11 +80,11 @@ export class VisualSearchService {
             to_tsvector('simple', document_visual_insights.extracted_text) @@ search_query.query
             OR document_visual_insights.extracted_text ILIKE '%' || $2 || '%'
           )
-          ${documentPermissionClause(5, 3)}
+          ${permissionSql}
         ORDER BY score DESC, document_visual_assets.page_number ASC
-        LIMIT $4
+        LIMIT $3
       `,
-      [companyId, normalizedQuery, roleIds, limit, userId ?? "00000000-0000-0000-0000-000000000000"]
+      params
     );
 
     return result.rows.map((row) => ({

@@ -21,10 +21,22 @@ export type VectorSearchResult = {
   score: number;
 };
 
+export type SearchAccessOptions = {
+  enforceAccess?: boolean;
+};
+
 export class VectorSearchService {
-  static async search(company_id: string, query: string, user_role_ids: string[], top_k = 10, user_id?: string): Promise<VectorSearchResult[]> {
+  static async search(
+    company_id: string,
+    query: string,
+    user_role_ids: string[],
+    top_k = 10,
+    user_id?: string,
+    options?: SearchAccessOptions
+  ): Promise<VectorSearchResult[]> {
     const normalizedQuery = query.trim();
     const limit = Math.min(50, Math.max(1, Number(top_k) || 10));
+    const enforceAccess = options?.enforceAccess === true;
 
     if (!company_id) {
       throw new Error("Company is required.");
@@ -34,17 +46,13 @@ export class VectorSearchService {
       throw new Error("Search query is required.");
     }
 
-    if (user_role_ids.length === 0) {
-      return [];
-    }
-
     const provider = await getEmbeddingProvider();
     const queryEmbedding = await provider.embed_text(normalizedQuery);
     const mode = await getEmbeddingColumnMode();
 
     return mode === "vector"
-      ? searchVector(company_id, queryEmbedding, user_role_ids, provider.provider, provider.model, limit, user_id)
-      : searchJson(company_id, queryEmbedding, user_role_ids, provider.provider, provider.model, limit, user_id);
+      ? searchVector(company_id, queryEmbedding, user_role_ids, provider.provider, provider.model, limit, user_id, enforceAccess)
+      : searchJson(company_id, queryEmbedding, user_role_ids, provider.provider, provider.model, limit, user_id, enforceAccess);
   }
 }
 
@@ -189,8 +197,22 @@ export function documentPermissionClause(userIdParam: number, roleIdsParam: numb
   `;
 }
 
-async function searchVector(companyId: string, queryEmbedding: number[], roleIds: string[], provider: string, model: string, limit: number, userId = "00000000-0000-0000-0000-000000000000") {
+async function searchVector(
+  companyId: string,
+  queryEmbedding: number[],
+  roleIds: string[],
+  provider: string,
+  model: string,
+  limit: number,
+  userId = "00000000-0000-0000-0000-000000000000",
+  enforceAccess = false
+) {
   const documentNameExpression = await resolveDocumentNameExpression("documents");
+  const permissionSql = enforceAccess ? documentPermissionClause(7, 6) : "";
+  const params = enforceAccess
+    ? [companyId, serializeVector(queryEmbedding), model, provider, limit, roleIds, userId]
+    : [companyId, serializeVector(queryEmbedding), model, provider, limit];
+
   const result = await getPool().query(
     `
       SELECT
@@ -215,21 +237,35 @@ async function searchVector(companyId: string, queryEmbedding: number[], roleIds
       INNER JOIN document_chunks ON document_chunks.id = chunk_embeddings.chunk_id
       INNER JOIN documents ON documents.id = document_chunks.document_id
       WHERE chunk_embeddings.company_id = $1
-        AND chunk_embeddings.embedding_model = $4
-        AND chunk_embeddings.embedding_provider = $6
+        AND chunk_embeddings.embedding_model = $3
+        AND chunk_embeddings.embedding_provider = $4
         AND documents.status IN ('embedded', 'indexed')
-        ${documentPermissionClause(7, 3)}
+        ${permissionSql}
       ORDER BY chunk_embeddings.embedding <=> $2::vector
       LIMIT $5
     `,
-    [companyId, serializeVector(queryEmbedding), roleIds, model, limit, provider, userId]
+    params
   );
 
   return result.rows.map(mapSearchRow);
 }
 
-async function searchJson(companyId: string, queryEmbedding: number[], roleIds: string[], provider: string, model: string, limit: number, userId = "00000000-0000-0000-0000-000000000000") {
+async function searchJson(
+  companyId: string,
+  queryEmbedding: number[],
+  roleIds: string[],
+  provider: string,
+  model: string,
+  limit: number,
+  userId = "00000000-0000-0000-0000-000000000000",
+  enforceAccess = false
+) {
   const documentNameExpression = await resolveDocumentNameExpression("documents");
+  const permissionSql = enforceAccess ? documentPermissionClause(5, 4) : "";
+  const params = enforceAccess
+    ? [companyId, model, provider, roleIds, userId]
+    : [companyId, model, provider];
+
   const result = await getPool().query(
     `
       SELECT
@@ -254,12 +290,12 @@ async function searchJson(companyId: string, queryEmbedding: number[], roleIds: 
       INNER JOIN document_chunks ON document_chunks.id = chunk_embeddings.chunk_id
       INNER JOIN documents ON documents.id = document_chunks.document_id
       WHERE chunk_embeddings.company_id = $1
-        AND chunk_embeddings.embedding_model = $3
-        AND chunk_embeddings.embedding_provider = $5
+        AND chunk_embeddings.embedding_model = $2
+        AND chunk_embeddings.embedding_provider = $3
         AND documents.status IN ('embedded', 'indexed')
-        ${documentPermissionClause(4, 2)}
+        ${permissionSql}
     `,
-    [companyId, roleIds, model, userId, provider]
+    params
   );
 
   return result.rows
