@@ -87,12 +87,25 @@ async function canPersistTelemetryUser(userId: string) {
   return result.rows[0]?.allowed === true;
 }
 
-export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryInput): Promise<string> {
-  const userCanPersist = await canPersistTelemetryUser(input.user_id);
+async function resolveTelemetryUserIdentity(userId: string) {
+  const normalized = String(userId || "").trim();
+  const canPersistAsInternal = await canPersistTelemetryUser(normalized);
 
-  if (!userCanPersist) {
-    return randomUUID();
+  if (canPersistAsInternal) {
+    return {
+      internalUserId: normalized,
+      externalUserId: null as string | null,
+    };
   }
+
+  return {
+    internalUserId: null as string | null,
+    externalUserId: normalized || null,
+  };
+}
+
+export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryInput): Promise<string> {
+  const telemetryIdentity = await resolveTelemetryUserIdentity(input.user_id);
 
   const canonicalTargetAppId = await resolveCanonicalTargetAppId(input.target_app_id);
 
@@ -102,6 +115,7 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
         INSERT INTO chat_query_telemetry (
           target_app_id,
           user_id,
+          external_user_id,
           conversation_id,
           question,
           answer,
@@ -121,15 +135,16 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
           error_message
         )
         VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10::jsonb, $11, $12, $13,
-          $14, $15, $16, $17, $18::jsonb, $19
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11::jsonb, $12, $13, $14,
+          $15, $16, $17, $18, $19::jsonb, $20
         )
         RETURNING id
       `,
       [
         canonicalTargetAppId,
-        input.user_id,
+        telemetryIdentity.internalUserId,
+        telemetryIdentity.externalUserId,
         input.conversation_id || null,
         input.question,
         input.answer,
@@ -158,6 +173,8 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
       targetAppId: input.target_app_id || null,
       canonicalTargetAppId,
       userId: input.user_id,
+      internalUserId: telemetryIdentity.internalUserId,
+      externalUserId: telemetryIdentity.externalUserId,
     });
     return randomUUID();
   }

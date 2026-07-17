@@ -56,6 +56,10 @@ export class ConversationError extends Error {
   }
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
 function normalizePage(input: PageInput) {
   const page = Math.max(1, Number(input.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(input.pageSize) || 20));
@@ -153,33 +157,61 @@ export async function getOrCreateConversation(input: {
   conversationId?: string;
   firstQuestion: string;
   skipUserValidation?: boolean;
+  persistAsExternal?: boolean;
 }) {
   await assertCompanyAndUser(input.companyId, input.userId, { skipUserValidation: input.skipUserValidation === true });
+  const persistAsExternal = input.persistAsExternal === true;
+  const normalizedUserId = input.userId.trim();
+
+  if (!persistAsExternal && !isUuid(normalizedUserId)) {
+    throw new ConversationError("A UUID user is required for internal conversation persistence.");
+  }
 
   if (input.conversationId) {
-    const existing = await getPool().query<{ id: string; status: ConversationStatus }>(
-      `
-        SELECT id, status
-        FROM conversations
-        WHERE id = $1
-          AND company_id = $2
-          AND user_id = $3
-        LIMIT 1
-      `,
-      [input.conversationId, input.companyId, input.userId]
-    );
+    const existing = persistAsExternal
+      ? await getPool().query<{ id: string; status: ConversationStatus }>(
+        `
+          SELECT id, status
+          FROM conversations
+          WHERE id = $1
+            AND company_id = $2
+            AND external_user_id = $3
+          LIMIT 1
+        `,
+        [input.conversationId, input.companyId, normalizedUserId]
+      )
+      : await getPool().query<{ id: string; status: ConversationStatus }>(
+        `
+          SELECT id, status
+          FROM conversations
+          WHERE id = $1
+            AND company_id = $2
+            AND user_id = $3
+          LIMIT 1
+        `,
+        [input.conversationId, input.companyId, normalizedUserId]
+      );
 
     const conversation = existing.rows[0];
 
     if (!conversation) {
-      const created = await getPool().query<{ id: string }>(
-        `
-          INSERT INTO conversations (id, company_id, user_id, title)
-          VALUES ($1, $2, $3, $4)
-          RETURNING id
-        `,
-        [input.conversationId, input.companyId, input.userId, truncateTitle(input.firstQuestion)]
-      );
+      const created = persistAsExternal
+        ? await getPool().query<{ id: string }>(
+          `
+            INSERT INTO conversations (id, company_id, user_id, external_user_id, title)
+            VALUES ($1, $2, NULL, $3, $4)
+            RETURNING id
+          `,
+          [input.conversationId, input.companyId, normalizedUserId, truncateTitle(input.firstQuestion)]
+        )
+        : await getPool().query<{ id: string }>(
+          `
+            INSERT INTO conversations (id, company_id, user_id, external_user_id, title)
+            VALUES ($1, $2, $3, NULL, $4)
+            RETURNING id
+          `,
+          [input.conversationId, input.companyId, normalizedUserId, truncateTitle(input.firstQuestion)]
+        );
 
       return created.rows[0].id;
     }
@@ -199,12 +231,18 @@ export async function getOrCreateConversation(input: {
   }
 
   const result = await getPool().query<{ id: string }>(
-    `
-      INSERT INTO conversations (company_id, user_id, title)
-      VALUES ($1, $2, $3)
-      RETURNING id
-    `,
-    [input.companyId, input.userId, truncateTitle(input.firstQuestion)]
+    persistAsExternal
+      ? `
+          INSERT INTO conversations (company_id, user_id, external_user_id, title)
+          VALUES ($1, NULL, $2, $3)
+          RETURNING id
+        `
+      : `
+          INSERT INTO conversations (company_id, user_id, external_user_id, title)
+          VALUES ($1, $2, NULL, $3)
+          RETURNING id
+        `,
+    [input.companyId, normalizedUserId, truncateTitle(input.firstQuestion)]
   );
 
   return result.rows[0].id;
@@ -215,20 +253,33 @@ export async function getConversationLifecycleState(input: {
   userId: string;
   conversationId: string;
   skipUserValidation?: boolean;
+  persistAsExternal?: boolean;
 }) {
   await assertCompanyAndUser(input.companyId, input.userId, { skipUserValidation: input.skipUserValidation === true });
+  const persistAsExternal = input.persistAsExternal === true;
+  const normalizedUserId = input.userId.trim();
 
   const result = await getPool().query<ConversationLifecycleState>(
-    `
-      SELECT id, status, created_at, last_message_at
-      FROM conversations
-      WHERE id = $1
-        AND company_id = $2
-        AND user_id = $3
-        AND status <> 'deleted'
-      LIMIT 1
-    `,
-    [input.conversationId, input.companyId, input.userId]
+    persistAsExternal
+      ? `
+          SELECT id, status, created_at, last_message_at
+          FROM conversations
+          WHERE id = $1
+            AND company_id = $2
+            AND external_user_id = $3
+            AND status <> 'deleted'
+          LIMIT 1
+        `
+      : `
+          SELECT id, status, created_at, last_message_at
+          FROM conversations
+          WHERE id = $1
+            AND company_id = $2
+            AND user_id = $3
+            AND status <> 'deleted'
+          LIMIT 1
+        `,
+    [input.conversationId, input.companyId, normalizedUserId]
   );
 
   return result.rows[0] ?? null;
@@ -242,23 +293,36 @@ export async function appendConversationExchange(input: {
   answer: string;
   citations: Citation[];
   metadata: Record<string, unknown>;
+  persistAsExternal?: boolean;
 }) {
   const citations = sanitizeCitations(input.citations);
+  const persistAsExternal = input.persistAsExternal === true;
+  const normalizedUserId = input.userId.trim();
   const client = await getPool().connect();
 
   try {
     await client.query("BEGIN");
     const conversation = await client.query<{ id: string }>(
-      `
-        SELECT id
-        FROM conversations
-        WHERE id = $1
-          AND company_id = $2
-          AND user_id = $3
-          AND status <> 'deleted'
-        FOR UPDATE
-      `,
-      [input.conversationId, input.companyId, input.userId]
+      persistAsExternal
+        ? `
+            SELECT id
+            FROM conversations
+            WHERE id = $1
+              AND company_id = $2
+              AND external_user_id = $3
+              AND status <> 'deleted'
+            FOR UPDATE
+          `
+        : `
+            SELECT id
+            FROM conversations
+            WHERE id = $1
+              AND company_id = $2
+              AND user_id = $3
+              AND status <> 'deleted'
+            FOR UPDATE
+          `,
+      [input.conversationId, input.companyId, normalizedUserId]
     );
 
     if (!conversation.rows[0]) {
