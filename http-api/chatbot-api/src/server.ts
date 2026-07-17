@@ -169,30 +169,69 @@ async function handleChatQuery(
   }
 
   const startedAt = Date.now();
-  const result = await answerChatQuery({
-    company_id: context.company.id,
-    user_id: userId,
-    external_user_trace_id: clientTraceId || undefined,
-    target_app_id: context.targetApp?.id,
-    question,
-    conversation_id: conversationId || undefined,
-    top_k: typeof body.topK === "number" ? body.topK : undefined
+  console.info("[chatbot-api] /v1/chat/query received", {
+    requestId,
+    companyId: context.company.id,
+    targetAppId: context.targetApp?.id ?? null,
+    userId,
+    conversationId: conversationId || null,
+    questionPreview: question.slice(0, 140),
   });
 
-  sendJson(
-    response,
-    200,
-    {
+  try {
+    const result = await answerChatQuery({
+      company_id: context.company.id,
+      user_id: userId,
+      external_user_trace_id: clientTraceId || undefined,
+      target_app_id: context.targetApp?.id,
+      question,
+      conversation_id: conversationId || undefined,
+      top_k: typeof body.topK === "number" ? body.topK : undefined
+    });
+
+    sendJson(
+      response,
+      200,
+      {
+        requestId,
+        company: { id: context.company.id, name: context.company.name },
+        targetApp: context.targetApp ? { id: context.targetApp.id, name: context.targetApp.name } : null,
+        timingMs: Date.now() - startedAt,
+        result
+      },
       requestId,
-      company: { id: context.company.id, name: context.company.name },
-      targetApp: context.targetApp ? { id: context.targetApp.id, name: context.targetApp.name } : null,
-      timingMs: Date.now() - startedAt,
-      result
-    },
-    requestId,
-    origin,
-    extraHeaders
-  );
+      origin,
+      extraHeaders
+    );
+  } catch (error) {
+    console.error("[chatbot-api] /v1/chat/query failed", {
+      requestId,
+      companyId: context.company.id,
+      targetAppId: context.targetApp?.id ?? null,
+      userId,
+      conversationId: conversationId || null,
+      questionPreview: question.slice(0, 140),
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
+    if (error instanceof ChatQueryError) {
+      sendJson(response, error.statusCode, { message: error.message, requestId }, requestId, origin, extraHeaders);
+      return;
+    }
+
+    sendJson(
+      response,
+      500,
+      {
+        message: error instanceof Error ? error.message : "Chat query failed.",
+        requestId,
+      },
+      requestId,
+      origin,
+      extraHeaders
+    );
+  }
 }
 
 async function handleChatSettings(
@@ -439,15 +478,23 @@ const server = createServer(async (request, response) => {
 
     sendJson(response, 404, { message: "Route not found." }, requestId, origin);
   } catch (error) {
+    console.error("[chatbot-api] unhandled server error", {
+      requestId,
+      path: request.url,
+      method: request.method,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
     if (error instanceof ChatQueryError) {
-      sendJson(response, error.statusCode, { message: error.message }, requestId, origin);
+      sendJson(response, error.statusCode, { message: error.message, requestId }, requestId, origin);
       return;
     }
 
     sendJson(
       response,
       500,
-      { message: error instanceof Error ? error.message : "Unexpected server error." },
+      { message: error instanceof Error ? error.message : "Unexpected server error.", requestId },
       requestId,
       origin
     );

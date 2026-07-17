@@ -2088,9 +2088,16 @@ export function ScoutChatbot({
       return undefined;
     }
 
+    const requestId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
     const response = await fetch(chatEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Request-Id": requestId,
+      },
       body: JSON.stringify({
         company_id: companyId,
         user_id: userId,
@@ -2106,11 +2113,14 @@ export function ScoutChatbot({
     console.log('🔍 Trigger data:', body?.orchestration_trigger);
 
     if (!response.ok) {
+      const serverRequestId = typeof body?.requestId === "string"
+        ? body.requestId
+        : response.headers.get("x-request-id") || requestId;
       const message = typeof body?.message === "string" ? body.message : "Chat query failed.";
       if (isApiKeyAuthFailure(response.status, message)) {
         blockChatbotForInvalidKey();
       }
-      throw new Error(message);
+      throw new Error(`${message} (requestId: ${serverRequestId})`);
     }
 
     if (typeof body?.conversation_id === "string") {

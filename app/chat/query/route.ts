@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { answerChatQuery, ChatQueryError } from "@/lib/chat/query";
 import { recordChatQueryTelemetry } from "@/lib/chat/telemetry";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
@@ -6,6 +7,7 @@ import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const requestId = request.headers.get("x-request-id") || randomUUID();
   const body = await request.json().catch(() => null);
 
   if (
@@ -14,7 +16,7 @@ export async function POST(request: Request) {
     || typeof body.user_id !== "string"
     || typeof body.question !== "string"
   ) {
-    return NextResponse.json({ message: "Company, user, and question are required." }, { status: 400 });
+    return NextResponse.json({ message: "Company, user, and question are required.", requestId }, { status: 400 });
   }
 
   let resolvedCompanyId = "";
@@ -33,7 +35,7 @@ export async function POST(request: Request) {
       : undefined;
   } catch (error) {
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Invalid scoped identifier payload." },
+      { message: error instanceof Error ? error.message : "Invalid scoped identifier payload.", requestId },
       { status: 400 }
     );
   }
@@ -51,12 +53,14 @@ export async function POST(request: Request) {
     return NextResponse.json(response);
   } catch (error) {
     console.error("[ChatQueryRoute] answerChatQuery failed", {
+      requestId,
       company_id: body?.company_id,
       user_id: body?.user_id,
       target_app_id: body?.target_app_id ?? body?.targetAppId,
       conversation_id: body?.conversation_id,
       question_preview: typeof body?.question === "string" ? body.question.slice(0, 160) : null,
       error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
     });
 
     if (
@@ -94,11 +98,11 @@ export async function POST(request: Request) {
     }
 
     if (error instanceof ChatQueryError) {
-      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+      return NextResponse.json({ message: error.message, requestId }, { status: error.statusCode });
     }
 
     return NextResponse.json(
-      { message: error instanceof Error ? error.message : "Chat query failed." },
+      { message: error instanceof Error ? error.message : "Chat query failed.", requestId },
       { status: 500 }
     );
   }
