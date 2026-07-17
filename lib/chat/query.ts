@@ -58,6 +58,10 @@ export class ChatQueryError extends Error {
   }
 }
 
+function isGuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
 async function validateCompany(companyId: string) {
   const result = await getPool().query<{ id: string }>(
     "SELECT id FROM companies WHERE id = $1 AND deleted_at IS NULL AND status = 'active'",
@@ -282,7 +286,9 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   await validateCompany(companyId);
   const triggerUserEmail = toTriggerUserEmail(userId);
-  const canPersistConversation = await canPersistConversationForUser(companyId, userId);
+  const canPersistConversation = isGuid(userId)
+    ? await canPersistConversationForUser(companyId, userId)
+    : false;
   const lifecycleSettings = await getEffectiveChatbotLifecycleSettings(companyId, input.target_app_id?.trim() || undefined);
   let requestedConversationId = input.conversation_id?.trim() || undefined;
 
