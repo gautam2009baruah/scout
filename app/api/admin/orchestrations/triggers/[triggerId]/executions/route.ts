@@ -176,7 +176,7 @@ async function getLogExecutions(
   const whereClause = conditions.join(" AND ");
 
   const countResult = await pool.query<{ total: string }>(
-    `SELECT COUNT(*)::text AS total
+    `SELECT COUNT(DISTINCT COALESCE(tel.execution_id::text, tel.id::text))::text AS total
      FROM trigger_execution_logs tel
      WHERE ${whereClause}`,
     params
@@ -184,17 +184,32 @@ async function getLogExecutions(
   const total = parseInt(countResult.rows[0]?.total || "0", 10);
 
   const rowsResult = await pool.query(
-    `SELECT
-      tel.id,
-      tel.status,
-      tel.error_message,
-      tel.triggered_at,
-      tel.triggered_by,
-      oe.status AS execution_status
-     FROM trigger_execution_logs tel
-     LEFT JOIN orchestration_executions oe ON tel.execution_id = oe.id
-     WHERE ${whereClause}
-     ORDER BY tel.triggered_at DESC
+    `WITH ranked_logs AS (
+       SELECT
+         tel.id,
+         tel.status,
+         tel.error_message,
+         tel.triggered_at,
+         tel.triggered_by,
+         tel.execution_id,
+         ROW_NUMBER() OVER (
+           PARTITION BY COALESCE(tel.execution_id::text, tel.id::text)
+           ORDER BY tel.triggered_at DESC, tel.id DESC
+         ) AS row_number
+       FROM trigger_execution_logs tel
+       WHERE ${whereClause}
+     )
+     SELECT
+       ranked_logs.id,
+       ranked_logs.status,
+       ranked_logs.error_message,
+       ranked_logs.triggered_at,
+       ranked_logs.triggered_by,
+       oe.status AS execution_status
+     FROM ranked_logs
+     LEFT JOIN orchestration_executions oe ON ranked_logs.execution_id = oe.id
+     WHERE ranked_logs.row_number = 1
+     ORDER BY ranked_logs.triggered_at DESC
      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
     [...params, pageSize, offset]
   );

@@ -1105,6 +1105,34 @@ function mapClarificationRow(row: ClarificationRow): OrchestrationClarificationR
   };
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
+}
+
+async function resolvePersistedConversationId(
+  pool: ReturnType<typeof getPool>,
+  companyId: string,
+  conversationId?: string | null
+): Promise<string | null> {
+  const candidate = String(conversationId || "").trim();
+  if (!candidate || !isUuid(candidate)) {
+    return null;
+  }
+
+  const result = await pool.query<{ id: string }>(
+    `
+      SELECT id
+      FROM conversations
+      WHERE id = $1
+        AND company_id = $2
+      LIMIT 1
+    `,
+    [candidate, companyId]
+  );
+
+  return result.rows[0]?.id || null;
+}
+
 export async function createClarificationRequest(data: {
   executionId: string;
   nodeExecutionId: string;
@@ -1123,6 +1151,7 @@ export async function createClarificationRequest(data: {
   expiresAt: string;
 }): Promise<OrchestrationClarificationRequest> {
   const pool = getPool();
+  const persistedConversationId = await resolvePersistedConversationId(pool, data.companyId, data.conversationId);
   const result = await pool.query<ClarificationRow>(
     `INSERT INTO orchestration_clarifications
      (execution_id, node_execution_id, node_id, conversation_id, company_id, target_app_id, output_variable, partial_output_json, missing_fields_json, prompt, expires_at)
@@ -1132,7 +1161,7 @@ export async function createClarificationRequest(data: {
       data.executionId,
       data.nodeExecutionId,
       data.nodeId,
-      data.conversationId || null,
+      persistedConversationId,
       data.companyId,
       data.targetAppId || null,
       data.outputVariable,

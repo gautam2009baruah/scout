@@ -54,7 +54,7 @@ export async function POST(
         executionId,
         status: "started",
         payload: triggerData || {},
-        triggeredBy: typeof triggerData?.userMessage === "string" ? "chatbot" : null,
+        triggeredBy: typeof triggerData?.userMessage === "string" ? "chatbot" : undefined,
       });
       await updateTriggerLastTriggered(triggerId);
     }

@@ -71,6 +71,15 @@ export class OrchestrationEngine {
     success: boolean;
     status: "completed" | "paused" | "failed";
     error?: string;
+    clarification?: {
+      message: string;
+      expiresAt: string;
+      fieldDefinitions: Array<{
+        key: string;
+        type: string;
+        description?: string;
+      }>;
+    };
   }> {
     try {
       // Find the starting node (trigger node or current node for resumption)
@@ -84,7 +93,11 @@ export class OrchestrationEngine {
       const result = await this.executeNode(startNodeId);
 
       if (result.status === "paused") {
-        return { success: true, status: "paused" };
+        return {
+          success: true,
+          status: "paused",
+          clarification: result.clarification,
+        };
       }
 
       if (result.status === "failed") {
@@ -109,6 +122,15 @@ export class OrchestrationEngine {
     success: boolean;
     status: "completed" | "paused" | "failed";
     error?: string;
+    clarification?: {
+      message: string;
+      expiresAt: string;
+      fieldDefinitions: Array<{
+        key: string;
+        type: string;
+        description?: string;
+      }>;
+    };
   }> {
     const node = this.nodes.get(nodeId);
     if (!node) {
@@ -195,7 +217,11 @@ export class OrchestrationEngine {
           result.output ?? null
         );
         await this.updateExecutionStatus("paused", nodeId);
-        return { success: true, status: "paused" };
+        return {
+          success: true,
+          status: "paused",
+          clarification: result.clarification,
+        };
       }
 
       if (!result.success) {

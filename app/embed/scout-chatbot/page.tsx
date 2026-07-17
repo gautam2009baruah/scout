@@ -199,6 +199,7 @@ export default function EmbeddedScoutChatbotPage() {
             assistantName={config.assistantName || "Scout Assistant"}
             apiKey={config.apiKey}
             companyId={config.companyId}
+            conversationId={conversationId || undefined}
             defaultOpen={false}
             lifecycleConfig={lifecycleConfig}
             onConversationChange={setConversationId}

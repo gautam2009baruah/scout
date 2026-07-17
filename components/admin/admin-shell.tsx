@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import Link from "next/link";
 import { Activity, BarChart3, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
-import { ScoutChatbot } from "@/components/scout-chatbot";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
 
@@ -53,9 +52,6 @@ const moduleIcons = {
   [MODULE_KEYS.searchAnalytics]: BarChart3,
   [MODULE_KEYS.chatbotSettings]: SlidersHorizontal
 } as const;
-
-const CRS_SCOUT_BASE_URL = "http://localhost:3000";
-const CRS_TARGET_APP_ID = "6141a508-4fea-48c0-a92f-7a7064164209";
 
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -534,21 +530,6 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         </div>
       ) : null}
 
-      <ScoutChatbot
-        assistantName="Scout Assistant"
-        companyId={session.user.tenantId}
-        defaultOpen={false}
-        placeholder="Ask or request a workflow..."
-        scoutBaseUrl={CRS_SCOUT_BASE_URL}
-        targetAppId={CRS_TARGET_APP_ID}
-        targetAppName="CRS"
-        theme={{
-          brandColor: "#111827",
-          accentColor: "#0ea5e9"
-        }}
-        userId={session.user.id}
-        variant="floating"
-      />
     </main>
   );
 }

@@ -1542,6 +1542,35 @@ export function ScoutChatbot({
       }
     }
 
+    try {
+      const continuationReply = await runWorkflowRouter(
+        trimmed,
+        createActionRouterWorkflow(),
+        contextWindow,
+        { continuationOnly: true }
+      );
+
+      if (continuationReply.routerIntent && continuationReply.routerIntent !== "fallback") {
+        setMessages(nextHistory);
+        setInput("");
+        const assistantReply = resolveReply(continuationReply);
+        setMessages((current) => [
+          ...current,
+          createRenderedMessage({
+            ...assistantReply,
+            id: assistantReply.id ?? generateMessageId(),
+            role: "assistant",
+            time: assistantReply.time ?? formatTime(),
+          }),
+        ]);
+        markActivity();
+        inputRef.current?.focus();
+        return;
+      }
+    } catch {
+      // Continue through normal intent routing when no paused workflow can be resumed.
+    }
+
     if (actionModeArmed) {
       autoResetActionMode("message_sent");
       setMessages(nextHistory);
@@ -2163,7 +2192,7 @@ export function ScoutChatbot({
     message: string,
     workflow: ScoutWorkflowSession,
     history: ScoutChatMessage[],
-    options?: { allowDraftPlan?: boolean; forceActionMode?: boolean }
+    options?: { allowDraftPlan?: boolean; forceActionMode?: boolean; continuationOnly?: boolean }
   ) {
     const endpoint = workflowRouterEndpoint || "/api/chatbot/workflow-router";
 
@@ -2179,6 +2208,7 @@ export function ScoutChatbot({
         history,
         allowDraftPlan: options?.allowDraftPlan === true,
         forceActionMode: options?.forceActionMode === true,
+        continuationOnly: options?.continuationOnly === true,
         companyId,
         userId,
         targetAppId: targetAppId || undefined,

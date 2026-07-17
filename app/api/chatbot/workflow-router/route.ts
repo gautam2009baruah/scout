@@ -7,6 +7,7 @@ import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 import type { ChatbotTriggerConfig } from "@/shared/orchestrationTypes";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
+import { appendConversationExchange, getOrCreateConversation } from "@/lib/chat/conversations";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,7 @@ type WorkflowRouterRequest = {
   conversationId?: string;
   allowDraftPlan?: boolean;
   forceActionMode?: boolean;
+  continuationOnly?: boolean;
   message?: string;
   workflow?: {
     id?: string;
@@ -33,6 +35,7 @@ type WorkflowRouterRequest = {
 
 type ChatbotWorkflowCandidate = {
   id: string;
+  triggerId: string;
   version: number;
   name: string;
   description: string;
@@ -105,6 +108,12 @@ async function loadChatbotWorkflowCandidates(
   userId: string,
   targetAppId: string
 ): Promise<ChatbotWorkflowCandidate[]> {
+  const activeChatbotTriggers = (await getTriggers({
+    triggerType: "chatbot",
+  })).filter((trigger) => trigger.status === "active" || trigger.status === "error");
+  const triggerByOrchestrationId = new Map(
+    activeChatbotTriggers.map((trigger) => [trigger.orchestrationId, trigger])
+  );
   const page = await getOrchestrationPage({
     companyId,
     userId,
@@ -116,6 +125,11 @@ async function loadChatbotWorkflowCandidates(
 
   const candidates = await Promise.all(
     page.orchestrations.map(async (orchestration) => {
+      const persistedTrigger = triggerByOrchestrationId.get(orchestration.id);
+      if (!persistedTrigger) {
+        return null;
+      }
+
       const nodes = await getNodes(orchestration.id);
       const connections = await getConnections(orchestration.id);
       const triggerNode = nodes.find((node) => node.nodeType === "trigger");
@@ -138,6 +152,7 @@ async function loadChatbotWorkflowCandidates(
 
       return {
         id: orchestration.id,
+        triggerId: persistedTrigger.id,
         version: orchestration.version,
         name: orchestration.name,
         description: orchestration.description || "",
@@ -682,6 +697,7 @@ export async function POST(request: NextRequest) {
     const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
     const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
     const forceActionMode = body.forceActionMode === true;
+    const continuationOnly = body.continuationOnly === true;
     const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
     const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
     const contextResolution = await resolveActionRequestFromConversation(rawMessage, history);
@@ -698,10 +714,29 @@ export async function POST(request: NextRequest) {
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
 
-    if (conversationId) {
+    const persistedConversationId = await getOrCreateConversation({
+      companyId,
+      userId,
+      conversationId: conversationId || undefined,
+      firstQuestion: rawMessage,
+    });
+
+    const persistExchange = async (answer: string, metadata: Record<string, unknown>) => {
+      await appendConversationExchange({
+        companyId,
+        userId,
+        conversationId: persistedConversationId,
+        question: rawMessage,
+        answer,
+        citations: [],
+        metadata: { source: "workflow_router", ...metadata },
+      });
+    };
+
+    if (persistedConversationId) {
       const clarification = await getActiveClarificationRequestForConversation({
         companyId,
-        conversationId,
+        conversationId: persistedConversationId,
       });
 
       if (clarification) {
@@ -718,8 +753,15 @@ export async function POST(request: NextRequest) {
             });
 
             if (resumeResult.success) {
+              const answer = `Thanks. I resumed the workflow "${orchestration.name}" using your response.`;
+              await persistExchange(answer, {
+                intent: "execute_plan",
+                resumedClarificationId: clarification.id,
+                executionId: execution.id,
+              });
               return NextResponse.json({
-                answer: `Thanks. I resumed the workflow "${orchestration.name}" using your response.`,
+                answer,
+                conversationId: persistedConversationId,
                 intent: "execute_plan",
                 confidence: 1,
                 matchedOrchestrationIds: [orchestration.id],
@@ -875,7 +917,7 @@ export async function POST(request: NextRequest) {
         triggerType: "chatbot",
         companyId,
         targetAppId: targetAppId || undefined,
-        conversationId: conversationId || undefined,
+        conversationId: persistedConversationId,
         userMessage: message,
         confidence: match.confidence,
         orchestrationName: selected.name,
@@ -883,57 +925,112 @@ export async function POST(request: NextRequest) {
       triggeredBy: userId,
     });
 
-    const chatbotTriggers = await getTriggers({
+    const triggerPayload = {
+      message,
+      originalMessage: rawMessage,
+      extractedVariables: variableExtraction.values,
+      conversationId: persistedConversationId,
+      companyId,
+      targetAppId: targetAppId || null,
+    };
+
+    await createTriggerLog({
+      triggerId: selected.triggerId,
       orchestrationId: selected.id,
-      triggerType: "chatbot",
-      status: "active",
+      executionId: execution.id,
+      status: "received",
+      payload: triggerPayload,
+      triggeredBy: userId,
     });
-    const chatbotTrigger = chatbotTriggers[0] || null;
 
-    if (chatbotTrigger) {
-      const triggerPayload = {
-        message,
-        originalMessage: rawMessage,
-        extractedVariables: variableExtraction.values,
-        conversationId: conversationId || null,
-        companyId,
-        targetAppId: targetAppId || null,
-      };
+    await createTriggerLog({
+      triggerId: selected.triggerId,
+      orchestrationId: selected.id,
+      executionId: execution.id,
+      status: "validated",
+      payload: triggerPayload,
+      triggeredBy: userId,
+    });
 
-      await createTriggerLog({
-        triggerId: chatbotTrigger.id,
-        orchestrationId: selected.id,
-        executionId: execution.id,
-        status: "received",
-        payload: triggerPayload,
-        triggeredBy: userId,
-      });
+    await createTriggerLog({
+      triggerId: selected.triggerId,
+      orchestrationId: selected.id,
+      executionId: execution.id,
+      status: "started",
+      payload: triggerPayload,
+      triggeredBy: userId,
+    });
 
-      await createTriggerLog({
-        triggerId: chatbotTrigger.id,
-        orchestrationId: selected.id,
-        executionId: execution.id,
-        status: "validated",
-        payload: triggerPayload,
-        triggeredBy: userId,
-      });
+    const executionResult = await executeChatbotExecution({
+      execution,
+      orchestrationId: selected.id,
+      triggerId: selected.triggerId,
+      triggeredBy: userId,
+    });
 
-      await createTriggerLog({
-        triggerId: chatbotTrigger.id,
-        orchestrationId: selected.id,
-        executionId: execution.id,
-        status: "started",
-        payload: triggerPayload,
-        triggeredBy: userId,
+    if (executionResult.status === "paused") {
+      const clarification = executionResult.clarification;
+      if (clarification) {
+        await persistExchange(clarification.message, {
+          intent: "need_clarification",
+          executionId: execution.id,
+          missingRequiredVariables: clarification.fieldDefinitions.map((field) => field.key),
+        });
+        return NextResponse.json({
+          answer: clarification.message,
+          conversationId: persistedConversationId,
+          intent: "need_clarification",
+          confidence: match.confidence,
+          matchedOrchestrationIds: [selected.id],
+          matchedOrchestrationNames: [selected.name],
+          needsClarification: true,
+          clarifyingQuestions: clarification.fieldDefinitions.map((field) => ({
+            question: field.description?.trim()
+              ? `${field.key}: ${field.description.trim()}`
+              : `Please provide ${field.key}.`,
+            required: true,
+            variableName: field.key,
+          })),
+          requireUserConfirmation: false,
+          plan,
+          metadata: {
+            selectedOrchestrationId: selected.id,
+            selectedOrchestrationName: selected.name,
+            executionId: execution.id,
+            missingRequiredVariables: clarification.fieldDefinitions.map((field) => field.key),
+          },
+        });
+      }
+    }
+
+    if (continuationOnly) {
+      return NextResponse.json({
+        answer: "",
+        conversationId: persistedConversationId,
+        intent: "fallback",
+        needsClarification: false,
       });
     }
 
-    void executeChatbotExecutionInBackground({
-      execution,
-      orchestrationId: selected.id,
-      triggerId: chatbotTrigger?.id || null,
-      triggeredBy: userId,
-    });
+    if (!executionResult.success) {
+      return NextResponse.json({
+        answer: `Orchestration "${selected.name}" could not be completed.`,
+        intent: "execution_failed",
+        confidence: match.confidence,
+        matchedOrchestrationIds: [selected.id],
+        matchedOrchestrationNames: [selected.name],
+        needsClarification: false,
+        clarifyingQuestions: [],
+        requireUserConfirmation: false,
+        plan,
+        metadata: {
+          selectedOrchestrationId: selected.id,
+          selectedOrchestrationName: selected.name,
+          executionId: execution.id,
+          executionError: executionResult.error,
+        },
+      });
+    }
 
     return NextResponse.json({
       answer: `Approved. I started orchestration \"${selected.name}\".`,
@@ -996,7 +1093,7 @@ export async function GET() {
   });
 }
 
-async function executeChatbotExecutionInBackground(input: {
+async function executeChatbotExecution(input: {
   execution: Awaited<ReturnType<typeof createExecution>>;
   orchestrationId: string;
   triggerId: string | null;
@@ -1020,12 +1117,13 @@ async function executeChatbotExecutionInBackground(input: {
       });
 
       await updateTriggerLastTriggered(input.triggerId, result.error || "Unknown execution error");
-      return;
+      return result;
     }
 
     if (input.triggerId) {
       await updateTriggerLastTriggered(input.triggerId);
     }
+    return result;
   } catch (error) {
     if (input.triggerId) {
       await createTriggerLog({
@@ -1045,5 +1143,10 @@ async function executeChatbotExecutionInBackground(input: {
     }
 
     console.error("[Chatbot Workflow Router] Background execution failed:", error);
+    return {
+      success: false,
+      status: "failed" as const,
+      error: error instanceof Error ? error.message : "Unknown execution error",
+    };
   }
 }
