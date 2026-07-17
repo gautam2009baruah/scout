@@ -1554,7 +1554,7 @@ export function ScoutChatbot({
           trimmed,
           createActionRouterWorkflow(),
           contextWindow,
-          { forceActionMode: true }
+          { allowDraftPlan: true, forceActionMode: true }
         );
 
         if (workflowReply.routerIntent === "fallback") {
@@ -2240,7 +2240,9 @@ export function ScoutChatbot({
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.altKey && event.key.toLowerCase() === "a") {
       event.preventDefault();
-      if (!actionModeArmed) {
+      if (actionModeArmed) {
+        autoResetActionMode("keyboard_toggle_off");
+      } else {
         armActionMode("keyboard");
       }
       return;
@@ -2674,7 +2676,7 @@ export function ScoutChatbot({
                   />
                   <div className="flex items-center justify-end gap-3 px-1 pb-0.5">
                     <button
-                      aria-label={actionModeArmed ? "Action mode armed for next message" : "Arm action mode for next message"}
+                      aria-label={actionModeArmed ? "Turn off action mode" : "Arm action mode for next message"}
                       className={cn(
                         "inline-flex h-9 items-center gap-1 rounded-full border px-3 text-xs font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
                         actionModeArmed
@@ -2683,7 +2685,9 @@ export function ScoutChatbot({
                       )}
                       disabled={Boolean(authBlockedMessage) || isTyping}
                       onClick={() => {
-                        if (!actionModeArmed) {
+                        if (actionModeArmed) {
+                          autoResetActionMode("button_toggle_off");
+                        } else {
                           armActionMode("button");
                         }
                       }}
@@ -2691,7 +2695,7 @@ export function ScoutChatbot({
                       type="button"
                     >
                       <Zap className="h-4 w-4" />
-                      {actionModeArmed ? "Action: next" : "Action"}
+                      {actionModeArmed ? "Action on" : "Action"}
                     </button>
                     <button
                       aria-label="Send message"
@@ -3265,92 +3269,80 @@ function MessageBubble({
           </div>
         )}
         {isAssistant && message.workflowActionSuggestion && message.workflowActionSuggestion.status !== "resolved" && (
-          <div className="mt-3 rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-3 text-slate-900 shadow-sm">
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white shadow-sm">
-                <Zap className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-slate-950">
-                    {message.workflowActionSuggestion.routedByClassifier
-                      ? "This looks actionable. I can route it to the best workflow."
-                      : "I found a workflow that can perform this action."}
-                  </p>
-                  <span className="rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-700">
-                    {message.workflowActionSuggestion.routedByClassifier
-                      ? "Action Router"
-                      : message.workflowActionSuggestion.workflow.title}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-slate-600">
-                  Classifier confidence: {Math.round(message.workflowActionSuggestion.confidence * 100)}%.
-                </p>
-                {message.workflowActionSuggestion.status === "error" && message.workflowActionSuggestion.errorMessage ? (
-                  <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                    {message.workflowActionSuggestion.errorMessage}
-                  </p>
-                ) : null}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    className={cn(
-                      "inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
-                      message.workflowActionSuggestion.status === "running"
-                        ? "cursor-wait border border-slate-200 bg-slate-100 text-slate-400"
-                        : "border border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
-                    )}
-                    disabled={message.workflowActionSuggestion.status === "running"}
-                    onClick={() => onRunWorkflowAction(message.id, message.workflowActionSuggestion!)}
-                    type="button"
-                  >
-                    <Zap className="h-4 w-4" />
-                    Run Workflow
-                  </button>
-                  <button
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
-                    onClick={() => onContinueAsChat(message.id, message.workflowActionSuggestion!)}
-                    type="button"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    Continue as Chat
-                  </button>
-                </div>
-              </div>
+          <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-2 text-slate-900 shadow-sm">
+            <div className="flex items-center gap-2">
+              <Zap className="h-3.5 w-3.5 text-sky-700" />
+              <p className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-900">
+                {message.workflowActionSuggestion.routedByClassifier
+                  ? "Action workflow available"
+                  : "Workflow suggestion available"}
+              </p>
+              <span className="rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+                {message.workflowActionSuggestion.routedByClassifier
+                  ? "Action"
+                  : message.workflowActionSuggestion.workflow.title}
+              </span>
+            </div>
+            {message.workflowActionSuggestion.status === "error" && message.workflowActionSuggestion.errorMessage ? (
+              <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] text-rose-700">
+                {message.workflowActionSuggestion.errorMessage}
+              </p>
+            ) : null}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
+                  message.workflowActionSuggestion.status === "running"
+                    ? "cursor-wait border border-slate-200 bg-slate-100 text-slate-400"
+                    : "border border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+                )}
+                disabled={message.workflowActionSuggestion.status === "running"}
+                onClick={() => onRunWorkflowAction(message.id, message.workflowActionSuggestion!)}
+                type="button"
+              >
+                <Zap className="h-3.5 w-3.5" />
+                Run
+              </button>
+              <button
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                onClick={() => onContinueAsChat(message.id, message.workflowActionSuggestion!)}
+                type="button"
+              >
+                <MessageCircle className="h-3.5 w-3.5" />
+                Chat
+              </button>
             </div>
           </div>
         )}
         {isAssistant && message.intentModeSuggestion && message.intentModeSuggestion.status !== "resolved" && (
-          <div className="mt-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-3 text-slate-900 shadow-sm">
+          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 text-slate-900 shadow-sm">
             <div className="flex items-start gap-3">
-              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm">
-                <Network className="h-4 w-4" />
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white shadow-sm">
+                <Network className="h-3.5 w-3.5" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-slate-950">Do you want Action Mode or Chat Mode?</p>
+                  <p className="text-xs font-semibold text-slate-950">Choose mode for this request</p>
                   <span className="rounded-full border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
                     Low confidence
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-slate-600">
-                  Classifier confidence: {Math.round(message.intentModeSuggestion.confidence * 100)}%.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   <button
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-950 bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-950 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                     onClick={() => onChooseIntentModeAction(message.id, message.intentModeSuggestion!)}
                     type="button"
                   >
-                    <Zap className="h-4 w-4" />
-                    Action Mode
+                    <Zap className="h-3.5 w-3.5" />
+                    Action
                   </button>
                   <button
-                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-sky-200 hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                     onClick={() => onChooseIntentModeChat(message.id, message.intentModeSuggestion!)}
                     type="button"
                   >
-                    <MessageCircle className="h-4 w-4" />
-                    Chat Mode
+                    <MessageCircle className="h-3.5 w-3.5" />
+                    Chat
                   </button>
                 </div>
               </div>
