@@ -56,6 +56,7 @@ type ChatbotApiKeyRecord = {
 
 type ChatbotEnvironment = {
   id: string;
+  targetAppId: string;
   name: string;
   createdAt: string;
   updatedAt: string;
@@ -190,17 +191,18 @@ function IconActionButton({
 
 export function ChatbotSettingsForm({ companyName, defaults, initialSettings, canUseCompanyLevelApiKeys, targetApps }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("conversation");
+  const sortedTargetApps = useMemo(() => [...targetApps].sort((a, b) => a.name.localeCompare(b.name)), [targetApps]);
 
   const [settings, setSettings] = useState(initialSettings);
-  const initialScope: ScopeValue = canUseCompanyLevelApiKeys ? "global" : (targetApps[0]?.id ?? "global");
+  const initialScope: ScopeValue = canUseCompanyLevelApiKeys ? "global" : (sortedTargetApps[0]?.id ?? "global");
   const [scope, setScope] = useState<ScopeValue>(initialScope);
   const [status, setStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
 
   const [apiKeys, setApiKeys] = useState<ChatbotApiKeyRecord[]>([]);
-  const [environments, setEnvironments] = useState<ChatbotEnvironment[]>([]);
+  const [environmentsByTargetApp, setEnvironmentsByTargetApp] = useState<Record<string, ChatbotEnvironment[]>>({});
 
   const [editingKeyId, setEditingKeyId] = useState<string | null>(null);
-  const defaultTargetAppId = targetApps[0]?.id ?? "";
+  const defaultTargetAppId = sortedTargetApps[0]?.id ?? "";
   const [apiKeyForm, setApiKeyForm] = useState({
     targetAppId: defaultTargetAppId,
     name: "",
@@ -214,6 +216,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   const [rotatedApiKeyCopied, setRotatedApiKeyCopied] = useState(false);
 
   const [environmentModalOpen, setEnvironmentModalOpen] = useState(false);
+  const [environmentModalTargetAppId, setEnvironmentModalTargetAppId] = useState(defaultTargetAppId);
   const [newEnvironmentName, setNewEnvironmentName] = useState("");
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
   const [editingEnvironmentName, setEditingEnvironmentName] = useState("");
@@ -224,7 +227,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   const [embedStatus, setEmbedStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
   const [embedForm, setEmbedForm] = useState({
     id: "",
-    targetAppId: targetApps[0]?.id ?? "",
+    targetAppId: sortedTargetApps[0]?.id ?? "",
     environment: "",
     userId: "",
     requireUserGuid: true,
@@ -236,6 +239,9 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   const [embedResult, setEmbedResult] = useState<EmbedPackageResponse | null>(null);
   const [embedRecords, setEmbedRecords] = useState<EmbedPackageRecord[]>([]);
   const [loadingEmbedRecords, setLoadingEmbedRecords] = useState(false);
+
+  const apiKeyEnvironments = apiKeyForm.targetAppId ? (environmentsByTargetApp[apiKeyForm.targetAppId] ?? []) : [];
+  const modalEnvironments = environmentModalTargetAppId ? (environmentsByTargetApp[environmentModalTargetAppId] ?? []) : [];
 
   const nonRevokedApiKeys = useMemo(
     () => apiKeys
@@ -268,7 +274,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   }
 
   const packageEnvironmentOptions = useMemo(() => {
-    const fromEnvironments = environments.map((entry) => entry.name);
+    const fromEnvironments = (environmentsByTargetApp[embedForm.targetAppId] ?? []).map((entry) => entry.name);
     const fromKeys = apiKeys
       .filter((entry) => (entry.targetAppId || "") === embedForm.targetAppId)
       .map((entry) => entry.environment)
@@ -279,7 +285,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       .filter(Boolean);
 
     return Array.from(new Set([...fromEnvironments, ...fromKeys, ...fromRecords])).sort((a, b) => a.localeCompare(b));
-  }, [environments, apiKeys, embedRecords, embedForm.targetAppId]);
+  }, [environmentsByTargetApp, apiKeys, embedRecords, embedForm.targetAppId]);
 
   useEffect(() => {
     void loadEmbedRecords().catch((error) => {
@@ -343,21 +349,29 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     setApiKeys(Array.isArray(body?.keys) ? body.keys : []);
   }
 
-  async function loadEnvironments() {
-    const response = await fetch("/api/admin/chatbot-settings/environments", { method: "GET" });
+  async function loadEnvironments(targetAppId: string) {
+    if (!targetAppId) {
+      return;
+    }
+
+    const response = await fetch(`/api/admin/chatbot-settings/environments?targetAppId=${encodeURIComponent(targetAppId)}`, { method: "GET" });
     const body = await response.json().catch(() => null);
     if (!response.ok) {
       throw new Error(typeof body?.message === "string" ? body.message : "Unable to load environments.");
     }
 
-    setEnvironments(Array.isArray(body?.environments) ? body.environments : []);
+    setEnvironmentsByTargetApp((current) => ({
+      ...current,
+      [targetAppId]: Array.isArray(body?.environments) ? body.environments : []
+    }));
   }
 
   useEffect(() => {
-    Promise.all([loadApiKeys(), loadEnvironments()]).catch((error) => {
+    const initialEnvironmentTargets = Array.from(new Set([defaultTargetAppId, embedForm.targetAppId].filter(Boolean)));
+    Promise.all([loadApiKeys(), ...initialEnvironmentTargets.map((targetAppId) => loadEnvironments(targetAppId))]).catch((error) => {
       showToast(error instanceof Error ? error.message : "Unable to load chatbot key settings.", "error");
     });
-  }, []);
+  }, [defaultTargetAppId, embedForm.targetAppId]);
 
   function updateScope(nextScope: ScopeValue) {
     setScope(nextScope);
@@ -447,6 +461,11 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       allowedOriginsText: key.allowedOrigins.join(", "),
       expiresAt: key.expiresAt ? toLocalDateTimeInput(new Date(key.expiresAt)) : ""
     });
+    if (key.targetAppId) {
+      void loadEnvironments(key.targetAppId).catch((error) => {
+        showToast(error instanceof Error ? error.message : "Unable to load environments.", "error");
+      });
+    }
     setActiveTab("keys");
   }
 
@@ -580,7 +599,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     const response = await fetch("/api/admin/chatbot-settings/environments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name, targetAppId: environmentModalTargetAppId })
     });
 
     const body = await response.json().catch(() => null);
@@ -589,7 +608,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       return;
     }
 
-    setEnvironments(Array.isArray(body?.environments) ? body.environments : []);
+    setEnvironmentsByTargetApp((current) => ({
+      ...current,
+      [environmentModalTargetAppId]: Array.isArray(body?.environments) ? body.environments : []
+    }));
     setNewEnvironmentName("");
     showToast("Environment created.", "success");
   }
@@ -613,7 +635,12 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       return;
     }
 
-    setEnvironments(Array.isArray(body?.environments) ? body.environments : []);
+    const next = Array.isArray(body?.environments) ? body.environments : [];
+    const nextTargetAppId = next[0]?.targetAppId || environmentModalTargetAppId;
+    setEnvironmentsByTargetApp((current) => ({
+      ...current,
+      [nextTargetAppId]: next
+    }));
     setEditingEnvironmentId(null);
     setEditingEnvironmentName("");
     await loadApiKeys();
@@ -634,7 +661,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
           return;
         }
 
-        setEnvironments(Array.isArray(body?.environments) ? body.environments : []);
+        setEnvironmentsByTargetApp((current) => ({
+          ...current,
+          [environmentModalTargetAppId]: Array.isArray(body?.environments) ? body.environments : []
+        }));
         if (apiKeyForm.environment === name) {
           setApiKeyForm((current) => ({ ...current, environment: "" }));
         }
@@ -886,7 +916,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     onChange={(event) => updateScope(event.target.value)}
                   >
                     {canUseCompanyLevelApiKeys ? <option value="global">Global default</option> : null}
-                    {targetApps.map((app) => (
+                    {sortedTargetApps.map((app) => (
                       <option key={app.id} value={app.id}>{app.name}</option>
                     ))}
                   </select>
@@ -966,10 +996,16 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     <select
                       className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       value={apiKeyForm.targetAppId}
-                      onChange={(event) => setApiKeyForm((current) => ({ ...current, targetAppId: event.target.value }))}
+                      onChange={(event) => {
+                        const nextTargetAppId = event.target.value;
+                        setApiKeyForm((current) => ({ ...current, targetAppId: nextTargetAppId, environment: "" }));
+                        void loadEnvironments(nextTargetAppId).catch((error) => {
+                          showToast(error instanceof Error ? error.message : "Unable to load environments.", "error");
+                        });
+                      }}
                       disabled={editingKeyId !== null}
                     >
-                      {targetApps.map((app) => (
+                      {sortedTargetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
                       ))}
                     </select>
@@ -996,7 +1032,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                       disabled={editingKeyId !== null}
                     >
                       <option value="">Select environment</option>
-                      {environments.map((env) => (
+                      {apiKeyEnvironments.map((env) => (
                         <option key={env.id} value={env.name}>{env.name}</option>
                       ))}
                     </select>
@@ -1006,7 +1042,13 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     <div className="relative group">
                       <button
                         className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        onClick={() => setEnvironmentModalOpen(true)}
+                        onClick={() => {
+                          setEnvironmentModalTargetAppId(apiKeyForm.targetAppId);
+                          setEnvironmentModalOpen(true);
+                          void loadEnvironments(apiKeyForm.targetAppId).catch((error) => {
+                            showToast(error instanceof Error ? error.message : "Unable to load environments.", "error");
+                          });
+                        }}
                         type="button"
                         disabled={editingKeyId !== null}
                         title="Create, edit, or delete environment values for this dropdown."
@@ -1186,11 +1228,17 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     <span className="inline-flex items-center gap-1.5">Target app <HelpHint text="Target application for which the package snippets are generated." /></span>
                     <select
                       className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
-                      onChange={(event) => setEmbedForm((current) => ({ ...current, id: "", targetAppId: event.target.value, environment: "", apiKey: "" }))}
+                      onChange={(event) => {
+                        const nextTargetAppId = event.target.value;
+                        setEmbedForm((current) => ({ ...current, id: "", targetAppId: nextTargetAppId, environment: "", apiKey: "" }));
+                        void loadEnvironments(nextTargetAppId).catch((error) => {
+                          showToast(error instanceof Error ? error.message : "Unable to load environments.", "error");
+                        });
+                      }}
                       value={embedForm.targetAppId}
                       disabled={Boolean(embedForm.id)}
                     >
-                      {targetApps.map((app) => (
+                      {sortedTargetApps.map((app) => (
                         <option key={app.id} value={app.id}>{app.name}</option>
                       ))}
                     </select>
@@ -1392,6 +1440,23 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
+              <select
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm md:col-span-2"
+                value={environmentModalTargetAppId}
+                onChange={(event) => {
+                  const nextTargetAppId = event.target.value;
+                  setEnvironmentModalTargetAppId(nextTargetAppId);
+                  setEditingEnvironmentId(null);
+                  setEditingEnvironmentName("");
+                  void loadEnvironments(nextTargetAppId).catch((error) => {
+                    showToast(error instanceof Error ? error.message : "Unable to load environments.", "error");
+                  });
+                }}
+              >
+                {sortedTargetApps.map((app) => (
+                  <option key={app.id} value={app.id}>{app.name}</option>
+                ))}
+              </select>
               <input
                 className="h-10 rounded-lg border border-slate-200 px-3 text-sm"
                 placeholder="New environment name"
@@ -1402,11 +1467,11 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
             </div>
 
             <div className="mt-4 max-h-64 overflow-auto rounded-lg border border-slate-200">
-              {environments.length === 0 ? (
+              {modalEnvironments.length === 0 ? (
                 <p className="p-4 text-sm text-slate-500">No environments created yet.</p>
               ) : (
                 <div className="divide-y divide-slate-200">
-                  {environments.map((env) => (
+                  {modalEnvironments.map((env) => (
                     <div className="flex items-center gap-2 p-3" key={env.id}>
                       {editingEnvironmentId === env.id ? (
                         <input

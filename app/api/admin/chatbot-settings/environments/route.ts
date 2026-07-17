@@ -9,7 +9,7 @@ import {
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getCurrentAdminSession();
   if (!session) {
     return NextResponse.json({ message: "Authentication required." }, { status: 401 });
@@ -19,8 +19,13 @@ export async function GET() {
     return NextResponse.json({ message: "You do not have permission to manage chatbot settings." }, { status: 403 });
   }
 
+  const targetAppId = new URL(request.url).searchParams.get("targetAppId")?.trim() || "";
+  if (!targetAppId) {
+    return NextResponse.json({ message: "targetAppId is required." }, { status: 400 });
+  }
+
   try {
-    const environments = await listChatbotKeyEnvironments(session);
+    const environments = await listChatbotKeyEnvironments(session, targetAppId);
     return NextResponse.json({ environments });
   } catch (error) {
     if (error instanceof ChatbotSettingsError) {
@@ -47,7 +52,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const environments = await createChatbotKeyEnvironment(session, String(body.name || ""));
+    const targetAppId = String(body.targetAppId || "").trim();
+    if (!targetAppId) {
+      return NextResponse.json({ message: "targetAppId is required." }, { status: 400 });
+    }
+
+    const environments = await createChatbotKeyEnvironment(session, targetAppId, String(body.name || ""));
     return NextResponse.json({ environments });
   } catch (error) {
     if (error instanceof ChatbotSettingsError) {

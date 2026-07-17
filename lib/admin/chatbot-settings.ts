@@ -235,6 +235,7 @@ export type CreateChatbotApiKeyInput = {
 
 export type ChatbotKeyEnvironmentRecord = {
   id: string;
+  targetAppId: string;
   name: string;
   createdAt: string;
   updatedAt: string;
@@ -318,21 +319,23 @@ function parseExpiryDate(value?: string | null) {
   return parsed;
 }
 
-async function assertEnvironmentExists(session: AdminSession, companyId: string, environment: string) {
+async function assertEnvironmentExists(session: AdminSession, companyId: string, targetAppId: string, environment: string) {
   const normalized = normalizeEnvironment(environment);
   if (!normalized) {
     throw new ChatbotSettingsError("Environment is required.", 400);
   }
 
+  await assertTargetAppAccess(session, companyId, targetAppId);
+
   const result = await getPool().query<{ id: string }>(
     `
       SELECT id
       FROM chatbot_api_key_environments
-      WHERE company_id = $1
+      WHERE target_app_id = $1
         AND normalized_name = $2
       LIMIT 1
     `,
-    [companyId, normalized]
+    [targetAppId, normalized]
   );
 
   if ((result.rowCount ?? 0) === 0) {
@@ -341,7 +344,7 @@ async function assertEnvironmentExists(session: AdminSession, companyId: string,
 }
 
 async function ensureNoOtherActiveKeyInEnvironment(
-  companyId: string,
+  targetAppId: string,
   environment: string,
   excludeApiKeyId?: string
 ) {
@@ -354,17 +357,15 @@ async function ensureNoOtherActiveKeyInEnvironment(
     `
       SELECT id
       FROM chatbot_api_keys k
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       INNER JOIN chatbot_api_key_environments env ON env.id = k.environment_id
-      WHERE cta.company_id = $1
+      WHERE k.target_app_id = $1
         AND env.normalized_name = $2
         AND status = 'active'
         AND is_active = true
         AND ($3::uuid IS NULL OR id <> $3)
       LIMIT 1
     `,
-    [companyId, normalized, excludeApiKeyId ?? null]
+    [targetAppId, normalized, excludeApiKeyId ?? null]
   );
 
   if ((result.rowCount ?? 0) > 0) {
@@ -564,11 +565,12 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
   if (!environment) {
     throw new ChatbotSettingsError("Environment is required.", 400);
   }
-  await assertEnvironmentExists(session, companyId, environment);
-
   const targetAppId = input.targetAppId ?? null;
   await assertTargetAppAccess(session, companyId, targetAppId);
-  await assertCompanyLevelApiKeyScopeAllowed(session, companyId, targetAppId);
+  if (!targetAppId) {
+    throw new ChatbotSettingsError("Target application is required.", 400);
+  }
+  await assertEnvironmentExists(session, companyId, targetAppId, environment);
 
   const allowedOrigins = normalizeOrigins(input.allowedOrigins);
   if (allowedOrigins.length === 0) {
@@ -630,7 +632,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, (SELECT id FROM chatbot_api_key_environments WHERE company_id = $13 AND normalized_name = $5 LIMIT 1), $6, $7, $8, $9::jsonb, $10, $11, $11)
+      VALUES ($1, $2, $3, $4, (SELECT id FROM chatbot_api_key_environments WHERE target_app_id = $4 AND normalized_name = $5 LIMIT 1), $6, $7, $8, $9::jsonb, $10, $11, $11)
       RETURNING
         chatbot_api_keys.id,
         chatbot_api_keys.name,
@@ -658,8 +660,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
       initialStatus,
       JSON.stringify(allowedOrigins),
       expiresAt,
-      session.user.id,
-      companyId
+      session.user.id
     ]
   );
 
@@ -730,19 +731,22 @@ export async function updateChatbotApiKey(
     throw new ChatbotSettingsError("Environment is required.", 400);
   }
 
-  await assertEnvironmentExists(session, companyId, nextEnvironment);
-
   if (Object.prototype.hasOwnProperty.call(input, "targetAppId")) {
     await assertTargetAppAccess(session, companyId, nextTargetAppId);
-    await assertCompanyLevelApiKeyScopeAllowed(session, companyId, nextTargetAppId);
   }
+
+  if (!nextTargetAppId) {
+    throw new ChatbotSettingsError("Target application is required.", 400);
+  }
+
+  await assertEnvironmentExists(session, companyId, nextTargetAppId, nextEnvironment);
 
   if (input.status === "active" && current.rows[0].status !== "suspended") {
     throw new ChatbotSettingsError("Only suspended API keys can be re-activated.", 400);
   }
 
   if (nextStatus === "active") {
-    await ensureNoOtherActiveKeyInEnvironment(companyId, nextEnvironment, apiKeyId);
+    await ensureNoOtherActiveKeyInEnvironment(nextTargetAppId, nextEnvironment, apiKeyId);
   }
 
   await assertUniqueApiKeyNamePerTargetApp(companyId, nextTargetAppId, nextName, nextStatus, apiKeyId);
@@ -784,8 +788,8 @@ export async function updateChatbotApiKey(
   }
 
   if (typeof input.environment === "string") {
-    updates.push(`environment_id = (SELECT id FROM chatbot_api_key_environments WHERE company_id = $${index + 1} AND normalized_name = $${index} LIMIT 1)`);
-    values.push(nextEnvironment, companyId);
+    updates.push(`environment_id = (SELECT id FROM chatbot_api_key_environments WHERE target_app_id = $${index + 1} AND normalized_name = $${index} LIMIT 1)`);
+    values.push(nextEnvironment, nextTargetAppId);
     index += 1;
     index += 1;
   }
@@ -1009,36 +1013,40 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
   };
 }
 
-export async function listChatbotKeyEnvironments(session: AdminSession): Promise<ChatbotKeyEnvironmentRecord[]> {
+export async function listChatbotKeyEnvironments(session: AdminSession, targetAppId: string): Promise<ChatbotKeyEnvironmentRecord[]> {
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
+  await assertTargetAppAccess(session, companyId, targetAppId);
 
   const result = await getPool().query<{
     id: string;
+    target_app_id: string;
     name: string;
     created_at: Date;
     updated_at: Date;
   }>(
     `
-      SELECT id, name, created_at, updated_at
+      SELECT id, target_app_id, name, created_at, updated_at
       FROM chatbot_api_key_environments
-      WHERE company_id = $1
+      WHERE target_app_id = $1
       ORDER BY name ASC
     `,
-    [companyId]
+    [targetAppId]
   );
 
   return result.rows.map((row) => ({
     id: row.id,
+    targetAppId: row.target_app_id,
     name: row.name,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   }));
 }
 
-export async function createChatbotKeyEnvironment(session: AdminSession, nameInput: string) {
+export async function createChatbotKeyEnvironment(session: AdminSession, targetAppId: string, nameInput: string) {
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
+  await assertTargetAppAccess(session, companyId, targetAppId);
 
   const name = String(nameInput || "").trim();
   const normalized = normalizeEnvironment(name);
@@ -1049,7 +1057,7 @@ export async function createChatbotKeyEnvironment(session: AdminSession, nameInp
   await getPool().query(
     `
       INSERT INTO chatbot_api_key_environments (
-        company_id,
+        target_app_id,
         name,
         normalized_name,
         created_by,
@@ -1057,7 +1065,7 @@ export async function createChatbotKeyEnvironment(session: AdminSession, nameInp
       )
       VALUES ($1, $2, $3, $4, $4)
     `,
-    [companyId, normalized, normalized, session.user.id]
+    [targetAppId, normalized, normalized, session.user.id]
   ).catch((error: unknown) => {
     if (error instanceof Error && /unique/i.test(error.message)) {
       throw new ChatbotSettingsError("Environment already exists.", 409);
@@ -1065,7 +1073,7 @@ export async function createChatbotKeyEnvironment(session: AdminSession, nameInp
     throw error;
   });
 
-  return listChatbotKeyEnvironments(session);
+  return listChatbotKeyEnvironments(session, targetAppId);
 }
 
 export async function updateChatbotKeyEnvironment(session: AdminSession, id: string, nameInput: string) {
@@ -1077,12 +1085,19 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
     throw new ChatbotSettingsError("Environment name is required.", 400);
   }
 
-  const existing = await getPool().query<{ normalized_name: string }>(
+  const existing = await getPool().query<{ normalized_name: string; target_app_id: string }>(
     `
-      SELECT normalized_name
+      SELECT normalized_name, target_app_id
       FROM chatbot_api_key_environments
       WHERE id = $1
-        AND company_id = $2
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = chatbot_api_key_environments.target_app_id
+            AND cta.company_id = $2
+            AND cta.deleted_at IS NULL
+        )
       LIMIT 1
     `,
     [id, companyId]
@@ -1092,6 +1107,8 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
     throw new ChatbotSettingsError("Environment not found.", 404);
   }
 
+  await assertTargetAppAccess(session, companyId, existing.rows[0].target_app_id);
+
   await getPool().query(
     `
       UPDATE chatbot_api_key_environments
@@ -1100,9 +1117,9 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
           updated_by = $3,
           updated_at = now()
       WHERE id = $4
-        AND company_id = $5
+        AND target_app_id = $5
     `,
-    [normalized, normalized, session.user.id, id, companyId]
+    [normalized, normalized, session.user.id, id, existing.rows[0].target_app_id]
   ).catch((error: unknown) => {
     if (error instanceof Error && /unique/i.test(error.message)) {
       throw new ChatbotSettingsError("Environment already exists.", 409);
@@ -1112,19 +1129,26 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
 
   // No key-row update needed; keys reference environment by environment_id.
 
-  return listChatbotKeyEnvironments(session);
+  return listChatbotKeyEnvironments(session, existing.rows[0].target_app_id);
 }
 
 export async function deleteChatbotKeyEnvironment(session: AdminSession, id: string) {
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
 
-  const envResult = await getPool().query<{ id: string }>(
+  const envResult = await getPool().query<{ id: string; target_app_id: string }>(
     `
-      SELECT id
+      SELECT id, target_app_id
       FROM chatbot_api_key_environments
       WHERE id = $1
-        AND company_id = $2
+        AND EXISTS (
+          SELECT 1
+          FROM guided_workflow_target_apps gta
+          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+          WHERE gta.id = chatbot_api_key_environments.target_app_id
+            AND cta.company_id = $2
+            AND cta.deleted_at IS NULL
+        )
       LIMIT 1
     `,
     [id, companyId]
@@ -1134,22 +1158,16 @@ export async function deleteChatbotKeyEnvironment(session: AdminSession, id: str
     throw new ChatbotSettingsError("Environment not found.", 404);
   }
 
+  await assertTargetAppAccess(session, companyId, envResult.rows[0].target_app_id);
+
   const inUse = await getPool().query<{ id: string }>(
     `
       SELECT id
       FROM chatbot_api_keys
-      WHERE environment_id = $2
-        AND EXISTS (
-          SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = chatbot_api_keys.target_app_id
-            AND cta.company_id = $1
-            AND cta.deleted_at IS NULL
-        )
+      WHERE environment_id = $1
       LIMIT 1
     `,
-    [companyId, envResult.rows[0].id]
+    [envResult.rows[0].id]
   );
 
   if ((inUse.rowCount ?? 0) > 0) {
@@ -1160,12 +1178,12 @@ export async function deleteChatbotKeyEnvironment(session: AdminSession, id: str
     `
       DELETE FROM chatbot_api_key_environments
       WHERE id = $1
-        AND company_id = $2
+        AND target_app_id = $2
     `,
-    [id, companyId]
+    [id, envResult.rows[0].target_app_id]
   );
 
-  return listChatbotKeyEnvironments(session);
+  return listChatbotKeyEnvironments(session, envResult.rows[0].target_app_id);
 }
 
 function mapChatbotEmbedPackageRow(row: {
@@ -1391,7 +1409,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
   }
 
   await assertTargetAppAccess(session, companyId, targetAppId);
-  await assertEnvironmentExists(session, companyId, environment);
+  await assertEnvironmentExists(session, companyId, targetAppId, environment);
 
   const matchedApiKey = await getPool().query<{
     id: string;
@@ -1409,14 +1427,14 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
       INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
       INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
-      WHERE cta.company_id = $1
+      WHERE k.target_app_id = $1
         AND k.key_hash = $2
         AND k.status = 'active'
         AND k.is_active = true
         AND (k.expires_at IS NULL OR k.expires_at > now())
       LIMIT 1
     `,
-    [companyId, hashSecret(apiKey)]
+    [targetAppId, hashSecret(apiKey)]
   );
 
   if ((matchedApiKey.rowCount ?? 0) === 0) {
@@ -1483,7 +1501,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         updated_by,
         deleted_at
       )
-      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, (SELECT id FROM chatbot_api_key_environments WHERE company_id = $13 AND normalized_name = $3 LIMIT 1), $4, $5, $6, $7, $8, $9, $10, $11, $11, NULL)
+      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, (SELECT id FROM chatbot_api_key_environments WHERE target_app_id = $2 AND normalized_name = $3 LIMIT 1), $4, $5, $6, $7, $8, $9, $10, $11, $11, NULL)
       ON CONFLICT (id)
       DO UPDATE SET
         target_app_id = EXCLUDED.target_app_id,
@@ -1526,7 +1544,6 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
       apiUrl,
       assistantName,
       session.user.id,
-      companyId,
     ]
   );
 
