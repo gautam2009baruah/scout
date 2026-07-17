@@ -70,7 +70,6 @@ export async function GET(
           esc.description,
           esc.from_name,
           esc.from_email,
-          esc.reply_to_email,
           esc.smtp_host,
           esc.smtp_port,
           esc.smtp_secure,
@@ -139,7 +138,6 @@ export async function PATCH(
     if (body.description !== undefined) addUpdate("description", body.description ? String(body.description).trim() : null);
     if (body.fromName !== undefined) addUpdate("from_name", body.fromName ? String(body.fromName).trim() : null);
     if (body.fromEmail !== undefined) addUpdate("from_email", String(body.fromEmail).trim());
-    if (body.replyToEmail !== undefined) addUpdate("reply_to_email", body.replyToEmail ? String(body.replyToEmail).trim() : null);
     if (body.smtpHost !== undefined) addUpdate("smtp_host", body.smtpHost ? String(body.smtpHost).trim() : null);
     if (body.smtpPort !== undefined) addUpdate("smtp_port", Number(body.smtpPort));
     if (body.smtpSecure !== undefined) addUpdate("smtp_secure", Boolean(body.smtpSecure));

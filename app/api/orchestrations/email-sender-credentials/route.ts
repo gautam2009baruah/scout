@@ -47,7 +47,6 @@ export async function GET(request: NextRequest) {
       description: string | null;
       from_name: string | null;
       from_email: string;
-      reply_to_email: string | null;
       smtp_host: string | null;
       smtp_port: number | null;
       smtp_secure: boolean;
@@ -68,7 +67,6 @@ export async function GET(request: NextRequest) {
           esc.description,
           esc.from_name,
           esc.from_email,
-          esc.reply_to_email,
           esc.smtp_host,
           esc.smtp_port,
           esc.smtp_secure,
@@ -102,13 +100,14 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const companyId = String(body.companyId || session.user.tenantId);
-    const targetAppId = body.targetAppId ? String(body.targetAppId) : null;
+    const targetAppIds: string[] = Array.isArray(body.targetAppIds)
+      ? body.targetAppIds.map((value: unknown) => String(value || "").trim()).filter(Boolean)
+      : (body.targetAppId ? [String(body.targetAppId)] : []);
     const provider = String(body.provider || "smtp") as "smtp" | "gmail" | "outlook";
     const name = String(body.name || "").trim();
     const description = body.description ? String(body.description).trim() : null;
     const fromName = body.fromName ? String(body.fromName).trim() : null;
     const fromEmail = String(body.fromEmail || "").trim();
-    const replyToEmail = body.replyToEmail ? String(body.replyToEmail).trim() : null;
     const smtpHost = body.smtpHost ? String(body.smtpHost).trim() : null;
     const smtpPort = body.smtpPort ? Number(body.smtpPort) : 587;
     const smtpSecure = body.smtpSecure === true;
@@ -125,85 +124,93 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Name and From email are required" }, { status: 400 });
     }
 
+    if (targetAppIds.length === 0) {
+      return NextResponse.json({ success: false, error: "At least one target application is required" }, { status: 400 });
+    }
+
     if (provider === "smtp" && (!smtpHost || !smtpUsername || !smtpPassword)) {
       return NextResponse.json({ success: false, error: "SMTP host, username, and password are required for SMTP provider" }, { status: 400 });
     }
 
-    await validateTargetAppScope(companyId, targetAppId);
+    for (const targetAppId of targetAppIds) {
+      await validateTargetAppScope(companyId, targetAppId);
+    }
 
     const client = await getPool().connect();
     try {
       await client.query("BEGIN");
 
-      if (isPrimary && isActive) {
-        await client.query(
-          `
-            UPDATE email_sender_credentials
-            SET is_primary = false, updated_by = $3, updated_at = now()
-            WHERE company_id = $1
-              AND COALESCE(target_app_id, '00000000-0000-0000-0000-000000000000'::uuid)
-                = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
-          `,
-          [companyId, targetAppId, session.user.id]
-        );
-      }
+      const createdIds: string[] = [];
 
-      const result = await client.query(
-        `
-          INSERT INTO email_sender_credentials (
-            company_id,
-            target_app_id,
+      for (const targetAppId of targetAppIds) {
+        if (isPrimary && isActive) {
+          await client.query(
+            `
+              UPDATE email_sender_credentials
+              SET is_primary = false, updated_by = $3, updated_at = now()
+              WHERE company_id = $1
+                AND target_app_id = $2
+            `,
+            [companyId, targetAppId, session.user.id]
+          );
+        }
+
+        const result = await client.query<{ id: string }>(
+          `
+            INSERT INTO email_sender_credentials (
+              company_id,
+              target_app_id,
+              provider,
+              name,
+              description,
+              from_name,
+              from_email,
+              smtp_host,
+              smtp_port,
+              smtp_secure,
+              smtp_username,
+              smtp_password,
+              oauth_access_token,
+              oauth_refresh_token,
+              oauth_token_expires_at,
+              oauth_scope,
+              is_active,
+              is_primary,
+              created_by,
+              updated_by
+            )
+            VALUES (
+              $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19
+            )
+            RETURNING id
+          `,
+          [
+            companyId,
+            targetAppId,
             provider,
             name,
             description,
-            from_name,
-            from_email,
-            reply_to_email,
-            smtp_host,
-            smtp_port,
-            smtp_secure,
-            smtp_username,
-            smtp_password,
-            oauth_access_token,
-            oauth_refresh_token,
-            oauth_token_expires_at,
-            oauth_scope,
-            is_active,
-            is_primary,
-            created_by,
-            updated_by
-          )
-          VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20
-          )
-          RETURNING id
-        `,
-        [
-          companyId,
-          targetAppId,
-          provider,
-          name,
-          description,
-          fromName,
-          fromEmail,
-          replyToEmail,
-          smtpHost,
-          Number.isFinite(smtpPort) ? smtpPort : 587,
-          smtpSecure,
-          smtpUsername,
-          encryptSecret(smtpPassword),
-          encryptSecret(oauthAccessToken),
-          encryptSecret(oauthRefreshToken),
-          oauthTokenExpiresAt,
-          oauthScope,
-          isActive,
-          isPrimary && isActive,
-          session.user.id
-        ]
-      );
+            fromName,
+            fromEmail,
+            smtpHost,
+            Number.isFinite(smtpPort) ? smtpPort : 587,
+            smtpSecure,
+            smtpUsername,
+            encryptSecret(smtpPassword),
+            encryptSecret(oauthAccessToken),
+            encryptSecret(oauthRefreshToken),
+            oauthTokenExpiresAt,
+            oauthScope,
+            isActive,
+            isPrimary && isActive,
+            session.user.id
+          ]
+        );
+        createdIds.push(result.rows[0].id);
+      }
 
       await client.query("COMMIT");
-      return NextResponse.json({ success: true, credentialId: result.rows[0].id });
+      return NextResponse.json({ success: true, credentialIds: createdIds });
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Inbox, Mail, Send, ShieldCheck, Star, X } from "lucide-react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { FlaskConical, Inbox, Mail, Pencil, Power, Send, ShieldCheck, Star, Trash2, X } from "lucide-react";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 
 type TargetApp = {
@@ -45,7 +45,6 @@ type SenderCredential = {
   description: string | null;
   from_name: string | null;
   from_email: string;
-  reply_to_email: string | null;
   smtp_host: string | null;
   smtp_port: number | null;
   smtp_secure: boolean;
@@ -58,13 +57,13 @@ type SenderCredential = {
 
 type NewSenderCredential = {
   companyId: string;
-  scopeTargetAppId: string;
+  targetAppIds: string[];
+  authenticationMode: "smtp_password" | "oauth2";
   provider: "smtp" | "gmail" | "outlook";
   name: string;
   description: string;
   fromName: string;
   fromEmail: string;
-  replyToEmail: string;
   smtpHost: string;
   smtpPort: number;
   smtpSecure: boolean;
@@ -74,7 +73,36 @@ type NewSenderCredential = {
   isPrimary: boolean;
 };
 
-const GLOBAL_SCOPE = "__company__";
+function IconActionButton({
+  label,
+  onClick,
+  disabled,
+  tone = "default",
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "default" | "danger";
+  children: ReactNode;
+}) {
+  const toneClass = tone === "danger"
+    ? "border-red-300 text-red-700 hover:bg-red-50"
+    : "border-slate-300 text-slate-700 hover:bg-slate-100";
+
+  return (
+    <button
+      type="button"
+      className={`inline-flex h-8 w-8 items-center justify-center rounded border ${toneClass} disabled:opacity-50`}
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName }: { selectedCompanyId: string; selectedCompanyName?: string }) {
   const [activeTab, setActiveTab] = useState<"inbox" | "sender">("inbox");
@@ -88,6 +116,8 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [showAddSenderForm, setShowAddSenderForm] = useState(false);
+  const [editingInboxId, setEditingInboxId] = useState<string | null>(null);
+  const [editingSenderId, setEditingSenderId] = useState<string | null>(null);
 
   const [newCredential, setNewCredential] = useState<NewInboxCredential>({
     companyId: selectedCompanyId,
@@ -103,13 +133,13 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
 
   const [newSenderCredential, setNewSenderCredential] = useState<NewSenderCredential>({
     companyId: selectedCompanyId,
-    scopeTargetAppId: GLOBAL_SCOPE,
+    targetAppIds: [],
+    authenticationMode: "smtp_password",
     provider: "smtp",
     name: "",
     description: "",
     fromName: "",
     fromEmail: "",
-    replyToEmail: "",
     smtpHost: "",
     smtpPort: 587,
     smtpSecure: false,
@@ -126,12 +156,13 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
   const [senderDeletingId, setSenderDeletingId] = useState<string | null>(null);
   const [senderTogglingId, setSenderTogglingId] = useState<string | null>(null);
   const [senderPrimaryId, setSenderPrimaryId] = useState<string | null>(null);
+  const [senderTestingId, setSenderTestingId] = useState<string | null>(null);
 
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
-  const scopeOptions = useMemo(
-    () => [{ id: GLOBAL_SCOPE, name: "Company level (default fallback)" }, ...targetApps],
+  const targetAppOptions = useMemo(
+    () => [...targetApps].sort((a, b) => a.name.localeCompare(b.name)),
     [targetApps]
   );
 
@@ -202,12 +233,70 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     setNewSenderCredential((current) => ({
       ...current,
       companyId: selectedCompanyId,
-      scopeTargetAppId: GLOBAL_SCOPE,
+      targetAppIds: [],
       isPrimary: false,
     }));
   }, [loadCredentials, loadSenderCredentials, loadTargetApps, selectedCompanyId]);
 
-  async function handleAddCredential() {
+  function resetInboxForm() {
+    setEditingInboxId(null);
+    setNewCredential({
+      companyId: selectedCompanyId,
+      provider: "imap",
+      name: "",
+      emailAddress: "",
+      imapHost: "",
+      imapPort: 993,
+      imapPassword: "",
+      imapTls: true,
+      targetAppIds: [],
+    });
+  }
+
+  async function handleEditInboxCredential(credentialId: string) {
+    try {
+      const response = await fetch(`/api/orchestrations/email-credentials/${credentialId}`);
+      const data = await response.json() as {
+        success?: boolean;
+        error?: string;
+        credential?: {
+          id: string;
+          provider: "imap" | "gmail" | "outlook";
+          name: string;
+          email_address: string;
+          imap_host?: string | null;
+          imap_port?: number | null;
+          imap_tls?: boolean | null;
+          target_apps?: Array<{ id: string }>;
+        };
+      };
+
+      if (!data.success || !data.credential) {
+        showToast(data.error || "Unable to load inbox credential for edit.", "error");
+        return;
+      }
+
+      const credential = data.credential;
+      setEditingInboxId(credential.id);
+      setShowAddForm(true);
+      setNewCredential({
+        companyId: selectedCompanyId,
+        provider: credential.provider,
+        name: credential.name,
+        emailAddress: credential.email_address,
+        imapHost: credential.imap_host || "",
+        imapPort: credential.imap_port || 993,
+        imapPassword: "",
+        imapTls: credential.imap_tls !== false,
+        targetAppIds: Array.isArray(credential.target_apps) ? credential.target_apps.map((item) => item.id) : [],
+      });
+    } catch (error) {
+      console.error("[Email Credentials] Load inbox credential for edit error:", error);
+      showToast("Unable to load inbox credential for edit.", "error");
+    }
+  }
+
+  async function handleSaveInboxCredential() {
     if (!selectedCompanyId) {
       showToast("Selected company is required", "error");
       return;
@@ -223,40 +312,45 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
       return;
     }
 
-    if (newCredential.provider === "imap" && (!newCredential.imapHost || !newCredential.imapPassword)) {
-      showToast("IMAP host and password are required", "error");
+    if (newCredential.provider === "imap" && !newCredential.imapHost) {
+      showToast("IMAP host is required", "error");
+      return;
+    }
+
+    if (!editingInboxId && newCredential.provider === "imap" && !newCredential.imapPassword) {
+      showToast("IMAP password is required", "error");
       return;
     }
 
     try {
-      const response = await fetch("/api/orchestrations/email-credentials", {
-        method: "POST",
+      const response = await fetch(editingInboxId ? `/api/orchestrations/email-credentials/${editingInboxId}` : "/api/orchestrations/email-credentials", {
+        method: editingInboxId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newCredential),
+        body: JSON.stringify(editingInboxId
+          ? {
+              name: newCredential.name,
+              emailAddress: newCredential.emailAddress,
+              imapHost: newCredential.imapHost,
+              imapPort: newCredential.imapPort,
+              imapPassword: newCredential.imapPassword,
+              imapTls: newCredential.imapTls,
+              targetAppIds: newCredential.targetAppIds,
+            }
+          : newCredential),
       });
 
       const data = await response.json() as { success?: boolean; error?: string };
 
       if (data.success) {
-        showToast("Inbox credential added successfully", "success");
+        showToast(editingInboxId ? "Inbox credential updated successfully" : "Inbox credential added successfully", "success");
         setShowAddForm(false);
-        setNewCredential({
-          companyId: selectedCompanyId,
-          provider: "imap",
-          name: "",
-          emailAddress: "",
-          imapHost: "",
-          imapPort: 993,
-          imapPassword: "",
-          imapTls: true,
-          targetAppIds: [],
-        });
+        resetInboxForm();
         await loadCredentials();
       } else {
-        showToast(data.error || "Failed to add inbox credential.", "error");
+        showToast(data.error || `Failed to ${editingInboxId ? "update" : "add"} inbox credential.`, "error");
       }
     } catch (error) {
-      console.error("[Email Credentials] Add inbox credential error:", error);
+      console.error("[Email Credentials] Save inbox credential error:", error);
       showToast("Unable to save inbox credential. Please try again.", "error");
     }
   }
@@ -336,14 +430,124 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     });
   }
 
-  async function handleAddSenderCredential() {
+  function resetSenderForm() {
+    setEditingSenderId(null);
+    setNewSenderCredential((current) => ({
+      ...current,
+      targetAppIds: [],
+      authenticationMode: "smtp_password",
+      name: "",
+      description: "",
+      fromName: "",
+      fromEmail: "",
+      smtpHost: "",
+      smtpPort: 587,
+      smtpSecure: false,
+      smtpUsername: "",
+      smtpPassword: "",
+      isActive: true,
+      isPrimary: false,
+    }));
+  }
+
+  async function handleEditSenderCredential(credentialId: string) {
+    try {
+      const response = await fetch(`/api/orchestrations/email-sender-credentials/${credentialId}`);
+      const data = await response.json() as {
+        success?: boolean;
+        error?: string;
+        credential?: {
+          id: string;
+          target_app_id: string | null;
+          provider: "smtp" | "gmail" | "outlook";
+          name: string;
+          description: string | null;
+          from_name: string | null;
+          from_email: string;
+          smtp_host: string | null;
+          smtp_port: number | null;
+          smtp_secure: boolean;
+          smtp_username: string | null;
+          is_active: boolean;
+          is_primary: boolean;
+        };
+      };
+
+      if (!data.success || !data.credential) {
+        showToast(data.error || "Unable to load sender credential for edit.", "error");
+        return;
+      }
+
+      const credential = data.credential;
+      setEditingSenderId(credential.id);
+      setShowAddSenderForm(true);
+      setNewSenderCredential((current) => ({
+        ...current,
+        targetAppIds: credential.target_app_id ? [credential.target_app_id] : [],
+        authenticationMode: "smtp_password",
+        provider: credential.provider,
+        name: credential.name,
+        description: credential.description || "",
+        fromName: credential.from_name || "",
+        fromEmail: credential.from_email,
+        smtpHost: credential.smtp_host || "",
+        smtpPort: credential.smtp_port || 587,
+        smtpSecure: credential.smtp_secure,
+        smtpUsername: credential.smtp_username || "",
+        smtpPassword: "",
+        isActive: credential.is_active,
+        isPrimary: credential.is_primary,
+      }));
+    } catch (error) {
+      console.error("[Email Credentials] Load sender credential for edit error:", error);
+      showToast("Unable to load sender credential for edit.", "error");
+    }
+  }
+
+  async function handleTestSenderCredential(credentialId: string) {
+    setSenderTestingId(credentialId);
+    try {
+      const response = await fetch(`/api/orchestrations/email-sender-credentials/${credentialId}/test`, {
+        method: "POST",
+      });
+      const data = await response.json() as { success?: boolean; error?: string };
+      if (data.success) {
+        showToast("Sender connection successful.", "success");
+      } else {
+        showToast(data.error || "Sender connection test failed.", "error");
+      }
+    } catch (error) {
+      console.error("[Email Credentials] Test sender credential error:", error);
+      showToast("Unable to test sender credential.", "error");
+    } finally {
+      setSenderTestingId(null);
+    }
+  }
+
+  async function handleSaveSenderCredential() {
     if (!newSenderCredential.name.trim() || !newSenderCredential.fromEmail.trim()) {
       showToast("Credential name and From email are required.", "error");
       return;
     }
 
-    if (newSenderCredential.scopeTargetAppId !== GLOBAL_SCOPE && !targetApps.some((app) => app.id === newSenderCredential.scopeTargetAppId)) {
-      showToast("Please select a valid target app scope.", "error");
+    if (!Array.isArray(newSenderCredential.targetAppIds) || newSenderCredential.targetAppIds.length === 0) {
+      showToast("At least one target application is required.", "error");
+      return;
+    }
+
+    if (editingSenderId && newSenderCredential.targetAppIds.length !== 1) {
+      showToast("Edit mode supports exactly one target application.", "error");
+      return;
+    }
+
+    const invalidSelection = newSenderCredential.targetAppIds.some((id) => !targetApps.some((app) => app.id === id));
+    if (invalidSelection) {
+      showToast("Please select valid target applications.", "error");
+      return;
+    }
+
+    if (newSenderCredential.authenticationMode !== "smtp_password") {
+      showToast("Only SMTP password authentication is currently supported.", "error");
       return;
     }
 
@@ -355,18 +559,31 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     }
 
     try {
-      const response = await fetch("/api/orchestrations/email-sender-credentials", {
-        method: "POST",
+      const response = await fetch(editingSenderId ? `/api/orchestrations/email-sender-credentials/${editingSenderId}` : "/api/orchestrations/email-sender-credentials", {
+        method: editingSenderId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companyId: selectedCompanyId,
-          targetAppId: newSenderCredential.scopeTargetAppId === GLOBAL_SCOPE ? null : newSenderCredential.scopeTargetAppId,
+        body: JSON.stringify(editingSenderId ? {
+          targetAppId: newSenderCredential.targetAppIds[0],
           provider: newSenderCredential.provider,
           name: newSenderCredential.name,
           description: newSenderCredential.description || null,
           fromName: newSenderCredential.fromName || null,
           fromEmail: newSenderCredential.fromEmail,
-          replyToEmail: newSenderCredential.replyToEmail || null,
+          smtpHost: newSenderCredential.smtpHost || null,
+          smtpPort: newSenderCredential.smtpPort,
+          smtpSecure: newSenderCredential.smtpSecure,
+          smtpUsername: newSenderCredential.smtpUsername || null,
+          smtpPassword: newSenderCredential.smtpPassword || null,
+          isActive: newSenderCredential.isActive,
+          isPrimary: newSenderCredential.isPrimary,
+        } : {
+          companyId: selectedCompanyId,
+          targetAppIds: newSenderCredential.targetAppIds,
+          provider: newSenderCredential.provider,
+          name: newSenderCredential.name,
+          description: newSenderCredential.description || null,
+          fromName: newSenderCredential.fromName || null,
+          fromEmail: newSenderCredential.fromEmail,
           smtpHost: newSenderCredential.smtpHost || null,
           smtpPort: newSenderCredential.smtpPort,
           smtpSecure: newSenderCredential.smtpSecure,
@@ -379,31 +596,16 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
 
       const data = await response.json() as { success?: boolean; error?: string };
       if (data.success) {
-        showToast("Sender credential created", "success");
+        showToast(editingSenderId ? "Sender credential updated" : "Sender credential created", "success");
         setShowAddSenderForm(false);
-        setNewSenderCredential((current) => ({
-          ...current,
-          scopeTargetAppId: GLOBAL_SCOPE,
-          name: "",
-          description: "",
-          fromName: "",
-          fromEmail: "",
-          replyToEmail: "",
-          smtpHost: "",
-          smtpPort: 587,
-          smtpSecure: false,
-          smtpUsername: "",
-          smtpPassword: "",
-          isActive: true,
-          isPrimary: false,
-        }));
+        resetSenderForm();
         await loadSenderCredentials();
       } else {
-        showToast(data.error || "Unable to create sender credential.", "error");
+        showToast(data.error || `Unable to ${editingSenderId ? "update" : "create"} sender credential.`, "error");
       }
     } catch (error) {
-      console.error("[Email Credentials] Add sender credential error:", error);
-      showToast("Unable to create sender credential.", "error");
+      console.error("[Email Credentials] Save sender credential error:", error);
+      showToast("Unable to save sender credential.", "error");
     }
   }
 
@@ -453,6 +655,21 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     } finally {
       setSenderTogglingId(null);
     }
+  }
+
+  function requestToggleSenderActive(credential: SenderCredential) {
+    if (!credential.is_active) {
+      void handleToggleSenderActive(credential);
+      return;
+    }
+
+    setConfirmDialog({
+      message: `Disable sender credential "${credential.name}"?`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        await handleToggleSenderActive(credential);
+      }
+    });
   }
 
   async function handleSetSenderPrimary(credential: SenderCredential) {
@@ -540,7 +757,15 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               <p className="text-sm text-slate-600">These credentials are used only to read incoming mail for orchestration email triggers.</p>
             </div>
             <button
-              onClick={() => setShowAddForm((current) => !current)}
+              onClick={() => {
+                if (showAddForm) {
+                  setShowAddForm(false);
+                  resetInboxForm();
+                  return;
+                }
+                resetInboxForm();
+                setShowAddForm(true);
+              }}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               type="button"
             >
@@ -550,12 +775,12 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
 
           {showAddForm ? (
             <div className="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
-              <h4 className="text-lg font-semibold text-slate-900">Add Email Trigger Inbox Credential</h4>
+              <h4 className="text-lg font-semibold text-slate-900">{editingInboxId ? "Edit Email Trigger Inbox Credential" : "Add Email Trigger Inbox Credential"}</h4>
 
               <div>
                 <MultiSelectDropdown
                   label="Target Applications *"
-                  options={targetApps.map((app) => ({ label: app.name, value: app.id }))}
+                  options={targetAppOptions.map((app) => ({ label: app.name, value: app.id }))}
                   selectedValues={newCredential.targetAppIds}
                   onChange={(values) => setNewCredential({ ...newCredential, targetAppIds: values })}
                   emptyLabel="Select target applications"
@@ -599,8 +824,8 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               </label>
 
               <div className="flex gap-3">
-                <button onClick={() => { void handleAddCredential(); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" type="button">Add Inbox Credential</button>
-                <button onClick={() => setShowAddForm(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" type="button">Cancel</button>
+                <button onClick={() => { void handleSaveInboxCredential(); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" type="button">{editingInboxId ? "Update Inbox Credential" : "Add Inbox Credential"}</button>
+                <button onClick={() => { setShowAddForm(false); resetInboxForm(); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" type="button">Cancel</button>
               </div>
             </div>
           ) : null}
@@ -613,8 +838,8 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                 <table className="w-full min-w-[980px]">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Sno</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Email</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Provider</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Target apps</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Status</th>
@@ -625,40 +850,45 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                   <tbody className="divide-y divide-slate-200">
                     {credentials.length === 0 ? (
                       <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">No inbox credentials configured yet.</td></tr>
-                    ) : credentials.map((cred) => (
+                    ) : credentials.map((cred, index) => (
                       <tr key={cred.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 text-sm text-slate-700">{index + 1}</td>
                         <td className="px-4 py-3 text-sm text-slate-900">{cred.name}</td>
-                        <td className="px-4 py-3 text-sm text-slate-700">{cred.email_address}</td>
                         <td className="px-4 py-3 text-sm text-slate-700 uppercase">{cred.provider}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.target_apps?.length ? cred.target_apps.map((app) => app.name).join(", ") : "All apps"}</td>
                         <td className="px-4 py-3 text-sm">{cred.is_active ? <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">Active</span> : <span className="rounded bg-red-100 px-2 py-0.5 text-red-800">Inactive</span>}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.last_tested_at ? new Date(cred.last_tested_at).toLocaleString() : "Never tested"}</td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                            <IconActionButton
+                              label={testingId === cred.id ? "Testing..." : "Test connection"}
                               onClick={() => { void handleTestCredential(cred.id); }}
                               disabled={!cred.is_active || inboxActionsBusy}
                             >
-                              {testingId === cred.id ? "Testing..." : "Test"}
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                              <FlaskConical className="h-3.5 w-3.5" />
+                            </IconActionButton>
+                            <IconActionButton
+                              label="Edit inbox credential"
+                              onClick={() => { void handleEditInboxCredential(cred.id); }}
+                              disabled={inboxActionsBusy}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </IconActionButton>
+                            <IconActionButton
+                              label={togglingId === cred.id ? "Updating..." : cred.is_active ? "Disable" : "Enable"}
                               onClick={() => handleToggleActive(cred.id, cred.is_active, cred.name)}
                               disabled={inboxActionsBusy}
                             >
-                              {togglingId === cred.id ? "..." : cred.is_active ? "Disable" : "Enable"}
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                              <Power className="h-3.5 w-3.5" />
+                            </IconActionButton>
+                            <IconActionButton
+                              label={deletingId === cred.id ? "Deleting..." : "Delete inbox credential"}
                               onClick={() => handleDeleteCredential(cred.id, cred.name)}
                               disabled={inboxActionsBusy}
+                              tone="danger"
                             >
-                              {deletingId === cred.id ? "..." : "Delete"}
-                            </button>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </IconActionButton>
                           </div>
                         </td>
                       </tr>
@@ -687,7 +917,15 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               <p className="text-sm text-slate-600">These credentials are for sending emails from autonomous processes and workflow actions.</p>
             </div>
             <button
-              onClick={() => setShowAddSenderForm((current) => !current)}
+              onClick={() => {
+                if (showAddSenderForm) {
+                  setShowAddSenderForm(false);
+                  resetSenderForm();
+                  return;
+                }
+                resetSenderForm();
+                setShowAddSenderForm(true);
+              }}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
               type="button"
             >
@@ -697,13 +935,24 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
 
           {showAddSenderForm ? (
             <div className="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
-              <h4 className="text-lg font-semibold text-slate-900">Add Outbound Sender Credential</h4>
+              <h4 className="text-lg font-semibold text-slate-900">{editingSenderId ? "Edit Outbound Sender Credential" : "Add Outbound Sender Credential"}</h4>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div className="md:col-span-2 xl:col-span-2">
+                  <MultiSelectDropdown
+                    label="Target Applications *"
+                    options={targetAppOptions.map((app) => ({ label: app.name, value: app.id }))}
+                    selectedValues={newSenderCredential.targetAppIds}
+                    onChange={(values) => setNewSenderCredential((current) => ({ ...current, targetAppIds: values }))}
+                    emptyLabel="Select target applications"
+                  />
+                </div>
+
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  Scope
-                  <select className="h-11 rounded-lg border border-slate-300 px-3" value={newSenderCredential.scopeTargetAppId} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, scopeTargetAppId: event.target.value })}>
-                    {scopeOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  Authentication Mode
+                  <select className="h-11 rounded-lg border border-slate-300 px-3" value={newSenderCredential.authenticationMode} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, authenticationMode: event.target.value as "smtp_password" | "oauth2" })}>
+                    <option value="smtp_password">SMTP Username/Password</option>
+                    <option value="oauth2" disabled>OAuth2 (coming soon)</option>
                   </select>
                 </label>
 
@@ -729,11 +978,6 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
                   From email *
                   <input className="h-11 rounded-lg border border-slate-300 px-3" type="email" value={newSenderCredential.fromEmail} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, fromEmail: event.target.value })} placeholder="noreply@company.com" />
-                </label>
-
-                <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  Reply-to email
-                  <input className="h-11 rounded-lg border border-slate-300 px-3" type="email" value={newSenderCredential.replyToEmail} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, replyToEmail: event.target.value })} placeholder="support@company.com" />
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
@@ -778,8 +1022,8 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               </div>
 
               <div className="flex gap-3">
-                <button onClick={() => { void handleAddSenderCredential(); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" type="button">Add Sender Credential</button>
-                <button onClick={() => setShowAddSenderForm(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" type="button">Cancel</button>
+                <button onClick={() => { void handleSaveSenderCredential(); }} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800" type="button">{editingSenderId ? "Update Sender Credential" : "Add Sender Credential"}</button>
+                <button onClick={() => { setShowAddSenderForm(false); resetSenderForm(); }} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" type="button">Cancel</button>
               </div>
             </div>
           ) : null}
@@ -792,54 +1036,64 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                 <table className="w-full min-w-[1080px]">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Sno</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Name</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Scope</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Target Applications</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">From identity</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">SMTP</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Primary</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {senderCredentials.length === 0 ? (
                       <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">No outbound sender credentials configured yet.</td></tr>
-                    ) : senderCredentials.map((cred) => (
+                    ) : senderCredentials.map((cred, index) => (
                       <tr key={cred.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 text-sm text-slate-900">{cred.name}</td>
+                        <td className="px-4 py-3 text-sm text-slate-700">{index + 1}</td>
+                        <td className="px-4 py-3 text-sm text-slate-900 inline-flex items-center gap-1.5">{cred.name}{cred.is_primary ? <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" /> : null}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.target_app_name || "Company level"}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.from_name ? `${cred.from_name} <${cred.from_email}>` : cred.from_email}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.smtp_host || "-"}{cred.smtp_port ? `:${cred.smtp_port}` : ""}</td>
                         <td className="px-4 py-3 text-sm">{cred.is_active ? <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">Active</span> : <span className="rounded bg-red-100 px-2 py-0.5 text-red-800">Inactive</span>}</td>
-                        <td className="px-4 py-3 text-sm">{cred.is_primary ? <span className="inline-flex items-center gap-1 rounded bg-amber-100 px-2 py-0.5 text-amber-800"><ShieldCheck className="h-3 w-3" />Primary</span> : <span className="text-slate-400">No</span>}</td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
+                            <IconActionButton
+                              label={senderTestingId === cred.id ? "Testing..." : "Test sender credential"}
+                              onClick={() => { void handleTestSenderCredential(cred.id); }}
+                              disabled={senderTestingId !== null}
+                            >
+                              <FlaskConical className="h-3.5 w-3.5" />
+                            </IconActionButton>
+                            <IconActionButton
+                              label="Edit sender credential"
+                              onClick={() => { void handleEditSenderCredential(cred.id); }}
+                              disabled={senderDeletingId !== null || senderTogglingId !== null || senderPrimaryId !== null}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </IconActionButton>
+                            <IconActionButton
+                              label={senderPrimaryId === cred.id ? "Setting primary..." : "Set as primary"}
                               onClick={() => { void handleSetSenderPrimary(cred); }}
                               disabled={senderPrimaryId !== null || !cred.is_active || cred.is_primary}
-                              className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                              title="Set as primary for this scope"
                             >
-                              <Star className="h-3.5 w-3.5" />
-                              {senderPrimaryId === cred.id ? "..." : "Primary"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { void handleToggleSenderActive(cred); }}
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                            </IconActionButton>
+                            <IconActionButton
+                              label={senderTogglingId === cred.id ? "Updating..." : cred.is_active ? "Disable" : "Enable"}
+                              onClick={() => requestToggleSenderActive(cred)}
                               disabled={senderTogglingId !== null}
-                              className="rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
                             >
-                              {senderTogglingId === cred.id ? "..." : cred.is_active ? "Disable" : "Enable"}
-                            </button>
-                            <button
-                              type="button"
+                              <Power className="h-3.5 w-3.5" />
+                            </IconActionButton>
+                            <IconActionButton
+                              label={senderDeletingId === cred.id ? "Deleting..." : "Delete sender credential"}
                               onClick={() => handleDeleteSenderCredential(cred.id, cred.name)}
                               disabled={senderDeletingId !== null}
-                              className="rounded border border-red-300 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                              tone="danger"
                             >
-                              {senderDeletingId === cred.id ? "..." : "Delete"}
-                            </button>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </IconActionButton>
                           </div>
                         </td>
                       </tr>
