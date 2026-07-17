@@ -55,6 +55,8 @@ export type ScoutChatMessage = {
   workflowSuggestion?: ScoutWorkflowSession;
   workflowActionSuggestion?: ScoutWorkflowActionSuggestion;
   intentModeSuggestion?: ScoutIntentModeSuggestion;
+  routerIntent?: string;
+  matchedOrchestrationIds?: string[];
 };
 
 export type ScoutChatCitation = {
@@ -117,6 +119,10 @@ type ScoutOrchestration = {
 type PendingRouterConfirmation = {
   originalText: string;
   workflow: ScoutWorkflowSession;
+};
+
+type PendingActionModeFallback = {
+  originalText: string;
 };
 
 type IntentGateDecision = {
@@ -480,6 +486,7 @@ export function ScoutChatbot({
     error: ""
   });
   const [input, setInput] = useState("");
+  const [actionModeArmed, setActionModeArmed] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [activeTab, setActiveTab] = useState<ChatTab>("qa");
   const [isMinimizing, setIsMinimizing] = useState(false);
@@ -508,6 +515,7 @@ export function ScoutChatbot({
   const lastActivityAtRef = useRef(Date.now());
   const scopeRef = useRef<string | null>(null);
   const pendingRouterConfirmationRef = useRef<PendingRouterConfirmation | null>(null);
+  const pendingActionModeFallbackRef = useRef<PendingActionModeFallback | null>(null);
 
   // Generate unique message ID using timestamp + random component
   const generateMessageId = () => {
@@ -541,6 +549,42 @@ export function ScoutChatbot({
     const trimmed = String(apiKey || "").trim();
     return trimmed ? { "X-API-Key": trimmed } : {};
   }, [apiKey]);
+
+  async function emitActionModeTelemetry(eventType: "action_mode_invoked" | "action_mode_auto_reset", metadata?: Record<string, unknown>) {
+    if (!companyId || !userId) {
+      return;
+    }
+
+    try {
+      await fetch("/api/chatbot/action-mode-telemetry", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...apiKeyHeaders,
+        },
+        body: JSON.stringify({
+          companyId,
+          userId,
+          targetAppId: targetAppId || undefined,
+          conversationId: activeConversationId.current || conversationSessionId || undefined,
+          eventType,
+          metadata: metadata || {},
+        }),
+      });
+    } catch {
+      // Non-fatal telemetry
+    }
+  }
+
+  function armActionMode(source: "button" | "keyboard") {
+    setActionModeArmed(true);
+    void emitActionModeTelemetry("action_mode_invoked", { source });
+  }
+
+  function autoResetActionMode(reason: string) {
+    setActionModeArmed(false);
+    void emitActionModeTelemetry("action_mode_auto_reset", { reason });
+  }
 
   const cssVars: WidgetStyle = {
     "--scout-brand": theme?.brandColor ?? "#020617",
@@ -1413,6 +1457,36 @@ export function ScoutChatbot({
     const nextHistory = [...messages, userMessage];
     const contextWindow = trimMessagesForLifecycle(nextHistory, resolvedLifecycleSettings);
 
+    if (pendingActionModeFallbackRef.current) {
+      const pending = pendingActionModeFallbackRef.current;
+
+      if (isAffirmativeResponse(trimmed)) {
+        pendingActionModeFallbackRef.current = null;
+        setMessages(nextHistory);
+        setInput("");
+        markActivity();
+        await completeChatResponse(pending.originalText, contextWindow);
+        return;
+      }
+
+      if (isNegativeResponse(trimmed)) {
+        pendingActionModeFallbackRef.current = null;
+        setMessages((current) => [
+          ...current,
+          createRenderedMessage({
+            id: generateMessageId(),
+            role: "assistant",
+            text: "Okay, no problem. I will not send this to chat.",
+            time: formatTime(),
+          }),
+        ]);
+        setInput("");
+        markActivity();
+        inputRef.current?.focus();
+        return;
+      }
+    }
+
     if (pendingRouterConfirmationRef.current) {
       const pending = pendingRouterConfirmationRef.current;
 
@@ -1462,6 +1536,64 @@ export function ScoutChatbot({
       if (isNegativeResponse(trimmed)) {
         pendingRouterConfirmationRef.current = null;
       }
+    }
+
+    if (actionModeArmed) {
+      autoResetActionMode("message_sent");
+      setMessages(nextHistory);
+      setInput("");
+      markActivity();
+      setIsTyping(true);
+
+      try {
+        const workflowReply = await runWorkflowRouter(
+          trimmed,
+          createActionRouterWorkflow(),
+          contextWindow,
+          { forceActionMode: true }
+        );
+
+        if (workflowReply.routerIntent === "fallback") {
+          pendingActionModeFallbackRef.current = { originalText: trimmed };
+          setMessages((current) => [
+            ...current,
+            createRenderedMessage({
+              id: generateMessageId(),
+              role: "assistant",
+              text: "I could not find a matching action workflow. Do you want me to continue this as normal chat?",
+              time: formatTime(),
+            }),
+          ]);
+          return;
+        }
+
+        const assistantReply = resolveReply(workflowReply);
+        setMessages((current) => [
+          ...current,
+          createRenderedMessage({
+            ...assistantReply,
+            id: assistantReply.id ?? generateMessageId(),
+            role: "assistant",
+            time: assistantReply.time ?? formatTime(),
+          }),
+        ]);
+      } catch (error) {
+        setMessages((current) => [
+          ...current,
+          createRenderedMessage({
+            id: generateMessageId(),
+            role: "assistant",
+            text: error instanceof Error ? error.message : "I could not complete that action request right now.",
+            time: formatTime(),
+          }),
+        ]);
+      } finally {
+        setIsTyping(false);
+        markActivity();
+        inputRef.current?.focus();
+      }
+
+      return;
     }
 
     const intentDecision = await classifyIntentWithHybridGate(trimmed, contextWindow);
@@ -1519,6 +1651,39 @@ export function ScoutChatbot({
       setMessages((current) => [...current, actionMessage]);
       inputRef.current?.focus();
       return;
+    }
+
+    if (intentDecision.intent === "chat" && shouldTryWorkflowRouterForChatIntent(trimmed)) {
+      setIsTyping(true);
+      try {
+        const routerReply = await runWorkflowRouter(
+          trimmed,
+          createActionRouterWorkflow(),
+          contextWindow,
+          { forceActionMode: false }
+        );
+
+        if (routerReply.routerIntent && routerReply.routerIntent !== "fallback") {
+          const assistantReply = resolveReply(routerReply);
+          setMessages((current) => [
+            ...current,
+            createRenderedMessage({
+              ...assistantReply,
+              id: assistantReply.id ?? generateMessageId(),
+              role: "assistant",
+              time: assistantReply.time ?? formatTime()
+            })
+          ]);
+          setIsTyping(false);
+          markActivity();
+          inputRef.current?.focus();
+          return;
+        }
+      } catch {
+        // Continue with standard chat flow when router check fails.
+      } finally {
+        setIsTyping(false);
+      }
     }
 
     await completeChatResponse(trimmed, contextWindow);
@@ -2048,7 +2213,11 @@ export function ScoutChatbot({
         queryId: typeof body?.queryId === "string" ? body.queryId : undefined,
         citations: Array.isArray(body?.citations) ? body.citations : [],
         noAnswer: body?.noAnswer === true,
-        noAnswerReason: typeof body?.noAnswerReason === "string" ? body.noAnswerReason : undefined
+        noAnswerReason: typeof body?.noAnswerReason === "string" ? body.noAnswerReason : undefined,
+        routerIntent: typeof body?.intent === "string" ? body.intent : undefined,
+        matchedOrchestrationIds: Array.isArray(body?.matchedOrchestrationIds)
+          ? body.matchedOrchestrationIds.filter((id: unknown): id is string => typeof id === "string")
+          : undefined,
       } satisfies ScoutChatMessage;
     }
 
@@ -2065,6 +2234,14 @@ export function ScoutChatbot({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.altKey && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      if (!actionModeArmed) {
+        armActionMode("keyboard");
+      }
+      return;
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendMessage(input);
@@ -2469,7 +2646,12 @@ export function ScoutChatbot({
 
               <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
                 <form
-                  className="rounded-[22px] border border-slate-200 bg-white p-2 shadow-sm focus-within:border-sky-300 focus-within:ring-4 focus-within:ring-[var(--scout-focus)]"
+                  className={cn(
+                    "rounded-[22px] border bg-white p-2 shadow-sm focus-within:ring-4 focus-within:ring-[var(--scout-focus)]",
+                    actionModeArmed
+                      ? "border-amber-300 focus-within:border-amber-400"
+                      : "border-slate-200 focus-within:border-sky-300"
+                  )}
                   onSubmit={handleSubmit}
                 >
                   <textarea
@@ -2487,6 +2669,26 @@ export function ScoutChatbot({
                     value={input}
                   />
                   <div className="flex items-center justify-end gap-3 px-1 pb-0.5">
+                    <button
+                      aria-label={actionModeArmed ? "Action mode armed for next message" : "Arm action mode for next message"}
+                      className={cn(
+                        "inline-flex h-9 items-center gap-1 rounded-full border px-3 text-xs font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
+                        actionModeArmed
+                          ? "border-amber-300 bg-amber-50 text-amber-800"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:text-amber-700"
+                      )}
+                      disabled={Boolean(authBlockedMessage) || isTyping}
+                      onClick={() => {
+                        if (!actionModeArmed) {
+                          armActionMode("button");
+                        }
+                      }}
+                      title="Action mode (next message only) - Alt+A"
+                      type="button"
+                    >
+                      <Zap className="h-4 w-4" />
+                      {actionModeArmed ? "Action: next" : "Action"}
+                    </button>
                     <button
                       aria-label="Send message"
                       className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:translate-y-0"
@@ -3630,6 +3832,16 @@ function isAffirmativeResponse(message: string) {
 function isNegativeResponse(message: string) {
   const normalized = message.trim().toLowerCase();
   return /^(no|n|nope|nah|not now|cancel|stop)$/.test(normalized);
+}
+
+function shouldTryWorkflowRouterForChatIntent(message: string) {
+  const normalized = message.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  // Discovery-style asks can be misclassified as chat; let router still evaluate once.
+  return /\b(workflow|orchestration|walk me through|walk me thru|process|rate creation|is there any|can you guide|how do i)\b/.test(normalized);
 }
 
 function resolveReply(reply: ScoutChatMessage | string | void): ScoutChatMessage {

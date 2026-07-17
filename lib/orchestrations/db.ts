@@ -341,7 +341,7 @@ export async function publishOrchestration(
         requiredVariables: triggerNodeConfig.requiredVariables || [],
         allowedRoles: triggerNodeConfig.allowedRoles || [],
         allowedUsers: triggerNodeConfig.allowedUsers || [],
-        minConfidence: triggerNodeConfig.minConfidence || 0.7,
+        minConfidence: triggerNodeConfig.minConfidence ?? 0.6,
         enabled: triggerNodeConfig.enabled !== false,
       };
       

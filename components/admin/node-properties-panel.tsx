@@ -1466,17 +1466,19 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Minimum Confidence</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Auto-match Strictness</label>
             <input
               type="number"
               min="0"
               max="1"
               step="0.1"
               className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              value={config.minConfidence || 0.7}
+              value={config.minConfidence ?? 0.6}
               onChange={(e) => updateConfig({ minConfidence: parseFloat(e.target.value) })}
             />
-            <p className="text-xs text-slate-500 mt-1">Threshold for intent match (0-1)</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Auto-match threshold (strictness), not a hard truth. Lower values are more permissive.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">

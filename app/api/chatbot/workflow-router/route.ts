@@ -284,6 +284,35 @@ function tokenize(input: string): string[] {
     .filter((token) => token.length > 1);
 }
 
+function scorePhraseSimilarity(message: string, phrases: string[]): number {
+  const messageTokens = new Set(tokenize(message));
+  if (messageTokens.size === 0 || phrases.length === 0) {
+    return 0;
+  }
+
+  let best = 0;
+  for (const phrase of phrases) {
+    const phraseTokens = new Set(tokenize(phrase));
+    if (phraseTokens.size === 0) {
+      continue;
+    }
+
+    let overlap = 0;
+    for (const token of messageTokens) {
+      if (phraseTokens.has(token)) {
+        overlap += 1;
+      }
+    }
+
+    const score = overlap / Math.max(1, phraseTokens.size);
+    if (score > best) {
+      best = score;
+    }
+  }
+
+  return Math.max(0, Math.min(1, best));
+}
+
 function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflowCandidate): number {
   const messageTokens = new Set(tokenize(message));
   if (messageTokens.size === 0) {
@@ -293,8 +322,6 @@ function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflow
   const searchable = [
     candidate.name,
     candidate.description,
-    ...candidate.triggerPhrases,
-    ...candidate.examplePhrases,
     ...candidate.nodeSummary,
   ].join(" ");
   const candidateTokens = new Set(tokenize(searchable));
@@ -305,7 +332,15 @@ function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflow
     }
   }
 
-  return overlap / Math.max(1, messageTokens.size);
+  const baseScore = overlap / Math.max(1, messageTokens.size);
+  const triggerPhraseScore = scorePhraseSimilarity(message, candidate.triggerPhrases);
+  // Example phrases are a soft signal only. They influence ranking but never dominate.
+  const examplePhraseScore = scorePhraseSimilarity(message, candidate.examplePhrases);
+
+  return Math.max(
+    0,
+    Math.min(1, baseScore * 0.7 + triggerPhraseScore * 0.2 + examplePhraseScore * 0.1)
+  );
 }
 
 async function findEligibleCandidateWithAi(
@@ -331,6 +366,8 @@ async function findEligibleCandidateWithAi(
     const systemPrompt = [
       "You are an orchestration router.",
       "Pick at most one best orchestration for the user ask.",
+      "Trigger phrases and example phrases are helpful hints, not strict rules.",
+      "Do not require exact phrase match. Use overall goal fit based on name, description, and node summary.",
       "If none match clearly, return null selection.",
       'Return JSON only: {"matchedId":"string-or-empty","confidence":0-1,"reason":"short"}.',
     ].join(" ");
@@ -510,6 +547,7 @@ export async function POST(request: NextRequest) {
     const targetAppIdentifier = body.targetAppId || "";
     const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
     const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
+    const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
     const forceActionMode = body.forceActionMode === true;
     const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
     const history = Array.isArray(body.history) ? body.history.slice(-12) : [];

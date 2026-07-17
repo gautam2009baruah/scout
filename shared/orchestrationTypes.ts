@@ -811,7 +811,7 @@ export type ChatbotTriggerConfig = {
   }>;
   allowedRoles?: string[]; // Roles that can trigger this (empty = all)
   allowedUsers?: string[]; // Specific user emails (empty = all)
-  minConfidence: number; // Minimum confidence threshold (0-1)
+  minConfidence: number; // Auto-match strictness threshold (0-1), not a hard truth
   enabled: boolean;
 };
 
