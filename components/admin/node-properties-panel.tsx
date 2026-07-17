@@ -3463,7 +3463,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           you can reference in later nodes.
         </p>
         <ol className="list-decimal pl-4 space-y-1 mt-2">
-          <li>Put the text to analyze in <strong>Input Text</strong> (use variables from earlier nodes).</li>
+          <li>Put the text to analyze in <strong>Input Text</strong> using variables from the trigger or earlier nodes.</li>
           <li>List the <strong>Fields to Extract</strong>, each with a short description.</li>
           <li>Reference results downstream as <code className="bg-slate-100 px-1 rounded">{`{{output.field}}`}</code>.</li>
         </ol>
@@ -3478,17 +3478,29 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
           value={config.input || ""}
           onChange={(e) => updateConfig({ input: e.target.value })}
-          placeholder="{{bodyText}}"
+          placeholder="{{trigger.userMessage}} or {{bodyText}}"
         />
         <CollapsibleHelp title="Examples by node type">
           <ul className="space-y-2">
+            <li>
+              <div className="font-semibold text-slate-700">After a Manual trigger</div>
+              <code className="block bg-slate-100 px-1 rounded">{`{{trigger.input.message}}`}</code>
+            </li>
+            <li>
+              <div className="font-semibold text-slate-700">After a Chatbot trigger</div>
+              <code className="block bg-slate-100 px-1 rounded">{`{{trigger.userMessage}}`}</code>
+            </li>
             <li>
               <div className="font-semibold text-slate-700">After an Email trigger</div>
               <code className="block bg-slate-100 px-1 rounded">{`{{subject}} {{bodyText}}`}</code>
             </li>
             <li>
-              <div className="font-semibold text-slate-700">After a Manual trigger</div>
-              <code className="block bg-slate-100 px-1 rounded">{`{{trigger.message}}`}</code>
+              <div className="font-semibold text-slate-700">After a Schedule trigger</div>
+              <code className="block bg-slate-100 px-1 rounded">{`Scheduled run for {{trigger.triggerType}} at {{trigger.timestamp}}`}</code>
+            </li>
+            <li>
+              <div className="font-semibold text-slate-700">After an HTTP/API trigger</div>
+              <code className="block bg-slate-100 px-1 rounded">{`{{request.body}}`}</code>
             </li>
             <li>
               <div className="font-semibold text-slate-700">After a Workflow node</div>
