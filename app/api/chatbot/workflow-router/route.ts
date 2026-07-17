@@ -167,6 +167,11 @@ type ActionContextResolution = {
   usedLLM: boolean;
 };
 
+function hasStrongActionIntent(message: string): boolean {
+  const normalized = String(message || "").toLowerCase();
+  return /\b(create|generate|run|execute|submit|send|start|trigger|process|invoice|order|request)\b/i.test(normalized);
+}
+
 function parseJsonObject(raw: string): Record<string, unknown> | null {
   const cleaned = (raw || "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
   if (!cleaned) {
@@ -254,6 +259,22 @@ async function resolveActionRequestFromConversation(
       : 0.5;
 
     if (resolvedMessage) {
+      const originalLooksActionable = hasStrongActionIntent(message);
+      const resolvedLooksActionable = hasStrongActionIntent(resolvedMessage);
+      const normalizedOriginal = normalizeForPhraseMatch(message);
+      const normalizedResolved = normalizeForPhraseMatch(resolvedMessage);
+      const rewriteLooksOverReduced = normalizedResolved.length > 0
+        && normalizedResolved.length < Math.max(12, Math.floor(normalizedOriginal.length * 0.55));
+
+      // Keep explicit action requests intact unless the rewrite is high-confidence and still actionable.
+      if (originalLooksActionable && (!resolvedLooksActionable || rewriteLooksOverReduced) && confidence < 0.85) {
+        return {
+          message,
+          confidence: Math.max(confidence, 0.6),
+          usedLLM: true,
+        };
+      }
+
       return {
         message: resolvedMessage,
         confidence,
@@ -277,11 +298,38 @@ function extractEmailAddress(message: string): string | null {
 }
 
 function tokenize(input: string): string[] {
+  const stopWords = new Set([
+    "a",
+    "an",
+    "the",
+    "my",
+    "me",
+    "for",
+    "to",
+    "of",
+    "in",
+    "on",
+    "at",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "please",
+    "kindly",
+    "one",
+    "id",
+  ]);
+
   return input
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .map((token) => token.trim())
-    .filter((token) => token.length > 1);
+    .map((token) => token.endsWith("s") && token.length > 3 ? token.slice(0, -1) : token)
+    .filter((token) => token.length > 1)
+    .filter((token) => !stopWords.has(token));
 }
 
 function scorePhraseSimilarity(message: string, phrases: string[]): number {
@@ -313,6 +361,71 @@ function scorePhraseSimilarity(message: string, phrases: string[]): number {
   return Math.max(0, Math.min(1, best));
 }
 
+function normalizeForPhraseMatch(input: string): string {
+  return String(input || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function scoreDirectPhraseMatch(message: string, phrases: string[]): number {
+  if (!phrases.length) {
+    return 0;
+  }
+
+  const normalizedMessage = normalizeForPhraseMatch(message);
+  if (!normalizedMessage) {
+    return 0;
+  }
+
+  const messageTokens = new Set(tokenize(normalizedMessage));
+  let best = 0;
+
+  for (const phrase of phrases) {
+    const normalizedPhrase = normalizeForPhraseMatch(phrase);
+    if (!normalizedPhrase) {
+      continue;
+    }
+
+    const phraseTokens = tokenize(normalizedPhrase);
+    if (phraseTokens.length === 0) {
+      continue;
+    }
+
+    const phraseIsSpecific = phraseTokens.length >= 2;
+
+    if (normalizedMessage === normalizedPhrase) {
+      best = Math.max(best, phraseIsSpecific ? 1 : 0.85);
+      continue;
+    }
+
+    if (normalizedMessage.includes(normalizedPhrase)) {
+      best = Math.max(best, phraseIsSpecific ? 0.92 : 0.7);
+      continue;
+    }
+
+    let overlap = 0;
+    for (const token of phraseTokens) {
+      if (messageTokens.has(token)) {
+        overlap += 1;
+      }
+    }
+
+    if (overlap === phraseTokens.length) {
+      best = Math.max(best, phraseIsSpecific ? 0.78 : 0.55);
+      continue;
+    }
+
+    const overlapRatio = overlap / phraseTokens.length;
+    if (overlapRatio >= 0.75) {
+      best = Math.max(best, phraseIsSpecific ? 0.62 : 0.45);
+    }
+  }
+
+  return Math.max(0, Math.min(1, best));
+}
+
 function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflowCandidate): number {
   const messageTokens = new Set(tokenize(message));
   if (messageTokens.size === 0) {
@@ -336,11 +449,28 @@ function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflow
   const triggerPhraseScore = scorePhraseSimilarity(message, candidate.triggerPhrases);
   // Example phrases are a soft signal only. They influence ranking but never dominate.
   const examplePhraseScore = scorePhraseSimilarity(message, candidate.examplePhrases);
+  const directTriggerMatchScore = scoreDirectPhraseMatch(message, candidate.triggerPhrases);
+  const directExampleMatchScore = scoreDirectPhraseMatch(message, candidate.examplePhrases);
 
-  return Math.max(
+  const blendedScore = Math.max(
     0,
     Math.min(1, baseScore * 0.7 + triggerPhraseScore * 0.2 + examplePhraseScore * 0.1)
   );
+
+  const directPhraseSignal = Math.max(directTriggerMatchScore, directExampleMatchScore * 0.9);
+  if (directPhraseSignal >= 0.9) {
+    return Math.max(blendedScore, 0.85);
+  }
+
+  if (directPhraseSignal >= 0.75) {
+    return Math.max(blendedScore, 0.7);
+  }
+
+  if (directPhraseSignal >= 0.6) {
+    return Math.max(blendedScore, 0.55);
+  }
+
+  return blendedScore;
 }
 
 async function findEligibleCandidateWithAi(
@@ -406,7 +536,8 @@ async function findEligibleCandidateWithAi(
 
 async function findEligibleOrchestration(
   message: string,
-  candidates: ChatbotWorkflowCandidate[]
+  candidates: ChatbotWorkflowCandidate[],
+  options?: { forceActionMode?: boolean }
 ): Promise<{ candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null> {
   const aiMatch = await findEligibleCandidateWithAi(message, candidates);
   if (aiMatch) {
@@ -421,7 +552,8 @@ async function findEligibleOrchestration(
     }
   }
 
-  if (!best || best.score < 0.35) {
+  const scoreThreshold = options?.forceActionMode ? 0.25 : 0.35;
+  if (!best || best.score < scoreThreshold) {
     return null;
   }
 
@@ -632,7 +764,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const match = await findEligibleOrchestration(message, candidates);
+    const match = await findEligibleOrchestration(message, candidates, { forceActionMode });
     if (!match) {
       return NextResponse.json({
         answer: "I could not find an eligible chatbot orchestration for this request.",
