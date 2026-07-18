@@ -30,6 +30,39 @@ function isSqlSafe(sqlText: string) {
   return String(sqlText || "").trim().length > 0;
 }
 
+function readSqlFromPayload(payload: ExecuteSqlRequest): string {
+  if (typeof payload.sql === "string") {
+    return payload.sql.trim();
+  }
+
+  if (typeof payload.generatedQuery === "string") {
+    return payload.generatedQuery.trim();
+  }
+
+  if (
+    payload.databaseQuery &&
+    typeof payload.databaseQuery === "object" &&
+    typeof payload.databaseQuery.generatedQuery === "string"
+  ) {
+    return payload.databaseQuery.generatedQuery.trim();
+  }
+
+  // Database nodes can use a custom output-variable name. Accept any
+  // top-level node-output object that contains a generatedQuery string.
+  for (const value of Object.values(payload)) {
+    if (
+      value &&
+      typeof value === "object" &&
+      "generatedQuery" in value &&
+      typeof (value as { generatedQuery?: unknown }).generatedQuery === "string"
+    ) {
+      return (value as { generatedQuery: string }).generatedQuery.trim();
+    }
+  }
+
+  return "";
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "localhost"}`);
 
@@ -67,10 +100,30 @@ const server = createServer(async (request, response) => {
     try {
       const bodyText = await readBody(request);
       const payload = (bodyText ? JSON.parse(bodyText) : {}) as ExecuteSqlRequest;
-      const sqlText = String(payload.sql || "").trim();
+
+      /*
+       * Accepted Database Node payload (default output variable):
+       * {
+       *   "databaseQuery": {
+       *     "schemaId": "schema-id",
+       *     "schemaName": "scout",
+       *     "databaseType": "postgresql",
+       *     "generatedQuery": "SELECT * FROM users LIMIT 10",
+       *     "sqlValidation": { "valid": true, "mode": "select_only" },
+       *     "notExecuted": true
+       *   }
+       * }
+       *
+       * The legacy shorthand remains supported:
+       * { "sql": "SELECT * FROM users LIMIT 10" }
+       */
+      const sqlText = readSqlFromPayload(payload);
 
       if (!isSqlSafe(sqlText)) {
-        sendJson(response, 400, { message: "sql is required." });
+        sendJson(response, 400, {
+          message:
+            "SQL is required. Send sql, generatedQuery, or a Database Node output object containing generatedQuery.",
+        });
         return;
       }
 

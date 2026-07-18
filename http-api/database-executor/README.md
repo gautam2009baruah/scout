@@ -108,8 +108,31 @@ succeeds.
 ## Execute SQL
 
 Send `POST /v1/sql/execute` with the `Content-Type: application/json` header.
-The request body requires one string property named `sql`. Do not add a
-trailing slash to the endpoint URL.
+Do not add a trailing slash to the endpoint URL.
+
+The endpoint accepts the Database node's default output directly:
+
+```json
+{
+  "databaseQuery": {
+    "schemaId": "schema-id",
+    "schemaName": "scout",
+    "databaseType": "postgresql",
+    "generatedQuery": "SELECT * FROM users LIMIT 10",
+    "sqlValidation": {
+      "valid": true,
+      "mode": "select_only"
+    },
+    "notExecuted": true
+  }
+}
+```
+
+If the Database node uses a custom output-variable name instead of
+`databaseQuery`, that top-level name is also accepted as long as its object
+contains a `generatedQuery` string.
+
+The shorter `sql` payload remains supported:
 
 Request:
 
@@ -154,8 +177,9 @@ Successful response:
 }
 ```
 
-An empty or missing `sql` value returns HTTP 400. Database errors also return
-HTTP 400 with a JSON `message`.
+If the request does not contain `sql`, `generatedQuery`, or a node-output
+object containing `generatedQuery`, it returns HTTP 400. Database errors also
+return HTTP 400 with a JSON `message`.
 
 The endpoint executes the supplied statement using the configured database
 account. Restrict port 4300 to Scout and authorized internal systems, and give

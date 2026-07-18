@@ -41,4 +41,10 @@ export type DatabaseMetadata = {
 
 export type ExecuteSqlRequest = {
   sql?: string;
+  generatedQuery?: string;
+  databaseQuery?: {
+    generatedQuery?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
 };

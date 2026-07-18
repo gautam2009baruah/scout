@@ -570,10 +570,12 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
                   <div className="font-semibold text-slate-900">Call the SQL execution endpoint</div>
                   <p className="mt-1 text-xs text-slate-600">
                     Send a <span className="font-mono">POST</span> request to <span className="font-mono">http://CLIENT_SERVER:4300/v1/sql/execute</span> with
-                    header <span className="font-mono">Content-Type: application/json</span>. The JSON body requires one string property named <span className="font-mono">sql</span>. Do not add a trailing slash to the URL.
+                    header <span className="font-mono">Content-Type: application/json</span>. It accepts the Database node output directly, including a custom output-variable name when its object contains <span className="font-mono">generatedQuery</span>. Do not add a trailing slash to the URL.
                   </p>
                   <div className="mt-2 rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
-                    <div className="text-slate-400"># Request body</div>
+                    <div className="text-slate-400"># Database Node payload</div>
+                    <div>{`{"databaseQuery":{"generatedQuery":"SELECT * FROM users LIMIT 10","notExecuted":true}}`}</div>
+                    <div className="mt-2 text-slate-400"># Short payload (also supported)</div>
                     <div>{`{"sql":"SELECT * FROM users LIMIT 10"}`}</div>
                     <div className="mt-2 text-slate-400"># cURL</div>
                     <div>curl -X POST http://localhost:4300/v1/sql/execute \</div>
@@ -587,7 +589,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
                   </div>
                   <div className="mt-2 space-y-1 text-xs text-slate-600">
                     <p>The response includes <span className="font-mono">ok</span>, <span className="font-mono">databaseType</span>, <span className="font-mono">databaseName</span>, <span className="font-mono">durationMs</span>, <span className="font-mono">rowCount</span>, <span className="font-mono">columns</span>, and <span className="font-mono">rows</span>.</p>
-                    <p>An empty or missing <span className="font-mono">sql</span> value returns HTTP <span className="font-mono">400</span>. Database execution errors also return HTTP <span className="font-mono">400</span> with a <span className="font-mono">message</span>.</p>
+                    <p>A request without <span className="font-mono">sql</span>, <span className="font-mono">generatedQuery</span>, or a node-output object containing <span className="font-mono">generatedQuery</span> returns HTTP <span className="font-mono">400</span>. Database execution errors also return HTTP <span className="font-mono">400</span> with a <span className="font-mono">message</span>.</p>
                   </div>
                 </div>
                 <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
