@@ -553,7 +553,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                 </label>
 
                 <div className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Status</span>
+                  <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Status</span>
                   <label className="inline-flex h-10 w-full items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
                     <input checked={llmDraft.is_active} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
                     Mark as active
@@ -561,7 +561,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                 </div>
 
                 <div className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Primary</span>
+                  <span className="mb-1 block text-xs font-semibold uppercase text-slate-500">Primary</span>
                   <label className="inline-flex h-10 w-full items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
                     <input checked={llmDraft.is_primary} onChange={(event) => setLlmDraft((prev) => ({ ...prev, is_primary: event.target.checked }))} type="checkbox" />
                     Mark as primary

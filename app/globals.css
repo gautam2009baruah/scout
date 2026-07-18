@@ -58,6 +58,41 @@ body {
   line-height: 1.5rem;
 }
 
+.admin-content :is(h1, h2, h3, h4)[class~="text-xs"] {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.admin-content :is(h1, h2, h3, h4)[class~="text-sm"] {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.admin-content :is(h1, h2, h3, h4)[class~="text-base"] {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.admin-content :is(h1, h2, h3, h4)[class~="text-lg"] {
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+}
+
+.admin-content :is(h1, h2, h3, h4)[class~="text-xl"] {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
+.admin-content :is(h1, h2, h3, h4)[class~="text-2xl"] {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
+.admin-content :is(h1, h2, h3, h4)[class~="text-3xl"] {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+}
+
 .admin-content :is(button, a)[class~="bg-slate-950"],
 .admin-content :is(button, a)[class~="bg-slate-900"],
 .admin-content :is(button, a)[class~="bg-teal-600"],
@@ -160,12 +195,25 @@ body {
   box-shadow: none;
 }
 
-.admin-content :is(input, select, textarea) {
+.admin-content :is(input, select, textarea),
+.admin-content .input,
+.admin-content [role="combobox"] {
   border-color: #cbd5e1;
   background-color: #ffffff;
   color: #334155;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.875rem;
   font-weight: 400;
+  line-height: 1.25rem;
+  text-transform: none;
+}
+
+.admin-content :is(input, textarea)::placeholder {
+  color: #94a3b8;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.875rem;
+  font-weight: 400;
+  opacity: 1;
   text-transform: none;
 }
 

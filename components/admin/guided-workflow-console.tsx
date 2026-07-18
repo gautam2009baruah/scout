@@ -1263,7 +1263,7 @@ function installSnippet(targetAppId: string) {
 }
 
 function Panel({ children, title }: { children: ReactNode; title: string }) {
-  return <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><h2 className="text-sm font-semibold text-slate-950">{title}</h2>{children}</section>;
+  return <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><h2 className="text-lg font-semibold text-slate-950">{title}</h2>{children}</section>;
 }
 
 function Field({ children, label }: { children: ReactNode; label: string }) {

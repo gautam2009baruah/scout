@@ -135,7 +135,7 @@ export function HierarchicalModuleSelector({
 
   return (
     <div className="relative w-full" ref={rootRef}>
-      {label && <span className="block text-sm font-medium text-slate-700 mb-2">{label}</span>}
+      {label && <span className="mb-2 block text-xs font-semibold uppercase text-slate-500">{label}</span>}
       <button
         className="flex h-11 w-full items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10 disabled:cursor-not-allowed disabled:opacity-50"
         onClick={() => !disabled && setOpen((value) => !value)}

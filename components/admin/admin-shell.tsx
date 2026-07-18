@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, Database, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Database, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -392,7 +392,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
   const sidebarContent = (collapsed: boolean, closeMobileMenu?: () => void) => (
     <>
-      <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
+      <div className={`flex items-center pt-5 ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
         <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-blue-700 text-white">
             <SlidersHorizontal className="h-5 w-5" />
@@ -439,7 +439,12 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         </button>
       ) : null}
 
-      <nav className={`${collapsed ? "mt-4 flex flex-col items-center gap-1" : "mt-10 space-y-1"}`}>
+      <nav
+        className={`admin-sidebar-scroll min-h-0 flex-1 overflow-y-auto pb-4 pr-1 ${isSidebarScrolling ? "is-scrolling" : ""} ${
+          collapsed ? "mt-4 flex flex-col items-center gap-1" : "mt-10 space-y-1"
+        }`}
+        onScroll={revealSidebarScrollbar}
+      >
         {topLevelModules.map((module) => {
           const children = modulesByParent.get(module.key) || [];
           const hasChildren = children.length > 0;
@@ -472,7 +477,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           if (hasChildren) {
             return (
               <details key={module.key} className="group py-0.5" open>
-                <summary className={`flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-md px-3 py-2 font-mono text-[13px] font-medium transition marker:hidden ${
+                <summary className={`flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-md px-3 py-2 font-mono text-sm font-medium transition marker:hidden ${
                   isActiveTree
                     ? "bg-blue-100 text-blue-700"
                     : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-950"
@@ -504,6 +509,20 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           return <NavLink key={module.key} active={active} activeHref={activeHref} module={module} onNavigate={closeMobileMenu} />;
         })}
       </nav>
+
+      <div className={`mt-auto shrink-0 border-t border-slate-300 ${collapsed ? "flex justify-center" : "px-1"}`}>
+        <Link
+          className={`flex min-h-11 items-center rounded-md font-mono text-sm font-medium text-slate-600 transition hover:bg-slate-200/70 hover:text-blue-700 ${
+            collapsed ? "w-10 justify-center" : "gap-3 px-3"
+          }`}
+          href="/control-panel/support"
+          onClick={closeMobileMenu}
+          title="Support"
+        >
+          <CircleHelp className="h-4 w-4 shrink-0" />
+          {collapsed ? <span className="sr-only">Support</span> : <span>Support</span>}
+        </Link>
+      </div>
     </>
   );
 
@@ -512,9 +531,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       <div className="flex min-h-screen">
         <aside
           aria-label="Control Panel navigation"
-          className={`admin-sidebar-scroll sticky top-0 hidden h-screen shrink-0 overflow-y-auto border-r border-slate-300 bg-[#f2f4f6] py-5 transition-[width] duration-200 lg:block ${isSidebarScrolling ? "is-scrolling" : ""} ${isSidebarCollapsed ? "w-20 px-3" : "w-72 px-3"}`}
-          onScroll={revealSidebarScrollbar}
-          tabIndex={0}
+          className={`sticky top-0 hidden h-screen shrink-0 flex-col overflow-hidden border-r border-slate-300 bg-[#f2f4f6] transition-[width] duration-200 lg:flex ${isSidebarCollapsed ? "w-20 px-3" : "w-72 px-3"}`}
         >
           {sidebarContent(isSidebarCollapsed)}
         </aside>
@@ -573,9 +590,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           />
           <aside
             aria-label="Control Panel mobile navigation"
-            className={`admin-sidebar-scroll relative h-full w-72 max-w-[88vw] overflow-y-auto border-r border-slate-300 bg-[#f2f4f6] px-3 py-5 shadow-xl ${isSidebarScrolling ? "is-scrolling" : ""}`}
-            onScroll={revealSidebarScrollbar}
-            tabIndex={0}
+            className="relative flex h-full w-72 max-w-[88vw] flex-col overflow-hidden border-r border-slate-300 bg-[#f2f4f6] px-3 shadow-xl"
           >
             {sidebarContent(false, () => setIsMobileMenuOpen(false))}
           </aside>
@@ -633,7 +648,7 @@ function NavLink({
 
   return (
     <Link
-      className={`flex min-h-10 items-center gap-3 rounded-md font-mono text-[13px] font-medium transition ${collapsed ? "w-10 justify-center px-0" : inset ? "px-3 py-2" : "px-3 py-2.5"} ${
+      className={`flex items-center gap-3 rounded-md font-mono text-sm font-medium transition ${inset ? "min-h-10" : "min-h-11"} ${collapsed ? "w-10 justify-center px-0" : inset ? "px-3 py-2" : "px-3 py-2.5"} ${
         isActive
           ? "bg-blue-700 text-white"
           : "text-slate-600 hover:bg-slate-200/70 hover:text-blue-700"

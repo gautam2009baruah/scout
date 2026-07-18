@@ -941,21 +941,21 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
               <div className="mt-6 grid gap-3 md:grid-cols-3">
                 <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   <input checked disabled readOnly type="checkbox" />
-                  <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold normal-case text-slate-700">
                     Reset on logout/session expiry event
                     <HelpHint text="Always enabled. Conversation context resets when logout or session expiry is detected." />
                   </span>
                 </label>
                 <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   <input checked disabled readOnly type="checkbox" />
-                  <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold normal-case text-slate-700">
                     Reset on user or tenant change
                     <HelpHint text="Always enabled. Conversation context resets whenever user identity or tenant changes." />
                   </span>
                 </label>
                 <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
                   <input checked disabled readOnly type="checkbox" />
-                  <span className="inline-flex items-center gap-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold normal-case text-slate-700">
                     Reset on target app/business context change
                     <HelpHint text="Always enabled. Conversation context resets when target app/business context changes." />
                   </span>
