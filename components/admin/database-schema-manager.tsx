@@ -262,9 +262,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
 
-    const hasSchemaInput = Boolean(editableSchema || uploadSchemaText.trim());
-
-    if (!selectedTargetAppId || !databaseName.trim() || !hasSchemaInput) {
+    if (!selectedTargetAppId || !databaseName.trim() || !uploadSchemaText.trim()) {
       showToast("Target app, database name, and schema file are required.", "error");
       return;
     }
@@ -276,11 +274,6 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
 
     setStatus({ type: "loading", message: editingSchemaId ? "Saving changes..." : "Uploading and activating schema..." });
 
-    let schemaPayload: unknown = undefined;
-    if (editableSchema) {
-      schemaPayload = editableSchema;
-    }
-
     const response = await fetch("/api/admin/database-schemas", {
       method: editingSchemaId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
@@ -290,8 +283,8 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
         databaseName: databaseName.trim(),
         databaseType,
         databaseDescription: databaseDescription.trim(),
-        schema: schemaPayload,
-        schemaText: schemaPayload ? undefined : uploadSchemaText,
+        schema: undefined,
+        schemaText: uploadSchemaText,
       }),
     });
 
@@ -373,7 +366,21 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   }
 
   function deleteJsonNode(path: JsonPathSegment[]) {
-    setJsonEditorValue((current) => deleteNodeAtPath(current, path));
+    setJsonEditorValue((current) => {
+      if (!current) {
+        showToast("No JSON loaded in editor.", "error");
+        return current;
+      }
+
+      const next = deleteNodeAtPath(current, path);
+      if (next === current) {
+        showToast("Unable to delete selected node.", "error");
+        return current;
+      }
+
+      showToast("Node removed. Click Save to persist changes.", "success");
+      return next;
+    });
   }
 
   function expandAllJsonNodes() {
@@ -421,9 +428,9 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   return (
     <div className="space-y-6">
       {toast ? (
-        <div className="fixed left-1/2 top-4 z-[9999] -translate-x-1/2 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
           <div
-            className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${
+            className={`pointer-events-auto flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${
               toast.type === "success"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-900"
                 : "border-red-200 bg-red-50 text-red-900"
@@ -534,13 +541,10 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
               }}
             />
             {uploadFileName ? <span className="text-xs text-slate-500">Selected: {uploadFileName}</span> : null}
+            {editingSchemaId ? (
+              <span className="text-xs text-slate-500">Edit mode: please upload JSON file again. All fields are mandatory.</span>
+            ) : null}
           </label>
-
-          {duplicateForTargetApp ? (
-            <div className="md:col-span-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Duplicate database name found for this target app. Use Edit in the list below.
-            </div>
-          ) : null}
 
           <div className="md:col-span-2 flex flex-wrap items-center gap-2">
             <button
