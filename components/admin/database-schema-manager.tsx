@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Download, Eye, FileUp, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Eye, FileUp, HelpCircle, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
 import type {
   DatabaseSchemaDocument,
   SupportedDatabaseType,
@@ -209,6 +209,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   const [jsonEditorValue, setJsonEditorValue] = useState<unknown>(null);
   const [jsonEditorExpanded, setJsonEditorExpanded] = useState<Set<string>>(new Set(["$"]));
   const [syncSchemaRow, setSyncSchemaRow] = useState<TargetAppDatabaseSchemaRecord | null>(null);
+  const [downloadHelpOpen, setDownloadHelpOpen] = useState(false);
   const [status, setStatus] = useState<Status>({ type: "idle", message: "" });
   const [toast, setToast] = useState<Toast | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
@@ -480,7 +481,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
         </div>
       ) : null}
 
-      <section className="rounded-lg border border-slate-300 bg-white p-6">
+      <section className="relative rounded-lg border border-slate-300 bg-white p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-slate-950">Database Schema Setup</h2>
@@ -493,6 +494,56 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
             <Download className="h-4 w-4" />
             Download Node.js Project
           </a>
+          <button
+            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white p-2 text-slate-600 transition hover:bg-slate-50"
+            type="button"
+            onClick={() => setDownloadHelpOpen((current) => !current)}
+            title="Hosting help"
+            aria-expanded={downloadHelpOpen}
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
+          {downloadHelpOpen ? (
+            <div className="absolute right-6 top-16 z-50 w-[min(42rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-950">How to host the downloaded project</h3>
+                  <p className="mt-1 text-xs text-slate-500">Give this ZIP to the client. They only need to fill in database credentials and start the service.</p>
+                </div>
+                <button className="rounded p-1 text-slate-500 hover:bg-slate-100" type="button" onClick={() => setDownloadHelpOpen(false)}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-3 text-sm text-slate-700">
+                <div>
+                  <div className="font-semibold text-slate-900">1. Unzip the project</div>
+                  <p className="mt-1 text-xs text-slate-600">The ZIP contains a standalone Node.js service under <span className="font-mono">http-api/database-executor</span>.</p>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">2. Copy the environment template</div>
+                  <p className="mt-1 text-xs text-slate-600">Rename <span className="font-mono">.env.example</span> to <span className="font-mono">.env</span> and set the database connection variables for PostgreSQL, MySQL, or SQL Server.</p>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">3. Update the minimum required values</div>
+                  <div className="mt-1 text-xs text-slate-600 space-y-1">
+                    <p><span className="font-mono">DB_TYPE</span>: choose <span className="font-mono">postgresql</span>, <span className="font-mono">mysql</span>, or <span className="font-mono">sqlserver</span>.</p>
+                    <p><span className="font-mono">DATABASE_URL</span> or the host/port/user/password fields: provide the client database credentials.</p>
+                    <p><span className="font-mono">DB_SCHEMA</span>: set the schema name to expose, for example <span className="font-mono">public</span> or <span className="font-mono">dbo</span>.</p>
+                    <p><span className="font-mono">PORT</span>: optional; defaults to <span className="font-mono">4300</span>.</p>
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">4. Start the service</div>
+                  <p className="mt-1 text-xs text-slate-600">Run <span className="font-mono">npm install</span> and then <span className="font-mono">npm start</span>. The service exposes <span className="font-mono">/v1/sql/execute</span> and <span className="font-mono">/v1/database/metadata</span>.</p>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">5. Test the connection</div>
+                  <p className="mt-1 text-xs text-slate-600">Use <span className="font-mono">GET /ready</span> to confirm the database is reachable before wiring it into Scout.</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={onSubmit}>

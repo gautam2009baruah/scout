@@ -16,10 +16,16 @@ type SyncRequest = {
   apiConfig?: {
     endpointUrl?: string;
     method?: string;
-    headersJson?: string;
     bodyJson?: string;
     responseSchemaPath?: string;
+    authMode?: "none" | "bearer" | "apiKey" | "basic";
+    authHeaderName?: string;
+    authToken?: string;
+    authUsername?: string;
+    authPassword?: string;
+    customHeadersJson?: string;
   };
+  headers?: Record<string, string>;
 };
 
 function unauthorized() {
@@ -129,7 +135,13 @@ export async function POST(request: Request) {
   let requestBody: unknown = undefined;
 
   try {
-    headers = body.apiConfig?.headersJson?.trim() ? JSON.parse(body.apiConfig.headersJson) : {};
+    headers = body.headers && typeof body.headers === "object" ? Object.fromEntries(Object.entries(body.headers).map(([key, value]) => [key, String(value)])) : {};
+    if (body.apiConfig?.customHeadersJson?.trim()) {
+      const extraHeaders = JSON.parse(body.apiConfig.customHeadersJson) as Record<string, unknown>;
+      for (const [key, value] of Object.entries(extraHeaders)) {
+        headers[key] = String(value);
+      }
+    }
   } catch {
     return NextResponse.json({ message: "Headers JSON must be valid JSON." }, { status: 400 });
   }

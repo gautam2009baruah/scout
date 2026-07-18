@@ -1,15 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, X } from "lucide-react";
 import type { DatabaseSchemaDocument, TargetAppDatabaseSchemaRecord } from "@/lib/admin/database-schemas";
 
 type SyncConfig = {
   endpointUrl: string;
   method: "GET" | "POST";
-  headersJson: string;
   bodyJson: string;
   responseSchemaPath: string;
+  authMode: "none" | "bearer" | "apiKey" | "basic";
+  authHeaderName: string;
+  authToken: string;
+  authUsername: string;
+  authPassword: string;
+  customHeadersJson: string;
 };
 
 type SyncResponse = {
@@ -37,9 +42,14 @@ const STORAGE_KEY = "scout.database-schema-sync-config";
 const DEFAULT_CONFIG: SyncConfig = {
   endpointUrl: "",
   method: "GET",
-  headersJson: "{}",
   bodyJson: "{}",
   responseSchemaPath: "schema",
+  authMode: "none",
+  authHeaderName: "Authorization",
+  authToken: "",
+  authUsername: "",
+  authPassword: "",
+  customHeadersJson: "{}",
 };
 
 function loadConfig(): SyncConfig {
@@ -51,9 +61,14 @@ function loadConfig(): SyncConfig {
     return {
       endpointUrl: String(parsed.endpointUrl || ""),
       method: parsed.method === "POST" ? "POST" : "GET",
-      headersJson: String(parsed.headersJson || "{}"),
       bodyJson: String(parsed.bodyJson || "{}"),
       responseSchemaPath: String(parsed.responseSchemaPath || "schema"),
+      authMode: parsed.authMode === "bearer" || parsed.authMode === "apiKey" || parsed.authMode === "basic" ? parsed.authMode : "none",
+      authHeaderName: String(parsed.authHeaderName || "Authorization"),
+      authToken: String(parsed.authToken || ""),
+      authUsername: String(parsed.authUsername || ""),
+      authPassword: String(parsed.authPassword || ""),
+      customHeadersJson: String(parsed.customHeadersJson || "{}"),
     };
   } catch {
     return DEFAULT_CONFIG;
@@ -66,6 +81,7 @@ export function DatabaseSchemaSyncDialog({ schema, onClose, onSynced }: Props) {
   const [result, setResult] = useState<SyncResponse | null>(null);
   const [error, setError] = useState("");
   const [hydrated, setHydrated] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(true);
 
   useEffect(() => {
     setConfig(loadConfig());
@@ -83,6 +99,41 @@ export function DatabaseSchemaSyncDialog({ schema, onClose, onSynced }: Props) {
       return;
     }
 
+    const headers: Record<string, string> = {};
+
+    try {
+      if (config.customHeadersJson.trim()) {
+        Object.assign(headers, JSON.parse(config.customHeadersJson));
+      }
+    } catch {
+      setError("Custom headers JSON must be valid JSON.");
+      return;
+    }
+
+    if (config.authMode === "bearer") {
+      if (!config.authToken.trim()) {
+        setError("Bearer token is required.");
+        return;
+      }
+      headers[config.authHeaderName.trim() || "Authorization"] = `Bearer ${config.authToken.trim()}`;
+    }
+
+    if (config.authMode === "apiKey") {
+      if (!config.authToken.trim()) {
+        setError("API key value is required.");
+        return;
+      }
+      headers[config.authHeaderName.trim() || "X-API-Key"] = config.authToken.trim();
+    }
+
+    if (config.authMode === "basic") {
+      if (!config.authUsername.trim() || !config.authPassword.trim()) {
+        setError("Basic auth requires username and password.");
+        return;
+      }
+      headers.Authorization = `Basic ${btoa(`${config.authUsername.trim()}:${config.authPassword.trim()}`)}`;
+    }
+
     setLoading(true);
     setError("");
     setResult(null);
@@ -95,6 +146,7 @@ export function DatabaseSchemaSyncDialog({ schema, onClose, onSynced }: Props) {
           schemaId: schema.id,
           apply,
           apiConfig: config,
+          headers,
         }),
       });
 
@@ -137,6 +189,19 @@ export function DatabaseSchemaSyncDialog({ schema, onClose, onSynced }: Props) {
               <div className="mt-1 text-xs text-slate-500">{schema.databaseType} • {schema.schema.tables.length} tables</div>
             </div>
 
+            <details className="rounded-lg border border-slate-200 bg-white p-4" open={helpOpen} onToggle={(event) => setHelpOpen((event.currentTarget as HTMLDetailsElement).open)}>
+              <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-900">
+                {helpOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                Sync help
+              </summary>
+              <div className="mt-3 space-y-2 text-xs text-slate-600">
+                <p>1. Enter the hosted client&apos;s metadata endpoint, usually <span className="font-mono">/v1/database/metadata</span>.</p>
+                <p>2. Choose the authentication mode that the client configured in the downloaded Node.js project.</p>
+                <p>3. Add any extra headers required by the client&apos;s gateway or reverse proxy.</p>
+                <p>4. Click Check Latest to compare schemas first. Use Sync Latest only after reviewing the delta.</p>
+              </div>
+            </details>
+
             <div className="grid gap-4 md:grid-cols-2">
               <label className="grid gap-1 text-sm">
                 <span className="font-semibold text-slate-700">API Endpoint URL</span>
@@ -171,15 +236,82 @@ export function DatabaseSchemaSyncDialog({ schema, onClose, onSynced }: Props) {
               />
             </label>
 
-            <label className="grid gap-1 text-sm">
-              <span className="font-semibold text-slate-700">Headers JSON</span>
-              <textarea
-                className="min-h-24 rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs"
-                value={config.headersJson}
-                onChange={(event) => setConfig((current) => ({ ...current, headersJson: event.target.value }))}
-                placeholder='{"Authorization":"Bearer ..."}'
-              />
-            </label>
+            <div className="grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+              <label className="grid gap-1 text-sm md:col-span-2">
+                <span className="font-semibold text-slate-700">Authentication Mode</span>
+                <select
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={config.authMode}
+                  onChange={(event) => setConfig((current) => ({ ...current, authMode: event.target.value as SyncConfig["authMode"] }))}
+                >
+                  <option value="none">No Authentication</option>
+                  <option value="bearer">Bearer Token</option>
+                  <option value="apiKey">API Key Header</option>
+                  <option value="basic">Basic Auth</option>
+                </select>
+              </label>
+
+              {config.authMode === "bearer" || config.authMode === "apiKey" ? (
+                <>
+                  <label className="grid gap-1 text-sm">
+                    <span className="font-semibold text-slate-700">Header Name</span>
+                    <input
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={config.authHeaderName}
+                      onChange={(event) => setConfig((current) => ({ ...current, authHeaderName: event.target.value }))}
+                      placeholder={config.authMode === "bearer" ? "Authorization" : "X-API-Key"}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="font-semibold text-slate-700">Token / API Key</span>
+                    <input
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={config.authToken}
+                      onChange={(event) => setConfig((current) => ({ ...current, authToken: event.target.value }))}
+                      placeholder="Paste the shared secret here"
+                    />
+                  </label>
+                </>
+              ) : null}
+
+              {config.authMode === "basic" ? (
+                <>
+                  <label className="grid gap-1 text-sm">
+                    <span className="font-semibold text-slate-700">Username</span>
+                    <input
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={config.authUsername}
+                      onChange={(event) => setConfig((current) => ({ ...current, authUsername: event.target.value }))}
+                      placeholder="api-user"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-sm">
+                    <span className="font-semibold text-slate-700">Password</span>
+                    <input
+                      className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      value={config.authPassword}
+                      onChange={(event) => setConfig((current) => ({ ...current, authPassword: event.target.value }))}
+                      placeholder="••••••••"
+                      type="password"
+                    />
+                  </label>
+                </>
+              ) : null}
+
+              <label className="grid gap-1 text-sm md:col-span-2">
+                <span className="font-semibold text-slate-700">Custom Headers JSON</span>
+                <textarea
+                  className="min-h-24 rounded-lg border border-slate-300 px-3 py-2 font-mono text-xs"
+                  value={config.customHeadersJson}
+                  onChange={(event) => setConfig((current) => ({ ...current, customHeadersJson: event.target.value }))}
+                  placeholder='{"X-Tenant":"acme"}'
+                />
+              </label>
+
+              <div className="md:col-span-2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">
+                The sync request is sent from Scout to the client&apos;s hosted API using the configured authentication mode and headers.
+              </div>
+            </div>
 
             <label className="grid gap-1 text-sm">
               <span className="font-semibold text-slate-700">Request Body JSON</span>
