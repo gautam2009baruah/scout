@@ -481,7 +481,22 @@ export async function uploadDatabaseSchema(
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, 1, true, $5::jsonb, $6, $6)
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        (
+          SELECT COALESCE(MAX(existing.version), 0) + 1
+          FROM target_app_database_schemas existing
+          WHERE existing.target_app_id = $1
+            AND existing.database_name = $2
+        ),
+        true,
+        $5::jsonb,
+        $6,
+        $6
+      )
       RETURNING
         id,
         target_app_id,
@@ -581,7 +596,16 @@ export async function updateDatabaseSchema(
         database_description = $3,
         schema_json = $4::jsonb,
         updated_by = $5,
-        updated_at = now()
+        updated_at = now(),
+        version = CASE
+          WHEN schemas.database_name = $1 THEN schemas.version
+          ELSE (
+            SELECT COALESCE(MAX(existing.version), 0) + 1
+            FROM target_app_database_schemas existing
+            WHERE existing.target_app_id = schemas.target_app_id
+              AND existing.database_name = $1
+          )
+        END
       FROM guided_workflow_target_apps gta
       INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE schemas.id = $6
