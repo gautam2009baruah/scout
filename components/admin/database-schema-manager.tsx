@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Eye, FileUp, Pencil, Save, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, FileUp, Pencil, Save, Trash2, X } from "lucide-react";
 import type {
   DatabaseSchemaDocument,
   SupportedDatabaseType,
@@ -20,7 +20,11 @@ type Props = {
   schemas: TargetAppDatabaseSchemaRecord[];
 };
 
-type Status = { type: "idle" | "loading" | "success" | "error"; message: string };
+type Status = { type: "idle" | "loading"; message: string };
+type Toast = { message: string; type: "success" | "error" };
+type ConfirmDialog = { message: string; onConfirm: () => void } | null;
+type JsonPathSegment = string | number;
+type JsonObject = Record<string, unknown>;
 
 const DATABASE_TYPES: Array<{ value: SupportedDatabaseType; label: string }> = [
   { value: "sqlserver", label: "SQL Server" },
@@ -49,6 +53,146 @@ function cloneSchema(schema: DatabaseSchemaDocument): DatabaseSchemaDocument {
   };
 }
 
+function isJsonObject(value: unknown): value is JsonObject {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isContainerNode(value: unknown): value is JsonObject | unknown[] {
+  return Array.isArray(value) || isJsonObject(value);
+}
+
+function pathKey(path: JsonPathSegment[]) {
+  return path.length === 0 ? "$" : `$/${path.map((segment) => String(segment)).join("/")}`;
+}
+
+function deleteNodeAtPath(value: unknown, path: JsonPathSegment[]): unknown {
+  if (path.length === 0) return value;
+  const [segment, ...rest] = path;
+
+  if (Array.isArray(value)) {
+    const index = typeof segment === "number" ? segment : Number(segment);
+    if (!Number.isInteger(index) || index < 0 || index >= value.length) return value;
+    const nextArray = [...value];
+    if (rest.length === 0) {
+      nextArray.splice(index, 1);
+      return nextArray;
+    }
+    nextArray[index] = deleteNodeAtPath(nextArray[index], rest);
+    return nextArray;
+  }
+
+  if (isJsonObject(value)) {
+    const key = String(segment);
+    if (!(key in value)) return value;
+    const nextObject: JsonObject = { ...value };
+    if (rest.length === 0) {
+      delete nextObject[key];
+      return nextObject;
+    }
+    nextObject[key] = deleteNodeAtPath(nextObject[key], rest);
+    return nextObject;
+  }
+
+  return value;
+}
+
+function collectContainerPaths(value: unknown, path: JsonPathSegment[] = []): string[] {
+  if (!isContainerNode(value)) return [];
+  const current = [pathKey(path)];
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      current.push(...collectContainerPaths(item, [...path, index]));
+    });
+    return current;
+  }
+
+  Object.entries(value).forEach(([key, child]) => {
+    current.push(...collectContainerPaths(child, [...path, key]));
+  });
+  return current;
+}
+
+type JsonNodeProps = {
+  label: string;
+  value: unknown;
+  path: JsonPathSegment[];
+  depth: number;
+  expanded: Set<string>;
+  onToggle: (path: JsonPathSegment[]) => void;
+  onDelete: (path: JsonPathSegment[]) => void;
+};
+
+function JsonTreeNode({ label, value, path, depth, expanded, onToggle, onDelete }: JsonNodeProps) {
+  const key = pathKey(path);
+  const container = isContainerNode(value);
+  const isExpanded = container ? expanded.has(key) : false;
+  const isRoot = path.length === 0;
+  const childEntries = Array.isArray(value)
+    ? value.map((item, index) => [String(index), item] as const)
+    : isJsonObject(value)
+      ? Object.entries(value)
+      : [];
+
+  let displayValue = "";
+  if (!container) {
+    displayValue = typeof value === "string" ? `\"${value}\"` : String(value);
+  }
+
+  return (
+    <div className="text-xs">
+      <div className="flex items-center gap-2 rounded px-2 py-1 hover:bg-slate-50" style={{ marginLeft: `${depth * 14}px` }}>
+        {container ? (
+          <button
+            className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-slate-600 hover:bg-slate-100"
+            type="button"
+            onClick={() => onToggle(path)}
+            title={isExpanded ? "Collapse node" : "Expand node"}
+          >
+            {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </button>
+        ) : (
+          <span className="inline-block h-5 w-5" />
+        )}
+
+        <span className="font-semibold text-slate-800">{label}</span>
+        {container ? (
+          <span className="text-slate-500">{Array.isArray(value) ? `[${value.length}]` : `{${childEntries.length}}`}</span>
+        ) : (
+          <span className="truncate text-slate-600">{displayValue}</span>
+        )}
+
+        {!isRoot ? (
+          <button
+            className="ml-auto inline-flex items-center gap-1 rounded border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-700 hover:bg-red-50"
+            type="button"
+            onClick={() => onDelete(path)}
+            title="Delete node"
+          >
+            <Trash2 className="h-3 w-3" />
+            Delete
+          </button>
+        ) : null}
+      </div>
+
+      {container && isExpanded
+        ? childEntries.map(([childLabel, childValue]) => (
+            <JsonTreeNode
+              key={`${key}/${childLabel}`}
+              label={childLabel}
+              value={childValue}
+              path={[...path, Array.isArray(value) ? Number(childLabel) : childLabel]}
+              depth={depth + 1}
+              expanded={expanded}
+              onToggle={onToggle}
+              onDelete={onDelete}
+            />
+          ))
+        : null}
+    </div>
+  );
+}
+
 export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Props) {
   const sortedTargetApps = useMemo(() => [...targetApps].sort((a, b) => a.name.localeCompare(b.name)), [targetApps]);
   const [rows, setRows] = useState<TargetAppDatabaseSchemaRecord[]>(schemas);
@@ -61,8 +205,16 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   const [editingSchemaId, setEditingSchemaId] = useState<string | null>(null);
   const [editableSchema, setEditableSchema] = useState<DatabaseSchemaDocument | null>(null);
   const [jsonEditorSchemaId, setJsonEditorSchemaId] = useState<string | null>(null);
-  const [jsonEditorText, setJsonEditorText] = useState("");
+  const [jsonEditorValue, setJsonEditorValue] = useState<unknown>(null);
+  const [jsonEditorExpanded, setJsonEditorExpanded] = useState<Set<string>>(new Set(["$"]));
   const [status, setStatus] = useState<Status>({ type: "idle", message: "" });
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
+
+  function showToast(message: string, type: "success" | "error" = "success") {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }
 
   const filteredRows = useMemo(
     () => rows.filter((row) => (selectedTargetAppId ? row.targetAppId === selectedTargetAppId : true)),
@@ -82,7 +234,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setStatus({ type: "error", message: parseMessage(body, "Unable to refresh schema list.") });
+      showToast(parseMessage(body, "Unable to refresh schema list."), "error");
       return;
     }
 
@@ -110,13 +262,15 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
 
-    if (!selectedTargetAppId || !databaseName.trim() || !uploadSchemaText.trim()) {
-      setStatus({ type: "error", message: "Target app, database name, and schema file are required." });
+    const hasSchemaInput = Boolean(editableSchema || uploadSchemaText.trim());
+
+    if (!selectedTargetAppId || !databaseName.trim() || !hasSchemaInput) {
+      showToast("Target app, database name, and schema file are required.", "error");
       return;
     }
 
     if (duplicateForTargetApp) {
-      setStatus({ type: "error", message: "Duplicate database name for selected target app is not allowed." });
+      showToast("Duplicate database name for selected target app is not allowed.", "error");
       return;
     }
 
@@ -144,13 +298,15 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setStatus({ type: "error", message: parseMessage(body, editingSchemaId ? "Unable to save schema." : "Unable to upload schema.") });
+      setStatus({ type: "idle", message: "" });
+      showToast(parseMessage(body, editingSchemaId ? "Unable to save schema." : "Unable to upload schema."), "error");
       return;
     }
 
     await refreshRows();
     resetForm();
-    setStatus({ type: "success", message: editingSchemaId ? "Schema updated successfully." : "Schema uploaded and activated successfully." });
+    setStatus({ type: "idle", message: "" });
+    showToast(editingSchemaId ? "Schema updated successfully." : "Schema uploaded and activated successfully.", "success");
   }
 
   function startEdit(row: TargetAppDatabaseSchemaRecord) {
@@ -166,49 +322,73 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   }
 
   async function deleteRow(row: TargetAppDatabaseSchemaRecord) {
-    if (!window.confirm(`Delete schema ${row.databaseName} (${row.targetAppName})?`)) {
-      return;
-    }
+    setConfirmDialog({
+      message: `Delete schema ${row.databaseName} (${row.targetAppName})?`,
+      onConfirm: () => {
+        void (async () => {
+          setConfirmDialog(null);
+          setStatus({ type: "loading", message: "Deleting schema..." });
 
-    setStatus({ type: "loading", message: "Deleting schema..." });
+          const response = await fetch("/api/admin/database-schemas", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ schemaId: row.id }),
+          });
 
-    const response = await fetch("/api/admin/database-schemas", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ schemaId: row.id }),
+          const body = await response.json().catch(() => null);
+          if (!response.ok) {
+            setStatus({ type: "idle", message: "" });
+            showToast(parseMessage(body, "Unable to delete schema."), "error");
+            return;
+          }
+
+          await refreshRows();
+          if (editingSchemaId === row.id) {
+            resetForm();
+          }
+          setStatus({ type: "idle", message: "" });
+          showToast("Schema deleted.", "success");
+        })();
+      },
     });
-
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      setStatus({ type: "error", message: parseMessage(body, "Unable to delete schema.") });
-      return;
-    }
-
-    await refreshRows();
-    if (editingSchemaId === row.id) {
-      resetForm();
-    }
-    setStatus({ type: "success", message: "Schema deleted." });
   }
 
   function openJsonEditor(row: TargetAppDatabaseSchemaRecord) {
     setJsonEditorSchemaId(row.id);
-    setJsonEditorText(JSON.stringify(row.schema, null, 2));
+    setJsonEditorValue(cloneSchema(row.schema));
+    setJsonEditorExpanded(new Set(collectContainerPaths(row.schema)));
+  }
+
+  function toggleJsonNode(path: JsonPathSegment[]) {
+    const key = pathKey(path);
+    setJsonEditorExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  function deleteJsonNode(path: JsonPathSegment[]) {
+    setJsonEditorValue((current) => deleteNodeAtPath(current, path));
+  }
+
+  function expandAllJsonNodes() {
+    setJsonEditorExpanded(new Set(collectContainerPaths(jsonEditorValue)));
+  }
+
+  function collapseAllJsonNodes() {
+    setJsonEditorExpanded(new Set(["$"]));
   }
 
   async function saveJsonEditor() {
-    if (!jsonEditorSchemaId) return;
+    if (!jsonEditorSchemaId || !jsonEditorValue) return;
 
     const row = rows.find((item) => item.id === jsonEditorSchemaId);
     if (!row) return;
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(jsonEditorText);
-    } catch {
-      setStatus({ type: "error", message: "Invalid JSON in editor." });
-      return;
-    }
 
     setStatus({ type: "loading", message: "Saving JSON editor changes..." });
 
@@ -220,24 +400,72 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
         databaseName: row.databaseName,
         databaseType: row.databaseType,
         databaseDescription: row.databaseDescription || "",
-        schema: parsed,
+        schema: jsonEditorValue,
       }),
     });
 
     const body = await response.json().catch(() => null);
     if (!response.ok) {
-      setStatus({ type: "error", message: parseMessage(body, "Unable to save JSON changes.") });
+      setStatus({ type: "idle", message: "" });
+      showToast(parseMessage(body, "Unable to save JSON changes."), "error");
       return;
     }
 
     await refreshRows();
     setJsonEditorSchemaId(null);
-    setJsonEditorText("");
-    setStatus({ type: "success", message: "Schema JSON updated." });
+    setJsonEditorValue(null);
+    setStatus({ type: "idle", message: "" });
+    showToast("Schema JSON updated.", "success");
   }
 
   return (
     <div className="space-y-6">
+      {toast ? (
+        <div className="fixed left-1/2 top-4 z-[9999] -translate-x-1/2 animate-in fade-in slide-in-from-top-2 duration-300">
+          <div
+            className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${
+              toast.type === "success"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : "border-red-200 bg-red-50 text-red-900"
+            }`}
+          >
+            <span className="text-sm font-medium">{toast.message}</span>
+            <button
+              className="ml-2 rounded p-0.5 transition-colors hover:bg-black/5"
+              type="button"
+              onClick={() => setToast(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDialog ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-slate-950">Please confirm</h3>
+            <p className="mt-2 text-sm text-slate-600">{confirmDialog.message}</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
+                type="button"
+                onClick={confirmDialog.onConfirm}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <h2 className="text-sm font-semibold text-slate-950">Database Schema Setup</h2>
         <p className="mt-1 text-xs text-slate-500">Organization: {companyName}</p>
@@ -342,6 +570,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Sno</th>
                 <th className="px-3 py-2 text-left font-semibold text-slate-600">Target App</th>
                 <th className="px-3 py-2 text-left font-semibold text-slate-600">Database Name</th>
                 <th className="px-3 py-2 text-left font-semibold text-slate-600">Type</th>
@@ -355,13 +584,14 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
             <tbody className="divide-y divide-slate-100">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-3 text-slate-500" colSpan={8}>
+                  <td className="px-3 py-3 text-slate-500" colSpan={9}>
                     No uploaded schema records for selected target app.
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row) => (
+                filteredRows.map((row, index) => (
                   <tr key={row.id}>
+                    <td className="px-3 py-2 text-slate-700">{index + 1}</td>
                     <td className="px-3 py-2 text-slate-700">{row.targetAppName}</td>
                     <td className="px-3 py-2 font-medium text-slate-800">{row.databaseName}</td>
                     <td className="px-3 py-2 text-slate-700">{row.databaseType}</td>
@@ -410,14 +640,6 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
             </tbody>
           </table>
         </div>
-      </section>
-
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        {status.message ? (
-          <p className={`rounded-lg px-3 py-2 text-sm ${status.type === "error" ? "bg-red-50 text-red-700" : status.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
-            {status.message}
-          </p>
-        ) : null}
       </section>
 
       <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -527,24 +749,66 @@ PRAGMA table_info('your_table_name');`}</pre>
           <div className="w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <h4 className="text-sm font-semibold text-slate-900">Schema JSON Editor</h4>
-              <button className="text-sm text-slate-600" type="button" onClick={() => setJsonEditorSchemaId(null)}>
+              <button
+                className="text-sm text-slate-600"
+                type="button"
+                onClick={() => {
+                  setJsonEditorSchemaId(null);
+                  setJsonEditorValue(null);
+                }}
+              >
                 Close
               </button>
             </div>
             <div className="p-4">
-              <textarea
-                className="h-[420px] w-full rounded border border-slate-300 px-3 py-2 font-mono text-xs"
-                value={jsonEditorText}
-                onChange={(event) => setJsonEditorText(event.target.value)}
-              />
-              <div className="mt-3 flex justify-end">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <button
+                  className="rounded border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  type="button"
+                  onClick={expandAllJsonNodes}
+                >
+                  Expand All
+                </button>
+                <button
+                  className="rounded border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  type="button"
+                  onClick={collapseAllJsonNodes}
+                >
+                  Collapse All
+                </button>
+              </div>
+
+              <div className="max-h-[420px] overflow-auto rounded border border-slate-300 bg-white p-2">
+                <JsonTreeNode
+                  label="root"
+                  value={jsonEditorValue}
+                  path={[]}
+                  depth={0}
+                  expanded={jsonEditorExpanded}
+                  onToggle={toggleJsonNode}
+                  onDelete={deleteJsonNode}
+                />
+              </div>
+
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                  type="button"
+                  onClick={() => {
+                    setJsonEditorSchemaId(null);
+                    setJsonEditorValue(null);
+                  }}
+                >
+                  Cancel
+                </button>
                 <button
                   className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
                   type="button"
                   onClick={() => void saveJsonEditor()}
+                  disabled={status.type === "loading"}
                 >
                   <Save className="h-4 w-4" />
-                  Save JSON
+                  Save
                 </button>
               </div>
             </div>
