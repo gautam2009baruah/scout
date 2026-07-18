@@ -318,7 +318,10 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
         />
       </div>
 
-      <details className="rounded-lg border border-slate-200 bg-white p-3" open={helpOpen.overview} onToggle={(event) => setHelpOpen((current) => ({ ...current, overview: (event.currentTarget as HTMLDetailsElement).open }))}>
+      <details className="rounded-lg border border-slate-200 bg-white p-3" open={helpOpen.overview} onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setHelpOpen((current) => ({ ...current, overview: open }));
+      }}>
         <summary className="cursor-pointer text-sm font-semibold text-slate-900">How the Database Node works</summary>
         <div className="mt-3 space-y-2 text-xs text-slate-700">
           <p>1. It receives the user question from the chatbot trigger path.</p>
@@ -330,7 +333,10 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
         </div>
       </details>
 
-      <details className="rounded-lg border border-slate-200 bg-white p-3" open={helpOpen.examples} onToggle={(event) => setHelpOpen((current) => ({ ...current, examples: (event.currentTarget as HTMLDetailsElement).open }))}>
+      <details className="rounded-lg border border-slate-200 bg-white p-3" open={helpOpen.examples} onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setHelpOpen((current) => ({ ...current, examples: open }));
+      }}>
         <summary className="cursor-pointer text-sm font-semibold text-slate-900">Sample usage patterns</summary>
         <div className="mt-3 space-y-3 text-xs text-slate-700">
           <div className="rounded border border-slate-200 bg-slate-50 p-3">
@@ -354,7 +360,10 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
         </div>
       </details>
 
-      <details className="rounded-lg border border-slate-200 bg-white p-3" open={helpOpen.safety} onToggle={(event) => setHelpOpen((current) => ({ ...current, safety: (event.currentTarget as HTMLDetailsElement).open }))}>
+      <details className="rounded-lg border border-slate-200 bg-white p-3" open={helpOpen.safety} onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setHelpOpen((current) => ({ ...current, safety: open }));
+      }}>
         <summary className="cursor-pointer text-sm font-semibold text-slate-900">SQL safety rules</summary>
         <div className="mt-3 space-y-2 text-xs text-slate-700">
           <p>Only a single SELECT statement is allowed.</p>
@@ -365,7 +374,10 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
         </div>
       </details>
 
-      <details className="rounded-lg border border-slate-200 bg-white p-3" open={helpOpen.tryout} onToggle={(event) => setHelpOpen((current) => ({ ...current, tryout: (event.currentTarget as HTMLDetailsElement).open }))}>
+      <details className="rounded-lg border border-slate-200 bg-white p-3" open={helpOpen.tryout} onToggle={(event) => {
+        const open = event.currentTarget.open;
+        setHelpOpen((current) => ({ ...current, tryout: open }));
+      }}>
         <summary className="cursor-pointer text-sm font-semibold text-slate-900">Try out</summary>
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           <div className="space-y-3">

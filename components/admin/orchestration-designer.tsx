@@ -969,6 +969,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                 const reason = !isCompatible && currentTriggerType
                   ? getIncompatibilityReason(nodeConfig.type, currentTriggerType)
                   : null;
+                const NodeIcon = nodeConfig.icon;
 
                 return (
                   <button
@@ -984,7 +985,9 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                     type="button"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-lg">{nodeConfig.icon}</span>
+                      <span className="text-lg">
+                        {typeof NodeIcon === "string" ? NodeIcon : <NodeIcon className="h-5 w-5" />}
+                      </span>
                       <span>{nodeConfig.label}</span>
                       {!isCompatible && (
                         <span className="ml-auto text-xs">🚫</span>

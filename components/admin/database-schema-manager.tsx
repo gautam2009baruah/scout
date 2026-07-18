@@ -371,7 +371,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   }
 
   function deleteJsonNode(path: JsonPathSegment[]) {
-    setJsonEditorValue((current) => {
+    setJsonEditorValue((current: unknown) => {
       if (!current) {
         showToast("No JSON loaded in editor.", "error");
         return current;

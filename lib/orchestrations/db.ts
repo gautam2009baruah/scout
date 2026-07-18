@@ -716,8 +716,8 @@ export async function createNode(data: {
       data.orchestrationId,
       data.nodeType,
       data.label,
-      data.positionX,
-      data.positionY,
+      Math.round(data.positionX),
+      Math.round(data.positionY),
       JSON.stringify(data.config),
       data.displayDescription,
     ]
@@ -767,12 +767,12 @@ export async function updateNode(
   }
 
   if (data.positionX !== undefined) {
-    params.push(data.positionX);
+    params.push(Math.round(data.positionX));
     updates.push(`position_x = $${params.length}`);
   }
 
   if (data.positionY !== undefined) {
-    params.push(data.positionY);
+    params.push(Math.round(data.positionY));
     updates.push(`position_y = $${params.length}`);
   }
 
