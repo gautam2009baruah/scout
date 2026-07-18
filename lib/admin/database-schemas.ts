@@ -264,7 +264,7 @@ export async function getDatabaseSchemaAdminPayload(session: AdminSession) {
       SELECT
         schemas.id,
         schemas.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         schemas.database_name,
         schemas.database_type,
         schemas.database_description,
@@ -318,7 +318,7 @@ export async function getDatabaseSchemaById(session: AdminSession, schemaId: str
       SELECT
         schemas.id,
         schemas.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         schemas.database_name,
         schemas.database_type,
         schemas.database_description,
@@ -516,12 +516,13 @@ export async function updateDatabaseSchema(
         updated_by = $5,
         updated_at = now()
       FROM guided_workflow_target_apps gta
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE schemas.id = $6
         AND schemas.target_app_id = gta.id
       RETURNING
         schemas.id,
         schemas.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         schemas.database_name,
         schemas.database_type,
         schemas.database_description,
