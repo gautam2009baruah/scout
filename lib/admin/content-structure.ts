@@ -102,14 +102,24 @@ async function validateTargetAppIds(companyId: string, targetAppIds: string[], s
   const result = await getPool().query<{ id: string }>(`
     SELECT app.id
     FROM guided_workflow_target_apps app
-    WHERE app.company_id = $1
+    INNER JOIN company_target_applications company_app
+      ON company_app.id = app.target_app_id
+    WHERE company_app.company_id = $1
+      AND company_app.deleted_at IS NULL
+      AND app.deleted_at IS NULL
       AND app.id = ANY($2::uuid[])
       AND (
         $3::boolean = true
         OR NOT EXISTS (
           SELECT 1 FROM user_target_app_access scope
           INNER JOIN guided_workflow_target_apps scoped_app ON scoped_app.id = scope.target_app_id
-          WHERE scope.user_id = $4 AND scope.deleted_at IS NULL AND scoped_app.company_id = $1
+          INNER JOIN company_target_applications scoped_company_app
+            ON scoped_company_app.id = scoped_app.target_app_id
+          WHERE scope.user_id = $4
+            AND scope.deleted_at IS NULL
+            AND scoped_app.deleted_at IS NULL
+            AND scoped_company_app.deleted_at IS NULL
+            AND scoped_company_app.company_id = $1
         )
         OR EXISTS (
           SELECT 1 FROM user_target_app_access allowed
@@ -129,11 +139,11 @@ async function replaceFolderTargetApps(folderId: string, companyId: string, targ
     await client.query(`UPDATE folder_target_apps SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE folder_id = $1 AND deleted_at IS NULL`, [folderId, session.user.id]);
     if (ids.length > 0) {
       await client.query(`
-        INSERT INTO folder_target_apps (company_id, folder_id, target_app_id, created_by, updated_by)
-        SELECT $1, $2, target_app_id, $3, $3 FROM unnest($4::uuid[]) AS target_app_id
+        INSERT INTO folder_target_apps (folder_id, target_app_id, created_by, updated_by)
+        SELECT $1, target_app_id, $2, $2 FROM unnest($3::uuid[]) AS target_app_id
         ON CONFLICT (folder_id, target_app_id) DO UPDATE
         SET deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
-      `, [companyId, folderId, session.user.id, ids]);
+      `, [folderId, session.user.id, ids]);
     }
     await client.query("COMMIT");
   } catch (error) {

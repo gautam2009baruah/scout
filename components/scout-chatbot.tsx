@@ -2012,6 +2012,25 @@ export function ScoutChatbot({
     }
 
     try {
+      const pendingRouterAction = pendingRouterConfirmationRef.current;
+      const pendingWorkflowAction = pendingWorkflowConfirmationRef.current
+        ?? findPendingWorkflowConfirmation(messages);
+      const pendingAction = pendingRouterAction
+        ? {
+            type: "action_confirmation",
+            description: `Run ${pendingRouterAction.workflow.title}`,
+            workflowId: pendingRouterAction.workflow.id,
+            workflowTitle: pendingRouterAction.workflow.title,
+          }
+        : pendingWorkflowAction
+          ? {
+              type: "action_confirmation",
+              description: `Run ${pendingWorkflowAction.suggestion.workflow.title}`,
+              workflowId: pendingWorkflowAction.suggestion.workflow.id,
+              workflowTitle: pendingWorkflowAction.suggestion.workflow.title,
+            }
+          : null;
+
       const response = await fetch(intentGateEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2022,6 +2041,7 @@ export function ScoutChatbot({
           conversationId: activeConversationId.current || conversationSessionId || undefined,
           message,
           history: contextWindow.slice(-10).map((item) => ({ role: item.role, text: item.text })),
+          pendingAction,
         }),
       });
 
