@@ -2377,7 +2377,7 @@ export function ScoutChatbot({
     if (body?.orchestration_trigger) {
       const trigger = body.orchestration_trigger;
       console.log('🎯 Orchestration option available:', trigger);
-      console.log('� Received executionId:', trigger.executionId);
+      console.log("Received executionId:", trigger.executionId);
       console.log('💡 User can click the orchestration link in the message to execute');
       
       if (!trigger.executionId) {

@@ -269,11 +269,6 @@ export async function getCurrentAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  // Reading a session must not extend only the database expiry. The browser
-  // cookie and client warning deadline are renewed together by the extend
-  // endpoint so all three clocks remain synchronized.
-  await getPool().query("UPDATE user_sessions SET last_seen_at = now() WHERE id = $1", [row.session_id]);
-
   return toAdminSession(row, availableCompanies);
 }
 

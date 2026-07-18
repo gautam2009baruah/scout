@@ -98,7 +98,6 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const logoutRequestedRef = useRef(false);
   const isExtendingSessionRef = useRef(false);
   const showSessionWarningRef = useRef(false);
-  const lastUserActivityRef = useRef(0);
   const lastSessionExtensionRef = useRef(0);
 
   const preferredTopLevelOrder = [
@@ -340,12 +339,9 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
   useEffect(() => {
     const activityExtensionIntervalMs = 4 * 60 * 1000;
-    const recentActivityWindowMs = 5 * 60 * 1000;
-    lastUserActivityRef.current = Date.now();
 
     const recordActivity = () => {
       const now = Date.now();
-      lastUserActivityRef.current = now;
 
       if (
         !showSessionWarningRef.current &&
@@ -355,35 +351,14 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       }
     };
 
-    const heartbeat = window.setInterval(() => {
-      const now = Date.now();
-      const userWasRecentlyActive =
-        now - lastUserActivityRef.current <= recentActivityWindowMs;
-
-      if (
-        userWasRecentlyActive &&
-        !showSessionWarningRef.current &&
-        now - lastSessionExtensionRef.current >= activityExtensionIntervalMs
-      ) {
-        void renewActiveSession();
-      }
-    }, 60_000);
-
     window.addEventListener("pointerdown", recordActivity, { passive: true });
     window.addEventListener("keydown", recordActivity);
     window.addEventListener("touchstart", recordActivity, { passive: true });
-    window.addEventListener("focus", recordActivity);
-
-    // Synchronize the database deadline, browser cookie, and client timer on
-    // every page mount/navigation.
-    void renewActiveSession();
 
     return () => {
-      window.clearInterval(heartbeat);
       window.removeEventListener("pointerdown", recordActivity);
       window.removeEventListener("keydown", recordActivity);
       window.removeEventListener("touchstart", recordActivity);
-      window.removeEventListener("focus", recordActivity);
     };
   }, [renewActiveSession]);
 

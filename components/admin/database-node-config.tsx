@@ -208,10 +208,6 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-        The Database Node builds a safe read-only SELECT query using the chatbot request, AI extraction JSON, and the selected active schema. It does not execute the query.
-      </div>
-
       <div>
         <label className="mb-1 block text-sm font-semibold text-slate-700">
           Active Database Schema <span className="text-red-500">*</span>
@@ -311,7 +307,7 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
         <label className="mb-1 block text-sm font-semibold text-slate-700">Custom SQL Generation Instructions</label>
         <textarea
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
-          rows={4}
+          rows={2}
           value={String(config.customInstructions || "")}
           onChange={(event) => updateConfig({ customInstructions: event.target.value })}
           placeholder="Optional business rules, preferred filters, result shape hints, and exclusions."
@@ -442,16 +438,6 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected schema</div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">{selectedSchema ? selectedSchema.databaseName : "No schema selected"}</div>
-              {selectedSchema ? (
-                <div className="mt-1 text-xs text-slate-500">
-                  {selectedSchema.databaseType} v{selectedSchema.version} | Updated {new Date(selectedSchema.updatedAt).toLocaleString()}
-                </div>
-              ) : null}
-            </div>
-
             <div className="rounded-lg border border-slate-200 bg-slate-950 p-3 text-slate-100">
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-300">Generated SQL</div>

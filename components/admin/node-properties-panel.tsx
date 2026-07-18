@@ -32,18 +32,18 @@ declare global {
 }
 
 const NODE_CONFIGS = [
-  { type: "trigger", label: "Trigger", icon: "ΓÜí" },
-  { type: "workflow", label: "Workflow", icon: "≡ƒöä" },
-  { type: "data_capture", label: "Data Capture", icon: "≡ƒôï" },
-  { type: "ai_extraction", label: "AI Extraction", icon: "≡ƒñû" },
-  { type: "ai_decision", label: "AI Decision", icon: "≡ƒºá" },
-  { type: "condition", label: "Condition", icon: "Γ¥ô" },
-  { type: "human_approval", label: "Human Approval", icon: "Γ£ï" },
-  { type: "notification", label: "Notification", icon: "≡ƒôº" },
-  { type: "api_call", label: "API Call", icon: "≡ƒîÉ" },
-  { type: "database", label: "Database", icon: "≡ƒùä∩╕Å" },
-  { type: "variable", label: "Variable", icon: "≡ƒôè" },
-  { type: "end", label: "End", icon: "≡ƒÅü" },
+  { type: "trigger", label: "Trigger", icon: "⚡" },
+  { type: "workflow", label: "Workflow", icon: "🔄" },
+  { type: "data_capture", label: "Data Capture", icon: "📋" },
+  { type: "ai_extraction", label: "AI Extraction", icon: "🤖" },
+  { type: "ai_decision", label: "AI Decision", icon: "🧠" },
+  { type: "condition", label: "Condition", icon: "◆" },
+  { type: "human_approval", label: "Human Approval", icon: "✋" },
+  { type: "notification", label: "Notification", icon: "📧" },
+  { type: "api_call", label: "API Call", icon: "🌐" },
+  { type: "database", label: "Database", icon: "🗄️" },
+  { type: "variable", label: "Variable", icon: "📈" },
+  { type: "end", label: "End", icon: "🏁" },
 ];
 
 const PANEL_MARGIN = 16;
@@ -1103,7 +1103,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
           <h4 className="text-sm font-semibold text-slate-700">Manual Trigger Settings</h4>
           
           <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs space-y-2">
-            <p className="font-semibold text-blue-900">≡ƒÆí How Manual Trigger Works:</p>
+            <p className="font-semibold text-blue-900">💡 How Manual Trigger Works:</p>
             <div className="space-y-1 text-blue-800">
               <p><strong>Field Name:</strong> Variable name (e.g., "session_name") - use lowercase with underscores</p>
               <p><strong>Label:</strong> Display text shown in dialog (e.g., "Training Session Title")</p>
@@ -1229,7 +1229,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
 
           <details className="text-xs bg-white border border-purple-200 rounded p-2">
             <summary className="cursor-pointer font-semibold text-purple-900 hover:text-purple-700">
-              ≡ƒÆí Schedule Timezone Help
+              💡 Schedule Timezone Help
             </summary>
             <div className="mt-2 space-y-2 text-slate-700">
               <p>
@@ -1292,18 +1292,18 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               {/* Cron Cheat Sheet */}
               <details className="text-xs mt-2 bg-white border border-purple-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-purple-900 hover:text-purple-700">
-                  ≡ƒôû Cron Expression Cheat Sheet
+                  📖 Cron Expression Cheat Sheet
                 </summary>
                 <div className="mt-2 space-y-3">
                   <div>
                     <div className="font-semibold text-slate-700 mb-1">Field Format:</div>
                     <div className="font-mono text-xs bg-slate-50 p-2 rounded">
-                      ΓöîΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ minute (0-59)<br/>
-                      Γöé ΓöîΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ hour (0-23)<br/>
-                      Γöé Γöé ΓöîΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ day of month (1-31)<br/>
-                      Γöé Γöé Γöé ΓöîΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ month (1-12)<br/>
-                      Γöé Γöé Γöé Γöé ΓöîΓöÇΓöÇΓöÇΓöÇΓöÇ day of week (0-6, Sunday=0)<br/>
-                      Γöé Γöé Γöé Γöé Γöé<br/>
+                      ┌───────────── minute (0-59)<br/>
+                      │ ┌─────────── hour (0-23)<br/>
+                      │ │ ┌───────── day of month (1-31)<br/>
+                      │ │ │ ┌─────── month (1-12)<br/>
+                      │ │ │ │ ┌───── day of week (0-6, Sunday=0)<br/>
+                      │ │ │ │ │<br/>
                       * * * * *
                     </div>
                   </div>
@@ -1333,7 +1333,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                   </div>
 
                   <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
-                    <div className="font-semibold text-yellow-900 mb-1">ΓÜá∩╕Å Troubleshooting:</div>
+                    <div className="font-semibold text-yellow-900 mb-1">⚠️ Troubleshooting:</div>
                     <ul className="list-disc list-inside text-yellow-800 space-y-1">
                       <li>Check timezone setting if schedule seems off</li>
                       <li>Use online tools like crontab.guru to validate</li>
@@ -1413,7 +1413,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
           {/* Schedule Preview */}
           {config.scheduleType && (
             <div className="bg-purple-100 border border-purple-300 rounded p-3">
-              <div className="text-xs font-semibold text-purple-900 mb-1">≡ƒôà Schedule Preview:</div>
+              <div className="text-xs font-semibold text-purple-900 mb-1">📅 Schedule Preview:</div>
               <div className="text-sm text-purple-800 font-medium">
                 {(() => {
                   const timezone = config.timezone || "UTC";
@@ -1454,7 +1454,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
           </div>
 
           <p className="text-xs text-purple-700">
-            Γä╣∩╕Å Schedule triggers will be executed by the scheduler worker process
+            ℹ️ Schedule triggers will be executed by the scheduler worker process
           </p>
         </div>
       )}
@@ -2767,7 +2767,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                   grouped[sessionTitle].forEach((workflow) => {
                     options.push(
                       <option key={workflow.id} value={workflow.id} style={{ paddingLeft: '1.5rem' }}>
-                        {'    ΓåÆ ' + workflow.title}
+                        {"    → " + workflow.title}
                       </option>
                     );
                   });
@@ -2778,7 +2778,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                   if (options.length > 0) {
                     options.push(
                       <option key="separator" disabled>
-                        ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+                        ────────────────
                       </option>
                     );
                   }
@@ -2828,7 +2828,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
           </p>
           {config.triggerPhrases && config.triggerPhrases.length > 0 && (
             <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
-              Γ£à This workflow will execute when user says: <strong>{config.triggerPhrases.join(", ")}</strong>
+              ✅ This workflow will execute when user says: <strong>{config.triggerPhrases.join(", ")}</strong>
             </div>
           )}
         </div>
@@ -2846,7 +2846,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
             placeholder="https://example.com or {{variableName}}"
           />
           <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs">
-            <p className="font-semibold text-blue-900 mb-1">≡ƒñû Automated Browser Execution</p>
+            <p className="font-semibold text-blue-900 mb-1">🤖 Automated Browser Execution</p>
             <p className="text-blue-800">
               When Target URL is provided, the workflow will run in an <strong>automated browser</strong>:
             </p>
@@ -2865,15 +2865,15 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
       {triggerType === "manual" && (
         <div className="border-t pt-4">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
-          ≡ƒôÑ Input Mapping
+          📥 Input Mapping
         </label>
         <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-slate-700">
-          <p className="font-semibold mb-2 text-blue-900">≡ƒÆí How Input Mapping Works:</p>
+          <p className="font-semibold mb-2 text-blue-900">💡 How Input Mapping Works:</p>
           <div className="space-y-1.5">
             <p><strong>Left side:</strong> Describe the field to find (e.g., "training session title", "employee name")</p>
             <p><strong>Right side:</strong> Select the trigger field that contains the value</p>
             <p className="text-blue-800 mt-2 pt-2 border-t border-blue-200">
-              <strong>Example:</strong> "fill training name textbox" ΓåÆ trigger.input.title<br/>
+              <strong>Example:</strong> "fill training name textbox" → trigger.input.title<br/>
               This finds a textbox with label "training name" and fills it with the title from your trigger.
             </p>
           </div>
@@ -2897,7 +2897,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                       <div className="text-sm font-semibold text-slate-900">{step.description}</div>
                       <div className="text-xs text-slate-500 mt-0.5">
                         Field: <span className="font-mono bg-slate-100 px-1 rounded">{step.parameterLabel}</span>
-                        {step.type && <span className="ml-2">ΓÇó Type: {step.type}</span>}
+                        {step.type && <span className="ml-2">• Type: {step.type}</span>}
                       </div>
                     </div>
                   </div>
@@ -2922,14 +2922,14 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                           }}
                         >
                           <option value="">Select a field...</option>
-                          <optgroup label="≡ƒôÑ Trigger Fields">
+                          <optgroup label="📥 Trigger Fields">
                             {availableFields.map((field) => (
                               <option key={field.value} value={field.value}>
                                 {field.label}
                               </option>
                             ))}
                           </optgroup>
-                          <optgroup label="Γ£ì∩╕Å Custom">
+                          <optgroup label="✍️ Custom">
                             <option value="__custom__">Type manually...</option>
                           </optgroup>
                         </select>
@@ -2990,7 +2990,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                       setInputMappings(updated);
                     }}
                   />
-                  <span className="flex items-center text-slate-400 text-lg">ΓåÉ</span>
+                  <span className="flex items-center text-slate-400 text-lg">←</span>
                   <div className="relative">
                     {availableFields.length > 0 ? (
                       <div className="flex flex-col gap-1">
@@ -3004,7 +3004,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                           }}
                         >
                           <option value="">Select a field...</option>
-                          <optgroup label="≡ƒôÑ Trigger Fields">
+                          <optgroup label="📥 Trigger Fields">
                             {availableFields.map((field) => (
                               <option key={field.value} value={field.value}>
                                 {field.label}
@@ -3061,12 +3061,12 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
         
         {availableFields.length > 0 && workflowSteps.length === 0 ? (
           <div className="mt-3 p-2 bg-green-50 border border-green-200 rounded text-xs text-green-800">
-            <strong>Γ£à {availableFields.length} field{availableFields.length !== 1 ? "s" : ""} available from trigger!</strong>
+            <strong>✅ {availableFields.length} field{availableFields.length !== 1 ? "s" : ""} available from trigger!</strong>
             <p className="mt-1">Select a workflow to see smart mapping suggestions.</p>
           </div>
         ) : !availableFields.length && workflowSteps.length === 0 ? (
           <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
-            <strong>ΓÜá∩╕Å No trigger node found</strong>
+            <strong>⚠️ No trigger node found</strong>
             <p className="mt-1">Connect a trigger node first to enable smart field mapping.</p>
           </div>
         ) : null}
@@ -3076,17 +3076,17 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
       {/* Output Mapping Section */}
       <div className="border-t pt-4">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
-          ≡ƒôñ Workflow Results
+          📤 Workflow Results
         </label>
         <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-slate-700">
-          <p className="font-semibold mb-2 text-blue-900">≡ƒÆí Capture system-generated values from the final page</p>
+          <p className="font-semibold mb-2 text-blue-900">💡 Capture system-generated values from the final page</p>
           <p className="mb-2">After workflow completes, capture values like invoice IDs, confirmation codes, or calculated totals.</p>
           <div className="space-y-1">
             <p><strong>Example:</strong> After creating an invoice, capture the invoice number from the confirmation page.</p>
             <p className="text-blue-800 mt-2 pt-2 border-t border-blue-200">
               <strong>Field Name:</strong> invoiceNumber<br/>
               <strong>CSS Selector:</strong> #invoice-id or .confirmation-code<br/>
-              <strong>Required:</strong> Γÿæ (prompts user if not found)
+              <strong>Required:</strong> ☑ (prompts user if not found)
             </p>
           </div>
         </div>
@@ -3205,7 +3205,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
         
         {outputMappings.length === 0 && (
           <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded text-xs text-slate-600">
-            <strong>Γä╣∩╕Å Optional:</strong> Only add result fields if you need to capture values from the final page after workflow completes.
+            <strong>ℹ️ Optional:</strong> Only add result fields if you need to capture values from the final page after workflow completes.
           </div>
         )}
       </div>
@@ -3263,7 +3263,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
               </label>
               <div className="ml-auto">
                 <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                  ≡ƒñû Smart field matching
+                  🤖 Smart field matching
                 </span>
               </div>
             </div>
@@ -3288,7 +3288,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                 </label>
                 <div className="ml-auto">
                   <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-                    ΓÜí Auto-progress
+                    ⚡ Auto-progress
                   </span>
                 </div>
               </div>
@@ -3390,7 +3390,7 @@ function DataCaptureConfig({ config, updateConfig }: any) {
           onClick={() => setShowAdvanced(!showAdvanced)}
           className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900"
         >
-          <span>{showAdvanced ? 'Γû╝' : 'Γû╢'}</span>
+          <span>{showAdvanced ? "▼" : "▶"}</span>
           Advanced Settings
         </button>
         
@@ -3411,7 +3411,7 @@ function DataCaptureConfig({ config, updateConfig }: any) {
                 Variable name to store captured data. Useful when you have multiple data capture nodes and need to keep their data separate (e.g., userInfo, orderDetails).
               </p>
               <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-                <p className="font-semibold text-blue-900 mb-1">≡ƒÆí How to use in Condition/Variable nodes:</p>
+                <p className="font-semibold text-blue-900 mb-1">💡 How to use in Condition/Variable nodes:</p>
                 <code className="text-blue-800">
                   {`{{${config.outputVariable || "capturedData"}.fieldName.value}}`}
                 </code>
@@ -3484,7 +3484,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
               {activeProvider.model ? ` (${activeProvider.model})` : ""}
             </span>
           ) : (
-            <span className="italic">loadingΓÇª</span>
+            <span className="italic">loading…</span>
           )}
         </div>
         <div className="mt-1">
@@ -3562,7 +3562,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
         <CollapsibleHelp title="How fields work">
           <p>
             Give each field a name (used downstream) and describe what to look for.
-            The AI matches synonyms/variants automatically ΓÇö e.g. a field described
+            The AI matches synonyms/variants automatically — e.g. a field described
             as &ldquo;invoice number&rdquo; also finds Invoice #, Invoice ID, Invoice No.
           </p>
         </CollapsibleHelp>
@@ -3850,7 +3850,7 @@ function ConditionConfig({ config, updateConfig }: any) {
       {/* Variable Usage Help */}
       <details className="border border-slate-300 rounded-lg bg-white">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
-          ≡ƒôÿ How to Use Variables in Conditions
+          📘 How to Use Variables in Conditions
         </summary>
         <div className="px-4 py-3 space-y-4 text-sm border-t border-slate-200 bg-slate-50">
           
@@ -3875,7 +3875,7 @@ function ConditionConfig({ config, updateConfig }: any) {
               {/* Variable Node */}
               <div className="bg-white border border-slate-200 rounded p-2">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">≡ƒôè</span>
+                  <span className="text-lg">📈</span>
                   <span className="font-semibold text-slate-800">Variable Node</span>
                   <code className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-xs">{"{{variables.xxx}}"}</code>
                 </div>
@@ -3889,7 +3889,7 @@ function ConditionConfig({ config, updateConfig }: any) {
               {/* Data Capture Node */}
               <div className="bg-white border border-slate-200 rounded p-2">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">≡ƒôï</span>
+                  <span className="text-lg">📋</span>
                   <span className="font-semibold text-slate-800">Data Capture Node</span>
                   <code className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-xs">{"{{capturedData.xxx.value}}"}</code>
                 </div>
@@ -3904,7 +3904,7 @@ function ConditionConfig({ config, updateConfig }: any) {
               {/* Workflow Node */}
               <div className="bg-white border border-slate-200 rounded p-2">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">≡ƒöä</span>
+                  <span className="text-lg">🔄</span>
                   <span className="font-semibold text-slate-800">Workflow Node</span>
                   <code className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-xs">{"{{workflow.Name.field}}"}</code>
                 </div>
@@ -3919,7 +3919,7 @@ function ConditionConfig({ config, updateConfig }: any) {
               {/* Trigger Node */}
               <div className="bg-white border border-slate-200 rounded p-2">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">ΓÜí</span>
+                  <span className="text-lg">⚡</span>
                   <span className="font-semibold text-slate-800">Trigger Node</span>
                   <code className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-xs">{"{{trigger.xxx}}"}</code>
                 </div>
@@ -3934,7 +3934,7 @@ function ConditionConfig({ config, updateConfig }: any) {
               {/* AI Extraction Node */}
               <div className="bg-white border border-slate-200 rounded p-2">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">≡ƒñû</span>
+                  <span className="text-lg">🤖</span>
                   <span className="font-semibold text-slate-800">AI Extraction Node</span>
                   <code className="bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded text-xs">{"{{ai.xxx}}"}</code>
                 </div>
@@ -3993,26 +3993,26 @@ function ConditionConfig({ config, updateConfig }: any) {
 
           {/* Best Practices */}
           <div>
-            <h4 className="font-semibold text-slate-900 mb-2">Γ¡É Best Practices</h4>
+            <h4 className="font-semibold text-slate-900 mb-2">⭐ Best Practices</h4>
             <ul className="space-y-1 text-xs text-slate-700">
               <li className="flex items-start gap-2">
-                <span className="text-green-600 mt-0.5">Γ£ô</span>
+                <span className="text-green-600 mt-0.5">✓</span>
                 <span>Use descriptive names: <code className="bg-slate-200 px-1 rounded">{"{{variables.customerOrderAmount}}"}</code> not <code className="bg-slate-200 px-1 rounded">{"{{variables.amt}}"}</code></span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-green-600 mt-0.5">Γ£ô</span>
+                <span className="text-green-600 mt-0.5">✓</span>
                 <span>Variables must exist BEFORE the condition node in the orchestration flow</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-green-600 mt-0.5">Γ£ô</span>
+                <span className="text-green-600 mt-0.5">✓</span>
                 <span>Match exact field names from node outputs (case-sensitive)</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-green-600 mt-0.5">Γ£ô</span>
+                <span className="text-green-600 mt-0.5">✓</span>
                 <span>Test with literal values first: use <code className="bg-slate-200 px-1 rounded">Premium</code> instead of variables initially</span>
               </li>
               <li className="flex items-start gap-2">
-                <span className="text-green-600 mt-0.5">Γ£ô</span>
+                <span className="text-green-600 mt-0.5">✓</span>
                 <span>For numbers, don't use quotes: <code className="bg-slate-200 px-1 rounded">1000</code> not <code className="bg-slate-200 px-1 rounded">"1000"</code></span>
               </li>
             </ul>
@@ -4021,13 +4021,13 @@ function ConditionConfig({ config, updateConfig }: any) {
           {/* Important Notes */}
           <div className="bg-amber-50 border border-amber-200 rounded p-2">
             <h4 className="font-semibold text-amber-900 mb-2 flex items-center gap-1">
-              <span>ΓÜá∩╕Å</span> Important Notes
+              <span>⚠️</span> Important Notes
             </h4>
             <ul className="space-y-1 text-xs text-amber-800">
-              <li>ΓÇó The system automatically resolves variable paths during execution</li>
-              <li>ΓÇó If a variable doesn't exist, the condition evaluates to false</li>
-              <li>ΓÇó Condition evaluation is left-to-right (no parentheses grouping)</li>
-              <li>ΓÇó Node labels in the designer don't affect variable names</li>
+              <li>• The system automatically resolves variable paths during execution</li>
+              <li>• If a variable doesn't exist, the condition evaluates to false</li>
+              <li>• Condition evaluation is left-to-right (no parentheses grouping)</li>
+              <li>• Node labels in the designer don't affect variable names</li>
             </ul>
           </div>
 
@@ -4095,11 +4095,11 @@ function ConditionConfig({ config, updateConfig }: any) {
                     onChange={(e) => updateCondition(index, "operator", e.target.value)}
                   >
                     <option value="equals">Equals (=)</option>
-                    <option value="not_equals">Not Equals (Γëá)</option>
+                    <option value="not_equals">Not Equals (≠)</option>
                     <option value="greater_than">Greater Than (&gt;)</option>
                     <option value="less_than">Less Than (&lt;)</option>
-                    <option value="greater_or_equal">Greater or Equal (ΓëÑ)</option>
-                    <option value="less_or_equal">Less or Equal (Γëñ)</option>
+                    <option value="greater_or_equal">Greater or Equal (≥)</option>
+                    <option value="less_or_equal">Less or Equal (≤)</option>
                     <option value="contains">Contains</option>
                     <option value="not_contains">Not Contains</option>
                     <option value="contains_any">Contains Any (OR)</option>
@@ -4130,7 +4130,7 @@ function ConditionConfig({ config, updateConfig }: any) {
                     {/* Help text for multi-value operators */}
                     {["contains_any", "contains_all", "not_contains_any"].includes(condition.operator) && (
                       <p className="mt-1 text-xs text-slate-600 bg-blue-50 border border-blue-200 rounded px-2 py-1.5">
-                        <span className="font-semibold text-blue-900">≡ƒÆí Tip:</span> Separate multiple values with commas. 
+                        <span className="font-semibold text-blue-900">💡 Tip:</span> Separate multiple values with commas. 
                         {condition.operator === "contains_any" && "Returns TRUE if ANY value is found."}
                         {condition.operator === "contains_all" && "Returns TRUE only if ALL values are found."}
                         {condition.operator === "not_contains_any" && "Returns TRUE if NONE of the values are found."}
@@ -5720,7 +5720,7 @@ function VariableConfig({ config, updateConfig }: any) {
       {/* Help Section */}
       <details className="border border-slate-300 rounded-lg bg-white">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
-          ≡ƒÆí What are Variables?
+          💡 What are Variables?
         </summary>
         <div className="px-4 py-3 space-y-3 text-sm border-t border-slate-200 bg-blue-50">
           <p className="text-blue-800">
@@ -5807,7 +5807,7 @@ function VariableConfig({ config, updateConfig }: any) {
       {/* Usage Example */}
       <details className="border border-slate-300 rounded-lg bg-white">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
-          ≡ƒôï Example Usage
+          📋 Example Usage
         </summary>
         <div className="px-4 py-3 text-xs border-t border-slate-200 bg-slate-50">
           <div className="space-y-1 font-mono text-slate-700">
@@ -6079,7 +6079,7 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
           {/* Help Section */}
           <details className="border border-slate-300 rounded-lg bg-white">
             <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
-              ≡ƒÆí Using Variables in Messages
+              💡 Using Variables in Messages
             </summary>
             <div className="px-4 py-3 space-y-2 text-xs border-t border-slate-200 bg-blue-50">
               <p className="text-blue-800">
