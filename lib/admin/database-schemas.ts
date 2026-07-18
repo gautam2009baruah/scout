@@ -98,14 +98,14 @@ function normalizeSchemaDocument(input: unknown): DatabaseSchemaDocument {
   const rawTables = Array.isArray(payload.tables) ? payload.tables : [];
 
   const tables: DatabaseSchemaTable[] = rawTables
-    .map((item) => {
+    .map<DatabaseSchemaTable | null>((item) => {
       const row = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
       const tableName = normalizeIdentifier(row.name);
       if (!tableName) return null;
 
       const rawColumns = Array.isArray(row.columns) ? row.columns : [];
       const columns: DatabaseSchemaColumn[] = rawColumns
-        .map((columnItem) => {
+        .map<DatabaseSchemaColumn | null>((columnItem) => {
           const col = (columnItem && typeof columnItem === "object" ? columnItem : {}) as Record<string, unknown>;
           const columnName = normalizeIdentifier(col.name);
           if (!columnName) return null;
@@ -122,7 +122,7 @@ function normalizeSchemaDocument(input: unknown): DatabaseSchemaDocument {
 
       const rawForeignKeys = Array.isArray(row.foreignKeys) ? row.foreignKeys : [];
       const foreignKeys: DatabaseSchemaForeignKey[] = rawForeignKeys
-        .map((fkItem) => {
+        .map<DatabaseSchemaForeignKey | null>((fkItem) => {
           const fk = (fkItem && typeof fkItem === "object" ? fkItem : {}) as Record<string, unknown>;
           const column = normalizeIdentifier(fk.column);
           const referencesTable = normalizeIdentifier(fk.referencesTable);
@@ -215,7 +215,7 @@ export async function getDatabaseSchemaAdminPayload(session: AdminSession) {
     `
       SELECT
         active.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         active.database_name,
         active.database_type,
         active.version AS active_version,
@@ -230,10 +230,11 @@ export async function getDatabaseSchemaAdminPayload(session: AdminSession) {
         ) AS history_count
       FROM target_app_database_schemas active
       INNER JOIN guided_workflow_target_apps gta ON gta.id = active.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE active.company_id = $1
         AND active.is_active = true
         AND active.deleted_at IS NULL
-      ORDER BY gta.name ASC, active.database_name ASC
+      ORDER BY cta.name ASC, active.database_name ASC
     `,
     [session.user.tenantId]
   );
@@ -286,9 +287,10 @@ export async function getActiveDatabaseSchema(session: AdminSession, targetAppId
     `
       SELECT
         schemas.*,
-        gta.name AS target_app_name
+        cta.name AS target_app_name
       FROM target_app_database_schemas schemas
       INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE schemas.company_id = $1
         AND schemas.target_app_id = $2
         AND schemas.database_name = $3
@@ -532,13 +534,14 @@ export async function updateActiveDatabaseSchema(
         updated_by = $3,
         updated_at = now()
       FROM guided_workflow_target_apps gta
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE schemas.id = $4
         AND schemas.target_app_id = gta.id
       RETURNING
         schemas.id,
         schemas.company_id,
         schemas.target_app_id,
-        gta.name AS target_app_name,
+        cta.name AS target_app_name,
         schemas.database_name,
         schemas.database_type,
         schemas.version,
@@ -587,9 +590,10 @@ export async function listDatabaseSchemaHistory(session: AdminSession, targetApp
     `
       SELECT
         schemas.*,
-        gta.name AS target_app_name
+        cta.name AS target_app_name
       FROM target_app_database_schemas schemas
       INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
       WHERE schemas.company_id = $1
         AND schemas.target_app_id = $2
         AND schemas.database_name = $3
