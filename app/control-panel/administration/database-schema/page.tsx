@@ -31,7 +31,7 @@ export default async function DatabaseSchemaManagerPage() {
       <DatabaseSchemaManager
         companyName={session.tenant.name}
         targetApps={payload.targetApps}
-        catalog={payload.catalog}
+        schemas={payload.schemas}
       />
     </AdminShell>
   );

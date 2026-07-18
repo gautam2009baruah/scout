@@ -3,10 +3,10 @@
 
 CREATE TABLE IF NOT EXISTS target_app_database_schemas (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   target_app_id uuid NOT NULL REFERENCES guided_workflow_target_apps(id) ON DELETE CASCADE,
   database_name text NOT NULL,
   database_type text NOT NULL,
+  database_description text,
   version integer NOT NULL,
   is_active boolean NOT NULL DEFAULT true,
   schema_json jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS target_app_database_schemas (
 );
 
 CREATE INDEX IF NOT EXISTS target_app_database_schemas_company_idx
-  ON target_app_database_schemas (company_id)
+  ON target_app_database_schemas (target_app_id)
   WHERE deleted_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS target_app_database_schemas_lookup_idx

@@ -39,11 +39,11 @@ export type DatabaseSchemaDocument = {
 
 export type TargetAppDatabaseSchemaRecord = {
   id: string;
-  companyId: string;
   targetAppId: string;
   targetAppName: string;
   databaseName: string;
   databaseType: SupportedDatabaseType;
+  databaseDescription: string | null;
   version: number;
   isActive: boolean;
   schema: DatabaseSchemaDocument;
@@ -52,17 +52,6 @@ export type TargetAppDatabaseSchemaRecord = {
   uploadedAt: string;
   createdById: string | null;
   updatedById: string | null;
-};
-
-export type DatabaseSchemaCatalogEntry = {
-  targetAppId: string;
-  targetAppName: string;
-  databaseName: string;
-  databaseType: SupportedDatabaseType;
-  activeVersion: number;
-  activeSchemaId: string;
-  updatedAt: string;
-  historyCount: number;
 };
 
 export class DatabaseSchemaAdminError extends Error {
@@ -157,11 +146,11 @@ function normalizeSchemaDocument(input: unknown): DatabaseSchemaDocument {
 
 function mapRecord(row: {
   id: string;
-  company_id: string;
   target_app_id: string;
   target_app_name: string;
   database_name: string;
   database_type: SupportedDatabaseType;
+  database_description: string | null;
   version: number;
   is_active: boolean;
   schema_json: DatabaseSchemaDocument;
@@ -173,11 +162,11 @@ function mapRecord(row: {
 }): TargetAppDatabaseSchemaRecord {
   return {
     id: row.id,
-    companyId: row.company_id,
     targetAppId: row.target_app_id,
     targetAppName: row.target_app_name,
     databaseName: row.database_name,
     databaseType: row.database_type,
+    databaseDescription: row.database_description,
     version: row.version,
     isActive: row.is_active,
     schema: normalizeSchemaDocument(row.schema_json),
@@ -197,118 +186,6 @@ async function assertTargetAppAccess(session: AdminSession, targetAppId: string)
   }
   return allowed;
 }
-
-export async function getDatabaseSchemaAdminPayload(session: AdminSession) {
-  const targetApps = await listGuidedWorkflowTargetApps(session);
-  const companyTargetApps = targetApps.filter((app) => app.companyId === session.user.tenantId);
-
-  const catalogResult = await getPool().query<{
-    target_app_id: string;
-    target_app_name: string;
-    database_name: string;
-    database_type: SupportedDatabaseType;
-    active_version: number;
-    active_schema_id: string;
-    updated_at: Date;
-    history_count: string;
-  }>(
-    `
-      SELECT
-        active.target_app_id,
-        cta.name AS target_app_name,
-        active.database_name,
-        active.database_type,
-        active.version AS active_version,
-        active.id AS active_schema_id,
-        active.updated_at,
-        (
-          SELECT COUNT(*)::text
-          FROM target_app_database_schemas history
-          WHERE history.target_app_id = active.target_app_id
-            AND history.database_name = active.database_name
-            AND history.deleted_at IS NULL
-        ) AS history_count
-      FROM target_app_database_schemas active
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = active.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-      WHERE active.company_id = $1
-        AND active.is_active = true
-        AND active.deleted_at IS NULL
-      ORDER BY cta.name ASC, active.database_name ASC
-    `,
-    [session.user.tenantId]
-  );
-
-  const catalog: DatabaseSchemaCatalogEntry[] = catalogResult.rows.map((row) => ({
-    targetAppId: row.target_app_id,
-    targetAppName: row.target_app_name,
-    databaseName: row.database_name,
-    databaseType: row.database_type,
-    activeVersion: row.active_version,
-    activeSchemaId: row.active_schema_id,
-    updatedAt: row.updated_at.toISOString(),
-    historyCount: Number(row.history_count || "0"),
-  }));
-
-  return {
-    targetApps: companyTargetApps.map((app) => ({
-      id: app.id,
-      name: app.name,
-      companyId: app.companyId,
-    })),
-    catalog,
-  };
-}
-
-export async function getActiveDatabaseSchema(session: AdminSession, targetAppId: string, databaseName: string) {
-  await assertTargetAppAccess(session, targetAppId);
-
-  const normalizedName = normalizeIdentifier(databaseName);
-  if (!normalizedName) {
-    throw new DatabaseSchemaAdminError("Database name is required.", 400);
-  }
-
-  const result = await getPool().query<{
-    id: string;
-    company_id: string;
-    target_app_id: string;
-    target_app_name: string;
-    database_name: string;
-    database_type: SupportedDatabaseType;
-    version: number;
-    is_active: boolean;
-    schema_json: DatabaseSchemaDocument;
-    created_at: Date;
-    updated_at: Date;
-    uploaded_at: Date;
-    created_by: string | null;
-    updated_by: string | null;
-  }>(
-    `
-      SELECT
-        schemas.*,
-        cta.name AS target_app_name
-      FROM target_app_database_schemas schemas
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-      WHERE schemas.company_id = $1
-        AND schemas.target_app_id = $2
-        AND schemas.database_name = $3
-        AND schemas.is_active = true
-        AND schemas.deleted_at IS NULL
-      ORDER BY schemas.version DESC
-      LIMIT 1
-    `,
-    [session.user.tenantId, targetAppId, normalizedName]
-  );
-
-  if (!result.rows[0]) {
-    return null;
-  }
-
-  return mapRecord(result.rows[0]);
-}
-
 function buildTableMap(schema: DatabaseSchemaDocument) {
   const map = new Map<string, DatabaseSchemaTable>();
   for (const table of schema.tables) {
@@ -340,7 +217,7 @@ function validateDeletionConstraints(previous: DatabaseSchemaDocument, next: Dat
     }
   }
 
-  for (const [tableName, table] of nextTables.entries()) {
+  for (const table of nextTables.values()) {
     for (const fk of table.foreignKeys || []) {
       const refTable = fk.referencesTable.toLowerCase();
       const refColumn = fk.referencesColumn.toLowerCase();
@@ -363,17 +240,125 @@ function validateDeletionConstraints(previous: DatabaseSchemaDocument, next: Dat
   }
 }
 
+export async function getDatabaseSchemaAdminPayload(session: AdminSession) {
+  const targetApps = await listGuidedWorkflowTargetApps(session);
+  const companyTargetApps = targetApps.filter((app) => app.companyId === session.user.tenantId);
+
+  const schemasResult = await getPool().query<{
+    id: string;
+    target_app_id: string;
+    target_app_name: string;
+    database_name: string;
+    database_type: SupportedDatabaseType;
+    database_description: string | null;
+    version: number;
+    is_active: boolean;
+    schema_json: DatabaseSchemaDocument;
+    created_at: Date;
+    updated_at: Date;
+    uploaded_at: Date;
+    created_by: string | null;
+    updated_by: string | null;
+  }>(
+    `
+      SELECT
+        schemas.id,
+        schemas.target_app_id,
+        gta.name AS target_app_name,
+        schemas.database_name,
+        schemas.database_type,
+        schemas.database_description,
+        schemas.version,
+        schemas.is_active,
+        schemas.schema_json,
+        schemas.created_at,
+        schemas.updated_at,
+        schemas.uploaded_at,
+        schemas.created_by,
+        schemas.updated_by
+      FROM target_app_database_schemas schemas
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      WHERE cta.company_id = $1
+        AND cta.deleted_at IS NULL
+        AND schemas.deleted_at IS NULL
+      ORDER BY schemas.updated_at DESC
+    `,
+    [session.user.tenantId]
+  );
+
+  return {
+    targetApps: companyTargetApps.map((app) => ({
+      id: app.id,
+      name: app.name,
+      companyId: app.companyId,
+    })),
+    schemas: schemasResult.rows.map(mapRecord),
+  };
+}
+
+export async function getDatabaseSchemaById(session: AdminSession, schemaId: string) {
+  const result = await getPool().query<{
+    id: string;
+    target_app_id: string;
+    target_app_name: string;
+    database_name: string;
+    database_type: SupportedDatabaseType;
+    database_description: string | null;
+    version: number;
+    is_active: boolean;
+    schema_json: DatabaseSchemaDocument;
+    created_at: Date;
+    updated_at: Date;
+    uploaded_at: Date;
+    created_by: string | null;
+    updated_by: string | null;
+  }>(
+    `
+      SELECT
+        schemas.id,
+        schemas.target_app_id,
+        gta.name AS target_app_name,
+        schemas.database_name,
+        schemas.database_type,
+        schemas.database_description,
+        schemas.version,
+        schemas.is_active,
+        schemas.schema_json,
+        schemas.created_at,
+        schemas.updated_at,
+        schemas.uploaded_at,
+        schemas.created_by,
+        schemas.updated_by
+      FROM target_app_database_schemas schemas
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      WHERE schemas.id = $1
+        AND cta.company_id = $2
+        AND cta.deleted_at IS NULL
+        AND schemas.deleted_at IS NULL
+      LIMIT 1
+    `,
+    [schemaId, session.user.tenantId]
+  );
+
+  return result.rows[0] ? mapRecord(result.rows[0]) : null;
+}
+
 export async function uploadDatabaseSchema(
   session: AdminSession,
   input: {
     targetAppId: string;
     databaseName: string;
     databaseType: SupportedDatabaseType;
+    databaseDescription?: string | null;
     schema: unknown;
   }
 ) {
   const targetApp = await assertTargetAppAccess(session, input.targetAppId);
   const databaseName = normalizeIdentifier(input.databaseName);
+  const databaseDescription = normalizeIdentifier(input.databaseDescription || "") || null;
+
   if (!databaseName) {
     throw new DatabaseSchemaAdminError("Database name is required.", 400);
   }
@@ -381,142 +366,137 @@ export async function uploadDatabaseSchema(
   const schema = normalizeSchemaDocument(input.schema);
   const databaseType = normalizeDatabaseType(input.databaseType);
 
-  const pool = getPool();
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    const versionResult = await client.query<{ next_version: number }>(
-      `
-        SELECT COALESCE(MAX(version), 0) + 1 AS next_version
+  const duplicateResult = await getPool().query<{ exists: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
         FROM target_app_database_schemas
         WHERE target_app_id = $1
-          AND database_name = $2
+          AND lower(database_name) = lower($2)
           AND deleted_at IS NULL
-      `,
-      [targetApp.id, databaseName]
+      ) AS exists
+    `,
+    [targetApp.id, databaseName]
+  );
+
+  if (duplicateResult.rows[0]?.exists) {
+    throw new DatabaseSchemaAdminError(
+      "Duplicate database name for this target app is not allowed. Use Edit from the list.",
+      409
     );
-
-    const nextVersion = Number(versionResult.rows[0]?.next_version || 1);
-
-    await client.query(
-      `
-        UPDATE target_app_database_schemas
-        SET
-          is_active = false,
-          deactivated_at = now(),
-          updated_at = now(),
-          updated_by = $4
-        WHERE target_app_id = $1
-          AND database_name = $2
-          AND is_active = true
-          AND deleted_at IS NULL
-      `,
-      [targetApp.id, databaseName, session.user.tenantId, session.user.id]
-    );
-
-    const insertResult = await client.query<{
-      id: string;
-      company_id: string;
-      target_app_id: string;
-      target_app_name: string;
-      database_name: string;
-      database_type: SupportedDatabaseType;
-      version: number;
-      is_active: boolean;
-      schema_json: DatabaseSchemaDocument;
-      created_at: Date;
-      updated_at: Date;
-      uploaded_at: Date;
-      created_by: string | null;
-      updated_by: string | null;
-    }>(
-      `
-        INSERT INTO target_app_database_schemas (
-          company_id,
-          target_app_id,
-          database_name,
-          database_type,
-          version,
-          is_active,
-          schema_json,
-          created_by,
-          updated_by
-        )
-        VALUES ($1, $2, $3, $4, $5, true, $6::jsonb, $7, $7)
-        RETURNING
-          id,
-          company_id,
-          target_app_id,
-          $8::text AS target_app_name,
-          database_name,
-          database_type,
-          version,
-          is_active,
-          schema_json,
-          created_at,
-          updated_at,
-          uploaded_at,
-          created_by,
-          updated_by
-      `,
-      [
-        session.user.tenantId,
-        targetApp.id,
-        databaseName,
-        databaseType,
-        nextVersion,
-        JSON.stringify(schema),
-        session.user.id,
-        targetApp.name,
-      ]
-    );
-
-    await client.query("COMMIT");
-
-    return mapRecord(insertResult.rows[0]);
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
   }
-}
-
-export async function updateActiveDatabaseSchema(
-  session: AdminSession,
-  input: {
-    targetAppId: string;
-    databaseName: string;
-    databaseType?: SupportedDatabaseType;
-    schema: unknown;
-  }
-) {
-  const targetApp = await assertTargetAppAccess(session, input.targetAppId);
-  const databaseName = normalizeIdentifier(input.databaseName);
-  if (!databaseName) {
-    throw new DatabaseSchemaAdminError("Database name is required.", 400);
-  }
-
-  const nextSchema = normalizeSchemaDocument(input.schema);
-
-  const existing = await getActiveDatabaseSchema(session, targetApp.id, databaseName);
-  if (!existing) {
-    throw new DatabaseSchemaAdminError("No active schema found for this database.", 404);
-  }
-
-  validateDeletionConstraints(existing.schema, nextSchema);
-
-  const databaseType = input.databaseType ? normalizeDatabaseType(input.databaseType) : existing.databaseType;
 
   const result = await getPool().query<{
     id: string;
-    company_id: string;
     target_app_id: string;
     target_app_name: string;
     database_name: string;
     database_type: SupportedDatabaseType;
+    database_description: string | null;
+    version: number;
+    is_active: boolean;
+    schema_json: DatabaseSchemaDocument;
+    created_at: Date;
+    updated_at: Date;
+    uploaded_at: Date;
+    created_by: string | null;
+    updated_by: string | null;
+  }>(
+    `
+      INSERT INTO target_app_database_schemas (
+        target_app_id,
+        database_name,
+        database_type,
+        database_description,
+        version,
+        is_active,
+        schema_json,
+        created_by,
+        updated_by
+      )
+      VALUES ($1, $2, $3, $4, 1, true, $5::jsonb, $6, $6)
+      RETURNING
+        id,
+        target_app_id,
+        $7::text AS target_app_name,
+        database_name,
+        database_type,
+        database_description,
+        version,
+        is_active,
+        schema_json,
+        created_at,
+        updated_at,
+        uploaded_at,
+        created_by,
+        updated_by
+    `,
+    [
+      targetApp.id,
+      databaseName,
+      databaseType,
+      databaseDescription,
+      JSON.stringify(schema),
+      session.user.id,
+      targetApp.name,
+    ]
+  );
+
+  return mapRecord(result.rows[0]);
+}
+
+export async function updateDatabaseSchema(
+  session: AdminSession,
+  input: {
+    schemaId: string;
+    databaseName: string;
+    databaseType: SupportedDatabaseType;
+    databaseDescription?: string | null;
+    schema: unknown;
+  }
+) {
+  const existing = await getDatabaseSchemaById(session, input.schemaId);
+  if (!existing) {
+    throw new DatabaseSchemaAdminError("Schema record not found.", 404);
+  }
+
+  const databaseName = normalizeIdentifier(input.databaseName);
+  const databaseDescription = normalizeIdentifier(input.databaseDescription || "") || null;
+  if (!databaseName) {
+    throw new DatabaseSchemaAdminError("Database name is required.", 400);
+  }
+
+  const duplicateResult = await getPool().query<{ exists: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM target_app_database_schemas
+        WHERE target_app_id = $1
+          AND id <> $2
+          AND lower(database_name) = lower($3)
+          AND deleted_at IS NULL
+      ) AS exists
+    `,
+    [existing.targetAppId, existing.id, databaseName]
+  );
+
+  if (duplicateResult.rows[0]?.exists) {
+    throw new DatabaseSchemaAdminError(
+      "Duplicate database name for this target app is not allowed.",
+      409
+    );
+  }
+
+  const nextSchema = normalizeSchemaDocument(input.schema);
+  validateDeletionConstraints(existing.schema, nextSchema);
+
+  const result = await getPool().query<{
+    id: string;
+    target_app_id: string;
+    target_app_name: string;
+    database_name: string;
+    database_type: SupportedDatabaseType;
+    database_description: string | null;
     version: number;
     is_active: boolean;
     schema_json: DatabaseSchemaDocument;
@@ -529,21 +509,22 @@ export async function updateActiveDatabaseSchema(
     `
       UPDATE target_app_database_schemas schemas
       SET
-        schema_json = $1::jsonb,
+        database_name = $1,
         database_type = $2,
-        updated_by = $3,
+        database_description = $3,
+        schema_json = $4::jsonb,
+        updated_by = $5,
         updated_at = now()
       FROM guided_workflow_target_apps gta
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-      WHERE schemas.id = $4
+      WHERE schemas.id = $6
         AND schemas.target_app_id = gta.id
       RETURNING
         schemas.id,
-        schemas.company_id,
         schemas.target_app_id,
-        cta.name AS target_app_name,
+        gta.name AS target_app_name,
         schemas.database_name,
         schemas.database_type,
+        schemas.database_description,
         schemas.version,
         schemas.is_active,
         schemas.schema_json,
@@ -553,7 +534,14 @@ export async function updateActiveDatabaseSchema(
         schemas.created_by,
         schemas.updated_by
     `,
-    [JSON.stringify(nextSchema), databaseType, session.user.id, existing.id]
+    [
+      databaseName,
+      normalizeDatabaseType(input.databaseType),
+      databaseDescription,
+      JSON.stringify(nextSchema),
+      session.user.id,
+      existing.id,
+    ]
   );
 
   if (!result.rows[0]) {
@@ -563,47 +551,25 @@ export async function updateActiveDatabaseSchema(
   return mapRecord(result.rows[0]);
 }
 
-export async function listDatabaseSchemaHistory(session: AdminSession, targetAppId: string, databaseName: string) {
-  await assertTargetAppAccess(session, targetAppId);
-
-  const normalizedName = normalizeIdentifier(databaseName);
-  if (!normalizedName) {
-    throw new DatabaseSchemaAdminError("Database name is required.", 400);
+export async function deleteDatabaseSchema(session: AdminSession, schemaId: string) {
+  const existing = await getDatabaseSchemaById(session, schemaId);
+  if (!existing) {
+    throw new DatabaseSchemaAdminError("Schema record not found.", 404);
   }
 
-  const result = await getPool().query<{
-    id: string;
-    company_id: string;
-    target_app_id: string;
-    target_app_name: string;
-    database_name: string;
-    database_type: SupportedDatabaseType;
-    version: number;
-    is_active: boolean;
-    schema_json: DatabaseSchemaDocument;
-    created_at: Date;
-    updated_at: Date;
-    uploaded_at: Date;
-    created_by: string | null;
-    updated_by: string | null;
-  }>(
+  await getPool().query(
     `
-      SELECT
-        schemas.*,
-        cta.name AS target_app_name
-      FROM target_app_database_schemas schemas
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-      WHERE schemas.company_id = $1
-        AND schemas.target_app_id = $2
-        AND schemas.database_name = $3
-        AND schemas.deleted_at IS NULL
-      ORDER BY schemas.version DESC
+      UPDATE target_app_database_schemas
+      SET
+        deleted_at = now(),
+        is_active = false,
+        deactivated_at = now(),
+        updated_by = $2,
+        updated_at = now()
+      WHERE id = $1
     `,
-    [session.user.tenantId, targetAppId, normalizedName]
+    [existing.id, session.user.id]
   );
-
-  return result.rows.map(mapRecord);
 }
 
 export function parseUploadedSchemaText(rawText: string): DatabaseSchemaDocument {
@@ -619,37 +585,39 @@ export function parseUploadedSchemaText(rawText: string): DatabaseSchemaDocument
 
   const payload = parsed as Record<string, unknown>;
 
-  // Accept direct { tables: [...] } or { schema: { tables: [...] } } payloads.
   if (payload && typeof payload === "object" && payload.schema && typeof payload.schema === "object") {
     return normalizeSchemaDocument(payload.schema);
   }
 
-  // Accept a table map shape: { tables: { users: { columns: [...] } } }
   if (payload && typeof payload === "object" && payload.tables && !Array.isArray(payload.tables) && typeof payload.tables === "object") {
     const mappedTables = Object.entries(payload.tables as Record<string, unknown>).map(([tableName, tableValue]) => {
       const row = (tableValue && typeof tableValue === "object" ? tableValue : {}) as Record<string, unknown>;
       const rawColumns = Array.isArray(row.columns) ? row.columns : [];
-      const columns = rawColumns.map((columnItem) => {
-        const col = (columnItem && typeof columnItem === "object" ? columnItem : {}) as Record<string, unknown>;
-        return {
-          name: normalizeIdentifier(col.name || col.column_name),
-          type: normalizeIdentifier(col.type || col.data_type),
-          nullable: col.nullable === undefined ? undefined : col.nullable === true,
-          description: normalizeIdentifier(col.description),
-          isExposed: col.isExposed === false ? false : true,
-        };
-      }).filter((column) => column.name);
+      const columns = rawColumns
+        .map((columnItem) => {
+          const col = (columnItem && typeof columnItem === "object" ? columnItem : {}) as Record<string, unknown>;
+          return {
+            name: normalizeIdentifier(col.name || col.column_name),
+            type: normalizeIdentifier(col.type || col.data_type),
+            nullable: col.nullable === undefined ? undefined : col.nullable === true,
+            description: normalizeIdentifier(col.description),
+            isExposed: col.isExposed === false ? false : true,
+          };
+        })
+        .filter((column) => column.name);
 
       const rawForeignKeys = Array.isArray(row.foreignKeys) ? row.foreignKeys : [];
-      const foreignKeys = rawForeignKeys.map((fkItem) => {
-        const fk = (fkItem && typeof fkItem === "object" ? fkItem : {}) as Record<string, unknown>;
-        return {
-          name: normalizeIdentifier(fk.name),
-          column: normalizeIdentifier(fk.column),
-          referencesTable: normalizeIdentifier(fk.referencesTable),
-          referencesColumn: normalizeIdentifier(fk.referencesColumn),
-        };
-      }).filter((fk) => fk.column && fk.referencesTable && fk.referencesColumn);
+      const foreignKeys = rawForeignKeys
+        .map((fkItem) => {
+          const fk = (fkItem && typeof fkItem === "object" ? fkItem : {}) as Record<string, unknown>;
+          return {
+            name: normalizeIdentifier(fk.name),
+            column: normalizeIdentifier(fk.column),
+            referencesTable: normalizeIdentifier(fk.referencesTable),
+            referencesColumn: normalizeIdentifier(fk.referencesColumn),
+          };
+        })
+        .filter((fk) => fk.column && fk.referencesTable && fk.referencesColumn);
 
       return {
         name: tableName,

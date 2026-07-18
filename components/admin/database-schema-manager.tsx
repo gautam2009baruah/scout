@@ -1,12 +1,11 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Database, FileUp, Save, Trash2, RefreshCw, Shield, History } from "lucide-react";
+import { Eye, FileUp, Pencil, Save, Trash2 } from "lucide-react";
 import type {
   DatabaseSchemaDocument,
   SupportedDatabaseType,
   TargetAppDatabaseSchemaRecord,
-  DatabaseSchemaCatalogEntry,
 } from "@/lib/admin/database-schemas";
 
 type TargetAppOption = {
@@ -18,7 +17,7 @@ type TargetAppOption = {
 type Props = {
   companyName: string;
   targetApps: TargetAppOption[];
-  catalog: DatabaseSchemaCatalogEntry[];
+  schemas: TargetAppDatabaseSchemaRecord[];
 };
 
 type Status = { type: "idle" | "loading" | "success" | "error"; message: string };
@@ -32,6 +31,14 @@ const DATABASE_TYPES: Array<{ value: SupportedDatabaseType; label: string }> = [
   { value: "other", label: "Other" },
 ];
 
+function parseMessage(payload: unknown, fallback: string) {
+  if (payload && typeof payload === "object" && "message" in payload) {
+    const message = String((payload as { message?: unknown }).message ?? "").trim();
+    if (message) return message;
+  }
+  return fallback;
+}
+
 function cloneSchema(schema: DatabaseSchemaDocument): DatabaseSchemaDocument {
   return {
     tables: schema.tables.map((table) => ({
@@ -42,132 +49,55 @@ function cloneSchema(schema: DatabaseSchemaDocument): DatabaseSchemaDocument {
   };
 }
 
-function parseMessage(payload: unknown, fallback: string) {
-  if (payload && typeof payload === "object" && "message" in payload) {
-    const message = String((payload as { message?: unknown }).message ?? "").trim();
-    if (message) return message;
-  }
-  return fallback;
-}
-
-export function DatabaseSchemaManager({ companyName, targetApps, catalog }: Props) {
+export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Props) {
   const sortedTargetApps = useMemo(() => [...targetApps].sort((a, b) => a.name.localeCompare(b.name)), [targetApps]);
+  const [rows, setRows] = useState<TargetAppDatabaseSchemaRecord[]>(schemas);
   const [selectedTargetAppId, setSelectedTargetAppId] = useState(sortedTargetApps[0]?.id ?? "");
   const [databaseName, setDatabaseName] = useState("");
   const [databaseType, setDatabaseType] = useState<SupportedDatabaseType>("sqlserver");
-  const [uploadFileName, setUploadFileName] = useState("");
+  const [databaseDescription, setDatabaseDescription] = useState("");
   const [uploadSchemaText, setUploadSchemaText] = useState("");
-  const [activeSchema, setActiveSchema] = useState<TargetAppDatabaseSchemaRecord | null>(null);
+  const [uploadFileName, setUploadFileName] = useState("");
+  const [editingSchemaId, setEditingSchemaId] = useState<string | null>(null);
   const [editableSchema, setEditableSchema] = useState<DatabaseSchemaDocument | null>(null);
-  const [history, setHistory] = useState<TargetAppDatabaseSchemaRecord[]>([]);
+  const [jsonEditorSchemaId, setJsonEditorSchemaId] = useState<string | null>(null);
+  const [jsonEditorText, setJsonEditorText] = useState("");
   const [status, setStatus] = useState<Status>({ type: "idle", message: "" });
 
-  const targetAppCatalog = useMemo(
-    () => catalog.filter((item) => item.targetAppId === selectedTargetAppId).sort((a, b) => a.databaseName.localeCompare(b.databaseName)),
-    [catalog, selectedTargetAppId]
+  const filteredRows = useMemo(
+    () => rows.filter((row) => (selectedTargetAppId ? row.targetAppId === selectedTargetAppId : true)),
+    [rows, selectedTargetAppId]
   );
 
-  const selectedCatalog = useMemo(
-    () => targetAppCatalog.find((item) => item.databaseName.toLowerCase() === databaseName.trim().toLowerCase()) || null,
-    [targetAppCatalog, databaseName]
-  );
-
-  async function loadActiveSchema(targetAppId: string, dbName: string) {
-    if (!targetAppId || !dbName.trim()) {
-      setStatus({ type: "error", message: "Select a target app and database name first." });
-      return;
-    }
-
-    setStatus({ type: "loading", message: "Loading active schema..." });
-
-    const response = await fetch(
-      `/api/admin/database-schemas?targetAppId=${encodeURIComponent(targetAppId)}&databaseName=${encodeURIComponent(dbName.trim())}`,
-      { method: "GET" }
+  const duplicateForTargetApp = useMemo(() => {
+    const normalizedName = databaseName.trim().toLowerCase();
+    if (!selectedTargetAppId || !normalizedName || editingSchemaId) return false;
+    return rows.some(
+      (row) => row.targetAppId === selectedTargetAppId && row.databaseName.trim().toLowerCase() === normalizedName
     );
+  }, [databaseName, editingSchemaId, rows, selectedTargetAppId]);
+
+  async function refreshRows() {
+    const response = await fetch("/api/admin/database-schemas", { method: "GET" });
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setStatus({ type: "error", message: parseMessage(body, "Unable to load schema details.") });
+      setStatus({ type: "error", message: parseMessage(body, "Unable to refresh schema list.") });
       return;
     }
 
-    const nextActive = (body?.active as TargetAppDatabaseSchemaRecord | null) || null;
-    const nextHistory = Array.isArray(body?.history) ? (body.history as TargetAppDatabaseSchemaRecord[]) : [];
-
-    setActiveSchema(nextActive);
-    setEditableSchema(nextActive ? cloneSchema(nextActive.schema) : null);
-    setHistory(nextHistory);
-
-    if (nextActive) {
-      setDatabaseType(nextActive.databaseType);
-      setStatus({ type: "success", message: `Loaded active schema v${nextActive.version}.` });
-    } else {
-      setStatus({ type: "success", message: "No active schema yet for this database. Upload one to start." });
-    }
+    const nextRows = Array.isArray(body?.schemas) ? (body.schemas as TargetAppDatabaseSchemaRecord[]) : [];
+    setRows(nextRows);
   }
 
-  async function uploadSchema(event: FormEvent) {
-    event.preventDefault();
-
-    if (!selectedTargetAppId || !databaseName.trim() || !uploadSchemaText.trim()) {
-      setStatus({ type: "error", message: "Target app, database name, and schema file are required." });
-      return;
-    }
-
-    setStatus({ type: "loading", message: "Uploading new schema version..." });
-
-    const response = await fetch("/api/admin/database-schemas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        targetAppId: selectedTargetAppId,
-        databaseName: databaseName.trim(),
-        databaseType,
-        schemaText: uploadSchemaText,
-      }),
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setStatus({ type: "error", message: parseMessage(body, "Unable to upload schema.") });
-      return;
-    }
-
+  function resetForm() {
+    setDatabaseName("");
+    setDatabaseType("sqlserver");
+    setDatabaseDescription("");
     setUploadSchemaText("");
     setUploadFileName("");
-    await loadActiveSchema(selectedTargetAppId, databaseName);
-    setStatus({ type: "success", message: "Schema uploaded. Previous active version is now inactive." });
-  }
-
-  async function saveConfiguration() {
-    if (!selectedTargetAppId || !databaseName.trim() || !editableSchema) {
-      setStatus({ type: "error", message: "Load an active schema before saving changes." });
-      return;
-    }
-
-    setStatus({ type: "loading", message: "Saving schema configuration..." });
-
-    const response = await fetch("/api/admin/database-schemas", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        targetAppId: selectedTargetAppId,
-        databaseName: databaseName.trim(),
-        databaseType,
-        schema: editableSchema,
-      }),
-    });
-
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setStatus({ type: "error", message: parseMessage(body, "Unable to save schema configuration.") });
-      return;
-    }
-
-    await loadActiveSchema(selectedTargetAppId, databaseName);
-    setStatus({ type: "success", message: "Schema configuration saved." });
+    setEditingSchemaId(null);
+    setEditableSchema(null);
   }
 
   async function onUploadFileChange(file: File | null) {
@@ -177,374 +107,325 @@ export function DatabaseSchemaManager({ companyName, targetApps, catalog }: Prop
     setUploadSchemaText(text);
   }
 
-  function updateTableDescription(tableName: string, description: string) {
-    if (!editableSchema) return;
-    setEditableSchema({
-      tables: editableSchema.tables.map((table) =>
-        table.name === tableName ? { ...table, description } : table
-      ),
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
+
+    if (!selectedTargetAppId || !databaseName.trim() || !uploadSchemaText.trim()) {
+      setStatus({ type: "error", message: "Target app, database name, and schema file are required." });
+      return;
+    }
+
+    if (duplicateForTargetApp) {
+      setStatus({ type: "error", message: "Duplicate database name for selected target app is not allowed." });
+      return;
+    }
+
+    setStatus({ type: "loading", message: editingSchemaId ? "Saving changes..." : "Uploading and activating schema..." });
+
+    let schemaPayload: unknown = undefined;
+    if (editableSchema) {
+      schemaPayload = editableSchema;
+    }
+
+    const response = await fetch("/api/admin/database-schemas", {
+      method: editingSchemaId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        schemaId: editingSchemaId,
+        targetAppId: selectedTargetAppId,
+        databaseName: databaseName.trim(),
+        databaseType,
+        databaseDescription: databaseDescription.trim(),
+        schema: schemaPayload,
+        schemaText: schemaPayload ? undefined : uploadSchemaText,
+      }),
     });
+
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setStatus({ type: "error", message: parseMessage(body, editingSchemaId ? "Unable to save schema." : "Unable to upload schema.") });
+      return;
+    }
+
+    await refreshRows();
+    resetForm();
+    setStatus({ type: "success", message: editingSchemaId ? "Schema updated successfully." : "Schema uploaded and activated successfully." });
   }
 
-  function updateTableExposure(tableName: string, isExposed: boolean) {
-    if (!editableSchema) return;
-    setEditableSchema({
-      tables: editableSchema.tables.map((table) =>
-        table.name === tableName ? { ...table, isExposed } : table
-      ),
-    });
+  function startEdit(row: TargetAppDatabaseSchemaRecord) {
+    setSelectedTargetAppId(row.targetAppId);
+    setDatabaseName(row.databaseName);
+    setDatabaseType(row.databaseType);
+    setDatabaseDescription(row.databaseDescription || "");
+    setEditableSchema(cloneSchema(row.schema));
+    setEditingSchemaId(row.id);
+    setUploadSchemaText("");
+    setUploadFileName("");
+    setStatus({ type: "idle", message: "" });
   }
 
-  function updateColumnDescription(tableName: string, columnName: string, description: string) {
-    if (!editableSchema) return;
-    setEditableSchema({
-      tables: editableSchema.tables.map((table) =>
-        table.name === tableName
-          ? {
-              ...table,
-              columns: table.columns.map((column) =>
-                column.name === columnName ? { ...column, description } : column
-              ),
-            }
-          : table
-      ),
+  async function deleteRow(row: TargetAppDatabaseSchemaRecord) {
+    if (!window.confirm(`Delete schema ${row.databaseName} (${row.targetAppName})?`)) {
+      return;
+    }
+
+    setStatus({ type: "loading", message: "Deleting schema..." });
+
+    const response = await fetch("/api/admin/database-schemas", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schemaId: row.id }),
     });
+
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setStatus({ type: "error", message: parseMessage(body, "Unable to delete schema.") });
+      return;
+    }
+
+    await refreshRows();
+    if (editingSchemaId === row.id) {
+      resetForm();
+    }
+    setStatus({ type: "success", message: "Schema deleted." });
   }
 
-  function updateColumnExposure(tableName: string, columnName: string, isExposed: boolean) {
-    if (!editableSchema) return;
-    setEditableSchema({
-      tables: editableSchema.tables.map((table) =>
-        table.name === tableName
-          ? {
-              ...table,
-              columns: table.columns.map((column) =>
-                column.name === columnName ? { ...column, isExposed } : column
-              ),
-            }
-          : table
-      ),
-    });
+  function openJsonEditor(row: TargetAppDatabaseSchemaRecord) {
+    setJsonEditorSchemaId(row.id);
+    setJsonEditorText(JSON.stringify(row.schema, null, 2));
   }
 
-  function deleteTable(tableName: string) {
-    if (!editableSchema) return;
-    if (!window.confirm(`Delete table ${tableName}?`)) return;
+  async function saveJsonEditor() {
+    if (!jsonEditorSchemaId) return;
 
-    setEditableSchema({
-      tables: editableSchema.tables.filter((table) => table.name !== tableName),
+    const row = rows.find((item) => item.id === jsonEditorSchemaId);
+    if (!row) return;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(jsonEditorText);
+    } catch {
+      setStatus({ type: "error", message: "Invalid JSON in editor." });
+      return;
+    }
+
+    setStatus({ type: "loading", message: "Saving JSON editor changes..." });
+
+    const response = await fetch("/api/admin/database-schemas", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        schemaId: row.id,
+        databaseName: row.databaseName,
+        databaseType: row.databaseType,
+        databaseDescription: row.databaseDescription || "",
+        schema: parsed,
+      }),
     });
-  }
 
-  function deleteColumn(tableName: string, columnName: string) {
-    if (!editableSchema) return;
-    if (!window.confirm(`Delete column ${tableName}.${columnName}?`)) return;
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setStatus({ type: "error", message: parseMessage(body, "Unable to save JSON changes.") });
+      return;
+    }
 
-    setEditableSchema({
-      tables: editableSchema.tables.map((table) =>
-        table.name === tableName
-          ? { ...table, columns: table.columns.filter((column) => column.name !== columnName) }
-          : table
-      ),
-    });
+    await refreshRows();
+    setJsonEditorSchemaId(null);
+    setJsonEditorText("");
+    setStatus({ type: "success", message: "Schema JSON updated." });
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-      <aside className="grid gap-4">
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-            <Database className="h-4 w-4" />
-            Database Schema Manager
-          </div>
-          <p className="mt-2 text-xs text-slate-500">Organization: {companyName}</p>
+    <div className="space-y-6">
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-sm font-semibold text-slate-950">Database Schema Setup</h2>
+        <p className="mt-1 text-xs text-slate-500">Organization: {companyName}</p>
 
-          <div className="mt-4 grid gap-3">
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Target App</span>
-              <select
-                className="rounded-lg border border-slate-300 px-3 py-2"
-                value={selectedTargetAppId}
-                onChange={(event) => {
-                  setSelectedTargetAppId(event.target.value);
-                  setDatabaseName("");
-                  setActiveSchema(null);
-                  setEditableSchema(null);
-                  setHistory([]);
-                }}
-              >
-                {sortedTargetApps.map((app) => (
-                  <option key={app.id} value={app.id}>
-                    {app.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Database</span>
-              <input
-                className="rounded-lg border border-slate-300 px-3 py-2"
-                placeholder="e.g., ERP_MAIN"
-                value={databaseName}
-                onChange={(event) => setDatabaseName(event.target.value)}
-              />
-            </label>
-
-            {targetAppCatalog.length > 0 ? (
-              <label className="grid gap-1 text-sm">
-                <span className="font-medium text-slate-700">Existing Databases</span>
-                <select
-                  className="rounded-lg border border-slate-300 px-3 py-2"
-                  value={selectedCatalog?.databaseName || ""}
-                  onChange={(event) => {
-                    const selected = targetAppCatalog.find((item) => item.databaseName === event.target.value);
-                    if (!selected) return;
-                    setDatabaseName(selected.databaseName);
-                    setDatabaseType(selected.databaseType);
-                    void loadActiveSchema(selected.targetAppId, selected.databaseName);
-                  }}
-                >
-                  <option value="">Select existing database...</option>
-                  {targetAppCatalog.map((item) => (
-                    <option key={`${item.targetAppId}-${item.databaseName}`} value={item.databaseName}>
-                      {item.databaseName} (v{item.activeVersion})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Database Type</span>
-              <select
-                className="rounded-lg border border-slate-300 px-3 py-2"
-                value={databaseType}
-                onChange={(event) => setDatabaseType(event.target.value as SupportedDatabaseType)}
-              >
-                {DATABASE_TYPES.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              onClick={() => void loadActiveSchema(selectedTargetAppId, databaseName)}
-              type="button"
+        <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={onSubmit}>
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-slate-700">Target App</span>
+            <select
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              value={selectedTargetAppId}
+              onChange={(event) => setSelectedTargetAppId(event.target.value)}
             >
-              <RefreshCw className="h-4 w-4" />
-              Load Active Schema
-            </button>
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <form className="grid gap-3" onSubmit={uploadSchema}>
-            <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-              <FileUp className="h-4 w-4" />
-              Upload New Schema Version
-            </div>
-            <label className="grid gap-1 text-sm">
-              <span className="font-medium text-slate-700">Schema JSON File</span>
-              <input
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                type="file"
-                accept="application/json,.json"
-                onChange={(event) => {
-                  const file = event.target.files?.[0] || null;
-                  void onUploadFileChange(file);
-                }}
-              />
-            </label>
-            {uploadFileName ? <p className="text-xs text-slate-500">Selected: {uploadFileName}</p> : null}
-            <button
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              disabled={status.type === "loading"}
-              type="submit"
-            >
-              <FileUp className="h-4 w-4" />
-              Upload And Activate
-            </button>
-          </form>
-        </section>
-
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 text-sm font-semibold text-slate-950">
-            <History className="h-4 w-4" />
-            Version History (Audit)
-          </div>
-          <div className="mt-3 max-h-64 overflow-auto space-y-2">
-            {history.length === 0 ? (
-              <p className="text-sm text-slate-500">No history loaded.</p>
-            ) : (
-              history.map((entry) => (
-                <div key={entry.id} className="rounded border border-slate-200 px-3 py-2 text-xs">
-                  <p className="font-semibold text-slate-700">v{entry.version} {entry.isActive ? "(Active)" : "(Inactive)"}</p>
-                  <p className="text-slate-500">Updated: {new Date(entry.updatedAt).toLocaleString()}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
-      </aside>
-
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-5 py-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-950">Active Schema Tree</h2>
-              <p className="text-sm text-slate-500">
-                {activeSchema
-                  ? `${activeSchema.targetAppName} • ${activeSchema.databaseName} • v${activeSchema.version}`
-                  : "Load or upload a schema to begin configuration."}
-              </p>
-            </div>
-            <button
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              onClick={() => void saveConfiguration()}
-              disabled={!editableSchema || status.type === "loading"}
-              type="button"
-            >
-              <Save className="h-4 w-4" />
-              Save Configuration
-            </button>
-          </div>
-
-          {status.message ? (
-            <p
-              className={`mt-3 rounded-lg px-3 py-2 text-sm ${
-                status.type === "error"
-                  ? "bg-red-50 text-red-700"
-                  : status.type === "success"
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-slate-100 text-slate-700"
-              }`}
-            >
-              {status.message}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="grid gap-5 p-5">
-          {!editableSchema ? (
-            <div className="rounded-lg border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-              No active schema loaded.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {editableSchema.tables.map((table) => (
-                <details key={table.name} className="rounded-lg border border-slate-200 bg-white" open>
-                  <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
-                    <div>
-                      <p className="font-semibold text-slate-900">{table.name}</p>
-                      <p className="text-xs text-slate-500">{table.columns.length} columns</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                        <Shield className="h-3.5 w-3.5" />
-                        <input
-                          type="checkbox"
-                          checked={table.isExposed !== false}
-                          onChange={(event) => updateTableExposure(table.name, event.target.checked)}
-                        />
-                        Expose table
-                      </label>
-                      <button
-                        className="inline-flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
-                        type="button"
-                        onClick={() => deleteTable(table.name)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Delete
-                      </button>
-                    </div>
-                  </summary>
-
-                  <div className="grid gap-3 border-t border-slate-200 px-4 py-3">
-                    <label className="grid gap-1 text-sm">
-                      <span className="font-medium text-slate-700">Table Description</span>
-                      <input
-                        className="rounded border border-slate-300 px-3 py-2"
-                        value={table.description || ""}
-                        onChange={(event) => updateTableDescription(table.name, event.target.value)}
-                        placeholder="Business description for this table"
-                      />
-                    </label>
-
-                    <div className="rounded-md border border-slate-200">
-                      <div className="grid grid-cols-[1.4fr_1fr_1fr_120px_100px] gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                        <span>Column</span>
-                        <span>Type</span>
-                        <span>Description</span>
-                        <span>Expose</span>
-                        <span>Delete</span>
-                      </div>
-                      {table.columns.map((column) => (
-                        <div
-                          key={`${table.name}-${column.name}`}
-                          className="grid grid-cols-[1.4fr_1fr_1fr_120px_100px] items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-b-0"
-                        >
-                          <span className="font-medium text-slate-800">{column.name}</span>
-                          <span className="text-slate-600">{column.type || "-"}</span>
-                          <input
-                            className="rounded border border-slate-300 px-2 py-1 text-xs"
-                            value={column.description || ""}
-                            onChange={(event) =>
-                              updateColumnDescription(table.name, column.name, event.target.value)
-                            }
-                            placeholder="Description"
-                          />
-                          <label className="inline-flex items-center gap-2 text-xs text-slate-600">
-                            <input
-                              type="checkbox"
-                              checked={column.isExposed !== false}
-                              onChange={(event) =>
-                                updateColumnExposure(table.name, column.name, event.target.checked)
-                              }
-                            />
-                            Expose
-                          </label>
-                          <button
-                            className="inline-flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
-                            type="button"
-                            onClick={() => deleteColumn(table.name, column.name)}
-                          >
-                            <Trash2 className="h-3 w-3" />
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    {(table.foreignKeys || []).length > 0 ? (
-                      <details className="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-                        <summary className="cursor-pointer font-semibold text-slate-700">
-                          Foreign Keys ({table.foreignKeys?.length || 0})
-                        </summary>
-                        <div className="mt-2 space-y-1">
-                          {(table.foreignKeys || []).map((fk, index) => (
-                            <p key={`${table.name}-fk-${index}`}>
-                              {fk.name || `${table.name}_${fk.column}_fk`}: {table.name}.{fk.column} → {fk.referencesTable}.{fk.referencesColumn}
-                            </p>
-                          ))}
-                        </div>
-                      </details>
-                    ) : null}
-                  </div>
-                </details>
+              {sortedTargetApps.map((app) => (
+                <option key={app.id} value={app.id}>
+                  {app.name}
+                </option>
               ))}
-            </div>
-          )}
+            </select>
+          </label>
 
-          <details className="rounded-lg border border-slate-200 bg-slate-50 p-4" open>
-            <summary className="cursor-pointer text-sm font-semibold text-slate-900">Schema Extraction Help (No Data)</summary>
-            <div className="mt-3 space-y-3 text-xs text-slate-700">
-              <details className="rounded border border-slate-200 bg-white p-3" open>
-                <summary className="cursor-pointer font-semibold">SQL Server</summary>
-                <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`SELECT
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-slate-700">Database Name</span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              value={databaseName}
+              onChange={(event) => setDatabaseName(event.target.value)}
+              placeholder="e.g., ERP_MAIN"
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-slate-700">Database Type</span>
+            <select
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              value={databaseType}
+              onChange={(event) => setDatabaseType(event.target.value as SupportedDatabaseType)}
+            >
+              {DATABASE_TYPES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1 text-sm md:col-span-2">
+            <span className="font-medium text-slate-700">Description About This Database</span>
+            <textarea
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              rows={2}
+              value={databaseDescription}
+              onChange={(event) => setDatabaseDescription(event.target.value)}
+              placeholder="Business purpose and scope of this database"
+            />
+          </label>
+
+          <label className="grid gap-1 text-sm md:col-span-2">
+            <span className="font-medium text-slate-700">Upload Schema JSON File</span>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2"
+              type="file"
+              accept="application/json,.json"
+              onChange={(event) => {
+                const file = event.target.files?.[0] || null;
+                void onUploadFileChange(file);
+              }}
+            />
+            {uploadFileName ? <span className="text-xs text-slate-500">Selected: {uploadFileName}</span> : null}
+          </label>
+
+          {duplicateForTargetApp ? (
+            <div className="md:col-span-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Duplicate database name found for this target app. Use Edit in the list below.
+            </div>
+          ) : null}
+
+          <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+            <button
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              type="submit"
+              disabled={status.type === "loading" || duplicateForTargetApp}
+            >
+              <FileUp className="h-4 w-4" />
+              {editingSchemaId ? "Save" : "Upload And Activate"}
+            </button>
+            {editingSchemaId ? (
+              <button
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                type="button"
+                onClick={resetForm}
+              >
+                Cancel Edit
+              </button>
+            ) : null}
+          </div>
+        </form>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-slate-950">Uploaded Schema Details</h3>
+        <div className="mt-3 overflow-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Target App</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Database Name</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Type</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Description</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Version</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Status</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Updated</th>
+                <th className="px-3 py-2 text-left font-semibold text-slate-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredRows.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-3 text-slate-500" colSpan={8}>
+                    No uploaded schema records for selected target app.
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="px-3 py-2 text-slate-700">{row.targetAppName}</td>
+                    <td className="px-3 py-2 font-medium text-slate-800">{row.databaseName}</td>
+                    <td className="px-3 py-2 text-slate-700">{row.databaseType}</td>
+                    <td className="px-3 py-2 text-slate-600">{row.databaseDescription || "-"}</td>
+                    <td className="px-3 py-2 text-slate-700">v{row.version}</td>
+                    <td className="px-3 py-2">
+                      <span className={`rounded px-2 py-1 text-xs font-semibold ${row.isActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                        {row.isActive ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-slate-600">{new Date(row.updatedAt).toLocaleString()}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700"
+                          type="button"
+                          onClick={() => startEdit(row)}
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700"
+                          type="button"
+                          onClick={() => openJsonEditor(row)}
+                          title="View in JSON editor"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          JSON
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs font-semibold text-red-700"
+                          type="button"
+                          onClick={() => void deleteRow(row)}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        {status.message ? (
+          <p className={`rounded-lg px-3 py-2 text-sm ${status.type === "error" ? "bg-red-50 text-red-700" : status.type === "success" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
+            {status.message}
+          </p>
+        ) : null}
+      </section>
+
+      <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Schema Extraction Help (No Data)</summary>
+        <div className="mt-3 space-y-3 text-xs text-slate-700">
+          <details className="rounded border border-slate-200 bg-white p-3">
+            <summary className="cursor-pointer font-semibold">SQL Server</summary>
+            <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`SELECT
   t.TABLE_NAME AS [name],
   (
     SELECT
@@ -558,11 +439,11 @@ export function DatabaseSchemaManager({ companyName, targetApps, catalog }: Prop
 FROM INFORMATION_SCHEMA.TABLES t
 WHERE t.TABLE_TYPE='BASE TABLE'
 FOR JSON PATH, ROOT('tables');`}</pre>
-              </details>
+          </details>
 
-              <details className="rounded border border-slate-200 bg-white p-3">
-                <summary className="cursor-pointer font-semibold">Oracle</summary>
-                <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`SELECT JSON_OBJECT(
+          <details className="rounded border border-slate-200 bg-white p-3">
+            <summary className="cursor-pointer font-semibold">Oracle</summary>
+            <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`SELECT JSON_OBJECT(
   'tables' VALUE JSON_ARRAYAGG(
     JSON_OBJECT(
       'name' VALUE t.table_name,
@@ -581,11 +462,11 @@ FOR JSON PATH, ROOT('tables');`}</pre>
   )
 ) AS schema_json
 FROM user_tables t;`}</pre>
-              </details>
+          </details>
 
-              <details className="rounded border border-slate-200 bg-white p-3">
-                <summary className="cursor-pointer font-semibold">PostgreSQL</summary>
-                <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`SELECT json_build_object(
+          <details className="rounded border border-slate-200 bg-white p-3">
+            <summary className="cursor-pointer font-semibold">PostgreSQL</summary>
+            <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`SELECT json_build_object(
   'tables', json_agg(
     json_build_object(
       'name', table_name,
@@ -603,11 +484,11 @@ FROM user_tables t;`}</pre>
 )
 FROM information_schema.tables t
 WHERE table_schema='public' AND table_type='BASE TABLE';`}</pre>
-              </details>
+          </details>
 
-              <details className="rounded border border-slate-200 bg-white p-3">
-                <summary className="cursor-pointer font-semibold">MySQL</summary>
-                <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`SELECT JSON_OBJECT(
+          <details className="rounded border border-slate-200 bg-white p-3">
+            <summary className="cursor-pointer font-semibold">MySQL</summary>
+            <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`SELECT JSON_OBJECT(
   'tables', JSON_ARRAYAGG(
     JSON_OBJECT(
       'name', t.table_name,
@@ -627,21 +508,49 @@ WHERE table_schema='public' AND table_type='BASE TABLE';`}</pre>
 ) AS schema_json
 FROM information_schema.tables t
 WHERE t.table_schema = DATABASE() AND t.table_type='BASE TABLE';`}</pre>
-              </details>
+          </details>
 
-              <details className="rounded border border-slate-200 bg-white p-3">
-                <summary className="cursor-pointer font-semibold">SQLite</summary>
-                <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`-- Use sqlite3 shell
+          <details className="rounded border border-slate-200 bg-white p-3">
+            <summary className="cursor-pointer font-semibold">SQLite</summary>
+            <pre className="mt-2 overflow-auto rounded bg-slate-950 p-3 text-slate-100">{`-- Use sqlite3 shell
 .headers off
 .mode json
 SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';
 -- For each table:
 PRAGMA table_info('your_table_name');`}</pre>
-              </details>
-            </div>
           </details>
         </div>
-      </section>
+      </details>
+
+      {jsonEditorSchemaId ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <h4 className="text-sm font-semibold text-slate-900">Schema JSON Editor</h4>
+              <button className="text-sm text-slate-600" type="button" onClick={() => setJsonEditorSchemaId(null)}>
+                Close
+              </button>
+            </div>
+            <div className="p-4">
+              <textarea
+                className="h-[420px] w-full rounded border border-slate-300 px-3 py-2 font-mono text-xs"
+                value={jsonEditorText}
+                onChange={(event) => setJsonEditorText(event.target.value)}
+              />
+              <div className="mt-3 flex justify-end">
+                <button
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white"
+                  type="button"
+                  onClick={() => void saveJsonEditor()}
+                >
+                  <Save className="h-4 w-4" />
+                  Save JSON
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
