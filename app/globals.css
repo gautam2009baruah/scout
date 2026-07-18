@@ -25,6 +25,145 @@ body {
   background: #f6f7fb;
 }
 
+.admin-content {
+  color: #191c1e;
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.admin-content h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 2.5rem;
+  letter-spacing: -0.02em;
+}
+
+.admin-content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 2rem;
+  letter-spacing: -0.01em;
+}
+
+.admin-content h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.75rem;
+  letter-spacing: -0.01em;
+}
+
+.admin-content h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+}
+
+.admin-content :is(button, a)[class~="bg-slate-950"],
+.admin-content :is(button, a)[class~="bg-slate-900"],
+.admin-content :is(button, a)[class~="bg-teal-600"],
+.admin-content :is(button, a)[class~="bg-teal-700"],
+.admin-content :is(button, a)[class~="bg-emerald-600"],
+.admin-content :is(button, a)[class~="bg-emerald-700"] {
+  border-color: #004ac6;
+  background-color: #004ac6;
+  color: #ffffff;
+}
+
+.admin-content :is(button, a)[class~="bg-slate-950"]:hover,
+.admin-content :is(button, a)[class~="bg-slate-900"]:hover,
+.admin-content :is(button, a)[class~="bg-teal-600"]:hover,
+.admin-content :is(button, a)[class~="bg-teal-700"]:hover,
+.admin-content :is(button, a)[class~="bg-emerald-600"]:hover,
+.admin-content :is(button, a)[class~="bg-emerald-700"]:hover {
+  background-color: #1d4ed8;
+}
+
+.admin-content :is(button, a)[class~="border-slate-950"] {
+  border-color: #004ac6;
+}
+
+.admin-content :is(div, span)[class~="bg-slate-950"][class~="text-white"],
+.admin-content :is(div, span)[class~="bg-slate-900"][class~="text-white"] {
+  background-color: #004ac6;
+}
+
+.admin-content :is(button, input, select, textarea) {
+  border-radius: 0.25rem;
+}
+
+.admin-content :is(label > span:first-child, th) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1rem;
+  letter-spacing: 0.05em;
+}
+
+.admin-content th {
+  text-transform: uppercase;
+}
+
+.admin-content section[class~="bg-white"] {
+  border-color: #cbd5e1;
+  box-shadow: none;
+}
+
+.admin-content [class~="rounded-lg"],
+.admin-content [class~="rounded-md"],
+.admin-content [class~="rounded-xl"],
+.admin-content [class~="rounded-2xl"] {
+  border-radius: 0.25rem;
+}
+
+.admin-content [class~="rounded-t-lg"],
+.admin-content [class~="rounded-t-xl"] {
+  border-radius: 0.25rem 0.25rem 0 0;
+}
+
+.admin-content [class~="rounded-b-lg"],
+.admin-content [class~="rounded-b-xl"] {
+  border-radius: 0 0 0.25rem 0.25rem;
+}
+
+.admin-content [class~="rounded-l-lg"] {
+  border-radius: 0.25rem 0 0 0.25rem;
+}
+
+.admin-content [class~="rounded-r-lg"] {
+  border-radius: 0 0.25rem 0.25rem 0;
+}
+
+.admin-content [class~="border-slate-200"] {
+  border-color: #cbd5e1;
+}
+
+.admin-content :is(section, article, form, div)[class~="border"][class~="bg-white"][class~="shadow-sm"] {
+  box-shadow: none;
+}
+
+.admin-content :is(input, select, textarea) {
+  border-color: #cbd5e1;
+  background-color: #ffffff;
+}
+
+.admin-content :is(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+@media (max-width: 639px) {
+  .admin-content h1 {
+    font-size: 1.5rem;
+    line-height: 2rem;
+    letter-spacing: -0.01em;
+  }
+
+  .admin-content h2 {
+    font-size: 1.25rem;
+    line-height: 1.75rem;
+  }
+}
+
 button,
 textarea {
   font: inherit;

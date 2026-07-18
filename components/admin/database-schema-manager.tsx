@@ -478,15 +478,15 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
         </div>
       ) : null}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h2 className="text-sm font-semibold text-slate-950">Database Schema Setup</h2>
-        <p className="mt-1 text-xs text-slate-500">Organization: {companyName}</p>
+      <section className="rounded-lg border border-slate-300 bg-white p-6">
+        <h2 className="text-xl font-semibold tracking-tight text-slate-950">Database Schema Setup</h2>
+        <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-slate-500">Organization: {companyName}</p>
 
         <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={onSubmit}>
           <label className="grid gap-1 text-sm">
-            <span className="font-medium text-slate-700">Target App</span>
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-700">Target App</span>
             <select
-              className="rounded-lg border border-slate-300 px-3 py-2"
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
               value={selectedTargetAppId}
               onChange={(event) => setSelectedTargetAppId(event.target.value)}
               disabled={Boolean(editingSchemaId)}
@@ -500,9 +500,9 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
           </label>
 
           <label className="grid gap-1 text-sm">
-            <span className="font-medium text-slate-700">Database Name</span>
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-700">Database Name</span>
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2"
+              className="rounded-md border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
               value={databaseName}
               onChange={(event) => setDatabaseName(event.target.value)}
               placeholder="e.g., ERP_MAIN"
@@ -510,9 +510,9 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
           </label>
 
           <label className="grid gap-1 text-sm">
-            <span className="font-medium text-slate-700">Database Type</span>
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-700">Database Type</span>
             <select
-              className="rounded-lg border border-slate-300 px-3 py-2"
+              className="rounded-md border border-slate-300 bg-white px-3 py-2 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
               value={databaseType}
               onChange={(event) => setDatabaseType(event.target.value as SupportedDatabaseType)}
               disabled={Boolean(editingSchemaId)}
@@ -526,9 +526,9 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
           </label>
 
           <label className="grid gap-1 text-sm md:col-span-2">
-            <span className="font-medium text-slate-700">Description About This Database</span>
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-700">Description About This Database</span>
             <textarea
-              className="rounded-lg border border-slate-300 px-3 py-2"
+              className="rounded-md border border-slate-300 px-3 py-2 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
               rows={2}
               value={databaseDescription}
               onChange={(event) => setDatabaseDescription(event.target.value)}
@@ -537,9 +537,9 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
           </label>
 
           <label className="grid gap-1 text-sm md:col-span-2">
-            <span className="font-medium text-slate-700">Upload Schema JSON File</span>
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-700">Upload Schema JSON File</span>
             <input
-              className="rounded-lg border border-slate-300 px-3 py-2"
+              className="rounded-md border border-dashed border-blue-400 bg-blue-50/40 px-3 py-3 font-mono text-xs file:mr-3 file:rounded-md file:border-0 file:bg-blue-700 file:px-3 file:py-2 file:text-white"
               type="file"
               accept="application/json,.json"
               onChange={(event) => {
@@ -555,7 +555,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
 
           <div className="md:col-span-2 flex flex-wrap items-center gap-2">
             <button
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-5 py-2.5 font-mono text-sm font-semibold text-white transition hover:bg-blue-800 focus:ring-2 focus:ring-blue-200 disabled:opacity-60"
               type="submit"
               disabled={status.type === "loading" || duplicateForTargetApp}
             >
@@ -564,7 +564,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
             </button>
             {editingSchemaId ? (
               <button
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 font-mono text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
                 type="button"
                 onClick={resetForm}
               >
@@ -575,21 +575,23 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
         </form>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="text-sm font-semibold text-slate-950">Uploaded Schema Details</h3>
-        <div className="mt-3 overflow-auto">
+      <section className="overflow-hidden rounded-lg border border-slate-300 bg-white">
+        <div className="border-b border-slate-300 px-6 py-4">
+          <h3 className="text-xl font-semibold tracking-tight text-slate-950">Uploaded Schema Details</h3>
+        </div>
+        <div className="overflow-auto">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead className="bg-slate-50">
+            <thead className="bg-slate-100">
               <tr>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Sno</th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Target App</th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Database Name</th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Type</th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Description</th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Version</th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Status</th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Updated</th>
-                <th className="px-3 py-2 text-left font-semibold text-slate-600">Actions</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Sno</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Target App</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Database Name</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Type</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Description</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Version</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Status</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Updated</th>
+                <th className="px-3 py-3 text-left font-mono text-[11px] font-semibold uppercase tracking-wider text-slate-600">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -601,7 +603,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
                 </tr>
               ) : (
                 displayRows.map((row, index) => (
-                  <tr key={row.id}>
+                  <tr className="even:bg-slate-50/70 hover:bg-blue-50/40" key={row.id}>
                     <td className="px-3 py-2 text-slate-700">{index + 1}</td>
                     <td className="px-3 py-2 text-slate-700">{row.targetAppName}</td>
                     <td className="px-3 py-2 font-medium text-slate-800">{row.databaseName}</td>

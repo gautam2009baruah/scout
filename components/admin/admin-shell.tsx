@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, Database, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, Database, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -54,6 +54,34 @@ const moduleIcons = {
   [MODULE_KEYS.chatbotSettings]: SlidersHorizontal,
   [MODULE_KEYS.databaseSchemaManager]: Database
 } as const;
+
+const administrationMenuGroups = [
+  {
+    label: "Organization & Access",
+    moduleKeys: [MODULE_KEYS.companyRoleSetup, MODULE_KEYS.userManagement],
+  },
+  {
+    label: "AI & Chatbot",
+    moduleKeys: [MODULE_KEYS.aiConfiguration, MODULE_KEYS.chatbotSettings],
+  },
+  {
+    label: "Guided Workflow",
+    moduleKeys: [
+      MODULE_KEYS.workflowTrainingSetup,
+      MODULE_KEYS.workflowSelfHealingReview,
+      MODULE_KEYS.workflowAnalytics,
+    ],
+  },
+  {
+    label: "Platform Operations",
+    moduleKeys: [
+      MODULE_KEYS.databaseSchemaManager,
+      MODULE_KEYS.emailCredentials,
+      MODULE_KEYS.triggersMonitoring,
+      MODULE_KEYS.searchAnalytics,
+    ],
+  },
+] as const;
 
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -339,14 +367,42 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     return children.some(child => child.key === active);
   };
 
+  function groupChildModules(parentKey: number, children: typeof session.modules) {
+    const sortedChildren = [...children].sort((a, b) => a.sortOrder - b.sortOrder);
+    if (parentKey !== MODULE_KEYS.administration) {
+      return [{ label: null, modules: sortedChildren }];
+    }
+
+    const assignedKeys = new Set<number>();
+    const groups = administrationMenuGroups
+      .map((group) => {
+        const modules = group.moduleKeys
+          .map((key) => sortedChildren.find((module) => module.key === key))
+          .filter((module): module is (typeof sortedChildren)[number] => Boolean(module));
+        modules.forEach((module) => assignedKeys.add(module.key));
+        return { label: group.label, modules };
+      })
+      .filter((group) => group.modules.length > 0);
+    const unmatched = sortedChildren.filter((module) => !assignedKeys.has(module.key));
+
+    return unmatched.length > 0
+      ? [...groups, { label: "Other", modules: unmatched }]
+      : groups;
+  }
+
   const sidebarContent = (collapsed: boolean, closeMobileMenu?: () => void) => (
     <>
       <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
         <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white shadow-sm">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-blue-700 text-white">
             <SlidersHorizontal className="h-5 w-5" />
           </span>
-          {!collapsed ? <p className="text-base font-semibold text-slate-950">Control Panel</p> : null}
+          {!collapsed ? (
+            <div>
+              <p className="text-base font-bold tracking-tight text-blue-700">Scout</p>
+              <p className="mt-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">Control Panel</p>
+            </div>
+          ) : null}
         </div>
         {!collapsed && !closeMobileMenu ? (
           <button
@@ -383,7 +439,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         </button>
       ) : null}
 
-      <nav className={`${collapsed ? "mt-4 flex flex-col items-center gap-1" : "mt-8 space-y-1"}`}>
+      <nav className={`${collapsed ? "mt-4 flex flex-col items-center gap-1" : "mt-10 space-y-1"}`}>
         {topLevelModules.map((module) => {
           const children = modulesByParent.get(module.key) || [];
           const hasChildren = children.length > 0;
@@ -397,7 +453,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                   aria-label={`${module.name}. Expand sidebar to view submenu.`}
                   className={`inline-flex h-10 w-10 items-center justify-center rounded-lg transition ${
                     isActiveTree
-                      ? "bg-slate-950 text-white shadow-sm"
+                      ? "bg-blue-700 text-white"
                       : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
                   }`}
                   key={module.key}
@@ -415,19 +471,30 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
           if (hasChildren) {
             return (
-              <details key={module.key} className="group" open>
-                <summary className={`flex h-11 cursor-pointer list-none items-center gap-3 rounded-lg px-3 text-sm font-medium transition marker:hidden ${
+              <details key={module.key} className="group py-0.5" open>
+                <summary className={`flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-md px-3 py-2 font-mono text-[13px] font-medium transition marker:hidden ${
                   isActiveTree
-                    ? "bg-slate-100 text-slate-950"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+                    ? "bg-blue-100 text-blue-700"
+                    : "text-slate-600 hover:bg-slate-200/70 hover:text-slate-950"
                 }`}>
                   <Icon className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 flex-1 truncate">{module.name}</span>
                   <ChevronDown className="h-4 w-4 shrink-0 transition group-open:rotate-180" />
                 </summary>
-                <div className="mt-1 space-y-1 border-l border-slate-200 pl-3">
-                  {children.sort((a, b) => a.sortOrder - b.sortOrder).map((child) => (
-                    <NavLink active={active} activeHref={activeHref} inset key={child.key} module={child} onNavigate={closeMobileMenu} />
+                <div className="mt-2 space-y-4 pl-4">
+                  {groupChildModules(module.key, children).map((group) => (
+                    <div className="space-y-1" key={group.label ?? "items"}>
+                      {group.label ? (
+                        <p className="px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          {group.label}
+                        </p>
+                      ) : null}
+                      <div className="space-y-1 border-l border-slate-300 pl-2">
+                        {group.modules.map((child) => (
+                          <NavLink active={active} activeHref={activeHref} inset key={child.key} module={child} onNavigate={closeMobileMenu} />
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </details>
@@ -441,11 +508,11 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   );
 
   return (
-    <main className="min-h-screen bg-[#f4f6f8] text-slate-950">
+    <main className="min-h-screen bg-[#f7f9fb] text-slate-950">
       <div className="flex min-h-screen">
         <aside
           aria-label="Control Panel navigation"
-          className={`admin-sidebar-scroll sticky top-0 hidden h-screen shrink-0 overflow-y-auto border-r border-slate-200 bg-white py-5 transition-[width] duration-200 lg:block ${isSidebarScrolling ? "is-scrolling" : ""} ${isSidebarCollapsed ? "w-20 px-3" : "w-80 px-4"}`}
+          className={`admin-sidebar-scroll sticky top-0 hidden h-screen shrink-0 overflow-y-auto border-r border-slate-300 bg-[#f2f4f6] py-5 transition-[width] duration-200 lg:block ${isSidebarScrolling ? "is-scrolling" : ""} ${isSidebarCollapsed ? "w-20 px-3" : "w-72 px-3"}`}
           onScroll={revealSidebarScrollbar}
           tabIndex={0}
         >
@@ -453,34 +520,44 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         </aside>
 
         <section className="flex min-h-screen min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 px-4 py-4 backdrop-blur sm:px-6 lg:px-8">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex min-w-0 items-start gap-3">
+          <header className="sticky top-0 z-10 min-h-16 border-b border-slate-300 bg-white px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto flex min-h-16 w-full max-w-[1440px] flex-col justify-center gap-3 py-3 md:flex-row md:items-center md:justify-between md:py-0">
+              <div className="flex min-w-0 items-center gap-3">
                 <button
                   aria-label="Open navigation"
-                  className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 lg:hidden"
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-slate-300 text-slate-600 transition hover:bg-slate-100 hover:text-blue-700 lg:hidden"
                   onClick={() => setIsMobileMenuOpen(true)}
                   type="button"
                 >
                   <Menu className="h-5 w-5" />
                 </button>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-teal-700">{session.tenant.name}</p>
-                  <h1 className="truncate text-2xl font-semibold tracking-normal text-slate-950">{pageTitle}</h1>
-                </div>
+                <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 font-mono text-sm">
+                  <span className="truncate text-slate-500">{session.tenant.name}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                  <h1 className="truncate font-semibold text-slate-950">{pageTitle}</h1>
+                </nav>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-3 md:border-l md:border-slate-300 md:pl-5">
                 <CompanyContextSwitcher />
                 <UserMenu name={session.user.name} />
               </div>
             </div>
           </header>
 
-          <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</div>
-          <footer className="border-t border-slate-200 bg-white/80 px-4 py-3 text-xs text-slate-500 sm:px-6 lg:px-8">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <span>Scout Control Panel</span>
-              <span>© 2026 Scout</span>
+          <div className="admin-content flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+            <div className="mx-auto w-full max-w-[1440px]">{children}</div>
+          </div>
+          <footer className="border-t border-slate-300 bg-white px-4 py-4 text-slate-600 sm:px-6 lg:px-8">
+            <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-2 font-mono text-[11px] uppercase tracking-[0.08em] sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+                <span>© 2026 Scout</span>
+                <span>Control Panel</span>
+                <span>Enterprise Console</span>
+              </div>
+              <span className="inline-flex items-center gap-2 font-semibold text-slate-800">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Connected
+              </span>
             </div>
           </footer>
         </section>
@@ -496,7 +573,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           />
           <aside
             aria-label="Control Panel mobile navigation"
-            className={`admin-sidebar-scroll relative h-full w-80 max-w-[88vw] overflow-y-auto border-r border-slate-200 bg-white px-4 py-5 shadow-xl ${isSidebarScrolling ? "is-scrolling" : ""}`}
+            className={`admin-sidebar-scroll relative h-full w-72 max-w-[88vw] overflow-y-auto border-r border-slate-300 bg-[#f2f4f6] px-3 py-5 shadow-xl ${isSidebarScrolling ? "is-scrolling" : ""}`}
             onScroll={revealSidebarScrollbar}
             tabIndex={0}
           >
@@ -556,10 +633,10 @@ function NavLink({
 
   return (
     <Link
-      className={`flex h-11 items-center gap-3 rounded-lg text-sm font-medium transition ${collapsed ? "w-10 justify-center px-0" : "px-3"} ${
+      className={`flex min-h-10 items-center gap-3 rounded-md font-mono text-[13px] font-medium transition ${collapsed ? "w-10 justify-center px-0" : inset ? "px-3 py-2" : "px-3 py-2.5"} ${
         isActive
-          ? "bg-slate-950 text-white shadow-sm"
-          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+          ? "bg-blue-700 text-white"
+          : "text-slate-600 hover:bg-slate-200/70 hover:text-blue-700"
       }`}
       href={module.href}
       onClick={onNavigate}
