@@ -504,7 +504,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
             <HelpCircle className="h-4 w-4" />
           </button>
           {downloadHelpOpen ? (
-            <div className="absolute right-6 top-16 z-50 w-[min(42rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
+            <div className="absolute right-6 top-16 z-50 max-h-[calc(100vh-6rem)] w-[min(46rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-950">How to host the downloaded project</h3>
@@ -518,28 +518,87 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
               <div className="mt-3 space-y-3 text-sm text-slate-700">
                 <div>
                   <div className="font-semibold text-slate-900">1. Unzip the project</div>
-                  <p className="mt-1 text-xs text-slate-600">The ZIP contains a standalone Node.js service under <span className="font-mono">http-api/database-executor</span>.</p>
+                  <p className="mt-1 text-xs text-slate-600">The ZIP opens directly to the standalone project. The included README has Windows, Linux/macOS, and Docker instructions.</p>
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-900">2. Copy the environment template</div>
-                  <p className="mt-1 text-xs text-slate-600">Rename <span className="font-mono">.env.example</span> to <span className="font-mono">.env</span> and set the database connection variables for PostgreSQL, MySQL, or SQL Server.</p>
+                  <div className="font-semibold text-slate-900">2. Start the setup</div>
+                  <p className="mt-1 text-xs text-slate-600">On Windows, double-click <span className="font-mono">start.cmd</span>. On Linux/macOS, run <span className="font-mono">chmod +x start.sh &amp;&amp; ./start.sh</span>. The launcher creates <span className="font-mono">.env</span> automatically.</p>
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-900">3. Update the minimum required values</div>
+                  <div className="font-semibold text-slate-900">3. Enter the database settings</div>
                   <div className="mt-1 text-xs text-slate-600 space-y-1">
                     <p><span className="font-mono">DB_TYPE</span>: choose <span className="font-mono">postgresql</span>, <span className="font-mono">mysql</span>, or <span className="font-mono">sqlserver</span>.</p>
                     <p><span className="font-mono">DATABASE_URL</span> or the host/port/user/password fields: provide the client database credentials.</p>
                     <p><span className="font-mono">DB_SCHEMA</span>: set the schema name to expose, for example <span className="font-mono">public</span> or <span className="font-mono">dbo</span>.</p>
-                    <p><span className="font-mono">PORT</span>: optional; defaults to <span className="font-mono">4300</span>.</p>
                   </div>
                 </div>
                 <div>
                   <div className="font-semibold text-slate-900">4. Start the service</div>
-                  <p className="mt-1 text-xs text-slate-600">Run <span className="font-mono">npm install</span> and then <span className="font-mono">npm start</span>. The service exposes <span className="font-mono">/v1/sql/execute</span> and <span className="font-mono">/v1/database/metadata</span>.</p>
+                  <p className="mt-1 text-xs text-slate-600">Run the same launcher again. It installs dependencies automatically the first time and starts the service on port <span className="font-mono">4300</span>.</p>
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-900">5. Test the connection</div>
-                  <p className="mt-1 text-xs text-slate-600">Use <span className="font-mono">GET /ready</span> to confirm the database is reachable before wiring it into Scout.</p>
+                  <div className="font-semibold text-slate-900">Manual commands (without the launcher)</div>
+                  <p className="mt-1 text-xs text-slate-600">Open Command Prompt, PowerShell, or a terminal inside the unzipped project folder, then run:</p>
+                  <div className="mt-2 rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
+                    <div>copy .env.example .env <span className="text-slate-400"># Windows Command Prompt</span></div>
+                    <div>Copy-Item .env.example .env <span className="text-slate-400"># PowerShell</span></div>
+                    <div>cp .env.example .env <span className="text-slate-400"># Linux/macOS</span></div>
+                    <div className="mt-2 text-slate-400"># Edit .env, then:</div>
+                    <div>npm ci</div>
+                    <div>npm start</div>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600"><span className="font-mono">npm ci</span> is needed only for the first installation or after package dependencies change. Use <span className="font-mono">Ctrl+C</span> to stop the foreground service.</p>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">Run with Docker instead</div>
+                  <div className="mt-2 rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
+                    <div>docker compose up -d --build</div>
+                    <div>docker compose ps</div>
+                    <div>docker compose logs -f</div>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600">Stop it with <span className="font-mono">docker compose down</span>. After changing <span className="font-mono">.env</span>, run <span className="font-mono">docker compose restart</span>.</p>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">5. Test the service and database</div>
+                  <div className="mt-1 space-y-1 text-xs text-slate-600">
+                    <p><span className="font-mono">http://CLIENT_SERVER:4300/health</span>: confirms the service is running.</p>
+                    <p><span className="font-mono">http://CLIENT_SERVER:4300/ready</span>: confirms the configured database is reachable.</p>
+                    <p><span className="font-mono">http://CLIENT_SERVER:4300/v1/database/metadata</span>: returns the schema metadata used by Scout.</p>
+                  </div>
+                </div>
+                <div>
+                  <div className="font-semibold text-slate-900">Call the SQL execution endpoint</div>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Send a <span className="font-mono">POST</span> request to <span className="font-mono">http://CLIENT_SERVER:4300/v1/sql/execute</span> with
+                    header <span className="font-mono">Content-Type: application/json</span>. The JSON body requires one string property named <span className="font-mono">sql</span>. Do not add a trailing slash to the URL.
+                  </p>
+                  <div className="mt-2 rounded-md bg-slate-950 p-3 font-mono text-xs leading-5 text-slate-100">
+                    <div className="text-slate-400"># Request body</div>
+                    <div>{`{"sql":"SELECT * FROM users LIMIT 10"}`}</div>
+                    <div className="mt-2 text-slate-400"># cURL</div>
+                    <div>curl -X POST http://localhost:4300/v1/sql/execute \</div>
+                    <div className="pl-4">-H &quot;Content-Type: application/json&quot; \</div>
+                    <div className="pl-4">-d &apos;{`{"sql":"SELECT * FROM users LIMIT 10"}`}&apos;</div>
+                    <div className="mt-2 text-slate-400"># PowerShell</div>
+                    <div>$body = {`@{ sql = "SELECT * FROM users LIMIT 10" } | ConvertTo-Json`}</div>
+                    <div>Invoke-RestMethod -Method Post `</div>
+                    <div className="pl-4">-Uri http://localhost:4300/v1/sql/execute `</div>
+                    <div className="pl-4">-ContentType &quot;application/json&quot; -Body $body</div>
+                  </div>
+                  <div className="mt-2 space-y-1 text-xs text-slate-600">
+                    <p>The response includes <span className="font-mono">ok</span>, <span className="font-mono">databaseType</span>, <span className="font-mono">databaseName</span>, <span className="font-mono">durationMs</span>, <span className="font-mono">rowCount</span>, <span className="font-mono">columns</span>, and <span className="font-mono">rows</span>.</p>
+                    <p>An empty or missing <span className="font-mono">sql</span> value returns HTTP <span className="font-mono">400</span>. Database execution errors also return HTTP <span className="font-mono">400</span> with a <span className="font-mono">message</span>.</p>
+                  </div>
+                </div>
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+                  <div className="font-semibold text-amber-950">Important hosting notes</div>
+                  <div className="mt-1 space-y-1 text-xs text-amber-900">
+                    <p>Install Node.js 20.6 or newer when not using Docker.</p>
+                    <p>Restart the service after every <span className="font-mono">.env</span> change.</p>
+                    <p>Allow port <span className="font-mono">4300</span> only between Scout and authorized client systems.</p>
+                    <p>The SQL endpoint executes the supplied statement using the configured database account. Give that account only the permissions required by Scout workflows.</p>
+                    <p>When Docker connects to a database on the same Windows/macOS computer, use <span className="font-mono">host.docker.internal</span> instead of <span className="font-mono">localhost</span>.</p>
+                  </div>
                 </div>
               </div>
             </div>

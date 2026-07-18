@@ -1,9 +1,10 @@
 import { createServer } from "node:http";
-import { loadConfig } from "./config.js";
+import { loadConfig, validateConfig } from "./config.js";
 import { createDatabaseAdapter } from "./database.js";
 import type { ExecuteSqlRequest } from "./types.js";
 
 const config = loadConfig();
+validateConfig(config);
 const adapter = createDatabaseAdapter(config);
 
 function sendJson(response: import("node:http").ServerResponse, statusCode: number, payload: unknown) {

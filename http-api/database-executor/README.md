@@ -1,54 +1,175 @@
 # Scout Database Executor
 
-Standalone Node.js service that clients can host themselves. It accepts SQL, executes it against the client's database credentials, and returns rows plus execution metadata. It also exposes a database metadata endpoint that returns schema JSON for syncing.
+This standalone service connects Scout to a client-hosted PostgreSQL, MySQL, or
+SQL Server database. Keep this service inside the client's network and expose
+its URL to Scout through the client's normal firewall or reverse-proxy rules.
+
+## Requirements
+
+- Node.js 20.6 or newer, or Docker Desktop / Docker Engine
+- Network access from this service to the client's database
+- A database account with only the permissions required by the Scout workflows
+
+## Option A: Windows (easiest)
+
+1. Unzip `scout-database-executor.zip`.
+2. Double-click `start.cmd`.
+3. The first run creates `.env`. Open `.env` and enter the database settings.
+4. Double-click `start.cmd` again.
+
+The launcher installs dependencies on its first successful start. Later starts
+only launch the service.
+
+## Option B: Linux or macOS
+
+```bash
+unzip scout-database-executor.zip
+cd scout-database-executor
+chmod +x start.sh
+./start.sh
+```
+
+The first run creates `.env` and asks you to edit it. After saving the database
+settings, run `./start.sh` again.
+
+## Option C: Docker
+
+1. Copy `.env.example` to `.env`.
+2. Enter the database settings in `.env`.
+3. Run:
+
+```bash
+docker compose up -d --build
+```
+
+Check status with:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+## Database configuration
+
+Set `DB_TYPE` to one of:
+
+- `postgresql`
+- `mysql`
+- `sqlserver`
+
+For PostgreSQL, `DATABASE_URL` is recommended:
+
+```dotenv
+DB_TYPE=postgresql
+DATABASE_URL=postgresql://username:password@database-host:5432/database-name
+DB_SCHEMA=public
+DB_SSL=false
+```
+
+If a password contains characters such as `@`, `:`, `/`, `#`, or `%`,
+URL-encode it before putting it in `DATABASE_URL`. Alternatively, leave
+`DATABASE_URL` empty and use `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`,
+and `DB_NAME`.
+
+Only the settings for the selected `DB_TYPE` are used.
+
+## Verify the installation
+
+Open these URLs from a machine that can reach the service:
+
+```text
+http://SERVER_HOST:4300/health
+http://SERVER_HOST:4300/ready
+http://SERVER_HOST:4300/v1/database/metadata
+```
+
+Expected `/health` response:
+
+```json
+{"ok":true,"service":"scout-database-executor"}
+```
+
+Expected `/ready` response:
+
+```json
+{"ok":true,"databaseType":"postgresql"}
+```
+
+Use the metadata URL in Scout's Database Schema Manager after `/ready`
+succeeds.
 
 ## Endpoints
 
-- `GET /health` - service health
-- `GET /ready` - database connectivity check
-- `POST /v1/sql/execute` - execute SQL and return results
-- `GET /v1/database/metadata` - return database metadata and schema JSON
+- `GET /health` — service process health
+- `GET /ready` — database connectivity health
+- `GET /v1/database/metadata` — database metadata for schema synchronization
+- `POST /v1/sql/execute` — execute SQL and return rows and metadata
 
-## Configuration
+## Execute SQL
 
-Copy `.env.example` to `.env` and fill in the client's database credentials. The Scout control panel never stores those credentials.
+Send `POST /v1/sql/execute` with the `Content-Type: application/json` header.
+The request body requires one string property named `sql`. Do not add a
+trailing slash to the endpoint URL.
 
-Supported drivers:
-
-- PostgreSQL
-- MySQL
-- SQL Server
-
-## Quick start
-
-```bash
-npm install
-npm start
-```
-
-## Request examples
-
-Execute SQL:
+Request:
 
 ```json
-POST /v1/sql/execute
 {
-  "sql": "SELECT TOP 10 * FROM Customers"
+  "sql": "SELECT * FROM users LIMIT 10"
 }
 ```
 
-Database metadata:
+cURL:
 
 ```bash
-GET /v1/database/metadata
+curl -X POST http://localhost:4300/v1/sql/execute \
+  -H "Content-Type: application/json" \
+  -d '{"sql":"SELECT * FROM users LIMIT 10"}'
 ```
 
-## Docker
+PowerShell:
 
-```bash
-docker compose up --build
+```powershell
+$body = @{ sql = "SELECT * FROM users LIMIT 10" } | ConvertTo-Json
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:4300/v1/sql/execute `
+  -ContentType "application/json" `
+  -Body $body
 ```
 
-## Response shape
+Successful response:
 
-Metadata returns both a human-friendly summary and a `schema` object with `tables`, `columns`, and `foreignKeys`. That shape is compatible with the Scout schema manager sync flow.
+```json
+{
+  "ok": true,
+  "databaseType": "postgresql",
+  "databaseName": "scout",
+  "durationMs": 12,
+  "rowCount": 2,
+  "columns": ["id", "name"],
+  "rows": [
+    { "id": 1, "name": "First row" },
+    { "id": 2, "name": "Second row" }
+  ]
+}
+```
+
+An empty or missing `sql` value returns HTTP 400. Database errors also return
+HTTP 400 with a JSON `message`.
+
+The endpoint executes the supplied statement using the configured database
+account. Restrict port 4300 to Scout and authorized internal systems, and give
+the database account only the permissions required by Scout workflows.
+
+## Troubleshooting
+
+- `client password must be a string`: ensure the file is named `.env`, is in
+  the same folder as `package.json`, and restart the service.
+- `password authentication failed`: verify the username/password and database
+  access rules.
+- `ECONNREFUSED`: verify the database host/port and firewall.
+- Docker with a database on the same computer: `localhost` means the container
+  itself. Use `host.docker.internal` on Windows/macOS or the appropriate Docker
+  network hostname.
+- After every `.env` change, restart with `start.cmd`, `./start.sh`, or
+  `docker compose restart`.

@@ -10,4 +10,4 @@ COPY . .
 ENV NODE_ENV=production
 EXPOSE 4300
 
-CMD ["npm", "start"]
+CMD ["node", "--import", "tsx", "src/server.ts"]

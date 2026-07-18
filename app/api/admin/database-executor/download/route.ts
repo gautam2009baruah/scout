@@ -33,8 +33,13 @@ function dosDateTime(date: Date) {
 async function collectFiles(root: string, current = root): Promise<Array<{ absolutePath: string; relativePath: string }>> {
   const entries = await readdir(current, { withFileTypes: true });
   const files: Array<{ absolutePath: string; relativePath: string }> = [];
+  const excludedNames = new Set(["node_modules", ".env", ".git", "dist"]);
 
   for (const entry of entries) {
+    if (excludedNames.has(entry.name)) {
+      continue;
+    }
+
     const absolutePath = path.join(current, entry.name);
     if (entry.isDirectory()) {
       files.push(...await collectFiles(root, absolutePath));
