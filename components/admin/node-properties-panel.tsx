@@ -5809,6 +5809,19 @@ function DatabaseConfig({ config, updateConfig }: any) {
       <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm text-slate-600">
         Database Node is integrated and ready for configuration.
       </div>
+      <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
+        Configure per-target-app database schemas in
+        {" "}
+        <a
+          href="/control-panel/administration/database-schema"
+          className="font-semibold text-blue-700 hover:text-blue-800 underline"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Database Schema Manager
+        </a>
+        .
+      </div>
       <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
         No database functionality is implemented yet. This is a placeholder node.
       </div>

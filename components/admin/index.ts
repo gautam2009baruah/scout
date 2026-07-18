@@ -19,3 +19,4 @@ export { MultiSelectDropdown } from "./multi-select-dropdown";
 export { TopicManager } from "./topic-manager";
 export { TriggersMonitoringDashboard } from "./triggers-monitoring-dashboard";
 export { SearchAnalyticsDashboard } from "./search-analytics-dashboard";
+export { DatabaseSchemaManager } from "./database-schema-manager";

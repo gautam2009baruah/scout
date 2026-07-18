@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, Database, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -24,7 +24,8 @@ const MODULE_KEYS = {
   companyRoleSetup: 12,
   triggersMonitoring: 13,
   searchAnalytics: 14,
-  chatbotSettings: 15
+  chatbotSettings: 15,
+  databaseSchemaManager: 16
 } as const;
 
 type AdminShellProps = {
@@ -50,7 +51,8 @@ const moduleIcons = {
   [MODULE_KEYS.companyRoleSetup]: TableProperties,
   [MODULE_KEYS.triggersMonitoring]: Activity,
   [MODULE_KEYS.searchAnalytics]: BarChart3,
-  [MODULE_KEYS.chatbotSettings]: SlidersHorizontal
+  [MODULE_KEYS.chatbotSettings]: SlidersHorizontal,
+  [MODULE_KEYS.databaseSchemaManager]: Database
 } as const;
 
 export function AdminShell({ active, activeHref, children, session, title }: AdminShellProps) {
