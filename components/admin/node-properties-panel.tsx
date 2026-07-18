@@ -5964,6 +5964,58 @@ function DatabaseConfigLegacy({ config, updateConfig, targetAppId }: any) {
         />
       </div>
 
+      <details className="rounded-lg border border-amber-200 bg-amber-50 p-3" open>
+        <summary className="cursor-pointer text-sm font-semibold text-amber-900">Field Guide: which value goes where</summary>
+        <div className="mt-3 space-y-3 text-xs text-amber-900">
+          <p><strong>User Request Variable Path</strong>: raw user question from chatbot.</p>
+          <p><strong>AI Extraction JSON Variable Path</strong>: structured JSON from AI Extractor output.</p>
+          <p><strong>Additional Context Variable Path</strong>: optional extra payload like user profile, channel, company, or session metadata.</p>
+
+          <div className="rounded border border-amber-200 bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-semibold">Recommended setup for chatbot -&gt; ai extractor -&gt; database node</p>
+              <button
+                type="button"
+                className="rounded border border-amber-300 bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-200"
+                onClick={() =>
+                  updateConfig({
+                    userRequestVariablePath: "userMessage",
+                    extractedInputVariablePath: "extracted",
+                    additionalContextVariablePath: "trigger.input",
+                  })
+                }
+              >
+                Use recommended defaults
+              </button>
+            </div>
+            <p className="mt-1">User Request Variable Path: <span className="font-mono">userMessage</span></p>
+            <p className="mt-1">AI Extraction JSON Variable Path: <span className="font-mono">extracted</span></p>
+            <p className="mt-1">Additional Context Variable Path: <span className="font-mono">trigger.input</span> (optional)</p>
+          </div>
+
+          <div className="rounded border border-amber-200 bg-white p-3">
+            <p className="font-semibold">Sample runtime context</p>
+            <pre className="mt-2 overflow-x-auto rounded bg-slate-900 p-2 text-[11px] text-slate-100">{`{
+  "userMessage": "show last 5 invoices for acme",
+  "extracted": {
+    "customerName": "acme",
+    "entity": "invoice",
+    "limit": 5
+  },
+  "trigger": {
+    "input": {
+      "conversationId": "conv_123",
+      "channel": "chatbot"
+    }
+  }
+}`}</pre>
+            <p className="mt-2">Database Node reads question from <span className="font-mono">userMessage</span>, extracted filters from <span className="font-mono">extracted</span>, and optional metadata from <span className="font-mono">trigger.input</span>.</p>
+          </div>
+
+          <p className="text-amber-800">Tip: if you changed AI Extractor output variable to something like <span className="font-mono">extraction.result</span>, use that exact same path here.</p>
+        </div>
+      </details>
+
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">Max Rows</label>
         <input
