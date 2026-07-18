@@ -216,9 +216,14 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
     setTimeout(() => setToast(null), 3000);
   }
 
-  const filteredRows = useMemo(
-    () => rows.filter((row) => (selectedTargetAppId ? row.targetAppId === selectedTargetAppId : true)),
-    [rows, selectedTargetAppId]
+  const displayRows = useMemo(
+    () =>
+      [...rows].sort((a, b) => {
+        const byTargetApp = a.targetAppName.localeCompare(b.targetAppName);
+        if (byTargetApp !== 0) return byTargetApp;
+        return a.databaseName.localeCompare(b.databaseName);
+      }),
+    [rows]
   );
 
   const duplicateForTargetApp = useMemo(() => {
@@ -484,6 +489,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
               className="rounded-lg border border-slate-300 px-3 py-2"
               value={selectedTargetAppId}
               onChange={(event) => setSelectedTargetAppId(event.target.value)}
+              disabled={Boolean(editingSchemaId)}
             >
               {sortedTargetApps.map((app) => (
                 <option key={app.id} value={app.id}>
@@ -509,6 +515,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
               className="rounded-lg border border-slate-300 px-3 py-2"
               value={databaseType}
               onChange={(event) => setDatabaseType(event.target.value as SupportedDatabaseType)}
+              disabled={Boolean(editingSchemaId)}
             >
               {DATABASE_TYPES.map((item) => (
                 <option key={item.value} value={item.value}>
@@ -542,7 +549,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
             />
             {uploadFileName ? <span className="text-xs text-slate-500">Selected: {uploadFileName}</span> : null}
             {editingSchemaId ? (
-              <span className="text-xs text-slate-500">Edit mode: please upload JSON file again. All fields are mandatory.</span>
+              <span className="text-xs text-slate-500">Edit mode: target app and database type are locked. Upload JSON is still required.</span>
             ) : null}
           </label>
 
@@ -586,14 +593,14 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredRows.length === 0 ? (
+              {displayRows.length === 0 ? (
                 <tr>
                   <td className="px-3 py-3 text-slate-500" colSpan={9}>
-                    No uploaded schema records for selected target app.
+                    No uploaded schema records are available.
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row, index) => (
+                displayRows.map((row, index) => (
                   <tr key={row.id}>
                     <td className="px-3 py-2 text-slate-700">{index + 1}</td>
                     <td className="px-3 py-2 text-slate-700">{row.targetAppName}</td>

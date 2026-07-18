@@ -12,7 +12,7 @@
 
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, type ComponentType } from "react";
 import ReactFlow, {
   Node,
   Edge,
@@ -42,6 +42,7 @@ import {
   ChevronLeft,
   ChevronRight,
   List,
+  Database,
 } from "lucide-react";
 import type { NodeType, Orchestration, ManualTriggerConfig, OrchestrationTriggerType } from "@/shared/orchestrationTypes";
 import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
@@ -53,7 +54,7 @@ import { isNodeCompatibleWithTrigger, getIncompatibilityReason } from "@/lib/orc
 
 type TargetAppOption = { id: string; name: string; companyId: string };
 
-const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: string }> = [
+const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string | ComponentType<{ className?: string }>; color: string }> = [
   { type: "trigger", label: "Trigger", icon: "⚡", color: "#10b981" },
   { type: "workflow", label: "Workflow", icon: "🔄", color: "#3b82f6" },
   { type: "data_capture", label: "Data Capture", icon: "📋", color: "#0ea5e9" },
@@ -63,7 +64,7 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: 
   { type: "human_approval", label: "Human Approval", icon: "✋", color: "#ec4899" },
   { type: "notification", label: "Notification", icon: "📧", color: "#06b6d4" },
   { type: "api_call", label: "API Call", icon: "🌐", color: "#f97316" },
-  { type: "database", label: "Database", icon: "🗄️", color: "#6366f1" },
+  { type: "database", label: "Database", icon: Database, color: "#6366f1" },
   { type: "variable", label: "Variable", icon: "📊", color: "#14b8a6" },
   { type: "end", label: "End", icon: "🏁", color: "#ef4444" },
 ];
@@ -72,6 +73,7 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string; color: 
 const CustomNode = ({ data, id }: { data: any; id: string }) => {
   const config = NODE_CONFIGS.find((n) => n.type === data.nodeType);
   const isConditionNode = data.nodeType === 'condition';
+  const IconComponent = config?.icon;
   
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -126,7 +128,7 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
         <Trash2 className="h-2.5 w-2.5" />
       </button>
       <div className="flex items-center gap-2">
-        <span className="text-xl">{config?.icon}</span>
+        <span className="text-xl">{typeof IconComponent === "string" ? IconComponent : IconComponent ? <IconComponent className="h-5 w-5" /> : null}</span>
         <div className="flex-1">
           <div className="text-xs font-semibold text-slate-500">{config?.label}</div>
           <div className="text-sm font-semibold text-slate-900">{data.label}</div>
@@ -392,23 +394,20 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   }, [hasUnsavedChanges]);
 
   // Delete node by ID
-  const deleteNode = useCallback(
-    (nodeId: string) => {
-      setConfirmDialog({
-        message: "Delete this node?",
-        onConfirm: () => {
-          setNodes((nds) => nds.filter((node) => node.id !== nodeId));
-          setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
-          if (selectedNode?.id === nodeId) {
-            setSelectedNode(null);
-            setIsPropertiesOpen(false);
-          }
-          setConfirmDialog(null);
-        },
-      });
-    },
-    [selectedNode, setNodes, setEdges]
-  );
+  function deleteNode(nodeId: string) {
+    setConfirmDialog({
+      message: "Delete this node?",
+      onConfirm: () => {
+        setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+        setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId));
+        if (selectedNode?.id === nodeId) {
+          setSelectedNode(null);
+          setIsPropertiesOpen(false);
+        }
+        setConfirmDialog(null);
+      },
+    });
+  }
 
   // Handle connection creation
   const onConnect = useCallback(
