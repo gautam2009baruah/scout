@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Database, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -97,6 +97,9 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const sidebarScrollTimerRef = useRef<number | null>(null);
   const logoutRequestedRef = useRef(false);
   const isExtendingSessionRef = useRef(false);
+  const showSessionWarningRef = useRef(false);
+  const lastUserActivityRef = useRef(0);
+  const lastSessionExtensionRef = useRef(0);
 
   const preferredTopLevelOrder = [
     MODULE_KEYS.overview,
@@ -196,6 +199,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
   const beginWarningCountdown = useCallback((remainingMs: number) => {
     const clampedMs = Math.max(0, Math.min(30_000, remainingMs));
+    showSessionWarningRef.current = true;
     setShowSessionWarning(true);
     setWarningCountdownSeconds(Math.max(0, Math.ceil(clampedMs / 1000)));
     const startedAt = Date.now();
@@ -220,9 +224,8 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const scheduleSessionWarning = useCallback((deadlineMs: number) => {
     clearSessionTimers();
     if (!Number.isFinite(deadlineMs)) {
-      const fallbackDeadline = Date.now() + 15 * 60 * 1000;
-      setSessionDeadline(fallbackDeadline);
-      deadlineMs = fallbackDeadline;
+      void logoutNow();
+      return;
     }
 
     const remainingMs = deadlineMs - Date.now();
@@ -243,12 +246,62 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
     }, remainingMs - 30_000);
   }, [beginWarningCountdown, clearSessionTimers, logoutNow]);
 
+  const renewActiveSession = useCallback(async () => {
+    if (
+      logoutRequestedRef.current ||
+      isExtendingSessionRef.current ||
+      showSessionWarningRef.current
+    ) {
+      return;
+    }
+
+    isExtendingSessionRef.current = true;
+
+    try {
+      const response = await fetch("/api/admin/auth/extend", {
+        method: "POST",
+        cache: "no-store",
+        keepalive: true,
+      });
+      const body = await response.json().catch(() => null);
+
+      if (response.status === 401) {
+        await logoutNow();
+        return;
+      }
+
+      if (!response.ok) {
+        return;
+      }
+
+      const nextDeadline = body?.expiresAt
+        ? new Date(body.expiresAt).getTime()
+        : Number.NaN;
+
+      if (!Number.isFinite(nextDeadline)) {
+        return;
+      }
+
+      lastSessionExtensionRef.current = Date.now();
+      showSessionWarningRef.current = false;
+      setSessionDeadline(nextDeadline);
+      setShowSessionWarning(false);
+      setWarningCountdownSeconds(30);
+    } catch {
+      // Keep the existing deadline and warning schedule on transient failures.
+      // A later activity or heartbeat will retry before expiry.
+    } finally {
+      isExtendingSessionRef.current = false;
+    }
+  }, [logoutNow]);
+
   async function stayOnPage() {
-    if (isExtendingSession || logoutRequestedRef.current) return;
+    if (isExtendingSessionRef.current || logoutRequestedRef.current) return;
 
     // Stop the pending logout/countdown immediately to avoid race conditions
     // while the extend-session request is in flight.
     clearSessionTimers();
+    showSessionWarningRef.current = false;
     setShowSessionWarning(false);
 
     setIsExtendingSession(true);
@@ -263,8 +316,13 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         throw new Error(body?.message || "Unable to extend the session.");
       }
 
-      const nextDeadline = body?.expiresAt ? new Date(body.expiresAt).getTime() : Date.now() + 15 * 60 * 1000;
+      const nextDeadline = body?.expiresAt ? new Date(body.expiresAt).getTime() : Number.NaN;
+      if (!Number.isFinite(nextDeadline)) {
+        throw new Error("The server returned an invalid session expiry.");
+      }
+      lastSessionExtensionRef.current = Date.now();
       setSessionDeadline(nextDeadline);
+      showSessionWarningRef.current = false;
       setShowSessionWarning(false);
       setWarningCountdownSeconds(30);
       scheduleSessionWarning(nextDeadline);
@@ -279,6 +337,55 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   useEffect(() => {
     setSessionDeadline(new Date(session.expiresAt).getTime());
   }, [session.expiresAt]);
+
+  useEffect(() => {
+    const activityExtensionIntervalMs = 4 * 60 * 1000;
+    const recentActivityWindowMs = 5 * 60 * 1000;
+    lastUserActivityRef.current = Date.now();
+
+    const recordActivity = () => {
+      const now = Date.now();
+      lastUserActivityRef.current = now;
+
+      if (
+        !showSessionWarningRef.current &&
+        now - lastSessionExtensionRef.current >= activityExtensionIntervalMs
+      ) {
+        void renewActiveSession();
+      }
+    };
+
+    const heartbeat = window.setInterval(() => {
+      const now = Date.now();
+      const userWasRecentlyActive =
+        now - lastUserActivityRef.current <= recentActivityWindowMs;
+
+      if (
+        userWasRecentlyActive &&
+        !showSessionWarningRef.current &&
+        now - lastSessionExtensionRef.current >= activityExtensionIntervalMs
+      ) {
+        void renewActiveSession();
+      }
+    }, 60_000);
+
+    window.addEventListener("pointerdown", recordActivity, { passive: true });
+    window.addEventListener("keydown", recordActivity);
+    window.addEventListener("touchstart", recordActivity, { passive: true });
+    window.addEventListener("focus", recordActivity);
+
+    // Synchronize the database deadline, browser cookie, and client timer on
+    // every page mount/navigation.
+    void renewActiveSession();
+
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener("pointerdown", recordActivity);
+      window.removeEventListener("keydown", recordActivity);
+      window.removeEventListener("touchstart", recordActivity);
+      window.removeEventListener("focus", recordActivity);
+    };
+  }, [renewActiveSession]);
 
   useEffect(() => {
     scheduleSessionWarning(sessionDeadline);
@@ -395,7 +502,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       <div className={`flex items-center pt-5 ${collapsed ? "justify-center" : "justify-between gap-3 px-2"}`}>
         <div className={`flex items-center ${collapsed ? "justify-center" : "gap-3"}`}>
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-md bg-blue-700 text-white">
-            <SlidersHorizontal className="h-5 w-5" />
+            <Compass className="h-5 w-5" />
           </span>
           {!collapsed ? (
             <div>

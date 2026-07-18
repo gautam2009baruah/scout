@@ -3,10 +3,11 @@ import { cookies } from "next/headers";
 import { getPool } from "@/lib/db/pool";
 import { getEffectiveUserModules } from "./permissions";
 import { verifyPassword } from "./password";
+import { ADMIN_SESSION_MINUTES } from "./session-config";
 import type { AdminLoginCredentials, AdminSession, UserCompanyAccess } from "./auth";
 
 export const ADMIN_SESSION_COOKIE = "scout_admin_session";
-export const ADMIN_SESSION_MINUTES = 15;
+export { ADMIN_SESSION_MINUTES } from "./session-config";
 
 type SessionRow = {
   session_id: string;
@@ -268,10 +269,10 @@ export async function getCurrentAdminSession(): Promise<AdminSession | null> {
     return null;
   }
 
-  // Auto-extend session
-  const nextExpiresAt = new Date(Date.now() + ADMIN_SESSION_MINUTES * 60 * 1000);
-  await getPool().query("UPDATE user_sessions SET last_seen_at = now(), expires_at = $2 WHERE id = $1", [row.session_id, nextExpiresAt]);
-  row.expires_at = nextExpiresAt;
+  // Reading a session must not extend only the database expiry. The browser
+  // cookie and client warning deadline are renewed together by the extend
+  // endpoint so all three clocks remain synchronized.
+  await getPool().query("UPDATE user_sessions SET last_seen_at = now() WHERE id = $1", [row.session_id]);
 
   return toAdminSession(row, availableCompanies);
 }
@@ -339,7 +340,7 @@ export async function extendCurrentAdminSession(): Promise<Date | null> {
 
   const nextExpiresAt = new Date(Date.now() + ADMIN_SESSION_MINUTES * 60 * 1000);
   const result = await getPool().query<{ id: string }>(
-    "UPDATE user_sessions SET last_seen_at = now(), expires_at = $2 WHERE token_hash = $1 AND revoked_at IS NULL RETURNING id",
+    "UPDATE user_sessions SET last_seen_at = now(), expires_at = $2 WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now() RETURNING id",
     [hashToken(token), nextExpiresAt]
   );
 
