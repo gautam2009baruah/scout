@@ -53,7 +53,7 @@ export function isNodeCompatibleWithTrigger(
     return INTERACTIVE_TRIGGERS.includes(triggerType);
   }
 
-  // All other nodes (ai_extraction, ai_decision, condition, notification, variable) are always compatible
+  // All other nodes are always compatible
   return true;
 }
 
@@ -79,6 +79,7 @@ export function getIncompatibilityReason(
     notification: "Notification",
     variable: "Variable",
     api_call: "API Call",
+    database: "Database",
     end: "End",
   };
 

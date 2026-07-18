@@ -40,6 +40,7 @@ const NODE_CONFIGS = [
   { type: "human_approval", label: "Human Approval", icon: "✋" },
   { type: "notification", label: "Notification", icon: "📧" },
   { type: "api_call", label: "API Call", icon: "🌐" },
+  { type: "database", label: "Database", icon: "🗄️" },
   { type: "variable", label: "Variable", icon: "📊" },
   { type: "end", label: "End", icon: "🏁" },
 ];
@@ -694,6 +695,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
           />
         )}
         {nodeType === "api_call" && <ApiCallConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "database" && <DatabaseConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
 
@@ -5791,6 +5793,25 @@ function VariableConfig({ config, updateConfig }: any) {
           </div>
         </div>
       </details>
+    </div>
+  );
+}
+
+function DatabaseConfig({ config, updateConfig }: any) {
+  useEffect(() => {
+    if (config?.type !== "database") {
+      updateConfig({ type: "database" });
+    }
+  }, [config?.type, updateConfig]);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm text-slate-600">
+        Database Node is integrated and ready for configuration.
+      </div>
+      <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+        No database functionality is implemented yet. This is a placeholder node.
+      </div>
     </div>
   );
 }

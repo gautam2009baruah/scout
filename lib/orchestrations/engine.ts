@@ -16,6 +16,7 @@ import type {
   NotificationNodeConfig,
   VariableNodeConfig,
   ApiCallNodeConfig,
+  DatabaseNodeConfig,
   TriggerNodeConfig,
   OrchestrationTriggerType,
 } from "@/shared/orchestrationTypes";
@@ -29,6 +30,7 @@ import { executeHumanApprovalNode, resumeAfterApproval } from "./nodes/human-app
 import { executeNotificationNode } from "./nodes/notification-node";
 import { executeVariableNode } from "./nodes/variable-node";
 import { executeApiCallNode } from "./nodes/api-call-node";
+import { executeDatabaseNode } from "./nodes/database-node";
 import { evaluateExpression } from "./expression-evaluator";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { getPool } from "@/lib/db/pool";
@@ -374,6 +376,9 @@ export class OrchestrationEngine {
 
       case "api_call":
         return await executeApiCallNode(config as ApiCallNodeConfig, this.context);
+
+      case "database":
+        return await executeDatabaseNode(config as DatabaseNodeConfig, this.context);
 
       default:
         throw new Error(`Unknown node type: ${node.nodeType}`);

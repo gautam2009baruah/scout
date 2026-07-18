@@ -79,6 +79,7 @@ export type NodeType =
   | "notification"
   | "variable"
   | "api_call"
+  | "database"
   | "end";
 
 export type OrchestrationNode = {
@@ -106,6 +107,7 @@ export type NodeConfig =
   | NotificationNodeConfig
   | VariableNodeConfig
   | ApiCallNodeConfig
+  | DatabaseNodeConfig
   | EndNodeConfig;
 
 export type TriggerNodeConfig = {
@@ -541,6 +543,10 @@ export type ApiCallNodeConfig = {
   retryAttempts: number;
   retryDelayMs: number;
   failureStrategy: "stop" | "continue" | "alert"; // What to do on API failure
+};
+
+export type DatabaseNodeConfig = {
+  type: "database";
 };
 
 export type EndNodeConfig = {

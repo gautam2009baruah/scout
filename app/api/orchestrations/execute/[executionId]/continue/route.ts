@@ -3,6 +3,7 @@ import { executeConditionNode } from "@/lib/orchestrations/nodes/condition-node"
 import { executeVariableNode } from "@/lib/orchestrations/nodes/variable-node";
 import { executeNotificationNode } from "@/lib/orchestrations/nodes/notification-node";
 import { executeApiCallNode } from "@/lib/orchestrations/nodes/api-call-node";
+import { executeDatabaseNode } from "@/lib/orchestrations/nodes/database-node";
 
 export const runtime = "nodejs";
 
@@ -67,6 +68,12 @@ export async function POST(
         console.log('🌐 [SERVER] Executing API call node...');
         output = await executeApiCallNode(step.config, context);
         console.log('✅ [SERVER] API call result:', output);
+        break;
+
+      case 'database':
+        console.log('🗄️ [SERVER] Executing database node...');
+        output = await executeDatabaseNode(step.config, context);
+        console.log('✅ [SERVER] Database node result:', output);
         break;
         
       default:
