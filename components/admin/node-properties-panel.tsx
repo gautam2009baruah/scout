@@ -378,6 +378,28 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       }
     }
 
+    if (nodeType === "database") {
+      const schemaId = String(localConfig.schemaId || "").trim();
+      const outputVariable = String(localConfig.outputVariable || "").trim();
+
+      if (!schemaId) {
+        return { valid: false, error: "Database schema selection is required" };
+      }
+
+      if (!outputVariable) {
+        return { valid: false, error: "Output variable is required" };
+      }
+
+      if (!/^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(outputVariable)) {
+        return { valid: false, error: "Output variable must be a valid path (letters, numbers, underscore, dot)" };
+      }
+
+      const maxRows = Number(localConfig.maxRows ?? 25);
+      if (!Number.isFinite(maxRows) || maxRows < 1 || maxRows > 500) {
+        return { valid: false, error: "Max rows must be between 1 and 500" };
+      }
+    }
+
     // Add more validation rules here as needed for other node types
     
     return { valid: true, error: null };
@@ -695,7 +717,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
           />
         )}
         {nodeType === "api_call" && <ApiCallConfig config={localConfig} updateConfig={updateLocalConfig} />}
-        {nodeType === "database" && <DatabaseConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "database" && <DatabaseConfig config={localConfig} updateConfig={updateLocalConfig} targetAppId={targetAppId} />}
         {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
 
@@ -5797,20 +5819,192 @@ function VariableConfig({ config, updateConfig }: any) {
   );
 }
 
-function DatabaseConfig({ config, updateConfig }: any) {
+function DatabaseConfig({ config, updateConfig, targetAppId }: any) {
+  const [activeSchemas, setActiveSchemas] = useState<Array<{
+    id: string;
+    databaseName: string;
+    databaseType: string;
+    version: number;
+    updatedAt: string;
+  }>>([]);
+  const [loadingSchemas, setLoadingSchemas] = useState(false);
+  const [schemasError, setSchemasError] = useState("");
+
   useEffect(() => {
-    if (config?.type !== "database") {
-      updateConfig({ type: "database" });
+    const defaults: Record<string, unknown> = {};
+    if (config?.type !== "database") defaults.type = "database";
+    if (!config?.outputVariable) defaults.outputVariable = "databaseQuery";
+    if (!config?.userRequestVariablePath) defaults.userRequestVariablePath = "userMessage";
+    if (!config?.extractedInputVariablePath) defaults.extractedInputVariablePath = "extracted";
+    if (!config?.maxRows) defaults.maxRows = 25;
+    if (config?.allowSelectStar === undefined) defaults.allowSelectStar = false;
+
+    if (Object.keys(defaults).length > 0) {
+      updateConfig(defaults);
     }
-  }, [config?.type, updateConfig]);
+  }, [
+    config?.type,
+    config?.outputVariable,
+    config?.userRequestVariablePath,
+    config?.extractedInputVariablePath,
+    config?.maxRows,
+    config?.allowSelectStar,
+    updateConfig,
+  ]);
+
+  useEffect(() => {
+    const selectedTargetAppId = String(targetAppId || "").trim();
+    if (!selectedTargetAppId) {
+      setActiveSchemas([]);
+      setSchemasError("Select a target app in orchestration to load active database schemas.");
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingSchemas(true);
+    setSchemasError("");
+
+    void fetch(`/api/admin/database-schemas?activeOnly=1&targetAppId=${encodeURIComponent(selectedTargetAppId)}`)
+      .then((response) => response.json().then((body) => ({ ok: response.ok, body })))
+      .then(({ ok, body }) => {
+        if (cancelled) return;
+        if (!ok) {
+          setActiveSchemas([]);
+          setSchemasError(typeof body?.message === "string" ? body.message : "Unable to load active schemas.");
+          return;
+        }
+        const rows = Array.isArray(body?.schemas) ? body.schemas : [];
+        setActiveSchemas(rows);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setActiveSchemas([]);
+        setSchemasError("Unable to load active schemas.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSchemas(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [targetAppId]);
+
+  const schemaMissing = !String(config.schemaId || "").trim();
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-sm text-slate-600">
-        Database Node is integrated and ready for configuration.
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Active Database Schema <span className="text-red-500">*</span>
+        </label>
+        <select
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={String(config.schemaId || "")}
+          onChange={(e) => updateConfig({ schemaId: e.target.value })}
+          disabled={loadingSchemas || !targetAppId}
+        >
+          <option value="">Select active schema</option>
+          {activeSchemas.map((schema) => (
+            <option key={schema.id} value={schema.id}>
+              {schema.databaseName} ({schema.databaseType}) v{schema.version}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-slate-500">Mandatory. Only active schemas for selected target app are listed.</p>
+        {schemaMissing ? <p className="mt-1 text-xs text-red-600">Schema selection is required.</p> : null}
+        {schemasError ? <p className="mt-1 text-xs text-red-600">{schemasError}</p> : null}
       </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Output Variable <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={String(config.outputVariable || "")}
+          onChange={(e) => updateConfig({ outputVariable: e.target.value })}
+          placeholder="e.g., databaseQuery"
+        />
+        <p className="mt-1 text-xs text-slate-500">Generated SQL and metadata are stored at this variable path.</p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">User Request Variable Path</label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={String(config.userRequestVariablePath || "")}
+          onChange={(e) => updateConfig({ userRequestVariablePath: e.target.value })}
+          placeholder="e.g., userMessage or trigger.input.userMessage"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">AI Extraction JSON Variable Path</label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={String(config.extractedInputVariablePath || "")}
+          onChange={(e) => updateConfig({ extractedInputVariablePath: e.target.value })}
+          placeholder="e.g., extracted"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">Additional Context Variable Path</label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={String(config.additionalContextVariablePath || "")}
+          onChange={(e) => updateConfig({ additionalContextVariablePath: e.target.value })}
+          placeholder="Optional, e.g., trigger.input"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">Max Rows</label>
+        <input
+          type="number"
+          min={1}
+          max={500}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={Number(config.maxRows || 25)}
+          onChange={(e) => updateConfig({ maxRows: Number(e.target.value || 25) })}
+        />
+        <p className="mt-1 text-xs text-slate-500">Safety cap. SQL generator will apply row limit when missing.</p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          id="allowSelectStar"
+          type="checkbox"
+          className="rounded border-slate-300"
+          checked={config.allowSelectStar === true}
+          onChange={(e) => updateConfig({ allowSelectStar: e.target.checked })}
+        />
+        <label htmlFor="allowSelectStar" className="text-sm text-slate-700">Allow SELECT * when absolutely necessary</label>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">Custom SQL Generation Instructions</label>
+        <textarea
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          rows={3}
+          value={String(config.customInstructions || "")}
+          onChange={(e) => updateConfig({ customInstructions: e.target.value })}
+          placeholder="Optional business rules, preferred filters, sorting guidance, etc."
+        />
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        This node generates a safe SELECT SQL query only. It does not execute the query yet.
+        Generated SQL and safety validation details are included in node output so they are visible in execution monitoring.
+      </div>
+
       <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
-        Configure per-target-app database schemas in
+        Manage active schemas in
         {" "}
         <a
           href="/control-panel/administration/database-schema"
@@ -5821,9 +6015,6 @@ function DatabaseConfig({ config, updateConfig }: any) {
           Database Schema Manager
         </a>
         .
-      </div>
-      <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
-        No database functionality is implemented yet. This is a placeholder node.
       </div>
     </div>
   );

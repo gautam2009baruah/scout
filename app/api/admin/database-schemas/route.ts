@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import {
+  getActiveDatabaseSchemasForTargetApp,
   DatabaseSchemaAdminError,
   deleteDatabaseSchema,
   getDatabaseSchemaById,
@@ -28,8 +29,18 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const schemaId = url.searchParams.get("schemaId") || "";
+  const targetAppId = url.searchParams.get("targetAppId") || "";
+  const activeOnly = url.searchParams.get("activeOnly") === "1";
 
   try {
+    if (activeOnly) {
+      if (!targetAppId) {
+        return NextResponse.json({ message: "targetAppId is required when activeOnly=1" }, { status: 400 });
+      }
+      const schemas = await getActiveDatabaseSchemasForTargetApp(session, targetAppId);
+      return NextResponse.json({ schemas });
+    }
+
     if (!schemaId) {
       return NextResponse.json(await getDatabaseSchemaAdminPayload(session));
     }

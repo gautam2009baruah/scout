@@ -377,8 +377,15 @@ export class OrchestrationEngine {
       case "api_call":
         return await executeApiCallNode(config as ApiCallNodeConfig, this.context);
 
-      case "database":
-        return await executeDatabaseNode(config as DatabaseNodeConfig, this.context);
+      case "database": {
+        const orchestration = await getOrchestrationById(this.execution.orchestrationId);
+        return await executeDatabaseNode(config as DatabaseNodeConfig, this.context, {
+          companyId: orchestration?.companyId,
+          targetAppId: orchestration?.targetAppId,
+          executionId: this.execution.id,
+          nodeId: node.id,
+        });
+      }
 
       default:
         throw new Error(`Unknown node type: ${node.nodeType}`);

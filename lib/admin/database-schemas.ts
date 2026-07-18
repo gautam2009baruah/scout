@@ -54,6 +54,17 @@ export type TargetAppDatabaseSchemaRecord = {
   updatedById: string | null;
 };
 
+export type ActiveDatabaseSchemaOption = {
+  id: string;
+  targetAppId: string;
+  targetAppName: string;
+  databaseName: string;
+  databaseType: SupportedDatabaseType;
+  databaseDescription: string | null;
+  version: number;
+  updatedAt: string;
+};
+
 export class DatabaseSchemaAdminError extends Error {
   statusCode: number;
 
@@ -343,6 +354,62 @@ export async function getDatabaseSchemaById(session: AdminSession, schemaId: str
   );
 
   return result.rows[0] ? mapRecord(result.rows[0]) : null;
+}
+
+export async function getActiveDatabaseSchemasForTargetApp(
+  session: AdminSession,
+  targetAppId: string
+): Promise<ActiveDatabaseSchemaOption[]> {
+  const normalizedTargetAppId = normalizeIdentifier(targetAppId);
+  if (!normalizedTargetAppId) {
+    throw new DatabaseSchemaAdminError("Target app is required.", 400);
+  }
+
+  await assertTargetAppAccess(session, normalizedTargetAppId);
+
+  const result = await getPool().query<{
+    id: string;
+    target_app_id: string;
+    target_app_name: string;
+    database_name: string;
+    database_type: SupportedDatabaseType;
+    database_description: string | null;
+    version: number;
+    updated_at: Date;
+  }>(
+    `
+      SELECT
+        schemas.id,
+        schemas.target_app_id,
+        cta.name AS target_app_name,
+        schemas.database_name,
+        schemas.database_type,
+        schemas.database_description,
+        schemas.version,
+        schemas.updated_at
+      FROM target_app_database_schemas schemas
+      INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      WHERE schemas.target_app_id = $1
+        AND cta.company_id = $2
+        AND cta.deleted_at IS NULL
+        AND schemas.is_active = true
+        AND schemas.deleted_at IS NULL
+      ORDER BY schemas.database_name ASC
+    `,
+    [normalizedTargetAppId, session.user.tenantId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    targetAppId: row.target_app_id,
+    targetAppName: row.target_app_name,
+    databaseName: row.database_name,
+    databaseType: row.database_type,
+    databaseDescription: row.database_description,
+    version: row.version,
+    updatedAt: row.updated_at.toISOString(),
+  }));
 }
 
 export async function uploadDatabaseSchema(

@@ -450,8 +450,8 @@ class CustomLLMProvider implements LLMProvider {
   }
 }
 
-export async function getLLMProvider(): Promise<LLMProvider> {
-  const config = await getAIProviderConfig();
+export async function getLLMProvider(companyId?: string): Promise<LLMProvider> {
+  const config = await getAIProviderConfig(companyId);
 
   if (config.llm_provider === "ollama") return new OllamaProvider(config);
   if (config.llm_provider === "openai") return new OpenAIProvider(config);

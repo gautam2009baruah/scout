@@ -547,6 +547,14 @@ export type ApiCallNodeConfig = {
 
 export type DatabaseNodeConfig = {
   type: "database";
+  schemaId?: string;
+  outputVariable?: string;
+  userRequestVariablePath?: string;
+  extractedInputVariablePath?: string;
+  additionalContextVariablePath?: string;
+  maxRows?: number;
+  customInstructions?: string;
+  allowSelectStar?: boolean;
 };
 
 export type EndNodeConfig = {
