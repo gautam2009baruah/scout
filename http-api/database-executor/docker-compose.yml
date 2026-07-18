@@ -1,0 +1,8 @@
+services:
+  database-executor:
+    build: .
+    ports:
+      - "4300:4300"
+    env_file:
+      - .env
+    restart: unless-stopped

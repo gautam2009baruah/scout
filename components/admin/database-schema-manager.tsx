@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Eye, FileUp, Pencil, Save, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Eye, FileUp, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
 import type {
   DatabaseSchemaDocument,
   SupportedDatabaseType,
   TargetAppDatabaseSchemaRecord,
 } from "@/lib/admin/database-schemas";
+import { DatabaseSchemaSyncDialog } from "./database-schema-sync-dialog";
 
 type TargetAppOption = {
   id: string;
@@ -207,6 +208,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   const [jsonEditorSchemaId, setJsonEditorSchemaId] = useState<string | null>(null);
   const [jsonEditorValue, setJsonEditorValue] = useState<unknown>(null);
   const [jsonEditorExpanded, setJsonEditorExpanded] = useState<Set<string>>(new Set(["$"]));
+  const [syncSchemaRow, setSyncSchemaRow] = useState<TargetAppDatabaseSchemaRecord | null>(null);
   const [status, setStatus] = useState<Status>({ type: "idle", message: "" });
   const [toast, setToast] = useState<Toast | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
@@ -479,8 +481,19 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
       ) : null}
 
       <section className="rounded-lg border border-slate-300 bg-white p-6">
-        <h2 className="text-xl font-semibold tracking-tight text-slate-950">Database Schema Setup</h2>
-        <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-slate-500">Organization: {companyName}</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-slate-950">Database Schema Setup</h2>
+            <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-slate-500">Organization: {companyName}</p>
+          </div>
+          <a
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            href="/api/admin/database-executor/download"
+          >
+            <Download className="h-4 w-4" />
+            Download Node.js Project
+          </a>
+        </div>
 
         <form className="mt-4 grid gap-3 md:grid-cols-2" onSubmit={onSubmit}>
           <label className="grid gap-1 text-sm">
@@ -635,6 +648,15 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
                         >
                           <Eye className="h-3.5 w-3.5" />
                           JSON
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-1 rounded border border-blue-200 px-2 py-1 text-xs font-semibold text-blue-700"
+                          type="button"
+                          onClick={() => setSyncSchemaRow(row)}
+                          title="Sync schema"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Sync
                         </button>
                         <button
                           className="inline-flex items-center gap-1 rounded border border-red-200 px-2 py-1 text-xs font-semibold text-red-700"
@@ -827,6 +849,17 @@ PRAGMA table_info('your_table_name');`}</pre>
             </div>
           </div>
         </div>
+      ) : null}
+
+      {syncSchemaRow ? (
+        <DatabaseSchemaSyncDialog
+          schema={syncSchemaRow}
+          onClose={() => setSyncSchemaRow(null)}
+          onSynced={async () => {
+            await refreshRows();
+            setSyncSchemaRow(null);
+          }}
+        />
       ) : null}
     </div>
   );
