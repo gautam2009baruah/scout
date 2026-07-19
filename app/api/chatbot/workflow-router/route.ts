@@ -303,7 +303,7 @@ async function classifyClarificationTurn(input: {
     .replace(/\s+/g, " ");
 
   if (
-    /\b(cancel|stop|abort|nevermind|never mind|forget it|drop it|leave it|nothing leave|not now)\b/.test(normalized)
+    /\b(cancel|stop|abort|nevermind|never mind|forget it|drop it|leave it|not now|no thanks|dont continue|do not continue)\b/.test(normalized)
     || /^(no|nope|nah|nothing)$/.test(normalized)
   ) {
     return "cancel";

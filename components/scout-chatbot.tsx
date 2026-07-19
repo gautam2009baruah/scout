@@ -1837,6 +1837,34 @@ export function ScoutChatbot({
     }
 
     const activeOrchestration = activeOrchestrationRef.current;
+    if (activeOrchestration && isActionModeExitResponse(trimmed)) {
+      activeOrchestrationRef.current = null;
+      pendingRouterConfirmationRef.current = null;
+      pendingWorkflowConfirmationRef.current = null;
+      pendingActionModeFallbackRef.current = null;
+      setMessages([
+        ...nextHistory,
+        createRenderedMessage({
+          id: generateMessageId(),
+          role: "assistant",
+          text: `Okay, I cancelled ${activeOrchestration.title}. You can ask me a normal question now.`,
+          time: formatTime(),
+        }),
+      ]);
+      setInput("");
+      setIsTyping(false);
+      markActivity();
+      inputRef.current?.focus();
+      return;
+    }
+
+    if (activeOrchestration && shouldExitActionContextForQuestion(trimmed)) {
+      activeOrchestrationRef.current = null;
+      pendingRouterConfirmationRef.current = null;
+      pendingWorkflowConfirmationRef.current = null;
+      pendingActionModeFallbackRef.current = null;
+    }
+
     if (activeOrchestration) {
       showProgress("conversation_context");
       try {
@@ -4479,7 +4507,27 @@ function isAffirmativeResponse(message: string) {
 
 function isNegativeResponse(message: string) {
   const normalized = normalizeConfirmationResponse(message);
-  return /^(no|n|nope|nah|na|cancel|stop|not now|dont|do not|please dont|please do not|never mind|nevermind)$/.test(normalized);
+  return /^(no|n|nope|nah|na|cancel|stop|not now|dont|do not|please dont|please do not|never mind|nevermind|leave it|forget it|drop it|abort)$/.test(normalized);
+}
+
+function isActionModeExitResponse(message: string) {
+  const normalized = normalizeConfirmationResponse(message);
+  return /^(cancel|stop|abort|leave it|forget it|drop it|nevermind|never mind|not now|nothing|no thanks)$/.test(normalized);
+}
+
+function shouldExitActionContextForQuestion(message: string) {
+  const normalized = normalizeConfirmationResponse(message);
+  if (!normalized) {
+    return false;
+  }
+
+  const looksQuestion = message.trim().endsWith("?") || /^(what|how|why|where|when|who|which|can you|could you|do you|does|is|are)\b/.test(normalized);
+  if (!looksQuestion) {
+    return false;
+  }
+
+  const hasActionVerb = /\b(create|update|submit|approve|reject|notify|schedule|process|trigger|launch|start|run|assign|send|email|forward|book|delete|remove|generate|dispatch|execute|fetch|retrieve|lookup)\b/.test(normalized);
+  return !hasActionVerb;
 }
 
 function normalizeConfirmationResponse(message: string) {
