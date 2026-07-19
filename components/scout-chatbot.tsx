@@ -19,6 +19,7 @@ import {
   Play,
   RefreshCcw,
   RotateCcw,
+  Sparkles,
   Zap,
   ThumbsDown,
   ThumbsUp,
@@ -3974,12 +3975,24 @@ function TypingIndicator({ message }: { message: string }) {
       <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white">
         <Bot className="h-4 w-4" />
       </div>
-      <div className="flex min-h-11 items-center gap-3 rounded-2xl rounded-tl-md border border-slate-100 bg-slate-50 px-4 py-3 shadow-sm">
-        <span className="relative flex h-3 w-3 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-25" />
-          <span className="relative inline-flex h-3 w-3 rounded-full bg-sky-500/80" />
+      <div className="relative flex min-h-12 items-center gap-3 overflow-hidden rounded-2xl rounded-tl-md border border-sky-100 bg-gradient-to-r from-slate-50 via-white to-sky-50/70 px-4 py-3 shadow-sm">
+        <span aria-hidden="true" className="relative flex h-8 w-8 shrink-0 items-center justify-center">
+          <span className="absolute inset-1 animate-pulse rounded-full bg-sky-300/30 blur-md motion-reduce:animate-none" />
+          <span className="absolute inset-0 animate-spin rounded-full border border-sky-200 border-t-sky-600 motion-reduce:animate-none" />
+          <span
+            className="absolute inset-1 animate-spin rounded-full border border-dashed border-violet-300/80 motion-reduce:animate-none"
+            style={{ animationDirection: "reverse", animationDuration: "2.4s" }}
+          />
+          <span className="absolute left-1/2 top-0 h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.8)]" />
+          <span className="relative flex h-5 w-5 items-center justify-center rounded-full bg-white text-sky-600 shadow-sm ring-1 ring-sky-100">
+            <Sparkles className="h-3 w-3 animate-pulse motion-reduce:animate-none" />
+          </span>
         </span>
-        <span className="text-sm text-slate-600 transition-opacity duration-300">{message}</span>
+        <span className="text-sm font-medium text-slate-600 transition-opacity duration-300">{message}</span>
+        <span
+          aria-hidden="true"
+          className="absolute bottom-0 left-0 h-px w-full origin-left animate-pulse bg-gradient-to-r from-transparent via-sky-400/70 to-transparent motion-reduce:animate-none"
+        />
       </div>
     </div>
   );
