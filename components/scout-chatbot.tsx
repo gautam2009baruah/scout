@@ -4507,12 +4507,25 @@ function isAffirmativeResponse(message: string) {
 
 function isNegativeResponse(message: string) {
   const normalized = normalizeConfirmationResponse(message);
-  return /^(no|n|nope|nah|na|cancel|stop|not now|dont|do not|please dont|please do not|never mind|nevermind|leave it|forget it|drop it|abort)$/.test(normalized);
+  if (/^(no|n|nope|nah|na)$/.test(normalized)) {
+    return true;
+  }
+  return containsActionCancelIntent(normalized);
 }
 
 function isActionModeExitResponse(message: string) {
   const normalized = normalizeConfirmationResponse(message);
-  return /^(cancel|stop|abort|leave it|forget it|drop it|nevermind|never mind|not now|nothing|no thanks)$/.test(normalized);
+  return containsActionCancelIntent(normalized)
+    || /\b(no thanks|nothing|not now)\b/.test(normalized);
+}
+
+function containsActionCancelIntent(normalizedMessage: string) {
+  if (!normalizedMessage) {
+    return false;
+  }
+
+  return /\b(cancel|stop|abort|nevermind|never mind|forget it|drop it|leave it|dont continue|do not continue)\b/.test(normalizedMessage)
+    || /^no\b/.test(normalizedMessage);
 }
 
 function shouldExitActionContextForQuestion(message: string) {

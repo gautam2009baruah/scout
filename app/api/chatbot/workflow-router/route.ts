@@ -302,13 +302,6 @@ async function classifyClarificationTurn(input: {
     .replace(/[.!?,;:]+/g, " ")
     .replace(/\s+/g, " ");
 
-  if (
-    /\b(cancel|stop|abort|nevermind|never mind|forget it|drop it|leave it|not now|no thanks|dont continue|do not continue)\b/.test(normalized)
-    || /^(no|nope|nah|nothing)$/.test(normalized)
-  ) {
-    return "cancel";
-  }
-
   try {
     const provider = await getLLMProvider();
     const recentContext = input.history
@@ -318,9 +311,12 @@ async function classifyClarificationTurn(input: {
     const response = await provider.generate_answer(
       [
         "Classify the latest user turn while a workflow is paused for clarification.",
-        "Use answer only when the message supplies, corrects, or meaningfully discusses the requested information.",
-        "Use cancel when the user declines, stops, abandons, or asks to leave the workflow.",
-        "Use new_topic when the user asks an unrelated informational question or starts another subject.",
+        "You must decide exactly one: answer, cancel, or new_topic.",
+        "Choose answer ONLY when the user provides or corrects the specific missing information requested by the clarification prompt.",
+        "Choose cancel when the user indicates they want to stop, skip, abandon, postpone, or not continue the workflow.",
+        "Choose new_topic when the user asks another question or starts a different discussion instead of supplying the missing value.",
+        "Important: short responses like 'leave it', 'cancel it', 'skip', 'not now', or equivalent intent are cancel even if wording varies.",
+        "Important: if the latest message does not add the required missing value, do not choose answer.",
         'Return JSON only: {"decision":"answer|cancel|new_topic","reason":"brief"}.',
       ].join(" "),
       [
@@ -336,6 +332,13 @@ async function classifyClarificationTurn(input: {
     }
   } catch {
     // Use the conservative fallback below.
+  }
+
+  if (
+    /\b(cancel|stop|abort|nevermind|never mind|forget it|drop it|leave it|not now|no thanks|dont continue|do not continue|skip)\b/.test(normalized)
+    || /^(no|nope|nah|nothing)$/.test(normalized)
+  ) {
+    return "cancel";
   }
 
   if (
