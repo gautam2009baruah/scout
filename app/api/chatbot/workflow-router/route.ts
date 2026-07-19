@@ -691,15 +691,27 @@ async function findEligibleCandidateWithAi(
       triggerPhrases: candidate.triggerPhrases,
       examplePhrases: candidate.examplePhrases,
       nodeSummary: candidate.nodeSummary,
+      requiredVariables: candidate.requiredVariables.map((item) => ({
+        name: item.name,
+        type: item.type,
+        description: item.description || "",
+      })),
+      executionContract: candidate.executionContract.map((step) => ({
+        label: step.label,
+        nodeType: step.nodeType,
+        requiredInputs: step.requiredInputs,
+      })),
     }));
 
     const systemPrompt = [
       "You are an orchestration router.",
       "Pick at most one best orchestration for the user ask.",
-      "Trigger phrases and example phrases are helpful hints, not strict rules.",
-      "Do not require exact phrase match. Use overall goal fit based on name, description, and node summary.",
+      "Use semantic intent matching, not lexical phrase overlap.",
+      "Treat paraphrases and synonyms as equivalent when intent and workflow capability match.",
+      "Trigger phrases and example phrases are hints only, never strict requirements.",
+      "Use overall goal fit based on name, description, node summary, required inputs, and execution contract.",
       "If none match clearly, return null selection.",
-      'Return JSON only: {"matchedId":"string-or-empty","confidence":0-1,"reason":"short"}.',
+      'Return JSON only: {"matchedId":"string-or-empty","matchedIndex":number-or-null,"confidence":0-1,"reason":"short"}.',
     ].join(" ");
 
     const userPrompt = [
@@ -711,16 +723,26 @@ async function findEligibleCandidateWithAi(
     const raw = await provider.generate_answer(systemPrompt, userPrompt, "");
     const parsed = parseJsonObject(raw || "");
     const matchedId = typeof parsed?.matchedId === "string" ? parsed.matchedId.trim() : "";
+    const matchedIndex = typeof parsed?.matchedIndex === "number"
+      ? Math.trunc(parsed.matchedIndex)
+      : null;
     const confidence = typeof parsed?.confidence === "number"
       ? Math.max(0, Math.min(1, parsed.confidence))
       : 0;
 
-    if (!matchedId) {
+    let candidate: ChatbotWorkflowCandidate | undefined;
+    if (matchedId) {
+      candidate = candidates.find((item) => item.id === matchedId);
+    }
+    if (!candidate && matchedIndex !== null && matchedIndex >= 0 && matchedIndex < candidates.length) {
+      candidate = candidates[matchedIndex];
+    }
+
+    if (!candidate) {
       return null;
     }
 
-    const candidate = candidates.find((item) => item.id === matchedId);
-    if (!candidate || confidence < 0.45) {
+    if (confidence < 0.3) {
       return null;
     }
 
@@ -737,18 +759,36 @@ async function findEligibleCandidateWithAi(
 async function findEligibleOrchestration(
   message: string,
   candidates: ChatbotWorkflowCandidate[],
-  options?: { forceActionMode?: boolean }
+  options?: { forceActionMode?: boolean; alternateMessage?: string }
 ): Promise<{ candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null> {
-  const aiMatch = await findEligibleCandidateWithAi(message, candidates);
-  if (aiMatch) {
-    return aiMatch;
+  const semanticMessages = [message];
+  if (
+    options?.alternateMessage
+    && options.alternateMessage.trim()
+    && options.alternateMessage.trim().toLowerCase() !== message.trim().toLowerCase()
+  ) {
+    semanticMessages.push(options.alternateMessage.trim());
+  }
+
+  let bestAiMatch: { candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null = null;
+  for (const semanticMessage of semanticMessages) {
+    const aiMatch = await findEligibleCandidateWithAi(semanticMessage, candidates);
+    if (aiMatch && (!bestAiMatch || aiMatch.confidence > bestAiMatch.confidence)) {
+      bestAiMatch = aiMatch;
+    }
+  }
+
+  if (bestAiMatch) {
+    return bestAiMatch;
   }
 
   let best: { candidate: ChatbotWorkflowCandidate; score: number } | null = null;
-  for (const candidate of candidates) {
-    const score = scoreCandidateHeuristically(message, candidate);
-    if (!best || score > best.score) {
-      best = { candidate, score };
+  for (const semanticMessage of semanticMessages) {
+    for (const candidate of candidates) {
+      const score = scoreCandidateHeuristically(semanticMessage, candidate);
+      if (!best || score > best.score) {
+        best = { candidate, score };
+      }
     }
   }
 
@@ -1213,7 +1253,10 @@ export async function POST(request: NextRequest) {
       : undefined;
     const match = explicitlySelected
       ? { candidate: explicitlySelected, confidence: 1, reason: "Explicitly selected by the user" }
-      : await findEligibleOrchestration(message, candidates, { forceActionMode });
+      : await findEligibleOrchestration(message, candidates, {
+        forceActionMode,
+        alternateMessage: rawMessage,
+      });
     if (!match) {
       return NextResponse.json({
         answer: "I could not find an eligible chatbot orchestration for this request.",
