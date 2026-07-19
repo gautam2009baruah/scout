@@ -1,5 +1,12 @@
 const config = window.NexusVendorScoutChatbotConfig;
 if (config) {
+  if (config.themeCss) {
+    const themeLoader = document.createElement("link");
+    themeLoader.id = "nv-scout-chatbot-theme";
+    themeLoader.rel = "stylesheet";
+    themeLoader.href = config.themeCss;
+    document.head.appendChild(themeLoader);
+  }
   const loader = document.createElement("script");
   loader.id = "nv-scout-chatbot-loader";
   loader.src = `${config.scoutUrl.replace(/\/$/, "")}/scout-chatbot.js?v=1.1.0`;

@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ScoutChatbot, type ScoutChatLifecycleConfig, type ScoutChatMessage } from "@/components/scout-chatbot";
+import {
+  ScoutChatbot,
+  type ScoutChatLifecycleConfig,
+  type ScoutChatMessage,
+  type ScoutChatTheme
+} from "@/components/scout-chatbot";
 
 type EmbedConfig = {
   scoutUrl: string;
@@ -17,6 +22,7 @@ type EmbedConfig = {
   autoLoadLifecycleSettings?: boolean;
   brandColor?: string;
   accentColor?: string;
+  theme?: unknown;
   lifecycleConfig?: ScoutChatLifecycleConfig;
   placeholder?: string;
   quickPrompts?: string[];
@@ -24,12 +30,53 @@ type EmbedConfig = {
   workflowRouterEndpoint?: string;
 };
 
+const CSS_COLOR_PATTERN = /^(#[0-9a-f]{3,8}|(?:rgb|hsl)a?\([\d\s.,%+-]+\)|[a-z]{3,20})$/i;
+const CSS_LENGTH_PATTERN = /^(?:0|(?:\d+(?:\.\d+)?)(?:px|rem|em|%))$/i;
+const FONT_FAMILY_PATTERN = /^[a-z0-9\s'",\-]+$/i;
+
+function safeString(value: unknown, pattern: RegExp, maxLength = 100) {
+  const candidate = typeof value === "string" ? value.trim() : "";
+  return candidate && candidate.length <= maxLength && pattern.test(candidate) ? candidate : undefined;
+}
+
+function safeAssetUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim() || value.length > 2048) return undefined;
+  try {
+    const url = new URL(value.trim(), window.location.origin);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.href : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeTheme(value: unknown, legacy: Pick<EmbedConfig, "brandColor" | "accentColor">): ScoutChatTheme {
+  const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const position = input.position === "bottom-left" || input.position === "bottom-right"
+    ? input.position
+    : undefined;
+
+  return {
+    primaryColor: safeString(input.primaryColor, CSS_COLOR_PATTERN) ?? safeString(legacy.brandColor, CSS_COLOR_PATTERN) ?? "#111827",
+    secondaryColor: safeString(input.secondaryColor, CSS_COLOR_PATTERN),
+    accentColor: safeString(input.accentColor, CSS_COLOR_PATTERN) ?? safeString(legacy.accentColor, CSS_COLOR_PATTERN) ?? "#0ea5e9",
+    textColor: safeString(input.textColor, CSS_COLOR_PATTERN),
+    backgroundColor: safeString(input.backgroundColor, CSS_COLOR_PATTERN),
+    borderRadius: safeString(input.borderRadius, CSS_LENGTH_PATTERN, 24),
+    fontFamily: safeString(input.fontFamily, FONT_FAMILY_PATTERN, 160),
+    logo: safeAssetUrl(input.logo),
+    launcherIcon: safeAssetUrl(input.launcherIcon),
+    position,
+    darkMode: typeof input.darkMode === "boolean" ? input.darkMode : undefined
+  };
+}
+
 export default function EmbeddedScoutChatbotPage() {
   const [config, setConfig] = useState<EmbedConfig | null>(null);
   const [conversationId, setConversationId] = useState("");
   const [lifecycleConfig, setLifecycleConfig] = useState<ScoutChatLifecycleConfig | undefined>(undefined);
   const parentOriginRef = useRef("*");
   const clientTraceIdRef = useRef<string | null>(null);
+  const theme = config ? normalizeTheme(config.theme, config) : undefined;
 
   function getClientTraceId() {
     if (clientTraceIdRef.current) {
@@ -216,11 +263,7 @@ export default function EmbeddedScoutChatbotPage() {
             scoutBaseUrl={config.scoutUrl}
             targetAppId={config.targetAppId}
             targetAppName={config.targetAppName}
-            theme={{
-              brandColor: config.brandColor || "#111827",
-              accentColor: config.accentColor || "#0ea5e9",
-              surfaceColor: "#ffffff"
-            }}
+            theme={theme}
             userId={String(config.userId || "").trim() || undefined}
             variant="embedded"
           />

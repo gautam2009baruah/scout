@@ -25,6 +25,9 @@
     }
 
     var scoutOrigin = new URL(config.scoutUrl, global.location.href).origin;
+    var configuredPosition = config.theme && (config.theme.position === "bottom-left" || config.theme.position === "bottom-right")
+      ? config.theme.position
+      : config.position;
     var iframe = document.createElement("iframe");
     var instanceId = "scout-chatbot-frame-" + (instances.length + 1);
     iframe.id = instanceId;
@@ -38,9 +41,9 @@
     iframe.style.height = "80px";
     iframe.style.border = "0";
     iframe.style.background = "transparent";
-    iframe.style.colorScheme = "light";
+    iframe.style.colorScheme = config.theme && config.theme.darkMode === true ? "dark" : "light";
     iframe.style.transition = "width 180ms ease, height 180ms ease";
-    iframe.style[config.position === "bottom-left" ? "left" : "right"] = "12px";
+    iframe.style[configuredPosition === "bottom-left" ? "left" : "right"] = "12px";
     document.body.appendChild(iframe);
 
     var isOpen = false;
@@ -72,7 +75,7 @@
       iframe.style.top = "auto";
       iframe.style.right = "auto";
       iframe.style.bottom = "12px";
-      iframe.style[config.position === "bottom-left" ? "left" : "right"] = "12px";
+      iframe.style[configuredPosition === "bottom-left" ? "left" : "right"] = "12px";
     }
 
     function applyOpenSize() {

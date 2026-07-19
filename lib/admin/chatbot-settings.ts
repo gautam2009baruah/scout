@@ -1571,7 +1571,7 @@ export function buildChatbotEmbedPackage(input: {
   const assistantName = input.assistantName || "Scout Assistant";
   const configVarName = `${sanitizeConfigVarBase(input.targetAppName)}ScoutChatbotConfig`;
 
-  const configSnippet = `window.${configVarName} = ${JSON.stringify({
+  const baseConfigJson = JSON.stringify({
     scoutUrl: input.scoutUrl,
     apiUrl: input.apiUrl,
     apiKey: input.apiKey,
@@ -1581,9 +1581,44 @@ export function buildChatbotEmbedPackage(input: {
     targetAppId: targetAppToken,
     targetAppName: input.targetAppName,
     assistantName
-  }, null, 2)};\n`;
+  }, null, 2);
 
-  const installSnippet = `const config = window.${configVarName};\nif (config) {\n  const loader = document.createElement(\"script\");\n  loader.id = \"nv-scout-chatbot-loader\";\n  loader.src = \`${'${config.scoutUrl.replace(/\\\/$/, "")}'}/scout-chatbot.js?v=1.1.0\`;\n  loader.async = true;\n  loader.onload = () => window.ScoutChatbot.install(config);\n  loader.onerror = () => console.error(\"ScoutChatbot could not load. Confirm the Scout host is available.\");\n  document.head.appendChild(loader);\n}\n`;
+  const configSnippet = `window.${configVarName} = ${baseConfigJson.slice(0, -2)},
+  // White-label theme options below may be modified by the client.
+  //"themeCss": "",
+  //"theme": {
+  //  "primaryColor": "#0052CC",
+  //  "secondaryColor": "#F4F6F8",
+  //  "accentColor": "#00A3FF",
+  //  "textColor": "#1A1A1A",
+  //  "backgroundColor": "#FFFFFF",
+  //  "borderRadius": "12px",
+  //  "fontFamily": "'Inter', sans-serif",
+  //  "logo": "https://client.com/logo.png",
+  //  "launcherIcon": "https://client.com/chat-icon.svg",
+  //  "position": "bottom-right",
+  //  "darkMode": false
+  //}
+};\n`;
+
+  const installSnippet = `const config = window.${configVarName};
+if (config) {
+  if (config.themeCss) {
+    const themeLoader = document.createElement("link");
+    themeLoader.id = "nv-scout-chatbot-theme";
+    themeLoader.rel = "stylesheet";
+    themeLoader.href = config.themeCss;
+    document.head.appendChild(themeLoader);
+  }
+  const loader = document.createElement("script");
+  loader.id = "nv-scout-chatbot-loader";
+  loader.src = \`${'${config.scoutUrl.replace(/\\\/$/, "")}'}/scout-chatbot.js?v=1.1.0\`;
+  loader.async = true;
+  loader.onload = () => window.ScoutChatbot.install(config);
+  loader.onerror = () => console.error("ScoutChatbot could not load. Confirm the Scout host is available.");
+  document.head.appendChild(loader);
+}
+`;
 
   const htmlSample = `<script src=\"./scout-chatbot-config.local.js\"></script>\n<script src=\"./scout-chatbot-install.js\"></script>`;
 

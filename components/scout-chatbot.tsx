@@ -270,6 +270,17 @@ declare global {
 }
 
 export type ScoutChatTheme = {
+  primaryColor?: string;
+  secondaryColor?: string;
+  textColor?: string;
+  backgroundColor?: string;
+  borderRadius?: string;
+  fontFamily?: string;
+  logo?: string;
+  launcherIcon?: string;
+  position?: "bottom-right" | "bottom-left";
+  darkMode?: boolean;
+  // Legacy names remain supported for existing integrations.
   brandColor?: string;
   accentColor?: string;
   surfaceColor?: string;
@@ -339,8 +350,12 @@ type RenderedMessage = Required<Pick<ScoutChatMessage, "id" | "role" | "text" | 
 type WidgetStyle = CSSProperties & {
   "--scout-brand": string;
   "--scout-accent": string;
+  "--scout-secondary": string;
   "--scout-surface": string;
+  "--scout-text": string;
   "--scout-focus": string;
+  "--scout-radius": string;
+  "--scout-font-family": string;
 };
 
 type ChatSize = {
@@ -564,6 +579,8 @@ export function ScoutChatbot({
   const [conversationSessionId, setConversationSessionId] = useState(() => conversationId ?? createConversationSessionId());
   const messageStorageKey = getMessageStorageKey({ companyId, conversationId: conversationSessionId, userId, variant });
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
+  const [launcherIconLoadFailed, setLauncherIconLoadFailed] = useState(false);
   const [messages, setMessages] = useState<RenderedMessage[]>(() =>
     readStoredMessages(messageStorageKey) ?? normalizeMessages(initialMessages ?? [])
   );
@@ -773,11 +790,18 @@ export function ScoutChatbot({
   }
 
   const cssVars: WidgetStyle = {
-    "--scout-brand": theme?.brandColor ?? "#020617",
+    "--scout-brand": theme?.primaryColor ?? theme?.brandColor ?? "#020617",
     "--scout-accent": theme?.accentColor ?? "#0ea5e9",
-    "--scout-surface": theme?.surfaceColor ?? "#ffffff",
-    "--scout-focus": `${theme?.accentColor ?? "#0ea5e9"}24`
+    "--scout-secondary": theme?.secondaryColor ?? (theme?.darkMode ? "#1e293b" : "#f8fafc"),
+    "--scout-surface": theme?.backgroundColor ?? theme?.surfaceColor ?? (theme?.darkMode ? "#0f172a" : "#ffffff"),
+    "--scout-text": theme?.textColor ?? (theme?.darkMode ? "#f8fafc" : "#0f172a"),
+    "--scout-focus": `color-mix(in srgb, ${theme?.accentColor ?? "#0ea5e9"} 18%, transparent)`,
+    "--scout-radius": theme?.borderRadius ?? "28px",
+    "--scout-font-family": theme?.fontFamily ?? "inherit"
   };
+
+  useEffect(() => setLogoLoadFailed(false), [theme?.logo]);
+  useEffect(() => setLauncherIconLoadFailed(false), [theme?.launcherIcon]);
 
   const markActivity = useCallback(() => {
     lastActivityAtRef.current = Date.now();
@@ -2788,7 +2812,16 @@ export function ScoutChatbot({
       style={cssVars}
       type="button"
     >
-      <MessageCircle className="h-6 w-6 transition group-hover:scale-105" />
+      {theme?.launcherIcon && !launcherIconLoadFailed ? (
+        <img
+          alt=""
+          className="h-7 w-7 object-contain transition group-hover:scale-105"
+          onError={() => setLauncherIconLoadFailed(true)}
+          src={theme.launcherIcon}
+        />
+      ) : (
+        <MessageCircle className="h-6 w-6 transition group-hover:scale-105" />
+      )}
     </button>
   );
 
@@ -2819,12 +2852,12 @@ export function ScoutChatbot({
     <section
       aria-label={`${assistantName} chat widget`}
       className={cn(
-        "relative flex w-full flex-col overflow-hidden rounded-[28px] border border-white/80 bg-[var(--scout-surface)] shadow-chat-panel ring-1 ring-slate-950/5 animate-slide-up transition duration-200 ease-out",
+        "relative flex w-full flex-col overflow-hidden rounded-[var(--scout-radius)] border border-white/80 bg-[var(--scout-surface)] text-[var(--scout-text)] shadow-chat-panel ring-1 ring-slate-950/5 animate-slide-up transition duration-200 ease-out",
         isMinimizing && "scale-75 opacity-0",
         variant === "inline" ? "max-w-[440px] min-h-[680px]" : "h-full min-h-0 max-w-none",
         className
       )}
-      style={cssVars}
+      style={{ ...cssVars, fontFamily: "var(--scout-font-family)" }}
     >
       <header
         className={cn(
@@ -2835,8 +2868,17 @@ export function ScoutChatbot({
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex h-7 min-w-0 flex-1 items-center gap-2">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/12 ring-1 ring-white/15">
-              <MessageCircle className="h-4 w-4 text-white" />
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/12 ring-1 ring-white/15">
+              {theme?.logo && !logoLoadFailed ? (
+                <img
+                  alt={`${assistantName} logo`}
+                  className="h-full w-full object-contain"
+                  onError={() => setLogoLoadFailed(true)}
+                  src={theme.logo}
+                />
+              ) : (
+                <MessageCircle className="h-4 w-4 text-white" />
+              )}
             </div>
             <div className="flex items-center gap-1.5" aria-hidden="true">
               <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
@@ -2866,7 +2908,7 @@ export function ScoutChatbot({
 
       <>
           {historyOpen ? (
-            <aside className="absolute inset-x-0 bottom-0 top-11 z-20 flex min-h-0 w-full flex-col overflow-hidden bg-white shadow-[0_-1px_0_rgba(15,23,42,0.08)]">
+            <aside className="absolute inset-x-0 bottom-0 top-11 z-20 flex min-h-0 w-full flex-col overflow-hidden bg-[var(--scout-surface)] shadow-[0_-1px_0_rgba(15,23,42,0.08)]">
               <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-slate-950">Conversation history</p>
@@ -3003,7 +3045,7 @@ export function ScoutChatbot({
           ) : null}
 
           {activeTab === "workflows" && orchestrationPanelOpen ? (
-            <aside className="absolute inset-x-0 bottom-0 top-[88px] z-20 flex min-h-0 w-full flex-col overflow-hidden bg-white shadow-[0_-1px_0_rgba(15,23,42,0.08)]">
+            <aside className="absolute inset-x-0 bottom-0 top-[88px] z-20 flex min-h-0 w-full flex-col overflow-hidden bg-[var(--scout-surface)] shadow-[0_-1px_0_rgba(15,23,42,0.08)]">
               <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 ring-1 ring-violet-100">
@@ -3121,7 +3163,7 @@ export function ScoutChatbot({
 
           {activeTab === "qa" ? (
             <>
-              <div ref={messagesViewportRef} className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-white px-5 py-5">
+              <div ref={messagesViewportRef} className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[var(--scout-surface)] px-5 py-5">
                 {authBlockedMessage ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                     {authBlockedMessage}
