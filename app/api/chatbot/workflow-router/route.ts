@@ -19,6 +19,7 @@ type WorkflowRouterRequest = {
   allowDraftPlan?: boolean;
   forceActionMode?: boolean;
   continuationOnly?: boolean;
+  suggestionOnly?: boolean;
   message?: string;
   workflow?: {
     id?: string;
@@ -49,7 +50,106 @@ type ChatbotWorkflowCandidate = {
   }>;
   triggerPhrases: string[];
   examplePhrases: string[];
+  executionContract: Array<{
+    label: string;
+    nodeType: string;
+    configuredFields: Array<{
+      field: string;
+      source: "literal" | "workflow_value";
+    }>;
+    requiredInputs: Array<{
+      field: string;
+      description?: string;
+    }>;
+  }>;
 };
+
+type ExecutionReadinessAssessment = {
+  ready: boolean;
+  confidence: number;
+  questions: string[];
+  missingInformation: string[];
+  reason: string;
+};
+
+const PLANNING_RELEVANT_CONFIG_KEY =
+  /^(recipient|recipients|to|cc|bcc|subject|title|body|message|template|prompt|instruction|instructions|input|inputMapping|query|sql|target|content|criteria|filter)$/i;
+const SENSITIVE_CONFIG_KEY =
+  /(password|secret|token|api.?key|credential|authorization|auth|webhook|connection|certificate|private.?key)/i;
+
+function buildNodeExecutionContract(
+  node: {
+    label: string;
+    nodeType: string;
+    config: unknown;
+  }
+): ChatbotWorkflowCandidate["executionContract"][number] {
+  const configuredFields: ChatbotWorkflowCandidate["executionContract"][number]["configuredFields"] = [];
+  const requiredInputs: ChatbotWorkflowCandidate["executionContract"][number]["requiredInputs"] = [];
+  const seenConfigured = new Set<string>();
+  const seenRequired = new Set<string>();
+
+  const addConfigured = (field: string, value: unknown) => {
+    if (!field || seenConfigured.has(field)) return;
+    const hasWorkflowValue = typeof value === "string" && /\{\{[\s\S]+?\}\}/.test(value);
+    seenConfigured.add(field);
+    configuredFields.push({
+      field,
+      source: hasWorkflowValue ? "workflow_value" : "literal",
+    });
+  };
+
+  const visit = (value: unknown, path: string[], relevantParent = false) => {
+    if (value === null || value === undefined || value === "") return;
+
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, [...path, String(index)], relevantParent));
+      return;
+    }
+
+    if (typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      const required = record.required === true;
+      const fieldName = typeof record.key === "string"
+        ? record.key
+        : typeof record.name === "string"
+          ? record.name
+          : "";
+      if (required && fieldName && !seenRequired.has(fieldName)) {
+        seenRequired.add(fieldName);
+        requiredInputs.push({
+          field: fieldName,
+          description: typeof record.description === "string" ? record.description : undefined,
+        });
+      }
+
+      for (const [key, child] of Object.entries(record)) {
+        if (SENSITIVE_CONFIG_KEY.test(key)) continue;
+        const relevant = relevantParent || PLANNING_RELEVANT_CONFIG_KEY.test(key);
+        visit(child, [...path, key], relevant);
+      }
+      return;
+    }
+
+    const leafKey = path[path.length - 1] || "";
+    if (
+      relevantParent
+      && !["required", "type", "enabled"].includes(leafKey)
+      && (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+    ) {
+      addConfigured(path.join("."), value);
+    }
+  };
+
+  visit(node.config, []);
+
+  return {
+    label: node.label,
+    nodeType: node.nodeType,
+    configuredFields,
+    requiredInputs,
+  };
+}
 
 function topologicalSort(
   nodes: Array<{ id: string; nodeType: string }>,
@@ -168,6 +268,11 @@ async function loadChatbotWorkflowCandidates(
         examplePhrases: Array.isArray(triggerConfig?.examplePhrases)
           ? triggerConfig.examplePhrases.filter((phrase): phrase is string => typeof phrase === "string")
           : [],
+        executionContract: sortedNodes.map((node) => buildNodeExecutionContract({
+          label: node!.label,
+          nodeType: node!.nodeType,
+          config: node!.config,
+        })),
       } satisfies ChatbotWorkflowCandidate;
     })
   );
@@ -186,6 +291,22 @@ type ActionContextResolution = {
 function hasStrongActionIntent(message: string): boolean {
   const normalized = String(message || "").toLowerCase();
   return /\b(create|generate|run|execute|submit|send|start|trigger|process|invoice|order|request)\b/i.test(normalized);
+}
+
+function isExplicitActionRequest(message: string): boolean {
+  const normalized = String(message || "").trim().toLowerCase();
+  if (!normalized) return false;
+
+  if (/^(how|what|why|where|when|who)\b/.test(normalized)) {
+    return false;
+  }
+
+  if (/^(can|could|does|do|is|are)\s+(the\s+)?(system|application|app|platform|workflow)\b/.test(normalized)) {
+    return false;
+  }
+
+  return /\b(create|update|submit|approve|reject|notify|schedule|cancel|process|trigger|launch|start|run|assign|send|email|forward|book|delete|remove|generate|dispatch|execute|fetch|retrieve|lookup)\b/i.test(normalized)
+    || /\blook\s+up\b/i.test(normalized);
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
@@ -628,6 +749,95 @@ function buildRequiredVariableQuestion(definition: RequiredVariableDefinition): 
   return `Please provide ${baseLabel}${description}.`;
 }
 
+async function assessExecutionReadiness(
+  candidate: ChatbotWorkflowCandidate,
+  message: string,
+  history: Array<{ role?: string; text?: string }>,
+  extractedVariables: Record<string, unknown>
+): Promise<ExecutionReadinessAssessment> {
+  const conversation = [
+    ...history
+      .slice(-12)
+      .map((entry) => `${(entry.role || "unknown").toUpperCase()}: ${String(entry.text || "")}`),
+    `USER: ${message}`,
+  ].join("\n");
+
+  const workflowContext = JSON.stringify({
+    name: candidate.name,
+    description: candidate.description,
+    steps: candidate.nodeSummary,
+    declaredRequiredInputs: candidate.requiredVariables,
+    extractedInputs: extractedVariables,
+    executionContract: candidate.executionContract,
+  });
+
+  try {
+    const provider = await getLLMProvider();
+    const systemPrompt = [
+      "You are a pre-execution conversation planner for workflow automation.",
+      "Decide whether the conversation contains enough business information to execute the selected workflow without making a material guess.",
+      "This is a semantic sufficiency check, not merely a required-field check.",
+      "Consider the workflow purpose and its steps. Identify information that an operator would need to know to produce the requested result.",
+      "The execution contract lists fields already configured as literals or mapped from workflow values. Treat those fields as supplied and never ask the user for them.",
+      "Do not ask for delivery recipients, subjects, templates, messages, targets, or other settings when their corresponding field is listed as configured.",
+      "A broad action request that leaves the subject, target, content, scope, selection criteria, or desired outcome materially ambiguous is not ready.",
+      "Do not demand implementation details, optional preferences, or information the workflow can safely determine itself.",
+      "Use the full conversation: a follow-up answer may complete an earlier request.",
+      "Never invent missing values.",
+      "If not ready, ask the smallest number of concise, natural questions needed to proceed.",
+      "Questions must be generic to the actual missing business information; do not mention this assessment or internal node names.",
+      "Return JSON only:",
+      '{"ready":true|false,"confidence":0-1,"questions":["..."],"missingInformation":["..."],"reason":"..."}.',
+    ].join("\n");
+    const userPrompt = [
+      `Selected workflow: ${workflowContext}`,
+      "Conversation:",
+      conversation,
+    ].join("\n\n");
+    const raw = await provider.generate_answer(systemPrompt, userPrompt, workflowContext);
+    const parsed = parseJsonObject(raw || "");
+    const questions = Array.isArray(parsed?.questions)
+      ? parsed.questions.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [];
+    const missingInformation = Array.isArray(parsed?.missingInformation)
+      ? parsed.missingInformation.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [];
+    const confidence = Math.max(0, Math.min(1, Number(parsed?.confidence) || 0));
+    const ready = parsed?.ready === true;
+
+    // A model may only stop execution when it can state a concrete follow-up
+    // question with reasonable confidence. Otherwise, declared workflow inputs
+    // remain the deterministic source of truth.
+    if (!ready && confidence >= 0.7 && questions.length > 0) {
+      return {
+        ready: false,
+        confidence,
+        questions: questions.slice(0, 3),
+        missingInformation,
+        reason: typeof parsed?.reason === "string" ? parsed.reason : "",
+      };
+    }
+
+    return {
+      ready: true,
+      confidence,
+      questions: [],
+      missingInformation: [],
+      reason: typeof parsed?.reason === "string" ? parsed.reason : "",
+    };
+  } catch {
+    // Provider failures must not make all orchestrations unavailable. Existing
+    // declared required-variable and extraction-node validation still applies.
+    return {
+      ready: true,
+      confidence: 0,
+      questions: [],
+      missingInformation: [],
+      reason: "Readiness assessment unavailable",
+    };
+  }
+}
+
 async function extractRequiredVariablesFromConversation(
   requiredVariables: RequiredVariableDefinition[],
   message: string,
@@ -697,6 +907,7 @@ export async function POST(request: NextRequest) {
     const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
     const conversationId = typeof body.conversationId === "string" ? body.conversationId.trim() : "";
     const forceActionMode = body.forceActionMode === true;
+    const suggestionOnly = body.suggestionOnly === true;
     const continuationOnly = body.continuationOnly === true;
     const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
     const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
@@ -713,6 +924,32 @@ export async function POST(request: NextRequest) {
     await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
+
+    if (suggestionOnly) {
+      if (!isExplicitActionRequest(rawMessage)) {
+        return NextResponse.json({ suggestion: null });
+      }
+
+      const candidates = await loadChatbotWorkflowCandidates(companyId, userId, targetAppId);
+      const match = await findEligibleOrchestration(rawMessage, candidates, { forceActionMode: false });
+      // Suggestions are review-only and cannot execute, so favor recall while
+      // still requiring a meaningful orchestration match.
+      const minimumSuggestionConfidence = 0.7;
+
+      if (!match || match.confidence < minimumSuggestionConfidence) {
+        return NextResponse.json({ suggestion: null });
+      }
+
+      return NextResponse.json({
+        suggestion: {
+          orchestrationId: match.candidate.id,
+          orchestrationName: match.candidate.name,
+          description: match.candidate.description,
+          confidence: match.confidence,
+          reason: match.reason,
+        },
+      });
+    }
 
     const persistedConversationId = await getOrCreateConversation({
       companyId,
@@ -782,6 +1019,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // A continuation probe may only resume an already-paused execution above.
+    // It must never fall through to candidate matching or execution creation.
+    if (continuationOnly) {
+      return NextResponse.json({
+        answer: "",
+        conversationId: persistedConversationId,
+        intent: "fallback",
+        needsClarification: false,
+      });
+    }
+
     const candidates = await loadChatbotWorkflowCandidates(companyId, userId, targetAppId);
 
     if (candidates.length === 0) {
@@ -807,7 +1055,13 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const match = await findEligibleOrchestration(message, candidates, { forceActionMode });
+    const explicitlySelectedId = typeof body.workflow?.id === "string" ? body.workflow.id.trim() : "";
+    const explicitlySelected = explicitlySelectedId
+      ? candidates.find((candidate) => candidate.id === explicitlySelectedId)
+      : undefined;
+    const match = explicitlySelected
+      ? { candidate: explicitlySelected, confidence: 1, reason: "Explicitly selected by the user" }
+      : await findEligibleOrchestration(message, candidates, { forceActionMode });
     if (!match) {
       return NextResponse.json({
         answer: "I could not find an eligible chatbot orchestration for this request.",
@@ -844,20 +1098,41 @@ export async function POST(request: NextRequest) {
       message,
       history
     );
+    const readiness = await assessExecutionReadiness(
+      selected,
+      message,
+      history,
+      variableExtraction.values
+    );
 
-    if (variableExtraction.missing.length > 0) {
+    if (variableExtraction.missing.length > 0 || !readiness.ready) {
+      const requiredInputQuestions = variableExtraction.missing.map((definition) => ({
+        question: buildRequiredVariableQuestion(definition),
+        required: true,
+        variableName: definition.name,
+      }));
+      const semanticQuestions = readiness.questions
+        .filter((question) => !requiredInputQuestions.some((item) => (
+          item.question.trim().toLowerCase() === question.trim().toLowerCase()
+        )))
+        .map((question) => ({
+          question,
+          required: true,
+        }));
+      const clarifyingQuestions = [...requiredInputQuestions, ...semanticQuestions];
+      const answer = clarifyingQuestions.length === 1
+        ? clarifyingQuestions[0].question
+        : `I need a little more information before I can start:\n${clarifyingQuestions.map((item) => `- ${item.question}`).join("\n")}`;
+
       return NextResponse.json({
-        answer: `I found orchestration \"${selected.name}\", but I still need some required inputs before execution.`,
+        answer,
+        conversationId: persistedConversationId,
         intent: "need_clarification",
         confidence: match.confidence,
         matchedOrchestrationIds: [selected.id],
         matchedOrchestrationNames: [selected.name],
         needsClarification: true,
-        clarifyingQuestions: variableExtraction.missing.map((definition) => ({
-          question: buildRequiredVariableQuestion(definition),
-          required: true,
-          variableName: definition.name,
-        })),
+        clarifyingQuestions,
         requireUserConfirmation: false,
         plan,
         metadata: {
@@ -865,6 +1140,12 @@ export async function POST(request: NextRequest) {
           selectedOrchestrationName: selected.name,
           missingRequiredVariables: variableExtraction.missing.map((definition) => definition.name),
           extractedVariables: variableExtraction.values,
+          semanticReadiness: {
+            ready: readiness.ready,
+            confidence: readiness.confidence,
+            missingInformation: readiness.missingInformation,
+            reason: readiness.reason,
+          },
           matchReason: match.reason,
           awaitingDraftPlanPermission: false,
           normalizedMessage: message,
@@ -1001,15 +1282,6 @@ export async function POST(request: NextRequest) {
           },
         });
       }
-    }
-
-    if (continuationOnly) {
-      return NextResponse.json({
-        answer: "",
-        conversationId: persistedConversationId,
-        intent: "fallback",
-        needsClarification: false,
-      });
     }
 
     if (!executionResult.success) {

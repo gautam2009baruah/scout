@@ -80,6 +80,7 @@ export type ScoutChatMessage = {
   feedback?: "up" | "down";
   workflowSuggestion?: ScoutWorkflowSession;
   workflowActionSuggestion?: ScoutWorkflowActionSuggestion;
+  orchestrationSuggestion?: ScoutOrchestrationSuggestion;
   intentModeSuggestion?: ScoutIntentModeSuggestion;
   routerIntent?: string;
   matchedOrchestrationIds?: string[];
@@ -145,6 +146,15 @@ type ScoutOrchestration = {
 type PendingRouterConfirmation = {
   originalText: string;
   workflow: ScoutWorkflowSession;
+};
+
+export type ScoutOrchestrationSuggestion = {
+  orchestrationId: string;
+  orchestrationName: string;
+  originalText: string;
+  description?: string;
+  confidence: number;
+  reason?: string;
 };
 
 type PendingWorkflowConfirmation = {
@@ -285,6 +295,7 @@ type RenderedMessage = Required<Pick<ScoutChatMessage, "id" | "role" | "text" | 
   workflowSuggestion?: ScoutWorkflowSession;
   workflowActionSuggestion?: ScoutWorkflowActionSuggestion;
   intentModeSuggestion?: ScoutIntentModeSuggestion;
+  orchestrationSuggestion?: ScoutOrchestrationSuggestion;
 };
 
 type WidgetStyle = CSSProperties & {
@@ -465,6 +476,10 @@ const workflowBusinessHints = [
 
 const ACTION_ROUTER_WORKFLOW_ID = "__action_router__";
 
+function isRagOnlyChatRoutingEnabled(): boolean {
+  return true;
+}
+
 function createActionRouterWorkflow(): ScoutWorkflowSession {
   return {
     id: ACTION_ROUTER_WORKFLOW_ID,
@@ -574,6 +589,8 @@ export function ScoutChatbot({
   const pendingRouterConfirmationRef = useRef<PendingRouterConfirmation | null>(null);
   const pendingWorkflowConfirmationRef = useRef<PendingWorkflowConfirmation | null>(null);
   const pendingActionModeFallbackRef = useRef<PendingActionModeFallback | null>(null);
+  const activeOrchestrationRef = useRef<ScoutWorkflowSession | null>(null);
+  const reviewedOrchestrationRequestRef = useRef<{ orchestrationId: string; originalText: string } | null>(null);
 
   const showProgress = useCallback((stage: ScoutChatProgressStage, requestId?: string) => {
     progressRequestIdRef.current = requestId || progressRequestIdRef.current || createProgressRequestId();
@@ -1756,16 +1773,21 @@ export function ScoutChatbot({
       }
     }
 
-    showProgress("conversation_context");
-    try {
+    const activeOrchestration = activeOrchestrationRef.current;
+    if (activeOrchestration) {
+      showProgress("conversation_context");
+      try {
       const continuationReply = await runWorkflowRouter(
         trimmed,
-        createActionRouterWorkflow(),
+        activeOrchestration,
         contextWindow,
-        { continuationOnly: true }
+        { allowDraftPlan: true, forceActionMode: true }
       );
 
       if (continuationReply.routerIntent && continuationReply.routerIntent !== "fallback") {
+        if (!["need_clarification", "workflow_match"].includes(continuationReply.routerIntent)) {
+          activeOrchestrationRef.current = null;
+        }
         setIsTyping(false);
         setMessages(nextHistory);
         setInput("");
@@ -1783,8 +1805,17 @@ export function ScoutChatbot({
         inputRef.current?.focus();
         return;
       }
-    } catch {
-      // Continue through normal intent routing when no paused workflow can be resumed.
+      } catch {
+        // Preserve normal chat if an explicitly started workflow cannot continue.
+      }
+    }
+
+    if (isRagOnlyChatRoutingEnabled()) {
+      setMessages(nextHistory);
+      setInput("");
+      markActivity();
+      await completeChatResponse(trimmed, contextWindow);
+      return;
     }
 
     if (actionModeArmed) {
@@ -1957,19 +1988,31 @@ export function ScoutChatbot({
         ? await onSendMessage(question, contextWindow)
         : await sendChatQuery(question); // Always use real API, skip mock workflows
       const assistantReply = resolveReply(customReply);
+      const assistantMessageId = assistantReply.id ?? generateMessageId();
 
       setIsTyping(false);
       setMessages((current) => [
         ...current,
         createRenderedMessage({
           ...assistantReply,
-          id: assistantReply.id ?? generateMessageId(),
+          id: assistantMessageId,
           role: "assistant",
           time: assistantReply.time ?? formatTime()
         })
       ]);
       markActivity();
       inputRef.current?.focus();
+
+      // Suggestions are advisory and intentionally run after the RAG answer is
+      // visible. They never block chat, create executions, or switch tabs.
+      void findOrchestrationSuggestion(question, contextWindow).then((suggestion) => {
+        if (!suggestion) return;
+        setMessages((current) => current.map((message) => (
+          message.id === assistantMessageId
+            ? { ...message, orchestrationSuggestion: suggestion }
+            : message
+        )));
+      }).catch(() => undefined);
     } catch (error) {
       const failureMessage = error instanceof Error ? error.message : "I could not reach the assistant service. Please try again in a moment.";
       if (isApiKeyAuthFailure(401, failureMessage)) {
@@ -2317,6 +2360,130 @@ export function ScoutChatbot({
     }
   }
 
+  async function startOrchestration(orchestration: ScoutOrchestration) {
+    if (authBlockedMessage || isTyping) return;
+
+    const workflow: ScoutWorkflowSession = {
+      id: orchestration.id,
+      title: orchestration.name,
+      description: orchestration.description,
+      estimatedTime: "",
+      steps: orchestration.nodes.length,
+    };
+    const reviewedRequest = reviewedOrchestrationRequestRef.current;
+    const originalRequest = reviewedRequest?.orchestrationId === orchestration.id
+      ? reviewedRequest.originalText
+      : `Run the orchestration "${orchestration.name}".`;
+
+    activeOrchestrationRef.current = workflow;
+    reviewedOrchestrationRequestRef.current = null;
+    setOrchestrationPanelOpen(false);
+    setActiveTab("qa");
+    showProgress("workflow_execution");
+
+    const startMessage = createRenderedMessage({
+      id: generateMessageId(),
+      role: "user",
+      text: `Start workflow: ${orchestration.name}`,
+      time: formatTime(),
+    });
+    const nextHistory = [...messages, startMessage];
+    setMessages(nextHistory);
+
+    try {
+      const reply = await runWorkflowRouter(
+        originalRequest,
+        workflow,
+        trimMessagesForLifecycle(nextHistory, resolvedLifecycleSettings),
+        { allowDraftPlan: true, forceActionMode: true }
+      );
+      const assistantReply = resolveReply(reply);
+      if (!["need_clarification", "workflow_match"].includes(reply.routerIntent || "")) {
+        activeOrchestrationRef.current = null;
+      }
+      setMessages((current) => [
+        ...current,
+        createRenderedMessage({
+          ...assistantReply,
+          id: assistantReply.id ?? generateMessageId(),
+          role: "assistant",
+          time: assistantReply.time ?? formatTime(),
+        }),
+      ]);
+    } catch (error) {
+      activeOrchestrationRef.current = null;
+      setMessages((current) => [
+        ...current,
+        createRenderedMessage({
+          id: generateMessageId(),
+          role: "assistant",
+          text: error instanceof Error ? error.message : "Unable to start the selected orchestration.",
+          time: formatTime(),
+        }),
+      ]);
+    } finally {
+      setIsTyping(false);
+      markActivity();
+      inputRef.current?.focus();
+    }
+  }
+
+  async function findOrchestrationSuggestion(
+    message: string,
+    history: ScoutChatMessage[]
+  ): Promise<ScoutOrchestrationSuggestion | null> {
+    if (!companyId || !userId || !targetAppId) return null;
+
+    const endpoint = workflowRouterEndpoint || "/api/chatbot/workflow-router";
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...apiKeyHeaders,
+      },
+      body: JSON.stringify({
+        message,
+        history,
+        suggestionOnly: true,
+        companyId,
+        userId,
+        targetAppId,
+      }),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body?.suggestion) return null;
+
+    const suggestion = body.suggestion as Partial<ScoutOrchestrationSuggestion>;
+    if (
+      typeof suggestion.orchestrationId !== "string"
+      || typeof suggestion.orchestrationName !== "string"
+      || typeof suggestion.confidence !== "number"
+      || suggestion.confidence < 0.7
+    ) {
+      return null;
+    }
+
+    return {
+      orchestrationId: suggestion.orchestrationId,
+      orchestrationName: suggestion.orchestrationName,
+      originalText: message,
+      description: typeof suggestion.description === "string" ? suggestion.description : undefined,
+      confidence: suggestion.confidence,
+      reason: typeof suggestion.reason === "string" ? suggestion.reason : undefined,
+    };
+  }
+
+  function reviewOrchestrationSuggestion(suggestion: ScoutOrchestrationSuggestion) {
+    reviewedOrchestrationRequestRef.current = {
+      orchestrationId: suggestion.orchestrationId,
+      originalText: suggestion.originalText,
+    };
+    setActiveTab("workflows");
+    setHistoryOpen(false);
+    setOrchestrationPanelOpen(true);
+    setExpandedOrchestrations((current) => new Set(current).add(suggestion.orchestrationId));
+  }
+
   async function startWorkflowTopic(topic: ScoutWorkflowTopic) {
     await startWorkflow({
       id: topic.guideId,
@@ -2524,16 +2691,6 @@ export function ScoutChatbot({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.altKey && event.key.toLowerCase() === "a") {
-      event.preventDefault();
-      if (actionModeArmed) {
-        autoResetActionMode("keyboard_toggle_off");
-      } else {
-        armActionMode("keyboard");
-      }
-      return;
-    }
-
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendMessage(input);
@@ -2858,6 +3015,20 @@ export function ScoutChatbot({
                           </button>
                           {expanded ? (
                             <div className="space-y-1 border-t border-slate-100 bg-slate-50/70 p-2">
+                              <div className="mb-2 rounded-lg border border-violet-100 bg-white p-3">
+                                <p className="text-xs leading-5 text-slate-600">
+                                  Review the steps below. Nothing runs until you select Start workflow.
+                                </p>
+                                <button
+                                  className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-violet-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-violet-800 focus:outline-none focus:ring-4 focus:ring-violet-100 disabled:cursor-not-allowed disabled:bg-slate-300"
+                                  disabled={Boolean(authBlockedMessage) || isTyping}
+                                  onClick={() => void startOrchestration(orchestration)}
+                                  type="button"
+                                >
+                                  <Play className="h-3.5 w-3.5 fill-current" />
+                                  Start workflow
+                                </button>
+                              </div>
                               {orchestration.nodes.length > 0 ? orchestration.nodes.map((node, index) => (
                                 <div className="group relative flex min-h-10 items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-200" key={node.id} tabIndex={0}>
                                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-50 text-[11px] font-bold text-violet-700">{index + 1}</span>
@@ -2892,7 +3063,7 @@ export function ScoutChatbot({
               role="tab"
               type="button"
             >
-              Q&A
+              Chat
             </button>
             <button
               aria-selected={activeTab === "workflows"}
@@ -2904,7 +3075,7 @@ export function ScoutChatbot({
               role="tab"
               type="button"
             >
-              Guided workflows
+              Workflows
             </button>
           </div>
 
@@ -2924,6 +3095,7 @@ export function ScoutChatbot({
                     onChooseIntentModeAction={chooseIntentModeAction}
                     onChooseIntentModeChat={chooseIntentModeChat}
                     onContinueAsChat={continueAsChat}
+                    onReviewOrchestration={reviewOrchestrationSuggestion}
                     onRunWorkflowAction={runWorkflowAction}
                     onStartWorkflow={startWorkflow}
                     userLabel={userLabel}
@@ -2961,28 +3133,6 @@ export function ScoutChatbot({
                     value={input}
                   />
                   <div className="flex items-center justify-end gap-3 px-1 pb-0.5">
-                    <button
-                      aria-label={actionModeArmed ? "Turn off action mode" : "Arm action mode for next message"}
-                      className={cn(
-                        "inline-flex h-9 items-center gap-1 rounded-full border px-3 text-xs font-semibold transition focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]",
-                        actionModeArmed
-                          ? "border-amber-300 bg-amber-50 text-amber-800"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:text-amber-700"
-                      )}
-                      disabled={Boolean(authBlockedMessage) || isTyping}
-                      onClick={() => {
-                        if (actionModeArmed) {
-                          autoResetActionMode("button_toggle_off");
-                        } else {
-                          armActionMode("button");
-                        }
-                      }}
-                      title="Action mode (next message only) - Alt+A"
-                      type="button"
-                    >
-                      <Zap className="h-4 w-4" />
-                      {actionModeArmed ? "Action on" : "Action"}
-                    </button>
                     <button
                       aria-label="Send message"
                       className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:translate-y-0"
@@ -3390,6 +3540,7 @@ function MessageBubble({
   onChooseIntentModeAction,
   onChooseIntentModeChat,
   onContinueAsChat,
+  onReviewOrchestration,
   onRunWorkflowAction,
   onStartWorkflow,
   userLabel,
@@ -3401,6 +3552,7 @@ function MessageBubble({
   onChooseIntentModeAction: (messageId: string, suggestion: ScoutIntentModeSuggestion) => void;
   onChooseIntentModeChat: (messageId: string, suggestion: ScoutIntentModeSuggestion) => void;
   onContinueAsChat: (messageId: string, suggestion: ScoutWorkflowActionSuggestion) => void;
+  onReviewOrchestration: (suggestion: ScoutOrchestrationSuggestion) => void;
   onRunWorkflowAction: (messageId: string, suggestion: ScoutWorkflowActionSuggestion) => void;
   onStartWorkflow: (workflow: ScoutWorkflowSession) => void;
   userLabel: string;
@@ -3552,6 +3704,30 @@ function MessageBubble({
         {message.workflowSuggestion && (
           <div className="mt-2">
             <WorkflowCard compact onStart={onStartWorkflow} workflow={message.workflowSuggestion} />
+          </div>
+        )}
+        {isAssistant && message.orchestrationSuggestion && (
+          <div className="mt-2 rounded-xl border border-violet-200 bg-violet-50/80 px-3 py-2.5 text-slate-900 shadow-sm">
+            <div className="flex items-start gap-2.5">
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-700 text-white">
+                <Network className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold text-slate-950">A workflow may be able to do this</p>
+                <p className="mt-1 text-sm font-semibold text-violet-900">{message.orchestrationSuggestion.orchestrationName}</p>
+                {message.orchestrationSuggestion.description ? (
+                  <p className="mt-1 text-xs leading-5 text-slate-600">{message.orchestrationSuggestion.description}</p>
+                ) : null}
+                <button
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-violet-700 bg-white px-3 py-1.5 text-xs font-semibold text-violet-800 transition hover:bg-violet-100 focus:outline-none focus:ring-4 focus:ring-violet-100"
+                  onClick={() => onReviewOrchestration(message.orchestrationSuggestion!)}
+                  type="button"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Review workflow
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {isAssistant && message.workflowActionSuggestion && message.workflowActionSuggestion.status !== "resolved" && (
@@ -3740,8 +3916,11 @@ function createRenderedMessage(message: ScoutChatMessage & { id: string; time: s
     noAnswerReason: message.noAnswerReason,
     feedback: message.feedback,
     workflowSuggestion: message.workflowSuggestion,
-    workflowActionSuggestion: message.workflowActionSuggestion,
-    intentModeSuggestion: message.intentModeSuggestion
+    // Legacy intent-routing prompts are intentionally not restored. Chat is
+    // RAG-only and orchestration suggestions use review-only navigation.
+    workflowActionSuggestion: undefined,
+    intentModeSuggestion: undefined,
+    orchestrationSuggestion: message.orchestrationSuggestion
   };
 }
 
@@ -3850,7 +4029,8 @@ function trimMessagesForLifecycle(messages: RenderedMessage[], settings: Chatbot
     feedback: message.feedback,
     workflowSuggestion: message.workflowSuggestion,
     workflowActionSuggestion: message.workflowActionSuggestion,
-    intentModeSuggestion: message.intentModeSuggestion
+    intentModeSuggestion: message.intentModeSuggestion,
+    orchestrationSuggestion: message.orchestrationSuggestion
   }));
 }
 

@@ -823,6 +823,9 @@ export class OrchestrationEngine {
         ...resolvedValues,
       };
 
+      // Preserve the user's latest clarification separately from the original
+      // workflow request so downstream nodes can use both intent and parameters.
+      this.context.latestUserMessage = input.responseText.trim();
       this.context[clarification.outputVariable] = resolvedData;
       Object.assign(this.context, {
         [clarification.outputVariable]: resolvedData,
@@ -890,11 +893,6 @@ async function resolveClarificationValues(
   },
   responseText: string
 ): Promise<Record<string, unknown>> {
-  if (clarification.missingFields.length <= 1) {
-    const field = clarification.missingFields[0];
-    return field ? { [field.key]: coerceClarificationValue(field, responseText) } : {};
-  }
-
   try {
     const provider = await getLLMProvider();
     const systemPrompt = [

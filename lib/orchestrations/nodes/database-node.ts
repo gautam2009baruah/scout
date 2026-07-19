@@ -110,8 +110,9 @@ function buildSqlGenerationPrompt(input: {
     `4) Avoid SELECT * unless truly necessary.${input.allowSelectStar ? "" : " SELECT * is disallowed."}`,
     `5) Use concise projection and include LIMIT ${input.maxRows} (or equivalent row cap syntax).`,
     "6) Use schema metadata only.",
-    "7) Prefer filters inferred from extracted JSON fields and user request.",
-    input.customInstructions ? `8) Additional instructions: ${input.customInstructions}` : "",
+    "7) Treat extracted JSON fields and the latest clarification as authoritative query parameters.",
+    "8) Use the original user request for business intent, but never interpret workflow-control text such as 'start workflow' or an orchestration name as the database query.",
+    input.customInstructions ? `9) Additional instructions: ${input.customInstructions}` : "",
   ].filter(Boolean).join("\n");
 
   const userPrompt = [
@@ -374,13 +375,20 @@ export async function executeDatabaseNode(
     const additionalContextPath = normalizeText(config.additionalContextVariablePath);
     const outputVariable = normalizeText(config.outputVariable) || "databaseQuery";
 
-    const userRequest = firstNonEmptyString([
+    const originalUserRequest = firstNonEmptyString([
       resolveVariablePath(userRequestPath, context),
       resolveVariablePath("trigger.input.userMessage", context),
       resolveVariablePath("trigger.input.message", context),
       resolveVariablePath("message", context),
       resolveVariablePath("query", context),
     ]);
+    const latestUserMessage = firstNonEmptyString([
+      resolveVariablePath("latestUserMessage", context),
+      resolveVariablePath("_chatbot.latestUserMessage", context),
+    ]);
+    const userRequest = latestUserMessage && latestUserMessage !== originalUserRequest
+      ? `${originalUserRequest || "Database request"}\nLatest clarification: ${latestUserMessage}`
+      : originalUserRequest;
 
     const extractedInput = resolveVariablePath(extractedPath, context);
     const additionalContext = additionalContextPath

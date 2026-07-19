@@ -336,7 +336,11 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   // OPTIMIZATION: Pre-filter for orchestration triggers
   // Only check triggers for action-oriented messages (saves 70-90% of LLM calls)
   console.log(`🔍 Checking if message should check triggers: "${question}"`);
-  const passedFilter = shouldCheckTriggers(question);
+  // Chat is intentionally RAG-only. Orchestration discovery runs separately
+  // through the workflow router's suggestionOnly mode and can never create an
+  // execution from a chat question.
+  const automaticOrchestrationMatchingEnabled = false;
+  const passedFilter = automaticOrchestrationMatchingEnabled && shouldCheckTriggers(question);
   console.log(`🔍 Pre-filter result: ${passedFilter}`);
   
   if (passedFilter) {
