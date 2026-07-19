@@ -1847,6 +1847,10 @@ export function ScoutChatbot({
         { allowDraftPlan: true, forceActionMode: true }
       );
 
+      if (continuationReply.routerIntent === "fallback") {
+        activeOrchestrationRef.current = null;
+      }
+
       if (continuationReply.routerIntent && continuationReply.routerIntent !== "fallback") {
         if (!["need_clarification", "workflow_match"].includes(continuationReply.routerIntent)) {
           activeOrchestrationRef.current = null;

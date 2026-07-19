@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
-import { createExecution, getConnections, getExecutionById, getActiveClarificationRequestForConversation, getNodes, getOrchestrationPage, getOrchestrationById } from "@/lib/orchestrations/db";
+import { createExecution, getConnections, getExecutionById, getActiveClarificationRequestForConversation, getNodes, getOrchestrationPage, getOrchestrationById, resolveClarificationRequest, updateExecution } from "@/lib/orchestrations/db";
 import { createTriggerLog, getTriggers, updateTriggerLastTriggered } from "@/lib/orchestrations/triggers";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
@@ -287,6 +287,66 @@ type ActionContextResolution = {
   confidence: number;
   usedLLM: boolean;
 };
+
+type ClarificationTurnDecision = "answer" | "cancel" | "new_topic";
+
+async function classifyClarificationTurn(input: {
+  message: string;
+  clarificationPrompt: string;
+  history: Array<{ role?: string; text?: string }>;
+}): Promise<ClarificationTurnDecision> {
+  const normalized = input.message
+    .trim()
+    .toLowerCase()
+    .replace(/[’']/g, "")
+    .replace(/[.!?,;:]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  if (
+    /\b(cancel|stop|abort|nevermind|never mind|forget it|drop it|leave it|nothing leave|not now)\b/.test(normalized)
+    || /^(no|nope|nah|nothing)$/.test(normalized)
+  ) {
+    return "cancel";
+  }
+
+  try {
+    const provider = await getLLMProvider();
+    const recentContext = input.history
+      .slice(-6)
+      .map((entry) => `${String(entry.role || "unknown").toUpperCase()}: ${String(entry.text || "")}`)
+      .join("\n");
+    const response = await provider.generate_answer(
+      [
+        "Classify the latest user turn while a workflow is paused for clarification.",
+        "Use answer only when the message supplies, corrects, or meaningfully discusses the requested information.",
+        "Use cancel when the user declines, stops, abandons, or asks to leave the workflow.",
+        "Use new_topic when the user asks an unrelated informational question or starts another subject.",
+        'Return JSON only: {"decision":"answer|cancel|new_topic","reason":"brief"}.',
+      ].join(" "),
+      [
+        `Pending clarification: ${input.clarificationPrompt}`,
+        recentContext ? `Recent conversation:\n${recentContext}` : "",
+        `Latest user message: ${input.message}`,
+      ].filter(Boolean).join("\n\n"),
+      ""
+    );
+    const parsed = parseJsonObject(response || "");
+    if (parsed?.decision === "answer" || parsed?.decision === "cancel" || parsed?.decision === "new_topic") {
+      return parsed.decision;
+    }
+  } catch {
+    // Use the conservative fallback below.
+  }
+
+  if (
+    /^(may i know|can you tell me|could you tell me|tell me|explain|why|who|where|when)\b/.test(normalized)
+    || (input.message.trim().endsWith("?") && !hasStrongActionIntent(normalized))
+  ) {
+    return "new_topic";
+  }
+
+  return "answer";
+}
 
 function hasStrongActionIntent(message: string): boolean {
   const normalized = String(message || "").toLowerCase();
@@ -981,6 +1041,52 @@ export async function POST(request: NextRequest) {
         if (execution && execution.status === "paused") {
           const orchestration = await getOrchestrationById(execution.orchestrationId);
           if (orchestration) {
+            const clarificationDecision = await classifyClarificationTurn({
+              message: rawMessage,
+              clarificationPrompt: clarification.prompt,
+              history,
+            });
+
+            if (clarificationDecision !== "answer") {
+              await resolveClarificationRequest(clarification.id, {
+                responseText: rawMessage,
+                responseData: {
+                  cancelled: true,
+                  reason: clarificationDecision,
+                },
+              });
+              await updateExecution(execution.id, {
+                status: "cancelled",
+                currentNodeId: null,
+              });
+
+              if (clarificationDecision === "cancel") {
+                const answer = `Okay, I cancelled the workflow "${orchestration.name}".`;
+                await persistExchange(answer, {
+                  intent: "cancelled",
+                  cancelledExecutionId: execution.id,
+                });
+                return NextResponse.json({
+                  answer,
+                  conversationId: persistedConversationId,
+                  intent: "cancelled",
+                  needsClarification: false,
+                  requireUserConfirmation: false,
+                });
+              }
+
+              return NextResponse.json({
+                answer: "",
+                conversationId: persistedConversationId,
+                intent: "fallback",
+                needsClarification: false,
+                requireUserConfirmation: false,
+                metadata: {
+                  actionContextCleared: true,
+                },
+              });
+            }
+
             const nodes = await getNodes(orchestration.id);
             const connections = await getConnections(orchestration.id);
             const engine = new OrchestrationEngine(execution, nodes, connections);
@@ -1249,39 +1355,27 @@ export async function POST(request: NextRequest) {
       triggeredBy: userId,
     });
 
-    const triggerPayload = {
-      message,
-      originalMessage: rawMessage,
-      extractedVariables: variableExtraction.values,
-      conversationId: persistedConversationId,
-      companyId,
-      targetAppId: targetAppId || null,
+    // Keep the persisted trigger audit deliberately compact. The complete
+    // execution input remains on orchestration_executions for node processing.
+    const triggerAuditPayload = {
+      trigger: {
+        input: {
+          confidence: match.confidence,
+          triggerType: "chatbot",
+          userMessage: message,
+          orchestrationName: selected.name,
+        },
+        startedAt: execution.startedAt,
+        startedBy: userId,
+      },
     };
 
     await createTriggerLog({
       triggerId: selected.triggerId,
       orchestrationId: selected.id,
       executionId: execution.id,
-      status: "received",
-      payload: triggerPayload,
-      triggeredBy: userId,
-    });
-
-    await createTriggerLog({
-      triggerId: selected.triggerId,
-      orchestrationId: selected.id,
-      executionId: execution.id,
-      status: "validated",
-      payload: triggerPayload,
-      triggeredBy: userId,
-    });
-
-    await createTriggerLog({
-      triggerId: selected.triggerId,
-      orchestrationId: selected.id,
-      executionId: execution.id,
       status: "started",
-      payload: triggerPayload,
+      payload: triggerAuditPayload,
       triggeredBy: userId,
     });
 
@@ -1290,6 +1384,7 @@ export async function POST(request: NextRequest) {
       orchestrationId: selected.id,
       triggerId: selected.triggerId,
       triggeredBy: userId,
+      auditPayload: triggerAuditPayload,
     });
 
     if (executionResult.status === "paused") {
@@ -1488,6 +1583,7 @@ async function executeChatbotExecution(input: {
   orchestrationId: string;
   triggerId: string | null;
   triggeredBy: string;
+  auditPayload: Record<string, unknown>;
 }) {
   try {
     const nodes = await getNodes(input.orchestrationId);
@@ -1501,7 +1597,7 @@ async function executeChatbotExecution(input: {
         orchestrationId: input.orchestrationId,
         executionId: input.execution.id,
         status: "failed",
-        payload: {},
+        payload: input.auditPayload,
         errorMessage: result.error,
         triggeredBy: input.triggeredBy,
       });
@@ -1521,7 +1617,7 @@ async function executeChatbotExecution(input: {
         orchestrationId: input.orchestrationId,
         executionId: input.execution.id,
         status: "failed",
-        payload: {},
+        payload: input.auditPayload,
         errorMessage: error instanceof Error ? error.message : "Unknown execution error",
         triggeredBy: input.triggeredBy,
       });

@@ -178,7 +178,12 @@ export class OrchestrationEngine {
         status: "completed",
         message: "Workflow completed successfully.",
       });
-      await this.recordNodeExecution(nodeId, "completed", this.context, endOutput);
+      await this.recordNodeExecution(
+        nodeId,
+        "completed",
+        null,
+        this.sanitizeCustomerLogValue(endOutput) as Record<string, unknown>
+      );
       return { success: true, status: "completed" };
     }
 
@@ -186,7 +191,7 @@ export class OrchestrationEngine {
     const nodeExecutionId = await this.recordNodeExecution(
       nodeId,
       "running",
-      this.context,
+      node.nodeType === "trigger" || node.nodeType === "notification" ? null : this.context,
       null
     );
     this.appendChatbotStatusEvent({
@@ -259,7 +264,9 @@ export class OrchestrationEngine {
           nodeExecutionId,
           "failed",
           null,
-          result.output ?? null,
+          node.nodeType === "notification"
+            ? this.sanitizeCustomerLogValue(result.output ?? null) as Record<string, unknown> | null
+            : (result.output ?? null),
           result.error
         );
         this.appendChatbotStatusEvent({
@@ -282,7 +289,11 @@ export class OrchestrationEngine {
         nodeExecutionId,
         "completed",
         this.context,
-        result.output ?? null
+        node.nodeType === "trigger"
+          ? this.buildCompactTriggerLogOutput()
+          : node.nodeType === "notification"
+            ? this.sanitizeCustomerLogValue(result.output ?? null) as Record<string, unknown> | null
+            : (result.output ?? null)
       );
 
       // Find next nodes to execute
@@ -673,7 +684,7 @@ export class OrchestrationEngine {
   private buildEndNodeOutput(node: OrchestrationNode): Record<string, unknown> {
     const config = node.config as EndNodeConfig;
     const responseVariablePath = String(config.responseVariablePath || "finalResponse").trim() || "finalResponse";
-    const includeNodeResponses = config.includeNodeResponses !== false;
+    const includeNodeResponses = config.includeNodeResponses === true;
     const outputVariables = Array.isArray(config.outputVariables)
       ? config.outputVariables.map((item) => String(item || "").trim()).filter(Boolean)
       : [];
@@ -733,6 +744,70 @@ export class OrchestrationEngine {
 
     this.captureNodeResponse(node, output, "completed");
     return output;
+  }
+
+  private buildCompactTriggerLogOutput(): Record<string, unknown> {
+    const triggerData = (
+      this.execution.triggerData && typeof this.execution.triggerData === "object"
+        ? this.execution.triggerData
+        : {}
+    ) as Record<string, unknown>;
+
+    return {
+      trigger: {
+        input: {
+          confidence: triggerData.confidence,
+          triggerType: triggerData.triggerType,
+          userMessage: triggerData.userMessage,
+          orchestrationName: triggerData.orchestrationName,
+        },
+        startedAt: this.execution.startedAt,
+        startedBy: this.execution.triggeredBy,
+      },
+    };
+  }
+
+  private sanitizeCustomerLogValue(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sanitizeCustomerLogValue(item));
+    }
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+
+    const internalKeys = new Set([
+      "_system",
+      "apiKeyId",
+      "companyId",
+      "company_id",
+      "credentialId",
+      "credential_id",
+      "emailCredentialId",
+      "executionId",
+      "execution_id",
+      "nodeId",
+      "node_id",
+      "nodeResponses",
+      "notificationIds",
+      "orchestrationId",
+      "orchestration_id",
+      "recipientUserIds",
+      "schemaId",
+      "schema_id",
+      "senderCredentialId",
+      "targetAppId",
+      "target_app_id",
+      "triggerId",
+      "trigger_id",
+      "userId",
+      "user_id",
+    ]);
+
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !internalKeys.has(key))
+        .map(([key, nestedValue]) => [key, this.sanitizeCustomerLogValue(nestedValue)])
+    );
   }
 
   /**

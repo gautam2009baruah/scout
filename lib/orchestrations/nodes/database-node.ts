@@ -541,7 +541,6 @@ export async function executeDatabaseNode(
       const question = readiness.question || "What data would you like to retrieve?";
       const expiresAt = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
       const partialPayload = {
-        schemaId: schemaRow.id,
         schemaName: schemaRow.database_name,
         databaseType: schemaRow.database_type,
         capturedInput: {
@@ -615,7 +614,6 @@ export async function executeDatabaseNode(
     }
 
     const outputPayload = {
-      schemaId: schemaRow.id,
       schemaName: schemaRow.database_name,
       databaseType: schemaRow.database_type,
       generatedQuery: generatedSql,
