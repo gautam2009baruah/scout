@@ -17,6 +17,7 @@ import type {
   VariableNodeConfig,
   ApiCallNodeConfig,
   DatabaseNodeConfig,
+  EndNodeConfig,
   TriggerNodeConfig,
   OrchestrationTriggerType,
 } from "@/shared/orchestrationTypes";
@@ -31,7 +32,7 @@ import { executeNotificationNode } from "./nodes/notification-node";
 import { executeVariableNode } from "./nodes/variable-node";
 import { executeApiCallNode } from "./nodes/api-call-node";
 import { executeDatabaseNode } from "./nodes/database-node";
-import { evaluateExpression } from "./expression-evaluator";
+import { evaluateExpression, resolveVariablePath, setVariablePath } from "./expression-evaluator";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { getPool } from "@/lib/db/pool";
 import {
@@ -106,6 +107,8 @@ export class OrchestrationEngine {
         return { success: false, status: "failed", error: result.error };
       }
 
+      await this.updateExecutionStatus("completed");
+
       return { success: true, status: "completed" };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
@@ -164,7 +167,16 @@ export class OrchestrationEngine {
 
     // Check if this is an end node
     if (node.nodeType === "end") {
-      await this.recordNodeExecution(nodeId, "completed", {}, {});
+      const endOutput = this.buildEndNodeOutput(node);
+      Object.assign(this.context, endOutput);
+      this.appendChatbotStatusEvent({
+        nodeId: node.id,
+        nodeLabel: node.label,
+        nodeType: node.nodeType,
+        status: "completed",
+        message: "Workflow completed successfully.",
+      });
+      await this.recordNodeExecution(nodeId, "completed", this.context, endOutput);
       return { success: true, status: "completed" };
     }
 
@@ -175,6 +187,13 @@ export class OrchestrationEngine {
       this.context,
       null
     );
+    this.appendChatbotStatusEvent({
+      nodeId: node.id,
+      nodeLabel: node.label,
+      nodeType: node.nodeType,
+      status: "running",
+      message: `Started ${this.getReadableNodeName(node.nodeType)} node.`,
+    });
 
     try {
       // Execute the node based on its type
@@ -219,6 +238,13 @@ export class OrchestrationEngine {
           result.output ?? null
         );
         await this.updateExecutionStatus("paused", nodeId);
+        this.appendChatbotStatusEvent({
+          nodeId: node.id,
+          nodeLabel: node.label,
+          nodeType: node.nodeType,
+          status: "paused",
+          message: result.clarification?.message || `${this.getReadableNodeName(node.nodeType)} is waiting for more input.`,
+        });
         return {
           success: true,
           status: "paused",
@@ -234,6 +260,13 @@ export class OrchestrationEngine {
           result.output ?? null,
           result.error
         );
+        this.appendChatbotStatusEvent({
+          nodeId: node.id,
+          nodeLabel: node.label,
+          nodeType: node.nodeType,
+          status: "failed",
+          message: `${this.getReadableNodeName(node.nodeType)} failed${result.error ? `: ${result.error}` : "."}`,
+        });
         return { success: false, status: "failed", error: result.error };
       }
 
@@ -252,6 +285,21 @@ export class OrchestrationEngine {
 
       // Find next nodes to execute
       const nextNodes = this.findNextNodes(nodeId, result.outputHandle);
+
+      this.captureNodeResponse(node, result.output ?? null, "completed");
+
+      const nextNodeLabel = nextNodes.length > 0
+        ? this.nodes.get(nextNodes[0])?.label || this.getReadableNodeName(this.nodes.get(nextNodes[0])?.nodeType || "")
+        : "End";
+      this.appendChatbotStatusEvent({
+        nodeId: node.id,
+        nodeLabel: node.label,
+        nodeType: node.nodeType,
+        status: "completed",
+        message: nextNodes.length > 0
+          ? `${this.getReadableNodeName(node.nodeType)} completed. Calling ${nextNodeLabel} next.`
+          : `${this.getReadableNodeName(node.nodeType)} completed.`,
+      });
 
       if (nextNodes.length === 0) {
         // No more nodes, orchestration complete
@@ -276,6 +324,13 @@ export class OrchestrationEngine {
         null,
         errorMessage
       );
+      this.appendChatbotStatusEvent({
+        nodeId: node.id,
+        nodeLabel: node.label,
+        nodeType: node.nodeType,
+        status: "failed",
+        message: `${this.getReadableNodeName(node.nodeType)} failed: ${errorMessage}`,
+      });
       return { success: false, status: "failed", error: errorMessage };
     }
   }
@@ -532,6 +587,119 @@ export class OrchestrationEngine {
    */
   updateContext(updates: Record<string, unknown>): void {
     Object.assign(this.context, updates);
+  }
+
+  private getReadableNodeName(nodeType: string): string {
+    const labels: Record<string, string> = {
+      trigger: "Trigger",
+      workflow: "Workflow",
+      data_capture: "Data Capture",
+      ai_extraction: "AI Extraction",
+      ai_decision: "AI Decision",
+      condition: "Condition",
+      human_approval: "Human Approval",
+      notification: "Notification",
+      variable: "Variable",
+      api_call: "API Call",
+      database: "Database",
+      end: "End",
+    };
+    return labels[nodeType] || nodeType;
+  }
+
+  private appendChatbotStatusEvent(event: {
+    nodeId: string;
+    nodeLabel: string;
+    nodeType: string;
+    status: "running" | "completed" | "paused" | "failed";
+    message: string;
+  }) {
+    const bucket = this.context._chatbot as Record<string, unknown> | undefined;
+    const statusUpdates = Array.isArray(bucket?.statusUpdates)
+      ? (bucket?.statusUpdates as Array<Record<string, unknown>>)
+      : [];
+
+    statusUpdates.push({
+      timestamp: new Date().toISOString(),
+      ...event,
+    });
+
+    this.context._chatbot = {
+      ...(bucket || {}),
+      statusUpdates,
+    };
+  }
+
+  private captureNodeResponse(
+    node: OrchestrationNode,
+    output: Record<string, unknown> | null,
+    status: "completed" | "failed" | "paused"
+  ) {
+    const existing = this.context._nodeResponses as Record<string, unknown> | undefined;
+    const byNodeId = existing && typeof existing === "object" ? { ...existing } : {};
+    byNodeId[node.id] = {
+      nodeId: node.id,
+      nodeLabel: node.label,
+      nodeType: node.nodeType,
+      status,
+      output,
+      updatedAt: new Date().toISOString(),
+    };
+    this.context._nodeResponses = byNodeId;
+  }
+
+  private renderTemplate(template: string, context: Record<string, unknown>): string {
+    return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, rawPath: string) => {
+      const value = resolveVariablePath(String(rawPath || "").trim(), context);
+      if (value === null || value === undefined) {
+        return "";
+      }
+      if (typeof value === "string") {
+        return value;
+      }
+      if (typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+      }
+      return JSON.stringify(value);
+    });
+  }
+
+  private buildEndNodeOutput(node: OrchestrationNode): Record<string, unknown> {
+    const config = node.config as EndNodeConfig;
+    const responseVariablePath = String(config.responseVariablePath || "finalResponse").trim() || "finalResponse";
+    const includeNodeResponses = config.includeNodeResponses !== false;
+    const outputVariables = Array.isArray(config.outputVariables)
+      ? config.outputVariables.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+
+    const selectedOutputs: Record<string, unknown> = {};
+    for (const variablePath of outputVariables) {
+      selectedOutputs[variablePath] = resolveVariablePath(variablePath, this.context);
+    }
+
+    const finalResponse = {
+      executionId: this.execution.id,
+      orchestrationId: this.execution.orchestrationId,
+      completedAt: new Date().toISOString(),
+      selectedOutputs,
+      nodeResponses: includeNodeResponses ? (this.context._nodeResponses || {}) : undefined,
+    };
+
+    const output: Record<string, unknown> = {};
+    setVariablePath(responseVariablePath, finalResponse, output);
+
+    const finalAnswer = config.displayMessage && String(config.message || "").trim()
+      ? this.renderTemplate(String(config.message || ""), this.context)
+      : "Workflow completed successfully.";
+
+    output._chatbot = {
+      ...((this.context._chatbot as Record<string, unknown> | undefined) || {}),
+      finalAnswer,
+      finalResponsePath: responseVariablePath,
+    };
+
+    this.captureNodeResponse(node, output, "completed");
+    return output;
   }
 
   /**

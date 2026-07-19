@@ -6074,24 +6074,65 @@ function DatabaseConfigLegacy({ config, updateConfig, targetAppId }: any) {
 }
 
 function EndConfig({ config, updateConfig, supportsMessage }: any) {
-  // "Display message" only makes sense for interactive triggers (manual/chatbot)
-  // where a user actually sees the completion message via the player. For other
-  // trigger types (email, schedule) there is no viewer, so hide it.
-  if (!supportsMessage) {
-    return (
-      <div className="space-y-4">
-        <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600">
-          This is the end of the orchestration. A completion message can only be
-          shown for <span className="font-semibold">Manual</span> and{" "}
-          <span className="font-semibold">Chatbot</span> triggers, so there are no
-          options to configure here for this trigger type.
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        End node now aggregates previous node outputs into one final workflow response.
+        Keep orchestration flow one-way. Use status updates for progress and this section for final response shaping.
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Final Response Variable Path</label>
+          <input
+            type="text"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            value={String(config.responseVariablePath || "")}
+            onChange={(e) => updateConfig({ responseVariablePath: e.target.value })}
+            placeholder="e.g., finalResponse"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            End node stores consolidated response at this path.
+          </p>
+        </div>
+
+        <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-3">
+          <input
+            id="includeNodeResponses"
+            type="checkbox"
+            className="mt-0.5 rounded border-slate-300"
+            checked={config.includeNodeResponses !== false}
+            onChange={(e) => updateConfig({ includeNodeResponses: e.target.checked })}
+          />
+          <label htmlFor="includeNodeResponses" className="text-sm text-slate-700">
+            Include per-node outputs in final response
+            <span className="block text-xs text-slate-500 mt-1">
+              Keeps each node&apos;s output/status under final response for downstream consumers.
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <details className="rounded-lg border border-slate-300 bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
+          Final response examples
+        </summary>
+        <div className="px-4 py-3 space-y-2 text-xs border-t border-slate-200 bg-slate-50 text-slate-700">
+          <p><strong>Path:</strong> finalResponse</p>
+          <p><strong>Contains:</strong> execution id, selected output variables, and optional per-node responses.</p>
+          <p><strong>Chatbot flow:</strong> Workflow router can read this final response and send a clean answer to the user.</p>
+        </div>
+      </details>
+
+      {!supportsMessage ? (
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600">
+          A completion message is only shown to users for <span className="font-semibold">Manual</span> and <span className="font-semibold">Chatbot</span> triggers.
+          Aggregation settings above still apply for all trigger types.
+        </div>
+      ) : null}
+
+      {supportsMessage ? (
+        <>
       <div>
         <div className="flex items-center gap-2">
           <input
@@ -6154,6 +6195,8 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
           </details>
         </>
       )}
+        </>
+      ) : null}
     </div>
   );
 }

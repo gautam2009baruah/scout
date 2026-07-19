@@ -1032,8 +1032,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const refreshedExecution = await getExecutionById(execution.id);
+    const workflowFinal = extractWorkflowFinalResponse(refreshedExecution?.context);
+    const finalAnswer = workflowFinal.answer || `Approved. I started orchestration "${selected.name}".`;
+    await persistExchange(finalAnswer, {
+      intent: "execute_plan",
+      executionId: execution.id,
+      workflowFinalResponsePath: workflowFinal.responsePath,
+      workflowFinalResponse: workflowFinal.payload,
+      statusUpdates: workflowFinal.statusUpdates,
+    });
+
     return NextResponse.json({
-      answer: `Approved. I started orchestration \"${selected.name}\".`,
+      answer: finalAnswer,
       intent: "execute_plan",
       confidence: match.confidence,
       matchedOrchestrationIds: [selected.id],
@@ -1048,6 +1059,9 @@ export async function POST(request: NextRequest) {
         executionId: execution.id,
         extractedVariables: variableExtraction.values,
         matchReason: match.reason,
+        workflowFinalResponsePath: workflowFinal.responsePath,
+        workflowFinalResponse: workflowFinal.payload,
+        statusUpdates: workflowFinal.statusUpdates,
         normalizedMessage: message,
         originalMessage: rawMessage,
         conversationResolution: {
@@ -1091,6 +1105,58 @@ export async function GET() {
       },
     },
   });
+}
+
+function extractWorkflowFinalResponse(context: Record<string, unknown> | null | undefined): {
+  answer: string;
+  responsePath: string;
+  payload: unknown;
+  statusUpdates: Array<Record<string, unknown>>;
+} {
+  if (!context || typeof context !== "object") {
+    return {
+      answer: "",
+      responsePath: "",
+      payload: null,
+      statusUpdates: [],
+    };
+  }
+
+  const chatbotBucket = context._chatbot as Record<string, unknown> | undefined;
+  const responsePath = typeof chatbotBucket?.finalResponsePath === "string"
+    ? chatbotBucket.finalResponsePath
+    : "finalResponse";
+  const answer = typeof chatbotBucket?.finalAnswer === "string" ? chatbotBucket.finalAnswer.trim() : "";
+  const payload = responsePath
+    ? resolvePathFromObject(context, responsePath)
+    : (context as Record<string, unknown>).finalResponse;
+  const statusUpdates = Array.isArray(chatbotBucket?.statusUpdates)
+    ? (chatbotBucket.statusUpdates as Array<Record<string, unknown>>)
+    : [];
+
+  return {
+    answer,
+    responsePath,
+    payload,
+    statusUpdates,
+  };
+}
+
+function resolvePathFromObject(source: Record<string, unknown>, path: string): unknown {
+  const trimmed = String(path || "").trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.split(".").reduce<unknown>((current, segment) => {
+    if (!segment) {
+      return current;
+    }
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+    return (current as Record<string, unknown>)[segment];
+  }, source);
 }
 
 async function executeChatbotExecution(input: {

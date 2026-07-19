@@ -562,6 +562,8 @@ export type EndNodeConfig = {
   displayMessage?: boolean; // Whether to display a message to the user
   message?: string; // Message to display (only used if displayMessage is true)
   outputVariables?: string[]; // which variables to include in final output
+  responseVariablePath?: string; // where to store the aggregated final response
+  includeNodeResponses?: boolean; // include per-node outputs/status in final response
 };
 
 // ============================================================================
