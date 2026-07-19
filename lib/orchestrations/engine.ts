@@ -15,6 +15,7 @@ import type {
   HumanApprovalNodeConfig,
   NotificationNodeConfig,
   VariableNodeConfig,
+  DataFormatterNodeConfig,
   ApiCallNodeConfig,
   DatabaseNodeConfig,
   EndNodeConfig,
@@ -30,6 +31,7 @@ import { executeConditionNode } from "./nodes/condition-node";
 import { executeHumanApprovalNode, resumeAfterApproval } from "./nodes/human-approval-node";
 import { executeNotificationNode } from "./nodes/notification-node";
 import { executeVariableNode } from "./nodes/variable-node";
+import { executeDataFormatterNode } from "./nodes/data-formatter-node";
 import { executeApiCallNode } from "./nodes/api-call-node";
 import { executeDatabaseNode } from "./nodes/database-node";
 import { evaluateExpression, resolveVariablePath, setVariablePath } from "./expression-evaluator";
@@ -429,6 +431,9 @@ export class OrchestrationEngine {
       case "variable":
         return await executeVariableNode(config as VariableNodeConfig, this.context);
 
+      case "data_formatter":
+        return await executeDataFormatterNode(config as DataFormatterNodeConfig, this.context);
+
       case "api_call":
         return await executeApiCallNode(config as ApiCallNodeConfig, this.context);
 
@@ -600,6 +605,7 @@ export class OrchestrationEngine {
       human_approval: "Human Approval",
       notification: "Notification",
       variable: "Variable",
+      data_formatter: "Data Formatter",
       api_call: "API Call",
       database: "Database",
       end: "End",
@@ -691,11 +697,38 @@ export class OrchestrationEngine {
     const finalAnswer = config.displayMessage && String(config.message || "").trim()
       ? this.renderTemplate(String(config.message || ""), this.context)
       : "Workflow completed successfully.";
+    const displayMode = config.displayMode || "text";
+    const displayDataPath = String(config.displayDataPath || "").trim();
+    const displayData = displayDataPath
+      ? resolveVariablePath(displayDataPath, this.context)
+      : undefined;
+    const displayColumnPaths = Array.isArray(config.displayColumnPaths)
+      ? config.displayColumnPaths.map((item) => String(item || "").trim()).filter(Boolean)
+      : [];
+    const structuredDisplay = displayMode === "table"
+      ? {
+          type: "table" as const,
+          dataPath: displayDataPath,
+          data: Array.isArray(displayData)
+            ? displayData
+            : displayData && typeof displayData === "object"
+              ? [displayData]
+              : [],
+          columns: displayColumnPaths,
+        }
+      : displayMode === "json"
+        ? {
+            type: "json" as const,
+            dataPath: displayDataPath,
+            data: displayData ?? null,
+          }
+        : undefined;
 
     output._chatbot = {
       ...((this.context._chatbot as Record<string, unknown> | undefined) || {}),
       finalAnswer,
       finalResponsePath: responseVariablePath,
+      display: structuredDisplay,
     };
 
     this.captureNodeResponse(node, output, "completed");
@@ -790,6 +823,15 @@ export class OrchestrationEngine {
     success: boolean;
     status: "completed" | "paused" | "failed";
     error?: string;
+    clarification?: {
+      message: string;
+      expiresAt: string;
+      fieldDefinitions: Array<{
+        key: string;
+        type: string;
+        description?: string;
+      }>;
+    };
   }> {
     try {
       const clarification = await getClarificationById(input.clarificationId);
@@ -845,6 +887,30 @@ export class OrchestrationEngine {
           [clarification.outputVariable]: resolvedData,
         }
       );
+
+      const clarificationNode = this.nodes.get(clarification.nodeId);
+      if (clarificationNode?.nodeType === "database") {
+        const chatbotContext = (
+          this.context._chatbot && typeof this.context._chatbot === "object"
+            ? this.context._chatbot
+            : {}
+        ) as Record<string, unknown>;
+        const existingClarifications = Array.isArray(chatbotContext.databaseClarifications)
+          ? chatbotContext.databaseClarifications.filter((value): value is string => typeof value === "string")
+          : [];
+        chatbotContext.latestUserMessage = input.responseText.trim();
+        chatbotContext.databaseClarifications = [
+          ...existingClarifications,
+          input.responseText.trim(),
+        ];
+        this.context._chatbot = chatbotContext;
+
+        // A Database node clarification resolves ambiguity about the pending
+        // query; the node must run again against the augmented conversation.
+        // Other clarification-capable nodes already produced their final output
+        // and therefore continue to their downstream node as before.
+        return await this.executeNode(clarification.nodeId);
+      }
 
       const nextNodes = this.findNextNodes(clarification.nodeId);
       if (nextNodes.length === 0) {

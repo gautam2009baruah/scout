@@ -23,6 +23,14 @@ type ValidationResult = {
   error?: string;
 };
 
+type DatabaseReadinessAssessment = {
+  ready: boolean;
+  confidence: number;
+  question?: string;
+  reason?: string;
+  missingInformation?: string[];
+};
+
 const FORBIDDEN_SQL_PATTERNS: RegExp[] = [
   /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke|merge|execute|call|copy|vacuum|analyze|comment)\b/i,
   /--/,
@@ -126,6 +134,92 @@ function buildSqlGenerationPrompt(input: {
   ].join("\n\n");
 
   return { systemPrompt, userPrompt };
+}
+
+async function assessDatabaseRequestReadiness(input: {
+  provider: Awaited<ReturnType<typeof getLLMProvider>>;
+  userRequest: string;
+  extractedInput: unknown;
+  additionalContext: unknown;
+  schemaSummary: string;
+  customInstructions: string;
+}): Promise<DatabaseReadinessAssessment> {
+  const systemPrompt = [
+    "You are a schema-aware database request planner.",
+    "Before SQL is generated, decide whether the user's complete request can be mapped to the available schema without making a material business assumption.",
+    "A request is ready when it identifies a meaningful result to retrieve and provides any criteria necessary for that stated result.",
+    "Do not require the user to know table names, column names, SQL, joins, or other implementation details.",
+    "Use natural-language intent, extracted values, configured instructions, and schema metadata together.",
+    "If multiple reasonable schema mappings would materially change the result, ask one concise question that best resolves the ambiguity.",
+    "If the request merely asks to fetch or retrieve unspecified data, it is not ready.",
+    "Do not ask for optional filters or preferences when a safe, useful query already follows from the request.",
+    "Never invent missing business intent or filter values.",
+    "Return JSON only:",
+    '{"ready":true|false,"confidence":0-1,"question":"single question or empty string","missingInformation":["..."],"reason":"..."}.',
+  ].join("\n");
+  const requestContext = JSON.stringify({
+    userRequest: input.userRequest,
+    extractedInput: input.extractedInput ?? null,
+    additionalContext: input.additionalContext ?? null,
+    customInstructions: input.customInstructions || null,
+  });
+  const userPrompt = [
+    "Request context:",
+    requestContext,
+    "Available schema:",
+    input.schemaSummary || "(no exposed schema metadata)",
+  ].join("\n\n");
+
+  const raw = await input.provider.generate_answer(systemPrompt, userPrompt, input.schemaSummary);
+  const parsed = parseJsonObject(raw || "");
+  const question = normalizeText(parsed?.question);
+  const confidence = Math.max(0, Math.min(1, Number(parsed?.confidence) || 0));
+  const missingInformation = Array.isArray(parsed?.missingInformation)
+    ? parsed.missingInformation
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .map((value) => value.trim())
+    : [];
+
+  if (parsed?.ready === false && confidence >= 0.65 && question) {
+    return {
+      ready: false,
+      confidence,
+      question,
+      missingInformation,
+      reason: normalizeText(parsed?.reason),
+    };
+  }
+
+  return {
+    ready: true,
+    confidence,
+    missingInformation: [],
+    reason: normalizeText(parsed?.reason),
+  };
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  const fencedJson = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const cleaned = (fencedJson ? fencedJson[1] : raw).trim();
+  if (!cleaned) return null;
+  try {
+    const parsed = JSON.parse(cleaned);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function isChatbotTriggerContext(context: Record<string, unknown>): boolean {
+  const trigger = context.trigger as Record<string, unknown> | undefined;
+  const triggerInput = trigger?.input as Record<string, unknown> | undefined;
+  return (
+    triggerInput?.triggerType === "chatbot"
+    || trigger?.type === "chatbot"
+    || context.triggerType === "chatbot"
+  );
 }
 
 function parseSqlFromLLMResponse(response: string): { sql: string; reasoning?: string } {
@@ -333,6 +427,20 @@ export async function executeDatabaseNode(
 ): Promise<{
   success: boolean;
   output?: Record<string, unknown>;
+  paused?: boolean;
+  outputHandle?: string;
+  clarification?: {
+    missingFields: string[];
+    message: string;
+    questions: string[];
+    timeoutMinutes: number;
+    expiresAt: string;
+    fieldDefinitions: Array<{
+      key: string;
+      type: string;
+      description?: string;
+    }>;
+  };
   error?: string;
 }> {
   try {
@@ -386,9 +494,23 @@ export async function executeDatabaseNode(
       resolveVariablePath("latestUserMessage", context),
       resolveVariablePath("_chatbot.latestUserMessage", context),
     ]);
-    const userRequest = latestUserMessage && latestUserMessage !== originalUserRequest
-      ? `${originalUserRequest || "Database request"}\nLatest clarification: ${latestUserMessage}`
-      : originalUserRequest;
+    const priorClarifications = resolveVariablePath("_chatbot.databaseClarifications", context);
+    const clarificationMessages = Array.isArray(priorClarifications)
+      ? priorClarifications
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map((value) => value.trim())
+      : [];
+    if (
+      latestUserMessage
+      && latestUserMessage !== originalUserRequest
+      && !clarificationMessages.includes(latestUserMessage)
+    ) {
+      clarificationMessages.push(latestUserMessage);
+    }
+    const userRequest = [
+      originalUserRequest || "Database request",
+      ...clarificationMessages.map((value, index) => `Clarification ${index + 1}: ${value}`),
+    ].join("\n");
 
     const extractedInput = resolveVariablePath(extractedPath, context);
     const additionalContext = additionalContextPath
@@ -398,6 +520,64 @@ export async function executeDatabaseNode(
     const maxRows = getMaxRows(config);
     const allowSelectStar = config.allowSelectStar === true;
     const schemaSummary = normalizeSchemaSummary(schemaRow.schema_json);
+    const provider = await getLLMProvider(companyId);
+    const readiness = await assessDatabaseRequestReadiness({
+      provider,
+      userRequest,
+      extractedInput,
+      additionalContext,
+      schemaSummary,
+      customInstructions: normalizeText(config.customInstructions),
+    });
+
+    if (!readiness.ready) {
+      if (!isChatbotTriggerContext(context)) {
+        throw new Error(
+          `Database request needs clarification: ${readiness.question || readiness.reason || "insufficient query intent"}`
+        );
+      }
+
+      const timeoutMinutes = Math.max(1, Number(config.clarificationTimeoutMinutes) || 15);
+      const question = readiness.question || "What data would you like to retrieve?";
+      const expiresAt = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
+      const partialPayload = {
+        schemaId: schemaRow.id,
+        schemaName: schemaRow.database_name,
+        databaseType: schemaRow.database_type,
+        capturedInput: {
+          userRequest,
+          extractedInput,
+          additionalContext,
+        },
+        readiness: {
+          confidence: readiness.confidence,
+          reason: readiness.reason || null,
+          missingInformation: readiness.missingInformation || [],
+        },
+        notExecuted: true,
+      };
+      const output: Record<string, unknown> = {};
+      setVariablePath(outputVariable, partialPayload, output);
+
+      return {
+        success: true,
+        paused: true,
+        output,
+        outputHandle: "clarification",
+        clarification: {
+          missingFields: ["database_request_clarification"],
+          message: question,
+          questions: [question],
+          timeoutMinutes,
+          expiresAt,
+          fieldDefinitions: [{
+            key: "database_request_clarification",
+            type: "string",
+            description: question,
+          }],
+        },
+      };
+    }
 
     const prompt = buildSqlGenerationPrompt({
       userRequest,
@@ -409,7 +589,6 @@ export async function executeDatabaseNode(
       allowSelectStar,
     });
 
-    const provider = await getLLMProvider(companyId);
     const aiResponse = await provider.generate_answer(
       prompt.systemPrompt,
       prompt.userPrompt,

@@ -78,6 +78,7 @@ export function getIncompatibilityReason(
     human_approval: "Human Approval",
     notification: "Notification",
     variable: "Variable",
+    data_formatter: "Data Formatter",
     api_call: "API Call",
     database: "Database",
     end: "End",

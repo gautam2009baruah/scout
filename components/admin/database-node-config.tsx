@@ -83,12 +83,13 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
     if (!String(config?.userRequestVariablePath || "").trim()) defaults.userRequestVariablePath = "userMessage";
     if (!String(config?.extractedInputVariablePath || "").trim()) defaults.extractedInputVariablePath = "extracted";
     if (!Number.isFinite(Number(config?.maxRows))) defaults.maxRows = 25;
+    if (!Number.isFinite(Number(config?.clarificationTimeoutMinutes))) defaults.clarificationTimeoutMinutes = 15;
     if (config?.allowSelectStar === undefined) defaults.allowSelectStar = false;
 
     if (Object.keys(defaults).length > 0) {
       updateConfig(defaults);
     }
-  }, [config?.allowSelectStar, config?.extractedInputVariablePath, config?.maxRows, config?.outputVariable, config?.type, config?.userRequestVariablePath, updateConfig]);
+  }, [config?.allowSelectStar, config?.clarificationTimeoutMinutes, config?.extractedInputVariablePath, config?.maxRows, config?.outputVariable, config?.type, config?.userRequestVariablePath, updateConfig]);
 
   useEffect(() => {
     if (!selectedTargetAppId) {
@@ -356,6 +357,25 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
       </div>
 
       <div>
+        <label className="mb-1 block text-sm font-semibold text-slate-700">
+          Clarification Timeout (minutes)
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={1440}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
+          value={Number(config.clarificationTimeoutMinutes || 15)}
+          onChange={(event) =>
+            updateConfig({ clarificationTimeoutMinutes: Math.max(1, Number(event.target.value) || 15) })
+          }
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          When a chatbot request cannot be mapped safely to the selected schema, the node pauses and asks a targeted question.
+        </p>
+      </div>
+
+      <div>
         <label className="mb-1 block text-sm font-semibold text-slate-700">Custom SQL Generation Instructions</label>
         <textarea
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500"
@@ -375,9 +395,10 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
           <p>1. It receives the user question from the chatbot trigger path.</p>
           <p>2. It receives extracted JSON from AI extraction or any earlier node.</p>
           <p>3. It loads the active schema for the selected target app.</p>
-          <p>4. The active company LLM generates a minimal, safe SELECT query.</p>
-          <p>5. The node validates the query before it leaves the application.</p>
-          <p>6. The query is written into the node output so it appears in triggers monitoring.</p>
+          <p>4. It checks whether the request maps to the schema without a material guess and asks a clarification when needed.</p>
+          <p>5. After any clarification, the active company LLM generates a minimal, safe SELECT query.</p>
+          <p>6. The node validates the query before it leaves the application.</p>
+          <p>7. The query is written into the node output so it appears in triggers monitoring.</p>
         </div>
       </details>
 

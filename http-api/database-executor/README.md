@@ -142,6 +142,12 @@ Request:
 }
 ```
 
+A JSON string containing SQL is also accepted:
+
+```json
+"SELECT * FROM users LIMIT 10"
+```
+
 cURL:
 
 ```bash
@@ -164,22 +170,22 @@ Successful response:
 
 ```json
 {
-  "ok": true,
-  "databaseType": "postgresql",
-  "databaseName": "scout",
-  "durationMs": 12,
-  "rowCount": 2,
-  "columns": ["id", "name"],
   "rows": [
     { "id": 1, "name": "First row" },
     { "id": 2, "name": "Second row" }
-  ]
+  ],
+  "rowCount": 2,
+  "durationMs": 12,
+  "databaseName": "scout",
+  "databaseType": "postgresql",
+  "httpStatusCode": 200
 }
 ```
 
-If the request does not contain `sql`, `generatedQuery`, or a node-output
-object containing `generatedQuery`, it returns HTTP 400. Database errors also
-return HTTP 400 with a JSON `message`.
+If the request body is empty, null, or does not contain usable SQL, it returns
+HTTP 400 with `rows: []`, `rowCount: 0`, `httpStatusCode: 400`, an `errorCode`,
+and a precise JSON `message`. A valid SELECT that simply matches no records is
+not an error; it returns HTTP 200 with `rows: []` and `rowCount: 0`.
 
 The endpoint executes the supplied statement using the configured database
 account. Restrict port 4300 to Scout and authorized internal systems, and give

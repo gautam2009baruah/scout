@@ -6,7 +6,7 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { request as httpsRequest } from "node:https";
 import type { ApiCallNodeConfig } from "@/shared/orchestrationTypes";
-import { evaluateExpression } from "../expression-evaluator";
+import { evaluateExpression, resolveVariablePath } from "../expression-evaluator";
 
 type ExecutionResult = {
   success: boolean;
@@ -99,7 +99,13 @@ export async function executeApiCallNode(
         return { success: true, output };
       }
 
-      const non2xxMessage = `API returned status ${response.statusCode}, expected ${config.successStatusCodes || "2xx"}`;
+      const responseErrorMessage = extractResponseErrorMessage(
+        response.parsedJson ?? response.responseBody
+      );
+      const non2xxMessage = [
+        `API returned status ${response.statusCode}, expected ${config.successStatusCodes || "2xx"}.`,
+        responseErrorMessage,
+      ].filter(Boolean).join(" ");
       const failure: ExecutionResult = {
         success: false,
         statusCode: response.statusCode,
@@ -310,9 +316,7 @@ async function buildBody(
       headers.set("Content-Type", "application/json");
     }
 
-    const evaluated = evaluateExpression(config.requestBodyTemplate || "{}", context);
-    const payload =
-      typeof evaluated === "string" ? normalizeMaybeJsonString(evaluated) : JSON.stringify(evaluated);
+    const payload = buildJsonRequestBody(config.requestBodyTemplate || "{}", context);
     return {
       body: payload,
       bodyForMtls: Buffer.from(payload, "utf8"),
@@ -660,6 +664,88 @@ function finalizeFailure(
   return { success: false, error: failure.error || "API call failed" };
 }
 
+function buildJsonRequestBody(
+  template: string,
+  context: Record<string, unknown>
+): string {
+  const trimmed = String(template || "").trim();
+  if (!trimmed) return "{}";
+
+  const wholeExpression = trimmed.match(/^\{\{([^}]+)\}\}$/);
+  if (wholeExpression) {
+    const value = resolveVariablePath(wholeExpression[1].trim(), context);
+    return JSON.stringify(value ?? null);
+  }
+
+  const interpolated = trimmed.replace(/\{\{([^}]+)\}\}/g, (match, expression, offset: number) => {
+    const value = resolveVariablePath(String(expression).trim(), context);
+    if (isInsideJsonString(trimmed, offset)) {
+      const stringValue = value === null || value === undefined
+        ? ""
+        : typeof value === "string"
+          ? value
+          : JSON.stringify(value);
+      // JSON.stringify performs all required escaping for quotes, newlines,
+      // tabs, backslashes, and control characters. Remove only its wrapping
+      // quotes because this placeholder already sits inside a JSON string.
+      return JSON.stringify(stringValue).slice(1, -1);
+    }
+    return JSON.stringify(value ?? null);
+  });
+
+  try {
+    return JSON.stringify(JSON.parse(interpolated));
+  } catch (error) {
+    throw new Error(
+      `JSON request body is invalid after variable substitution: ${
+        error instanceof Error ? error.message : "Unable to parse JSON"
+      }`
+    );
+  }
+}
+
+function isInsideJsonString(source: string, position: number): boolean {
+  let insideString = false;
+  let escaped = false;
+
+  for (let index = 0; index < position; index += 1) {
+    const character = source[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (character === '"') {
+      insideString = !insideString;
+    }
+  }
+
+  return insideString;
+}
+
+function extractResponseErrorMessage(response: unknown): string {
+  if (typeof response === "string") {
+    return response.trim();
+  }
+
+  if (!response || typeof response !== "object" || Array.isArray(response)) {
+    return "";
+  }
+
+  const record = response as Record<string, unknown>;
+  for (const key of ["message", "error", "detail", "title"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return "";
+}
+
 function applyPathVariables(
   apiUrl: string,
   pathVariables: ApiCallNodeConfig["pathVariables"],
@@ -686,15 +772,6 @@ function applyQueryParameters(
     if (!key) continue;
     url.searchParams.set(key, interpolateString(item.value || "", context));
   }
-}
-
-function normalizeMaybeJsonString(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "{}";
-  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
-    return trimmed;
-  }
-  return JSON.stringify(value);
 }
 
 function buildMappedResponseFields(response: unknown, config: ApiCallNodeConfig): Record<string, unknown> {

@@ -22,7 +22,8 @@ export async function GET(request: Request, context: RouteContext) {
       userId: url.searchParams.get("user_id") ?? "",
       conversationId: id,
       page: Number(url.searchParams.get("page") ?? 1),
-      pageSize: Number(url.searchParams.get("pageSize") ?? 20)
+      pageSize: Number(url.searchParams.get("pageSize") ?? 20),
+      includeMetadata: true,
     });
 
     return NextResponse.json(result);

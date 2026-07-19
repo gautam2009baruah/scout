@@ -78,6 +78,7 @@ export type NodeType =
   | "human_approval"
   | "notification"
   | "variable"
+  | "data_formatter"
   | "api_call"
   | "database"
   | "end";
@@ -106,6 +107,7 @@ export type NodeConfig =
   | HumanApprovalNodeConfig
   | NotificationNodeConfig
   | VariableNodeConfig
+  | DataFormatterNodeConfig
   | ApiCallNodeConfig
   | DatabaseNodeConfig
   | EndNodeConfig;
@@ -440,6 +442,18 @@ export type VariableNodeConfig = {
   }>;
 };
 
+export type DataFormatterNodeConfig = {
+  type: "data_formatter";
+  inputVariablePath: string;
+  outputVariable: string;
+  format: "pretty_json" | "html_table" | "plain_text_table" | "csv" | "key_value" | "custom_template";
+  columns?: string[];
+  customTemplate?: string;
+  emptyText?: string;
+  nullText?: string;
+  maxRows?: number;
+};
+
 export type ApiCallAuthConfig = {
   type: "none" | "api_key" | "bearer" | "basic" | "oauth2" | "custom_headers";
   // Legacy flat fields (backward compatibility)
@@ -555,12 +569,16 @@ export type DatabaseNodeConfig = {
   maxRows?: number;
   customInstructions?: string;
   allowSelectStar?: boolean;
+  clarificationTimeoutMinutes?: number;
 };
 
 export type EndNodeConfig = {
   type: "end";
   displayMessage?: boolean; // Whether to display a message to the user
   message?: string; // Message to display (only used if displayMessage is true)
+  displayMode?: "text" | "table" | "json";
+  displayDataPath?: string; // array/object path to render for table or JSON modes
+  displayColumnPaths?: string[]; // optional ordered table columns; inferred when omitted
   outputVariables?: string[]; // which variables to include in final output
   responseVariablePath?: string; // where to store the aggregated final response
   includeNodeResponses?: boolean; // include per-node outputs/status in final response

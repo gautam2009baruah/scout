@@ -30,26 +30,35 @@ function isSqlSafe(sqlText: string) {
   return String(sqlText || "").trim().length > 0;
 }
 
-function readSqlFromPayload(payload: ExecuteSqlRequest): string {
-  if (typeof payload.sql === "string") {
-    return payload.sql.trim();
+function readSqlFromPayload(payload: unknown): string {
+  if (typeof payload === "string") {
+    return payload.trim();
   }
 
-  if (typeof payload.generatedQuery === "string") {
-    return payload.generatedQuery.trim();
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return "";
+  }
+
+  const requestPayload = payload as ExecuteSqlRequest;
+  if (typeof requestPayload.sql === "string") {
+    return requestPayload.sql.trim();
+  }
+
+  if (typeof requestPayload.generatedQuery === "string") {
+    return requestPayload.generatedQuery.trim();
   }
 
   if (
-    payload.databaseQuery &&
-    typeof payload.databaseQuery === "object" &&
-    typeof payload.databaseQuery.generatedQuery === "string"
+    requestPayload.databaseQuery &&
+    typeof requestPayload.databaseQuery === "object" &&
+    typeof requestPayload.databaseQuery.generatedQuery === "string"
   ) {
-    return payload.databaseQuery.generatedQuery.trim();
+    return requestPayload.databaseQuery.generatedQuery.trim();
   }
 
   // Database nodes can use a custom output-variable name. Accept any
   // top-level node-output object that contains a generatedQuery string.
-  for (const value of Object.values(payload)) {
+  for (const value of Object.values(requestPayload)) {
     if (
       value &&
       typeof value === "object" &&
@@ -99,7 +108,7 @@ const server = createServer(async (request, response) => {
   if (request.method === "POST" && url.pathname === "/v1/sql/execute") {
     try {
       const bodyText = await readBody(request);
-      const payload = (bodyText ? JSON.parse(bodyText) : {}) as ExecuteSqlRequest;
+      const payload: unknown = bodyText ? JSON.parse(bodyText) : null;
 
       /*
        * Accepted Database Node payload (default output variable):
@@ -121,8 +130,16 @@ const server = createServer(async (request, response) => {
 
       if (!isSqlSafe(sqlText)) {
         sendJson(response, 400, {
-          message:
-            "SQL is required. Send sql, generatedQuery, or a Database Node output object containing generatedQuery.",
+          rows: [],
+          rowCount: 0,
+          durationMs: 0,
+          databaseName: config.databaseName,
+          databaseType: config.databaseType,
+          httpStatusCode: 400,
+          errorCode: "SQL_PAYLOAD_EMPTY",
+          message: bodyText.trim()
+            ? "The request body did not contain usable SQL. Send a SQL string, sql, generatedQuery, or a Database Node output object containing generatedQuery."
+            : "The request body was empty. Send a SQL string, sql, generatedQuery, or a Database Node output object containing generatedQuery.",
         });
         return;
       }
@@ -131,16 +148,24 @@ const server = createServer(async (request, response) => {
       const result = await adapter.query(sqlText);
 
       sendJson(response, 200, {
-        ok: true,
-        databaseType: config.databaseType,
-        databaseName: config.databaseName,
-        durationMs: Date.now() - startedAt,
-        rowCount: result.rowCount,
-        columns: result.columns,
         rows: result.rows,
+        rowCount: result.rowCount,
+        durationMs: Date.now() - startedAt,
+        databaseName: config.databaseName,
+        databaseType: config.databaseType,
+        httpStatusCode: 200,
       });
     } catch (error) {
-      sendJson(response, 400, { message: error instanceof Error ? error.message : "Unable to execute SQL." });
+      sendJson(response, 400, {
+        rows: [],
+        rowCount: 0,
+        durationMs: 0,
+        databaseName: config.databaseName,
+        databaseType: config.databaseType,
+        httpStatusCode: 400,
+        errorCode: "SQL_EXECUTION_FAILED",
+        message: error instanceof Error ? error.message : "Unable to execute SQL.",
+      });
     }
     return;
   }

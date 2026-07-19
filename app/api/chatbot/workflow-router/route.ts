@@ -990,14 +990,54 @@ export async function POST(request: NextRequest) {
             });
 
             if (resumeResult.success) {
-              const answer = `Thanks. I resumed the workflow "${orchestration.name}" using your response.`;
+              if (resumeResult.status === "paused" && resumeResult.clarification) {
+                const nextClarification = resumeResult.clarification;
+                await persistExchange(nextClarification.message, {
+                  intent: "need_clarification",
+                  resumedClarificationId: clarification.id,
+                  executionId: execution.id,
+                  missingRequiredVariables: nextClarification.fieldDefinitions.map((field) => field.key),
+                });
+                return NextResponse.json({
+                  answer: nextClarification.message,
+                  conversationId: persistedConversationId,
+                  intent: "need_clarification",
+                  confidence: 1,
+                  matchedOrchestrationIds: [orchestration.id],
+                  matchedOrchestrationNames: [orchestration.name],
+                  needsClarification: true,
+                  clarifyingQuestions: nextClarification.fieldDefinitions.map((field) => ({
+                    question: field.description?.trim()
+                      ? field.description.trim()
+                      : `Please provide ${field.key}.`,
+                    required: true,
+                    variableName: field.key,
+                  })),
+                  requireUserConfirmation: false,
+                  plan: [],
+                  metadata: {
+                    resumedClarificationId: clarification.id,
+                    executionId: execution.id,
+                    conversationId,
+                  },
+                });
+              }
+
+              const refreshedExecution = await getExecutionById(execution.id);
+              const workflowFinal = extractWorkflowFinalResponse(refreshedExecution?.context);
+              const answer = workflowFinal.answer
+                || `Thanks. I resumed the workflow "${orchestration.name}" using your response.`;
               await persistExchange(answer, {
                 intent: "execute_plan",
                 resumedClarificationId: clarification.id,
                 executionId: execution.id,
+                workflowFinalResponsePath: workflowFinal.responsePath,
+                workflowFinalResponse: workflowFinal.payload,
+                workflowDisplay: workflowFinal.display,
               });
               return NextResponse.json({
                 answer,
+                display: workflowFinal.display,
                 conversationId: persistedConversationId,
                 intent: "execute_plan",
                 confidence: 1,
@@ -1011,6 +1051,9 @@ export async function POST(request: NextRequest) {
                   resumedClarificationId: clarification.id,
                   executionId: execution.id,
                   conversationId,
+                  workflowFinalResponsePath: workflowFinal.responsePath,
+                  workflowFinalResponse: workflowFinal.payload,
+                  workflowDisplay: workflowFinal.display,
                 },
               });
             }
@@ -1312,11 +1355,13 @@ export async function POST(request: NextRequest) {
       executionId: execution.id,
       workflowFinalResponsePath: workflowFinal.responsePath,
       workflowFinalResponse: workflowFinal.payload,
+      workflowDisplay: workflowFinal.display,
       statusUpdates: workflowFinal.statusUpdates,
     });
 
     return NextResponse.json({
       answer: finalAnswer,
+      display: workflowFinal.display,
       intent: "execute_plan",
       confidence: match.confidence,
       matchedOrchestrationIds: [selected.id],
@@ -1333,6 +1378,7 @@ export async function POST(request: NextRequest) {
         matchReason: match.reason,
         workflowFinalResponsePath: workflowFinal.responsePath,
         workflowFinalResponse: workflowFinal.payload,
+        workflowDisplay: workflowFinal.display,
         statusUpdates: workflowFinal.statusUpdates,
         normalizedMessage: message,
         originalMessage: rawMessage,
@@ -1383,6 +1429,7 @@ function extractWorkflowFinalResponse(context: Record<string, unknown> | null | 
   answer: string;
   responsePath: string;
   payload: unknown;
+  display: unknown;
   statusUpdates: Array<Record<string, unknown>>;
 } {
   if (!context || typeof context !== "object") {
@@ -1390,6 +1437,7 @@ function extractWorkflowFinalResponse(context: Record<string, unknown> | null | 
       answer: "",
       responsePath: "",
       payload: null,
+      display: null,
       statusUpdates: [],
     };
   }
@@ -1405,11 +1453,15 @@ function extractWorkflowFinalResponse(context: Record<string, unknown> | null | 
   const statusUpdates = Array.isArray(chatbotBucket?.statusUpdates)
     ? (chatbotBucket.statusUpdates as Array<Record<string, unknown>>)
     : [];
+  const display = chatbotBucket?.display && typeof chatbotBucket.display === "object"
+    ? chatbotBucket.display
+    : null;
 
   return {
     answer,
     responsePath,
     payload,
+    display,
     statusUpdates,
   };
 }

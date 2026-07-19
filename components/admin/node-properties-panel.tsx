@@ -43,6 +43,7 @@ const NODE_CONFIGS = [
   { type: "api_call", label: "API Call", icon: "🌐" },
   { type: "database", label: "Database", icon: "🗄️" },
   { type: "variable", label: "Variable", icon: "📈" },
+  { type: "data_formatter", label: "Data Formatter", icon: "{}" },
   { type: "end", label: "End", icon: "🏁" },
 ];
 
@@ -376,6 +377,21 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         !String(localConfig.binaryBodyBase64 || localConfig.requestBodyTemplate || "").trim()
       ) {
         return { valid: false, error: "Binary body format requires base64 payload" };
+      }
+    }
+
+    if (nodeType === "data_formatter") {
+      if (!String(localConfig.inputVariablePath || "").trim()) {
+        return { valid: false, error: "Data Formatter input variable path is required" };
+      }
+      if (!String(localConfig.outputVariable || "").trim()) {
+        return { valid: false, error: "Data Formatter output variable is required" };
+      }
+      if (
+        localConfig.format === "custom_template"
+        && !String(localConfig.customTemplate || "").trim()
+      ) {
+        return { valid: false, error: "Custom template is required for custom-template format" };
       }
     }
 
@@ -720,6 +736,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "api_call" && <ApiCallConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "database" && <DatabaseConfig config={localConfig} updateConfig={updateLocalConfig} targetAppId={targetAppId} />}
         {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "data_formatter" && <DataFormatterConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
 
         {/* Validation Error */}
@@ -5690,6 +5707,120 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
   );
 }
 
+function DataFormatterConfig({ config, updateConfig }: any) {
+  const format = String(config.format || "pretty_json");
+  const columns = Array.isArray(config.columns) ? config.columns.join(", ") : "";
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-950">
+        Convert structured data into reusable text, email-safe HTML, CSV, or JSON. Use the output variable in Notification, API Call, Variable, or End nodes.
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-semibold text-slate-700">Input Variable Path <span className="text-red-500">*</span></label>
+        <input
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={String(config.inputVariablePath || "")}
+          onChange={(event) => updateConfig({ inputVariablePath: event.target.value })}
+          placeholder="e.g., apiResult.parsedJson.rows"
+        />
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Format <span className="text-red-500">*</span></label>
+          <select
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={format}
+            onChange={(event) => updateConfig({ format: event.target.value })}
+          >
+            <option value="pretty_json">Pretty JSON</option>
+            <option value="html_table">HTML Table</option>
+            <option value="plain_text_table">Plain-text Table</option>
+            <option value="csv">CSV</option>
+            <option value="key_value">Key/value List</option>
+            <option value="custom_template">Custom Template</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Output Variable <span className="text-red-500">*</span></label>
+          <input
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={String(config.outputVariable || "formattedData")}
+            onChange={(event) => updateConfig({ outputVariable: event.target.value })}
+            placeholder="formattedData"
+          />
+        </div>
+      </div>
+
+      {["html_table", "plain_text_table", "csv"].includes(format) && (
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Columns</label>
+          <input
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={columns}
+            onChange={(event) => updateConfig({
+              columns: event.target.value.split(",").map((item) => item.trim()).filter(Boolean),
+            })}
+            placeholder="Optional: name, status, created_at"
+          />
+          <p className="mt-1 text-xs text-slate-500">Comma-separated paths. Leave blank to infer columns from the data.</p>
+        </div>
+      )}
+
+      {format === "custom_template" && (
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Custom Template <span className="text-red-500">*</span></label>
+          <textarea
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono text-sm"
+            rows={5}
+            value={String(config.customTemplate || "")}
+            onChange={(event) => updateConfig({ customTemplate: event.target.value })}
+            placeholder={"Results ({{rowCount}} rows):\n{{json}}"}
+          />
+          <p className="mt-1 text-xs text-slate-500">Available tokens: {"{{value}}"}, {"{{json}}"}, and {"{{rowCount}}"}.</p>
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Maximum Rows</label>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={Number(config.maxRows || 100)}
+            onChange={(event) => updateConfig({ maxRows: Number(event.target.value) || 100 })}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Empty Result Text</label>
+          <input
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={String(config.emptyText ?? "No data available.")}
+            onChange={(event) => updateConfig({ emptyText: event.target.value })}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Null Value Text</label>
+          <input
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={String(config.nullText ?? "")}
+            onChange={(event) => updateConfig({ nullText: event.target.value })}
+            placeholder="Blank"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        For a rich-text email, select <strong>HTML Table</strong> and use {"{{formattedData}}"} in the Notification body. Cell values are HTML-escaped automatically.
+      </div>
+    </div>
+  );
+}
+
 function VariableConfig({ config, updateConfig }: any) {
   const [variables, setVariables] = useState<Array<{ name: string; value: string }>>(
     config.variables || [{ name: "", value: "" }]
@@ -6074,12 +6205,72 @@ function DatabaseConfigLegacy({ config, updateConfig, targetAppId }: any) {
 }
 
 function EndConfig({ config, updateConfig, supportsMessage }: any) {
+  const displayMode = String(config.displayMode || "text");
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
         End node now aggregates previous node outputs into one final workflow response.
         Keep orchestration flow one-way. Use status updates for progress and this section for final response shaping.
       </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">Display Mode</label>
+          <select
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            value={displayMode}
+            onChange={(e) => updateConfig({ displayMode: e.target.value })}
+          >
+            <option value="text">Text</option>
+            <option value="table">Table</option>
+            <option value="json">JSON</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            Text preserves the existing completion message. Table and JSON attach structured content to the chatbot response.
+          </p>
+        </div>
+
+        {displayMode !== "text" && (
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">
+              Display Data Variable Path <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={String(config.displayDataPath || "")}
+              onChange={(e) => updateConfig({ displayDataPath: e.target.value })}
+              placeholder="e.g., apiResult.parsedJson.rows"
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              Use the API Call node output path that contains the rows or JSON object.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {displayMode === "table" && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">
+            Table Columns
+          </label>
+          <input
+            type="text"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            value={Array.isArray(config.displayColumnPaths) ? config.displayColumnPaths.join(", ") : ""}
+            onChange={(e) => updateConfig({
+              displayColumnPaths: e.target.value
+                .split(",")
+                .map((item) => item.trim())
+                .filter(Boolean),
+            })}
+            placeholder="Optional, e.g., name, status, created_at"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            Comma-separated keys in display order. Leave blank to infer columns from the returned rows.
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-3 md:grid-cols-2">
         <div>
@@ -6120,6 +6311,7 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
         <div className="px-4 py-3 space-y-2 text-xs border-t border-slate-200 bg-slate-50 text-slate-700">
           <p><strong>Path:</strong> finalResponse</p>
           <p><strong>Contains:</strong> execution id, selected output variables, and optional per-node responses.</p>
+          <p><strong>Table example:</strong> set Display Data Variable Path to <span className="font-mono">apiResult.parsedJson.rows</span>.</p>
           <p><strong>Chatbot flow:</strong> Workflow router can read this final response and send a clean answer to the user.</p>
         </div>
       </details>

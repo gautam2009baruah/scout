@@ -386,6 +386,7 @@ export async function getConversation(input: {
   companyId: string;
   userId: string;
   conversationId: string;
+  includeMetadata?: boolean;
 } & PageInput) {
   await assertCompanyAndUser(input.companyId, input.userId);
   const conversation = await getPool().query(

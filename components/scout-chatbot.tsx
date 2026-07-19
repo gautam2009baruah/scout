@@ -84,7 +84,43 @@ export type ScoutChatMessage = {
   intentModeSuggestion?: ScoutIntentModeSuggestion;
   routerIntent?: string;
   matchedOrchestrationIds?: string[];
+  display?: ScoutMessageDisplay;
 };
+
+export type ScoutMessageDisplay =
+  | {
+      type: "table";
+      dataPath?: string;
+      data: Array<Record<string, unknown>>;
+      columns?: string[];
+    }
+  | {
+      type: "json";
+      dataPath?: string;
+      data: unknown;
+    };
+
+function parseScoutMessageDisplay(value: unknown): ScoutMessageDisplay | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const display = value as Record<string, unknown>;
+  const dataPath = typeof display.dataPath === "string" ? display.dataPath : undefined;
+
+  if (display.type === "table" && Array.isArray(display.data)) {
+    const data = display.data.filter(
+      (row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row)
+    );
+    const columns = Array.isArray(display.columns)
+      ? display.columns.filter((column): column is string => typeof column === "string" && column.trim().length > 0)
+      : undefined;
+    return { type: "table", dataPath, data, columns };
+  }
+
+  if (display.type === "json") {
+    return { type: "json", dataPath, data: display.data };
+  }
+
+  return undefined;
+}
 
 export type ScoutChatCitation = {
   document_id: string;
@@ -296,6 +332,7 @@ type RenderedMessage = Required<Pick<ScoutChatMessage, "id" | "role" | "text" | 
   workflowActionSuggestion?: ScoutWorkflowActionSuggestion;
   intentModeSuggestion?: ScoutIntentModeSuggestion;
   orchestrationSuggestion?: ScoutOrchestrationSuggestion;
+  display?: ScoutMessageDisplay;
 };
 
 type WidgetStyle = CSSProperties & {
@@ -1220,12 +1257,13 @@ export function ScoutChatbot({
     }
 
     const serverMessages = Array.isArray(body?.messages?.messages) ? body.messages.messages : [];
-    const renderedMessages = normalizeMessages(serverMessages.map((message: { id: string; sender: string; content: string; citations_json?: ScoutChatCitation[]; created_at?: string }) => ({
+    const renderedMessages = normalizeMessages(serverMessages.map((message: { id: string; sender: string; content: string; citations_json?: ScoutChatCitation[]; metadata_json?: Record<string, unknown>; created_at?: string }) => ({
       id: message.id,
       role: message.sender === "user" ? "user" : "assistant",
       text: message.content,
       time: formatTimeFromDate(message.created_at),
-      citations: Array.isArray(message.citations_json) ? message.citations_json : []
+      citations: Array.isArray(message.citations_json) ? message.citations_json : [],
+      display: parseScoutMessageDisplay(message.metadata_json?.workflowDisplay),
     })));
 
     activeConversationId.current = targetConversationId;
@@ -2675,6 +2713,7 @@ export function ScoutChatbot({
         matchedOrchestrationIds: Array.isArray(body?.matchedOrchestrationIds)
           ? body.matchedOrchestrationIds.filter((id: unknown): id is string => typeof id === "string")
           : undefined,
+        display: parseScoutMessageDisplay(body?.display),
       } satisfies ScoutChatMessage;
     }
 
@@ -3535,6 +3574,79 @@ function getCitationLink(citation: ScoutChatCitation, scoutBaseUrl?: string) {
   return null;
 }
 
+function resolveDisplayCell(row: Record<string, unknown>, path: string): unknown {
+  return path.split(".").reduce<unknown>((current, segment) => {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    return (current as Record<string, unknown>)[segment];
+  }, row);
+}
+
+function formatDisplayCell(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+}
+
+function formatDisplayColumnLabel(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function StructuredMessageDisplay({ display }: { display: ScoutMessageDisplay }) {
+  if (display.type === "json") {
+    return (
+      <pre className="mt-3 max-h-72 overflow-auto rounded-md border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-700">
+        {JSON.stringify(display.data, null, 2)}
+      </pre>
+    );
+  }
+
+  const inferredColumns = Array.from(
+    new Set(display.data.slice(0, 25).flatMap((row) => Object.keys(row)))
+  );
+  const columns = display.columns && display.columns.length > 0
+    ? display.columns
+    : inferredColumns;
+
+  if (display.data.length === 0) {
+    return (
+      <div className="mt-3 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+        No rows returned.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-3 max-h-72 max-w-full overflow-auto rounded-md border border-slate-200 bg-white">
+      <table className="min-w-full border-collapse text-left text-xs">
+        <thead className="sticky top-0 bg-slate-100 text-slate-700">
+          <tr>
+            {columns.map((column) => (
+              <th className="whitespace-nowrap border-b border-slate-200 px-3 py-2 font-semibold" key={column}>
+                {formatDisplayColumnLabel(column)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100 text-slate-700">
+          {display.data.map((row, rowIndex) => (
+            <tr className="hover:bg-slate-50" key={rowIndex}>
+              {columns.map((column) => (
+                <td className="max-w-64 whitespace-normal break-words px-3 py-2 align-top" key={column}>
+                  {formatDisplayCell(resolveDisplayCell(row, column))}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function MessageBubble({
   message,
   onChooseIntentModeAction,
@@ -3602,7 +3714,7 @@ function MessageBubble({
         </div>
       )}
 
-      <div className={cn("max-w-[78%]", isAssistant ? "items-start" : "items-end")}>
+      <div className={cn(message.display ? "max-w-[95%]" : "max-w-[78%]", isAssistant ? "items-start" : "items-end")}>
         <div
           aria-label={isAssistant ? "Assistant message" : `${userLabel} message`}
           className={cn(
@@ -3613,6 +3725,10 @@ function MessageBubble({
           )}
         >
           {parseMarkdownText(message.text)}
+
+          {isAssistant && message.display && (
+            <StructuredMessageDisplay display={message.display} />
+          )}
 
           {isAssistant && message.noAnswer && (
             <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
@@ -3920,7 +4036,8 @@ function createRenderedMessage(message: ScoutChatMessage & { id: string; time: s
     // RAG-only and orchestration suggestions use review-only navigation.
     workflowActionSuggestion: undefined,
     intentModeSuggestion: undefined,
-    orchestrationSuggestion: message.orchestrationSuggestion
+    orchestrationSuggestion: message.orchestrationSuggestion,
+    display: message.display,
   };
 }
 

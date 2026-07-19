@@ -64,6 +64,7 @@ export async function POST(request: Request) {
         extractedInputVariablePath: extractedInputPath,
         additionalContextVariablePath: additionalContextPath || undefined,
         maxRows: Number(config.maxRows || 25),
+        clarificationTimeoutMinutes: Number(config.clarificationTimeoutMinutes || 15),
         customInstructions: String(config.customInstructions || ""),
         allowSelectStar: config.allowSelectStar === true,
       },
