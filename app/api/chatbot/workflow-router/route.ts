@@ -704,25 +704,32 @@ async function findEligibleCandidateWithAi(
     }));
 
     const systemPrompt = [
-      "You are an orchestration router.",
-      "Pick at most one best orchestration for the user ask.",
-      "Use semantic intent matching, not lexical phrase overlap.",
-      "Treat paraphrases and synonyms as equivalent when intent and workflow capability match.",
-      "Trigger phrases and example phrases are hints only, never strict requirements.",
-      "Use overall goal fit based on name, description, node summary, required inputs, and execution contract.",
-      "If none match clearly, return null selection.",
-      'Return JSON only: {"matchedId":"string-or-empty","matchedIndex":number-or-null,"confidence":0-1,"reason":"short"}.',
+      "You are an orchestration intent router.",
+      "Your task is to select the orchestration whose capabilities can satisfy the user's request.",
+      "Match based on semantic meaning, not exact words, phrase overlap, or keyword count.",
+      "An orchestration may contain multiple internal steps.",
+      "The user does not need to explicitly mention every internal step.",
+      "Select an orchestration when the requested action is one of its primary supported capabilities.",
+      "Treat synonyms, paraphrases, and related entity names as equivalent when intent matches.",
+      "Infer related business meanings when reasonable; for example target app, application, app record, and application details can refer to the same stored entity.",
+      "Do not reject an orchestration merely because the user did not mention downstream implementation steps such as formatting, notification, or email.",
+      "Use overall goal fit based on name, description, trigger phrases, example phrases, node summary, required inputs, and execution contract.",
+      "Select no orchestration only when none of the available capabilities can reasonably satisfy the request.",
+      'Return JSON only: {"selectedOrchestrationId":"id or null","matchedId":"string-or-empty","matchedIndex":number-or-null,"confidence":0-1,"reason":"brief semantic reason","matchedCapabilities":["capability"]}.',
     ].join(" ");
 
     const userPrompt = [
-      `User ask: ${message}`,
-      "Eligible orchestrations (chatbot-trigger only):",
+      `User request: ${message}`,
+      "Available orchestrations:",
       JSON.stringify(compactCandidates),
     ].join("\n");
 
     const raw = await provider.generate_answer(systemPrompt, userPrompt, "");
     const parsed = parseJsonObject(raw || "");
-    const matchedId = typeof parsed?.matchedId === "string" ? parsed.matchedId.trim() : "";
+    const selectedOrchestrationId = typeof parsed?.selectedOrchestrationId === "string"
+      ? parsed.selectedOrchestrationId.trim()
+      : "";
+    const matchedId = selectedOrchestrationId || (typeof parsed?.matchedId === "string" ? parsed.matchedId.trim() : "");
     const matchedIndex = typeof parsed?.matchedIndex === "number"
       ? Math.trunc(parsed.matchedIndex)
       : null;
