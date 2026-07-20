@@ -5,9 +5,9 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Edit, Trash2, RefreshCw, Clock, X, Search, Filter, Link2 } from "lucide-react";
-import type { Orchestration, OrchestrationRoutingMetadata } from "@/shared/orchestrationTypes";
+import type { Orchestration } from "@/shared/orchestrationTypes";
 
 interface OrchestrationListProps {
   onLoad: (orchestration: Orchestration) => void;
@@ -22,27 +22,6 @@ const STATUS_COLORS = {
   draft: "bg-slate-100 text-slate-700",
   published: "bg-green-100 text-green-700",
   archived: "bg-red-100 text-red-700",
-};
-
-function listToTextarea(value: string[]) {
-  return value.join("\n");
-}
-
-function textareaToList(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-const EMPTY_ROUTING_METADATA: OrchestrationRoutingMetadata = {
-  primaryCapabilities: [],
-  handledEntities: [],
-  finalOutcome: "",
-  requiredInputs: [],
-  optionalSteps: [],
-  exclusionRules: [],
-  routingExamples: [],
 };
 
 export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, selectedCompanyId, targetApps, onOrchestrationUpdated }: OrchestrationListProps) {
@@ -63,15 +42,8 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
   const [editTargetAppId, setEditTargetAppId] = useState("__none__");
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
-  const [editCapabilities, setEditCapabilities] = useState("");
-  const [editEntities, setEditEntities] = useState("");
-  const [editFinalOutcome, setEditFinalOutcome] = useState("");
-  const [editRequiredInputs, setEditRequiredInputs] = useState("");
-  const [editOptionalSteps, setEditOptionalSteps] = useState("");
-  const [editExclusionRules, setEditExclusionRules] = useState("");
-  const [editRoutingExamples, setEditRoutingExamples] = useState("");
 
-  const fetchOrchestrations = useCallback(async () => {
+  const fetchOrchestrations = async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -96,11 +68,11 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
     } finally {
       setLoading(false);
     }
-  }, [selectedCompanyId, status, targetAppId, appliedSearch, page, pageSize]);
+  };
 
   useEffect(() => {
     fetchOrchestrations();
-  }, [fetchOrchestrations]);
+  }, [status, targetAppId, appliedSearch, page, pageSize, selectedCompanyId]);
 
   const handleDelete = async (id: string) => {
     try {
@@ -126,14 +98,6 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
     setEditName(String(orch.name || ""));
     setEditDescription(String(orch.description || ""));
     setEditTargetAppId(String(orch.targetAppId || "__none__"));
-    const routing = orch.routingMetadata || EMPTY_ROUTING_METADATA;
-    setEditCapabilities(listToTextarea(routing.primaryCapabilities));
-    setEditEntities(listToTextarea(routing.handledEntities));
-    setEditFinalOutcome(String(routing.finalOutcome || ""));
-    setEditRequiredInputs(listToTextarea(routing.requiredInputs));
-    setEditOptionalSteps(listToTextarea(routing.optionalSteps));
-    setEditExclusionRules(listToTextarea(routing.exclusionRules));
-    setEditRoutingExamples(listToTextarea(routing.routingExamples));
     setEditSaving(false);
     setEditError("");
   };
@@ -160,15 +124,6 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
           name: trimmedName,
           description: editDescription.trim() || null,
           targetAppId: editTargetAppId === "__none__" ? null : editTargetAppId,
-          routingMetadata: {
-            primaryCapabilities: textareaToList(editCapabilities),
-            handledEntities: textareaToList(editEntities),
-            finalOutcome: editFinalOutcome.trim(),
-            requiredInputs: textareaToList(editRequiredInputs),
-            optionalSteps: textareaToList(editOptionalSteps),
-            exclusionRules: textareaToList(editExclusionRules),
-            routingExamples: textareaToList(editRoutingExamples),
-          },
         }),
       });
 
@@ -410,92 +365,6 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
                       <option key={app.id} value={app.id}>{app.name}</option>
                     ))}
                 </select>
-              </div>
-
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-sm font-semibold text-slate-900">Routing metadata</p>
-                <p className="mt-1 text-xs text-slate-600">Used by orchestration router for semantic matching. Prefer one item per line.</p>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Primary Capabilities</label>
-                <textarea
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={editCapabilities}
-                  onChange={(event) => setEditCapabilities(event.target.value)}
-                  rows={3}
-                  placeholder={"retrieve database information\nsend results by email"}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Handled Entities</label>
-                <textarea
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={editEntities}
-                  onChange={(event) => setEditEntities(event.target.value)}
-                  rows={3}
-                  placeholder={"customer\ntarget app\napplication\nuser"}
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-semibold text-slate-700">Final Outcome</label>
-                <textarea
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  value={editFinalOutcome}
-                  onChange={(event) => setEditFinalOutcome(event.target.value)}
-                  rows={2}
-                  placeholder="Requested information is retrieved and emailed to the recipient."
-                />
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Required Inputs</label>
-                  <textarea
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={editRequiredInputs}
-                    onChange={(event) => setEditRequiredInputs(event.target.value)}
-                    rows={3}
-                    placeholder={"what data to retrieve\nrecipient email"}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Optional Steps</label>
-                  <textarea
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={editOptionalSteps}
-                    onChange={(event) => setEditOptionalSteps(event.target.value)}
-                    rows={3}
-                    placeholder={"format results\nnotify user"}
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Exclusion Rules</label>
-                  <textarea
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={editExclusionRules}
-                    onChange={(event) => setEditExclusionRules(event.target.value)}
-                    rows={3}
-                    placeholder={"do not use for create or update requests\ndo not use for pure document Q&A"}
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-semibold text-slate-700">Routing Examples</label>
-                  <textarea
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    value={editRoutingExamples}
-                    onChange={(event) => setEditRoutingExamples(event.target.value)}
-                    rows={3}
-                    placeholder={"get application details\nfind customer info\nemail target app data"}
-                  />
-                </div>
               </div>
 
               {editError ? <p className="text-sm text-red-600">{editError}</p> : null}

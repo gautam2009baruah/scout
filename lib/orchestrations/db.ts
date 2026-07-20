@@ -4,7 +4,6 @@
 import { getPool } from "@/lib/db/pool";
 import type {
   Orchestration,
-  OrchestrationRoutingMetadata,
   OrchestrationNode,
   OrchestrationConnection,
   OrchestrationExecution,
@@ -29,18 +28,6 @@ import { buildHttpApiTriggerConfig } from "./http-trigger/config";
 // Orchestrations
 // ============================================================================
 
-const ROUTING_METADATA_KEY = "__routingMetadata";
-
-const EMPTY_ROUTING_METADATA: OrchestrationRoutingMetadata = {
-  primaryCapabilities: [],
-  handledEntities: [],
-  finalOutcome: "",
-  requiredInputs: [],
-  optionalSteps: [],
-  exclusionRules: [],
-  routingExamples: [],
-};
-
 type OrchestrationRow = {
   id: string;
   company_id: string;
@@ -63,7 +50,6 @@ type OrchestrationRow = {
 };
 
 function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
-  const variables = normalizeOrchestrationVariables(row.variables);
   return {
     id: row.id,
     companyId: row.company_id,
@@ -72,8 +58,7 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
     description: row.description,
     version: row.version,
     status: row.status,
-    variables,
-    routingMetadata: extractRoutingMetadata(variables),
+    variables: row.variables,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
     createdById: row.created_by,
@@ -86,68 +71,12 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
   };
 }
 
-function normalizeOrchestrationVariables(value: Record<string, unknown> | null | undefined): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
-  return { ...value };
-}
-
-function normalizeStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((item) => String(item || "").trim())
-    .filter(Boolean);
-}
-
-function extractRoutingMetadata(variables: Record<string, unknown>): OrchestrationRoutingMetadata {
-  const raw = variables[ROUTING_METADATA_KEY];
-  const record = raw && typeof raw === "object" && !Array.isArray(raw)
-    ? raw as Record<string, unknown>
-    : {};
-
-  return {
-    primaryCapabilities: normalizeStringList(record.primaryCapabilities),
-    handledEntities: normalizeStringList(record.handledEntities),
-    finalOutcome: String(record.finalOutcome || "").trim(),
-    requiredInputs: normalizeStringList(record.requiredInputs),
-    optionalSteps: normalizeStringList(record.optionalSteps),
-    exclusionRules: normalizeStringList(record.exclusionRules),
-    routingExamples: normalizeStringList(record.routingExamples),
-  };
-}
-
-function withRoutingMetadata(
-  variables: Record<string, unknown> | undefined,
-  routingMetadata: OrchestrationRoutingMetadata | undefined
-): Record<string, unknown> {
-  const nextVariables = normalizeOrchestrationVariables(variables);
-  if (!routingMetadata) {
-    return nextVariables;
-  }
-
-  nextVariables[ROUTING_METADATA_KEY] = {
-    primaryCapabilities: normalizeStringList(routingMetadata.primaryCapabilities),
-    handledEntities: normalizeStringList(routingMetadata.handledEntities),
-    finalOutcome: String(routingMetadata.finalOutcome || "").trim(),
-    requiredInputs: normalizeStringList(routingMetadata.requiredInputs),
-    optionalSteps: normalizeStringList(routingMetadata.optionalSteps),
-    exclusionRules: normalizeStringList(routingMetadata.exclusionRules),
-    routingExamples: normalizeStringList(routingMetadata.routingExamples),
-  };
-
-  return nextVariables;
-}
-
 export async function createOrchestration(data: {
   companyId: string;
   targetAppId?: string | null;
   name: string;
   description?: string | null;
   variables?: Record<string, unknown>;
-  routingMetadata?: OrchestrationRoutingMetadata;
   createdById: string;
 }): Promise<Orchestration> {
   const pool = getPool();
@@ -161,7 +90,7 @@ export async function createOrchestration(data: {
       data.targetAppId || null,
       data.name,
       data.description || null,
-      JSON.stringify(withRoutingMetadata(data.variables, data.routingMetadata)),
+      JSON.stringify(data.variables || {}),
       data.createdById,
     ]
   );
@@ -302,23 +231,10 @@ export async function updateOrchestration(
     description?: string | null;
     variables?: Record<string, unknown>;
     targetAppId?: string | null;
-    routingMetadata?: OrchestrationRoutingMetadata;
     updatedById: string;
   }
 ): Promise<Orchestration> {
   const pool = getPool();
-
-  let nextVariables: Record<string, unknown> | undefined;
-  if (data.variables !== undefined || data.routingMetadata !== undefined) {
-    const current = await getOrchestrationById(id);
-    if (!current) {
-      throw new Error(`Orchestration ${id} not found`);
-    }
-    nextVariables = withRoutingMetadata(
-      data.variables !== undefined ? data.variables : current.variables,
-      data.routingMetadata !== undefined ? data.routingMetadata : current.routingMetadata
-    );
-  }
 
   const updates: string[] = ["updated_at = now()", "updated_by = $1"];
   const params: any[] = [data.updatedById];
@@ -333,8 +249,8 @@ export async function updateOrchestration(
     updates.push(`description = $${params.length}`);
   }
 
-  if (nextVariables !== undefined) {
-    params.push(JSON.stringify(nextVariables));
+  if (data.variables !== undefined) {
+    params.push(JSON.stringify(data.variables));
     updates.push(`variables = $${params.length}`);
   }
 

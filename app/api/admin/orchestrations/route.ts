@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { companyId, targetAppId, name, description, variables, routingMetadata } = body;
+    const { companyId, targetAppId, name, description, variables } = body;
 
     // Validate required fields
     if (!companyId || !name) {
@@ -81,7 +81,6 @@ export async function POST(request: NextRequest) {
       name,
       description,
       variables,
-      routingMetadata,
       createdById: session.user.id,
     });
 
@@ -105,7 +104,7 @@ export async function PUT(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { id, name, description, variables, targetAppId, routingMetadata, publish } = body;
+    const { id, name, description, variables, targetAppId, publish } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -128,7 +127,6 @@ export async function PUT(request: NextRequest) {
       description,
       variables,
       targetAppId,
-      routingMetadata,
       updatedById: session.user.id,
     });
 
