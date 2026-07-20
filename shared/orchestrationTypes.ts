@@ -44,6 +44,16 @@ export const TRIGGER_TYPE_LABELS: Record<OrchestrationTriggerType, string> = {
 export const UPCOMING_TRIGGER_TYPES: readonly OrchestrationTriggerType[] = [
 ] as const;
 
+export type OrchestrationRoutingMetadata = {
+  primaryCapabilities: string[];
+  handledEntities: string[];
+  finalOutcome: string;
+  requiredInputs: string[];
+  optionalSteps: string[];
+  exclusionRules: string[];
+  routingExamples: string[];
+};
+
 export type Orchestration = {
   id: string;
   companyId: string;
@@ -53,6 +63,7 @@ export type Orchestration = {
   version: number;
   status: OrchestrationStatus;
   variables: Record<string, unknown>;
+  routingMetadata: OrchestrationRoutingMetadata;
   createdAt: string;
   updatedAt: string;
   createdById?: string | null;

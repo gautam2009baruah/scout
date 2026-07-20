@@ -40,6 +40,13 @@ type ChatbotWorkflowCandidate = {
   version: number;
   name: string;
   description: string;
+  primaryCapabilities: string[];
+  handledEntities: string[];
+  finalOutcome: string;
+  requiredInputsSummary: string[];
+  optionalSteps: string[];
+  exclusionRules: string[];
+  routingExamples: string[];
   nodeSummary: string[];
   requiredVariables: Array<{
     name: string;
@@ -256,6 +263,13 @@ async function loadChatbotWorkflowCandidates(
         version: orchestration.version,
         name: orchestration.name,
         description: orchestration.description || "",
+        primaryCapabilities: orchestration.routingMetadata.primaryCapabilities,
+        handledEntities: orchestration.routingMetadata.handledEntities,
+        finalOutcome: orchestration.routingMetadata.finalOutcome,
+        requiredInputsSummary: orchestration.routingMetadata.requiredInputs,
+        optionalSteps: orchestration.routingMetadata.optionalSteps,
+        exclusionRules: orchestration.routingMetadata.exclusionRules,
+        routingExamples: orchestration.routingMetadata.routingExamples,
         nodeSummary: sortedNodes.map((node) => `${node!.label} (${node!.nodeType})`),
         requiredVariables: (
           Array.isArray(triggerConfig?.requiredVariables)
@@ -635,6 +649,11 @@ function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflow
   const searchable = [
     candidate.name,
     candidate.description,
+    candidate.finalOutcome,
+    ...candidate.primaryCapabilities,
+    ...candidate.handledEntities,
+    ...candidate.requiredInputsSummary,
+    ...candidate.routingExamples,
     ...candidate.nodeSummary,
   ].join(" ");
   const candidateTokens = new Set(tokenize(searchable));
@@ -649,15 +668,17 @@ function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflow
   const triggerPhraseScore = scorePhraseSimilarity(message, candidate.triggerPhrases);
   // Example phrases are a soft signal only. They influence ranking but never dominate.
   const examplePhraseScore = scorePhraseSimilarity(message, candidate.examplePhrases);
+  const routingExampleScore = scorePhraseSimilarity(message, candidate.routingExamples);
   const directTriggerMatchScore = scoreDirectPhraseMatch(message, candidate.triggerPhrases);
   const directExampleMatchScore = scoreDirectPhraseMatch(message, candidate.examplePhrases);
+  const directRoutingExampleScore = scoreDirectPhraseMatch(message, candidate.routingExamples);
 
   const blendedScore = Math.max(
     0,
-    Math.min(1, baseScore * 0.7 + triggerPhraseScore * 0.2 + examplePhraseScore * 0.1)
+    Math.min(1, baseScore * 0.7 + triggerPhraseScore * 0.1 + examplePhraseScore * 0.05 + routingExampleScore * 0.15)
   );
 
-  const directPhraseSignal = Math.max(directTriggerMatchScore, directExampleMatchScore * 0.9);
+  const directPhraseSignal = Math.max(directTriggerMatchScore, directExampleMatchScore * 0.9, directRoutingExampleScore * 0.95);
   if (directPhraseSignal >= 0.9) {
     return Math.max(blendedScore, 0.85);
   }
@@ -688,6 +709,13 @@ async function findEligibleCandidateWithAi(
       id: candidate.id,
       name: candidate.name,
       description: candidate.description,
+      primaryCapabilities: candidate.primaryCapabilities,
+      handledEntities: candidate.handledEntities,
+      finalOutcome: candidate.finalOutcome,
+      requiredInputsSummary: candidate.requiredInputsSummary,
+      optionalSteps: candidate.optionalSteps,
+      exclusionRules: candidate.exclusionRules,
+      routingExamples: candidate.routingExamples,
       triggerPhrases: candidate.triggerPhrases,
       examplePhrases: candidate.examplePhrases,
       nodeSummary: candidate.nodeSummary,
@@ -704,19 +732,22 @@ async function findEligibleCandidateWithAi(
     }));
 
     const systemPrompt = [
-      "You are an orchestration router.",
-      "Pick at most one best orchestration for the user ask.",
-      "Use semantic intent matching, not lexical phrase overlap.",
-      "Treat paraphrases and synonyms as equivalent when intent and workflow capability match.",
-      "Trigger phrases and example phrases are hints only, never strict requirements.",
-      "Use overall goal fit based on name, description, node summary, required inputs, and execution contract.",
-      "If none match clearly, return null selection.",
-      'Return JSON only: {"matchedId":"string-or-empty","matchedIndex":number-or-null,"confidence":0-1,"reason":"short"}.',
+      "You are an orchestration intent router.",
+      "Your job is to select the single orchestration whose business capability best satisfies the user's request.",
+      "Match by semantic meaning, user intent, handled entity, and expected outcome, not by exact wording, phrase overlap, or keyword count.",
+      "An orchestration may contain multiple internal steps, and the user does not need to mention every internal step.",
+      "Select an orchestration if the user's requested outcome is one of its primary supported capabilities.",
+      "Treat paraphrases, synonyms, and related business terms as equivalent when intent matches.",
+      "Do not reject an orchestration only because the user did not mention downstream implementation steps such as database lookup, formatting, API call, notification, or email.",
+      "Use name, description, primary capabilities, handled entities, required inputs, optional steps, final outcome, routing examples, required variables, and execution contract.",
+      "Respect exclusion rules when they clearly conflict with the user's request.",
+      "Return null only if none of the available orchestrations can reasonably satisfy the user's intent.",
+      'Return JSON only: {"matchedId":"string-or-empty","matchedIndex":number-or-null,"confidence":0-1,"reason":"brief semantic reason","matchedCapabilities":["capability"]}.',
     ].join(" ");
 
     const userPrompt = [
-      `User ask: ${message}`,
-      "Eligible orchestrations (chatbot-trigger only):",
+      `User request: ${message}`,
+      "Available orchestrations:",
       JSON.stringify(compactCandidates),
     ].join("\n");
 
