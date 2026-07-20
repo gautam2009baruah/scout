@@ -230,6 +230,7 @@ export async function updateOrchestration(
     name?: string;
     description?: string | null;
     variables?: Record<string, unknown>;
+    targetAppId?: string | null;
     updatedById: string;
   }
 ): Promise<Orchestration> {
@@ -251,6 +252,11 @@ export async function updateOrchestration(
   if (data.variables !== undefined) {
     params.push(JSON.stringify(data.variables));
     updates.push(`variables = $${params.length}`);
+  }
+
+  if (data.targetAppId !== undefined) {
+    params.push(data.targetAppId || null);
+    updates.push(`target_app_id = $${params.length}`);
   }
 
   params.push(id);

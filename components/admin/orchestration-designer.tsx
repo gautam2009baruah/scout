@@ -1149,6 +1149,13 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
             setOrchestration(loadedOrchestration);
             // Nodes and edges will be loaded by the useEffect
           }}
+          onOrchestrationUpdated={(updatedOrchestration) => {
+            setOrchestration((current) =>
+              current && current.id === updatedOrchestration.id
+                ? updatedOrchestration
+                : current
+            );
+          }}
           onClose={() => setIsListOpen(false)}
           currentOrchestrationId={orchestration?.id}
           selectedCompanyId={selectedCompanyId}

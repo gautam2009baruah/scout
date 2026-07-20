@@ -6,7 +6,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Edit, Trash2, RefreshCw, Clock, X, Search, Filter } from "lucide-react";
+import { Edit, Trash2, RefreshCw, Clock, X, Search, Filter, Link2 } from "lucide-react";
 import type { Orchestration } from "@/shared/orchestrationTypes";
 
 interface OrchestrationListProps {
@@ -15,6 +15,7 @@ interface OrchestrationListProps {
   currentOrchestrationId?: string;
   selectedCompanyId: string;
   targetApps: Array<{ id: string; name: string; companyId: string }>;
+  onOrchestrationUpdated?: (orchestration: Orchestration) => void;
 }
 
 const STATUS_COLORS = {
@@ -23,7 +24,7 @@ const STATUS_COLORS = {
   archived: "bg-red-100 text-red-700",
 };
 
-export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, selectedCompanyId, targetApps }: OrchestrationListProps) {
+export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, selectedCompanyId, targetApps, onOrchestrationUpdated }: OrchestrationListProps) {
   const [orchestrations, setOrchestrations] = useState<Orchestration[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("all");
@@ -35,6 +36,12 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
   const [pageCount, setPageCount] = useState(1);
   const [total, setTotal] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [editTarget, setEditTarget] = useState<Orchestration | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTargetAppId, setEditTargetAppId] = useState("__none__");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const fetchOrchestrations = async () => {
     try {
@@ -83,6 +90,62 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
     } catch (error) {
       console.error("Error deleting orchestration:", error);
       alert("Failed to delete orchestration");
+    }
+  };
+
+  const openEditMetadataModal = (orch: Orchestration) => {
+    setEditTarget(orch);
+    setEditName(String(orch.name || ""));
+    setEditDescription(String(orch.description || ""));
+    setEditTargetAppId(String(orch.targetAppId || "__none__"));
+    setEditSaving(false);
+    setEditError("");
+  };
+
+  const handleSaveMetadata = async () => {
+    if (!editTarget) return;
+
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      setEditError("Name is required.");
+      return;
+    }
+
+    try {
+      setEditSaving(true);
+      setEditError("");
+      const response = await fetch("/api/admin/orchestrations", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: editTarget.id,
+          name: trimmedName,
+          description: editDescription.trim() || null,
+          targetAppId: editTargetAppId === "__none__" ? null : editTargetAppId,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        setEditError(typeof data?.message === "string" ? data.message : "Failed to update orchestration metadata.");
+        return;
+      }
+
+      const updated = (data?.orchestration || null) as Orchestration | null;
+      if (updated) {
+        setOrchestrations((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+        onOrchestrationUpdated?.(updated);
+      } else {
+        await fetchOrchestrations();
+      }
+
+      setEditTarget(null);
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : "Failed to update orchestration metadata.");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -200,6 +263,13 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
                     {/* Actions */}
                     <div className="flex items-center gap-2 ml-4">
                       <button
+                        onClick={() => openEditMetadataModal(orch)}
+                        className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                        title="Edit Name, Description, Target App"
+                      >
+                        <Link2 className="h-5 w-5" />
+                      </button>
+                      <button
                         onClick={() => {
                           onLoad(orch);
                           onClose();
@@ -249,6 +319,74 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
             <div className="mt-6 flex justify-end gap-3">
               <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => setDeleteTarget(null)} type="button">Cancel</button>
               <button className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700" onClick={() => void handleDelete(deleteTarget.id)} type="button">Delete</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {editTarget ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-slate-950">Edit orchestration metadata</h3>
+            <p className="mt-1 text-sm text-slate-600">Update name, description, and target app without opening the canvas.</p>
+
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">Name</label>
+                <input
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={editName}
+                  onChange={(event) => setEditName(event.target.value)}
+                  placeholder="Orchestration name"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">Description</label>
+                <textarea
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={editDescription}
+                  onChange={(event) => setEditDescription(event.target.value)}
+                  rows={3}
+                  placeholder="Short description"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-slate-700">Target App</label>
+                <select
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  value={editTargetAppId}
+                  onChange={(event) => setEditTargetAppId(event.target.value)}
+                >
+                  <option value="__none__">No target app</option>
+                  {targetApps
+                    .filter((app) => !selectedCompanyId || app.companyId === selectedCompanyId)
+                    .map((app) => (
+                      <option key={app.id} value={app.id}>{app.name}</option>
+                    ))}
+                </select>
+              </div>
+
+              {editError ? <p className="text-sm text-red-600">{editError}</p> : null}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+                onClick={() => setEditTarget(null)}
+                type="button"
+                disabled={editSaving}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                onClick={() => void handleSaveMetadata()}
+                type="button"
+                disabled={editSaving}
+              >
+                {editSaving ? "Saving..." : "Save"}
+              </button>
             </div>
           </div>
         </div>

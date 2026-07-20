@@ -104,7 +104,7 @@ export async function PUT(request: NextRequest) {
     requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
     const body = await request.json();
-    const { id, name, description, variables, publish } = body;
+    const { id, name, description, variables, targetAppId, publish } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -126,6 +126,7 @@ export async function PUT(request: NextRequest) {
       name,
       description,
       variables,
+      targetAppId,
       updatedById: session.user.id,
     });
 
