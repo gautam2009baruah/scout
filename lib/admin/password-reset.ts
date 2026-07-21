@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { getPool } from "@/lib/db/pool";
 import { sendEmail } from "./email";
-import { hashPassword } from "./password";
+import { hashPassword, isPasswordComplexityValid, PASSWORD_REQUIREMENT_MESSAGE } from "./password";
 
 const RESET_TOKEN_MINUTES = 60;
 
@@ -78,8 +78,12 @@ export async function requestPasswordReset(email: string) {
  * the token used, and revokes any active sessions for the user.
  */
 export async function resetPassword(token: string, password: string) {
-  if (!token || password.length < 8) {
-    throw new PasswordResetError("A valid reset token and a password of at least 8 characters are required.");
+  if (!token) {
+    throw new PasswordResetError("A valid reset token is required.");
+  }
+
+  if (!isPasswordComplexityValid(password)) {
+    throw new PasswordResetError(PASSWORD_REQUIREMENT_MESSAGE);
   }
 
   const client = await getPool().connect();

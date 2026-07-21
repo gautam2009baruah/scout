@@ -4,6 +4,17 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Loader2, LockKeyhole } from "lucide-react";
 
+const PASSWORD_REQUIREMENT_MESSAGE = "Minimum 8 characters, alphanumeric, including 1 special character.";
+
+function isPasswordComplexityValid(password: string) {
+  return (
+    password.length >= 8 &&
+    /[A-Za-z]/.test(password) &&
+    /[0-9]/.test(password) &&
+    /[^A-Za-z0-9]/.test(password)
+  );
+}
+
 type ResetPasswordFormProps = {
   token: string;
 };
@@ -17,6 +28,12 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
     const form = new FormData(event.currentTarget);
     const password = String(form.get("password") ?? "");
     const confirmPassword = String(form.get("confirmPassword") ?? "");
+
+    if (!isPasswordComplexityValid(password)) {
+      setStatus("error");
+      setMessage(PASSWORD_REQUIREMENT_MESSAGE);
+      return;
+    }
 
     if (password !== confirmPassword) {
       setStatus("error");
@@ -75,6 +92,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         <p className="text-sm font-medium text-teal-700">Scout account</p>
         <h1 className="mt-2 text-2xl font-semibold text-slate-950">Reset your password</h1>
         <p className="mt-2 text-sm text-slate-600">Create a new password to regain access to your account.</p>
+        <p className="mt-3 text-xs text-slate-500">{PASSWORD_REQUIREMENT_MESSAGE}</p>
       </div>
 
       <div className="space-y-4">

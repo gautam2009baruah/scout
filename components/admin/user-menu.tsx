@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LogOut, UserPlus } from "lucide-react";
+import { ChevronDown, KeyRound, LogOut, UserPlus } from "lucide-react";
+import { ResetPasswordModal } from "./reset-password-modal";
 
 export function UserMenu({ name }: { name: string }) {
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -79,19 +81,34 @@ export function UserMenu({ name }: { name: string }) {
     <div className="relative" ref={menuRef}>
       <button
         aria-expanded={open}
-        className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 font-mono text-xs font-semibold text-slate-800 transition hover:border-blue-500 hover:bg-slate-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+        aria-haspopup="menu"
+        className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 font-mono text-sm font-semibold text-slate-800 transition hover:border-blue-500 hover:bg-slate-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
         onClick={() => setOpen((current) => !current)}
         type="button"
       >
         <UserPlus className="h-4 w-4" />
-        {name}
+        {name.length > 12 ? `${name.substring(0, 12)}...` : name}
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open ? (
-        <div className="absolute right-0 top-12 z-20 w-44 rounded-lg border border-slate-300 bg-white p-2 shadow-[0_10px_30px_rgba(15,23,42,0.10)]">
+        <div className="absolute right-0 top-12 z-20 w-48 rounded-lg border border-slate-300 bg-white p-2 shadow-[0_10px_30px_rgba(15,23,42,0.10)]" role="menu">
+          <button
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            onClick={() => {
+              setOpen(false);
+              setResetPasswordOpen(true);
+            }}
+            role="menuitem"
+            type="button"
+          >
+            <KeyRound className="h-4 w-4" />
+            Reset password
+          </button>
           <button
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={loggingOut}
             onClick={logout}
+            role="menuitem"
             type="button"
           >
             <LogOut className="h-4 w-4" />
@@ -99,6 +116,7 @@ export function UserMenu({ name }: { name: string }) {
           </button>
         </div>
       ) : null}
+      <ResetPasswordModal open={resetPasswordOpen} onClose={() => setResetPasswordOpen(false)} />
     </div>
   );
 }

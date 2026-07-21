@@ -4,6 +4,21 @@ const SCRYPT_N = 16384;
 const SCRYPT_R = 8;
 const SCRYPT_P = 1;
 
+export const PASSWORD_REQUIREMENT_MESSAGE = "Minimum 8 characters, alphanumeric, including 1 special character.";
+
+const LETTER_PATTERN = /[A-Za-z]/;
+const DIGIT_PATTERN = /[0-9]/;
+const SPECIAL_CHARACTER_PATTERN = /[^A-Za-z0-9]/;
+
+export function isPasswordComplexityValid(password: string) {
+  return (
+    password.length >= 8 &&
+    LETTER_PATTERN.test(password) &&
+    DIGIT_PATTERN.test(password) &&
+    SPECIAL_CHARACTER_PATTERN.test(password)
+  );
+}
+
 export function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const key = scryptSync(password, salt, 64, {

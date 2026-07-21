@@ -1,6 +1,6 @@
 import { getPool } from "@/lib/db/pool";
 import type { AdminSession } from "./auth";
-import { hashPassword } from "./password";
+import { hashPassword, isPasswordComplexityValid, PASSWORD_REQUIREMENT_MESSAGE } from "./password";
 
 export class PasswordChangeError extends Error {
   constructor(message: string) {
@@ -10,8 +10,8 @@ export class PasswordChangeError extends Error {
 }
 
 export async function changeCurrentUserPassword(session: AdminSession, password: string) {
-  if (password.length < 8) {
-    throw new PasswordChangeError("Password must be at least 8 characters.");
+  if (!isPasswordComplexityValid(password)) {
+    throw new PasswordChangeError(PASSWORD_REQUIREMENT_MESSAGE);
   }
 
   await getPool().query(
