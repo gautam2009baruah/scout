@@ -288,6 +288,25 @@ async function getFolderPath(folderId) {
   return result.rows[0]?.folder_path ?? "";
 }
 
+const SENTENCE_END_PATTERN = /[.!?]["')\]]?$/;
+const BOUNDARY_LOOKBACK_TOKENS = 60;
+
+function findSentenceBoundaryEnd(tokens, start, rawEnd, minTokenSize) {
+  if (rawEnd >= tokens.length) {
+    return rawEnd;
+  }
+
+  const earliestBoundary = Math.max(start + minTokenSize, rawEnd - BOUNDARY_LOOKBACK_TOKENS);
+
+  for (let index = rawEnd - 1; index >= earliestBoundary; index -= 1) {
+    if (SENTENCE_END_PATTERN.test(tokens[index])) {
+      return index + 1;
+    }
+  }
+
+  return rawEnd;
+}
+
 function createDocumentChunks(document, folderPath, parsedOutput) {
   const chunkMinTokenSize = 500;
   const chunkTokenSize = 820;
@@ -308,15 +327,18 @@ function createDocumentChunks(document, folderPath, parsedOutput) {
       }
 
       for (let start = 0; start < tokens.length; start += step) {
-        const chunkTokens = tokens.slice(start, start + chunkTokenSize);
+        const rawEnd = Math.min(start + chunkTokenSize, tokens.length);
 
-        if (chunkTokens.length === 0) {
+        if (rawEnd === start) {
           break;
         }
 
-        if (chunkTokens.length < chunkMinTokenSize && tokens.length > chunkMinTokenSize && start + chunkTokenSize < tokens.length) {
+        if ((rawEnd - start) < chunkMinTokenSize && tokens.length > chunkMinTokenSize && rawEnd < tokens.length) {
           continue;
         }
+
+        const end = findSentenceBoundaryEnd(tokens, start, rawEnd, chunkMinTokenSize);
+        const chunkTokens = tokens.slice(start, end);
 
         chunks.push({
           chunkIndex,
@@ -920,10 +942,24 @@ async function chunkDocument(job) {
   }
 }
 
+function buildEmbeddingText(chunk) {
+  const meta = chunk.metadata_json || {};
+  const documentName = typeof meta.document_name === "string" ? meta.document_name : "";
+  const sectionPath = typeof meta.section_path === "string" && meta.section_path
+    ? meta.section_path
+    : (chunk.section_title || "");
+  const header = [
+    documentName ? `Document: ${documentName}` : "",
+    sectionPath ? `Section: ${sectionPath}` : ""
+  ].filter(Boolean).join("\n");
+
+  return header ? `${header}\n\n${chunk.content}` : chunk.content;
+}
+
 async function embedDocument(job) {
   const chunksResult = await client.query(
     `
-      SELECT id, company_id, document_id, content
+      SELECT id, company_id, document_id, content, section_title, metadata_json
       FROM document_chunks
       WHERE document_id = $1
       ORDER BY chunk_index ASC
@@ -951,7 +987,7 @@ async function embedDocument(job) {
 
     for (let start = 0; start < chunks.length; start += embeddingBatchSize) {
       const batch = chunks.slice(start, start + embeddingBatchSize);
-      const embeddings = await embedBatch(batch.map((chunk) => chunk.content));
+      const embeddings = await embedBatch(batch.map((chunk) => buildEmbeddingText(chunk)));
 
       await client.query(
         `

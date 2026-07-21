@@ -51,6 +51,7 @@ function buildGuardedSystemPrompt(systemPrompt: string) {
     "Never answer from model memory.",
     "Never invent facts.",
     "Never fabricate citations.",
+    "If a Context block (recent conversation) appears in the user message, use it only to resolve what the question is asking about, never as evidence for facts.",
     `Only when the context does not contain enough information, say exactly: "${INSUFFICIENT_CONTEXT_MESSAGE}"`
   ].filter(Boolean).join("\n");
 }

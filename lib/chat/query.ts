@@ -1,6 +1,7 @@
 import { getPool } from "@/lib/db/pool";
 import { getLLMProvider, INSUFFICIENT_CONTEXT_MESSAGE, type LLMContextItem } from "@/lib/llm/providers";
 import { buildConversationContextWindow } from "@/lib/chat/context-manager";
+import { condenseQuestionForRetrieval } from "@/lib/chat/query-condensation";
 import { getEffectiveChatbotLifecycleSettings } from "@/lib/chat/lifecycle-settings";
 import { RetrievalEngine } from "@/lib/search/retrieval-engine";
 import type { Citation } from "@/lib/search/citation-engine";
@@ -109,7 +110,8 @@ function buildSystemPrompt() {
     "Do not use outside knowledge.",
     "Every factual claim must be supported by retrieved evidence.",
     "If evidence is weak or missing, return the insufficient-context response.",
-    "Keep the answer concise and cite-ready."
+    "Keep the answer concise and cite-ready.",
+    "Conversation history may clarify what the current question is referring to (e.g. pronouns or short follow-ups like \"and its start date\"), but conversation history is never a source of facts — every factual claim must still come only from the retrieved document context."
   ].join(" ");
 }
 
@@ -171,93 +173,6 @@ function buildRetrievalDiagnostics(
       visual_asset_type: chunk.visual_asset_type || null,
     })),
   };
-}
-
-function cleanExtractedValue(value: string) {
-  return value
-    .replace(/^[\s:.-]+/, "")
-    .replace(/[\s,;.)\]]+$/, "")
-    .trim();
-}
-
-function findLabeledValue(content: string, labels: string[], valuePattern: string) {
-  for (const label of labels) {
-    const pattern = new RegExp(`${label}\\s*[:\\-–]?\\s*(${valuePattern})`, "i");
-    const match = content.match(pattern);
-
-    if (match?.[1]) {
-      return cleanExtractedValue(match[1]);
-    }
-  }
-
-  return null;
-}
-
-function findBankName(content: string) {
-  const knownBanks = [
-    "Bank of Baroda",
-    "State Bank of India",
-    "SBI",
-    "HDFC Bank",
-    "ICICI Bank",
-    "Axis Bank",
-    "Punjab National Bank",
-    "Canara Bank",
-    "Kotak Mahindra Bank",
-    "IDFC First Bank",
-    "Yes Bank"
-  ];
-  const normalizedContent = content.toLowerCase();
-
-  for (const bank of knownBanks) {
-    if (normalizedContent.includes(bank.toLowerCase())) {
-      return bank === "SBI" ? "State Bank of India" : bank;
-    }
-  }
-
-  if (/\bbaroda\s+home\s+loan\b/i.test(content) || /\bcM+kSnk\s+x`g\s+_.k\b/i.test(content)) {
-    return "Bank of Baroda";
-  }
-
-  const labeledBank = findLabeledValue(content, ["bank", "lender", "financier"], "[A-Za-z][A-Za-z &.]{2,60}");
-
-  return labeledBank;
-}
-
-function buildExtractiveAnswer(
-  question: string,
-  chunks: Awaited<ReturnType<typeof RetrievalEngine.retrieve>>["chunks"]
-) {
-  const normalizedQuestion = question.toLowerCase();
-  const context = chunks.map((chunk) => chunk.content).join("\n");
-  let value: string | null = null;
-  let label = "";
-
-  if (/\b(mobile|phone|contact)\b/.test(normalizedQuestion)) {
-    value =
-      findLabeledValue(context, ["mobile\\s*(?:number|no)?", "phone\\s*(?:number|no)?", "contact\\s*(?:number|no)?"], "[+()\\d\\s-]{8,20}")
-      ?? context.match(/(?:\+?\d[\d\s-]{8,}\d)/)?.[0]
-      ?? null;
-    label = "mobile number";
-  } else if (/\bpolicy\b/.test(normalizedQuestion) && /\b(number|no|id)\b/.test(normalizedQuestion)) {
-    value = findLabeledValue(context, ["policy\\s*(?:number|no|id)"], "[A-Za-z0-9/-]{4,40}");
-    label = "policy number";
-  } else if (/\bcustomer\b/.test(normalizedQuestion) && /\b(id|number|no)\b/.test(normalizedQuestion)) {
-    value = findLabeledValue(context, ["customer\\s*(?:id|number|no)"], "[A-Za-z0-9/-]{4,40}");
-    label = "customer id";
-  } else if (/\bemail\b|\be-mail\b/.test(normalizedQuestion)) {
-    value = context.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? null;
-    label = "email address";
-  } else if (/\bbank\b|\blender\b|\bfinancier\b/.test(normalizedQuestion)) {
-    value = findBankName(context);
-    label = "bank";
-  }
-
-  if (!value || !label) {
-    return null;
-  }
-
-  return `The ${label} is ${cleanExtractedValue(value)}.`;
 }
 
 function isGreetingOnly(question: string) {
@@ -554,7 +469,20 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     return response;
   }
 
-  const retrieval = await RetrievalEngine.retrieve(companyId, userId, question, topK, input.target_app_id?.trim() || undefined);
+  const conversationWindow = canPersistConversation
+    ? await buildConversationContextWindow({
+      companyId,
+      conversationId,
+      settings: lifecycleSettings
+    })
+    : { messages: [], estimatedTokens: 0, summary: null };
+
+  const { retrievalQuery, condensed } = await condenseQuestionForRetrieval({
+    question,
+    conversationMessages: conversationWindow.messages
+  });
+
+  const retrieval = await RetrievalEngine.retrieve(companyId, userId, retrievalQuery, topK, input.target_app_id?.trim() || undefined);
 
   if (retrieval.chunks.length === 0) {
     const latencyMs = Date.now() - startedAt;
@@ -598,6 +526,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
       metadata: {
         mode: "no_retrieval_chunks",
         externalUserTraceId: externalUserTraceId || undefined,
+        condensedQuery: condensed ? retrievalQuery : null,
         retrievalDiagnostics: {
           topK,
           targetAppId: input.target_app_id?.trim() || null,
@@ -642,105 +571,8 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     return response;
   }
 
-  const extractiveAnswer = buildExtractiveAnswer(question, retrieval.chunks);
-
-  if (extractiveAnswer) {
-    const extractiveNeedsCitations = shouldRequireCitations(extractiveAnswer);
-    const extractiveGrounded = isAnswerGrounded(extractiveAnswer, retrieval.chunks);
-    const shouldRejectExtractive = (extractiveNeedsCitations && retrieval.citations.length === 0) || !extractiveGrounded;
-    const extractiveFinalAnswer = shouldRejectExtractive ? INSUFFICIENT_CONTEXT_MESSAGE : extractiveAnswer;
-    const extractiveNoAnswer = extractiveFinalAnswer === INSUFFICIENT_CONTEXT_MESSAGE;
-    const extractiveCitations = extractiveNoAnswer ? [] : retrieval.citations;
-    const latencyMs = Date.now() - startedAt;
-    if (canPersistConversation) {
-      await appendConversationExchange({
-        companyId,
-        userId,
-        conversationId,
-        question,
-        answer: extractiveFinalAnswer,
-        citations: extractiveCitations,
-        metadata: {
-          llm_provider: "none",
-          llm_model: "extractive",
-          latency_ms: latencyMs,
-          retrieved_chunk_count: retrieval.chunks.length,
-          token_usage_summary: null
-        }
-      });
-    }
-
-    const queryId = await recordChatQueryTelemetry({
-      target_app_id: input.target_app_id?.trim() || undefined,
-      user_id: userId,
-      conversation_id: conversationId,
-      question,
-      answer: extractiveFinalAnswer,
-      answer_status: extractiveNoAnswer ? "no_answer" : "answered",
-      no_answer_reason: extractiveNoAnswer ? "insufficient_context_from_grounding" : undefined,
-      retrieved_chunk_count: retrieval.chunks.length,
-      citations: extractiveCitations,
-      llm_provider: "none",
-      llm_model: "extractive",
-      latency_ms: latencyMs,
-      token_usage: {
-        prompt_tokens: null,
-        completion_tokens: null,
-        total_tokens: null,
-        estimated_cost_usd: 0,
-      },
-      metadata: {
-        mode: "extractive",
-        externalUserTraceId: externalUserTraceId || undefined,
-        retrievalDiagnostics: buildRetrievalDiagnostics(retrieval, {
-          topK,
-          targetAppId: input.target_app_id?.trim() || undefined,
-        }),
-      },
-    });
-
-    let modifiedExtractiveAnswer = extractiveAnswer;
-    modifiedExtractiveAnswer = extractiveFinalAnswer;
-    
-    if (orchestrationMatch) {
-      const orchestrationOption = `**🎯 Orchestration Available:**\n**"${orchestrationMatch.orchestrationName}"** - Execute with data capture\n[Click here to start](#orchestration:${orchestrationMatch.executionId})\n\n---\n\n`;
-      modifiedExtractiveAnswer = orchestrationOption + extractiveFinalAnswer;
-    }
-    
-    const response: ChatQueryResponse = {
-      query_id: queryId,
-      answer: modifiedExtractiveAnswer,
-      citations: extractiveCitations,
-      conversation_id: conversationId,
-      no_answer: extractiveNoAnswer,
-      no_answer_reason: extractiveNoAnswer ? "insufficient_context_from_grounding" : undefined,
-      latency_ms: latencyMs,
-      token_usage: {
-        prompt_tokens: null,
-        completion_tokens: null,
-        total_tokens: null,
-        estimated_cost_usd: 0,
-      },
-      retrieved_chunk_count: retrieval.chunks.length
-    };
-    
-    if (orchestrationMatch) {
-      response.orchestration_trigger = orchestrationMatch;
-      response.matchedPhrase = question;
-      response.matchedIntent = orchestrationMatch.orchestrationName;      console.log('📤 [EXTRACTIVE] Returning response with orchestration_trigger.executionId:', response.orchestration_trigger?.executionId);    }
-    
-    return response;
-  }
-
   const provider = await getLLMProvider();
   const systemPrompt = buildSystemPrompt();
-  const conversationWindow = canPersistConversation
-    ? await buildConversationContextWindow({
-      companyId,
-      conversationId,
-      settings: lifecycleSettings
-    })
-    : { messages: [], estimatedTokens: 0, summary: null };
   const llmContext = buildLLMContext(retrieval.chunks);
   const answer = await provider.generate_answer(systemPrompt, buildUserPrompt(question, conversationWindow.messages), llmContext);
   const generatedAnswer = answer || INSUFFICIENT_CONTEXT_MESSAGE;
@@ -798,6 +630,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     metadata: {
       mode: "llm",
       externalUserTraceId: externalUserTraceId || undefined,
+      condensedQuery: condensed ? retrievalQuery : null,
       retrievalDiagnostics: buildRetrievalDiagnostics(retrieval, {
         topK,
         targetAppId: input.target_app_id?.trim() || undefined,

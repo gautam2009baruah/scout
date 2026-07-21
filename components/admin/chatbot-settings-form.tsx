@@ -31,7 +31,6 @@ type Props = {
   companyName: string;
   defaults: ChatbotLifecycleSettings;
   initialSettings: ChatbotLifecycleSettingsRecord[];
-  canUseCompanyLevelApiKeys: boolean;
   targetApps: TargetAppOption[];
 };
 
@@ -87,7 +86,7 @@ type EmbedPackageRecord = {
   updatedAt: string;
 };
 
-type ScopeValue = "global" | string;
+type ScopeValue = string;
 type TabId = "conversation" | "keys" | "package";
 
 type Draft = {
@@ -189,12 +188,12 @@ function IconActionButton({
   );
 }
 
-export function ChatbotSettingsForm({ companyName, defaults, initialSettings, canUseCompanyLevelApiKeys, targetApps }: Props) {
+export function ChatbotSettingsForm({ companyName, defaults, initialSettings, targetApps }: Props) {
   const [activeTab, setActiveTab] = useState<TabId>("conversation");
   const sortedTargetApps = useMemo(() => [...targetApps].sort((a, b) => a.name.localeCompare(b.name)), [targetApps]);
 
   const [settings, setSettings] = useState(initialSettings);
-  const initialScope: ScopeValue = canUseCompanyLevelApiKeys ? "global" : (sortedTargetApps[0]?.id ?? "global");
+  const initialScope: ScopeValue = sortedTargetApps[0]?.id ?? "";
   const [scope, setScope] = useState<ScopeValue>(initialScope);
   const [status, setStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
 
@@ -296,7 +295,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   const byScope = useMemo(() => {
     const map = new Map<ScopeValue, ChatbotLifecycleSettingsRecord>();
     for (const item of settings) {
-      map.set(item.targetAppId ?? "global", item);
+      map.set(item.targetAppId ?? "", item);
     }
     return map;
   }, [settings]);
@@ -304,7 +303,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
   const activeSettings = byScope.get(scope) ?? {
     id: "",
     companyId: "",
-    targetAppId: scope === "global" ? null : scope,
+    targetAppId: scope,
     ...defaults
   };
 
@@ -378,7 +377,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     const nextSettings = byScope.get(nextScope) ?? {
       id: "",
       companyId: "",
-      targetAppId: nextScope === "global" ? null : nextScope,
+      targetAppId: nextScope,
       ...defaults
     };
     setDraft(toDraft(nextScope, nextSettings));
@@ -393,7 +392,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        targetAppId: draft.scope === "global" ? null : draft.scope,
+        targetAppId: draft.scope,
         maxContextMessages: Number(draft.maxContextMessages),
         maxContextTokens: Number(draft.maxContextTokens),
         inactivityTimeoutSeconds: Number(draft.inactivityTimeoutSeconds),
@@ -422,7 +421,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
     const response = await fetch("/api/admin/chatbot-settings", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targetAppId: draft.scope === "global" ? null : draft.scope })
+      body: JSON.stringify({ targetAppId: draft.scope })
     });
 
     const body = await response.json().catch(() => null);
@@ -915,7 +914,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ca
                     value={scope}
                     onChange={(event) => updateScope(event.target.value)}
                   >
-                    {canUseCompanyLevelApiKeys ? <option value="global">Global default</option> : null}
                     {sortedTargetApps.map((app) => (
                       <option key={app.id} value={app.id}>{app.name}</option>
                     ))}

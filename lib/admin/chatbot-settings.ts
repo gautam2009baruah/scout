@@ -68,7 +68,6 @@ export async function getChatbotLifecycleSettingsAdminPayload(session: AdminSess
     defaults: DEFAULT_CHATBOT_LIFECYCLE_SETTINGS,
     settings,
     security,
-    canUseCompanyLevelApiKeys: await canUseCompanyLevelApiKeys(session, companyId),
     targetApps: targetApps.filter((app) => app.companyId === companyId).map((app) => ({
       id: app.id,
       name: app.name,
