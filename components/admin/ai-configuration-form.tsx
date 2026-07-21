@@ -319,8 +319,6 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
   return (
     <section className="grid gap-0">
       <div className="rounded-t-lg border border-slate-200 border-b-0 bg-white px-4 pt-3">
-        <p className="text-xs font-medium text-slate-500">Company scope: {companyName}</p>
-
         <div className="mt-2 border-b border-slate-200">
           <div aria-label="AI configuration sections" className="flex items-end gap-2" role="tablist">
             <button

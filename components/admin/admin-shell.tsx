@@ -643,7 +643,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
             </div>
           </header>
 
-          <div className="admin-content flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+          <div className="admin-content flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-6">
             <div className="mx-auto w-full max-w-[1440px]">{children}</div>
           </div>
           <footer className="border-t border-slate-300 bg-white px-4 py-4 text-slate-600 sm:px-6 lg:px-8">
