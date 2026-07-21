@@ -2,6 +2,8 @@ export { AccountActivationForm } from "./account-activation-form";
 export { AIConfigurationForm } from "./ai-configuration-form";
 export { AdminShell } from "./admin-shell";
 export { AdminLoginForm } from "./admin-login-form";
+export { ForgotPasswordForm } from "./forgot-password-form";
+export { ResetPasswordForm } from "./reset-password-form";
 export { ChangePasswordForm } from "./change-password-form";
 export { ChatbotSettingsForm } from "./chatbot-settings-form";
 export { EmailCredentialsManager } from "./email-credentials-manager";

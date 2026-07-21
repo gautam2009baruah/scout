@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, LockKeyhole, Mail } from "lucide-react";
 
@@ -84,6 +85,15 @@ export function AdminLoginForm() {
           </button>
         </span>
       </label>
+
+      <div className="flex justify-end">
+        <Link
+          className="text-sm font-medium text-teal-700 transition hover:text-teal-800"
+          href="/control-panel/forgot-password"
+        >
+          Forgot password?
+        </Link>
+      </div>
 
       {status === "error" ? (
         <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
