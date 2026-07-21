@@ -305,18 +305,20 @@ const guideSelect = `
 
 const targetAppSelect = `
   SELECT
-    guided_workflow_target_apps.id,
+    company_target_applications.id,
     company_target_applications.company_id,
     companies.name AS company_name,
     company_target_applications.name,
     company_target_applications.base_url,
-    guided_workflow_target_apps.allowed_origins_json,
-    guided_workflow_target_apps.player_config_json,
-    guided_workflow_target_apps.created_at,
-    guided_workflow_target_apps.updated_at
-  FROM guided_workflow_target_apps
-  INNER JOIN company_target_applications ON company_target_applications.id = guided_workflow_target_apps.target_app_id
+    COALESCE(guided_workflow_target_apps.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
+    COALESCE(guided_workflow_target_apps.player_config_json, '{}'::jsonb) AS player_config_json,
+    company_target_applications.created_at,
+    company_target_applications.updated_at
+  FROM company_target_applications
   INNER JOIN companies ON companies.id = company_target_applications.company_id
+  LEFT JOIN guided_workflow_target_apps
+    ON guided_workflow_target_apps.target_app_id = company_target_applications.id
+   AND guided_workflow_target_apps.deleted_at IS NULL
 `;
 
 const recordingSessionSelect = `
@@ -481,10 +483,8 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
       NOT EXISTS (
         SELECT 1
         FROM user_target_app_access company_access
-        INNER JOIN guided_workflow_target_apps company_app
-          ON company_app.id = company_access.target_app_id
         INNER JOIN company_target_applications company_scoped_app
-          ON company_scoped_app.id = company_app.target_app_id
+          ON company_scoped_app.id = company_access.target_app_id
         WHERE company_access.user_id = $${userIdParam}
           AND company_scoped_app.company_id = company_target_applications.company_id
           AND company_access.deleted_at IS NULL
@@ -493,7 +493,7 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
         SELECT 1
         FROM user_target_app_access app_access
         WHERE app_access.user_id = $${userIdParam}
-          AND app_access.target_app_id = guided_workflow_target_apps.id
+          AND app_access.target_app_id = company_target_applications.id
           AND app_access.deleted_at IS NULL
       )
     )
@@ -505,7 +505,6 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
         ${targetAppSelect}
         WHERE companies.deleted_at IS NULL
           AND company_target_applications.deleted_at IS NULL
-          AND guided_workflow_target_apps.deleted_at IS NULL
           ${access}
           ${targetAppAccess}
         ORDER BY companies.name ASC, company_target_applications.name ASC
@@ -609,7 +608,7 @@ export async function createGuidedWorkflowTargetApp(input: {
   }
 
   const apps = await listGuidedWorkflowTargetApps(session);
-  return apps.find((app) => app.id === scopedAppId)!;
+  return apps.find((app) => app.id === canonicalTargetAppId)!;
 }
 
 export async function listGuidedWorkflowRecordingSessions(session: AdminSession) {
@@ -642,11 +641,10 @@ export async function listGuidedWorkflowRecordingSessions(session: AdminSession)
           AND guided_workflow_recording_sessions.deleted_at IS NULL
           ${access}
           AND (
-            target_app_map.id IS NULL
+            company_target_applications.id IS NULL
             OR NOT EXISTS (
               SELECT 1 FROM user_target_app_access uta
-              INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
-              INNER JOIN company_target_applications scope_cta ON scope_cta.id = scope_app.target_app_id
+              INNER JOIN company_target_applications scope_cta ON scope_cta.id = uta.target_app_id
               WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
                 AND scope_cta.company_id = company_target_applications.company_id
                 AND scope_cta.deleted_at IS NULL
@@ -654,7 +652,7 @@ export async function listGuidedWorkflowRecordingSessions(session: AdminSession)
             OR EXISTS (
               SELECT 1 FROM user_target_app_access uta
               WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
-                AND uta.target_app_id = target_app_map.id
+                AND uta.target_app_id = company_target_applications.id
             )
           )
         ORDER BY guided_workflow_recording_sessions.updated_at DESC
@@ -715,22 +713,15 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
         INNER JOIN guided_workflow_recording_sessions ON guided_workflow_recording_sessions.id = guided_workflow_topics.recording_session_id
         INNER JOIN companies ON companies.id = guided_workflow_topics.company_id
         INNER JOIN company_target_applications cta ON cta.id = guided_workflow_recording_sessions.company_target_application_id
-        LEFT JOIN LATERAL (
-          SELECT gta.id FROM guided_workflow_target_apps gta
-          WHERE gta.target_app_id = cta.id
-          ORDER BY gta.updated_at DESC LIMIT 1
-        ) topic_target_app ON true
         LEFT JOIN guided_workflow_guides ON guided_workflow_guides.id = guided_workflow_topics.guide_id
         WHERE companies.deleted_at IS NULL
           AND guided_workflow_recording_sessions.deleted_at IS NULL
           AND guided_workflow_topics.deleted_at IS NULL
           ${access}
           AND (
-            topic_target_app.id IS NULL
-            OR NOT EXISTS (
+            NOT EXISTS (
               SELECT 1 FROM user_target_app_access uta
-              INNER JOIN guided_workflow_target_apps scope_app ON scope_app.id = uta.target_app_id
-              INNER JOIN company_target_applications scope_cta ON scope_cta.id = scope_app.target_app_id
+              INNER JOIN company_target_applications scope_cta ON scope_cta.id = uta.target_app_id
               WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
                 AND scope_cta.company_id = guided_workflow_topics.company_id
                 AND scope_cta.deleted_at IS NULL
@@ -738,7 +729,7 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
             OR EXISTS (
               SELECT 1 FROM user_target_app_access uta
               WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
-                AND uta.target_app_id = topic_target_app.id
+                AND uta.target_app_id = cta.id
             )
           )
         ORDER BY guided_workflow_topics.recording_session_id, guided_workflow_topics.sort_order ASC, guided_workflow_topics.created_at ASC

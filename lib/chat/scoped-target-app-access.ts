@@ -19,9 +19,8 @@ export async function assertScopedTargetAppAccess(input: {
   const appExists = await getPool().query<{ allowed: boolean }>(
     `SELECT EXISTS (
        SELECT 1
-       FROM guided_workflow_target_apps app
-       INNER JOIN company_target_applications cta ON cta.id = app.target_app_id
-       WHERE app.id = $2
+       FROM company_target_applications cta
+       WHERE cta.id = $2
          AND cta.company_id = $1
      ) AS allowed`,
     [input.companyId, input.targetAppId]

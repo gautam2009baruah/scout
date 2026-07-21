@@ -100,30 +100,25 @@ async function validateTargetAppIds(companyId: string, targetAppIds: string[], s
   const uniqueIds = Array.from(new Set(targetAppIds));
   if (uniqueIds.length === 0) return uniqueIds;
   const result = await getPool().query<{ id: string }>(`
-    SELECT app.id
-    FROM guided_workflow_target_apps app
-    INNER JOIN company_target_applications company_app
-      ON company_app.id = app.target_app_id
+    SELECT company_app.id
+    FROM company_target_applications company_app
     WHERE company_app.company_id = $1
       AND company_app.deleted_at IS NULL
-      AND app.deleted_at IS NULL
-      AND app.id = ANY($2::uuid[])
+      AND company_app.id = ANY($2::uuid[])
       AND (
         $3::boolean = true
         OR NOT EXISTS (
           SELECT 1 FROM user_target_app_access scope
-          INNER JOIN guided_workflow_target_apps scoped_app ON scoped_app.id = scope.target_app_id
           INNER JOIN company_target_applications scoped_company_app
-            ON scoped_company_app.id = scoped_app.target_app_id
+            ON scoped_company_app.id = scope.target_app_id
           WHERE scope.user_id = $4
             AND scope.deleted_at IS NULL
-            AND scoped_app.deleted_at IS NULL
             AND scoped_company_app.deleted_at IS NULL
             AND scoped_company_app.company_id = $1
         )
         OR EXISTS (
           SELECT 1 FROM user_target_app_access allowed
-          WHERE allowed.user_id = $4 AND allowed.target_app_id = app.id AND allowed.deleted_at IS NULL
+          WHERE allowed.user_id = $4 AND allowed.target_app_id = company_app.id AND allowed.deleted_at IS NULL
         )
       )
   `, [companyId, uniqueIds, isAdmin(session), session.user.id]);
@@ -369,8 +364,7 @@ export async function getTopicWorkspace(session: AdminSession) {
         COALESCE((
           SELECT array_agg(company_target_applications.name ORDER BY company_target_applications.name)
           FROM folder_target_apps
-          INNER JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = folder_target_apps.target_app_id
-          INNER JOIN company_target_applications ON company_target_applications.id = guided_workflow_target_apps.target_app_id
+          INNER JOIN company_target_applications ON company_target_applications.id = folder_target_apps.target_app_id
           WHERE folder_target_apps.folder_id = folders.id
             AND folder_target_apps.deleted_at IS NULL
         ), ARRAY[]::text[]) AS target_app_names,

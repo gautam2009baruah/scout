@@ -288,8 +288,7 @@ export async function getDatabaseSchemaAdminPayload(session: AdminSession) {
         schemas.created_by,
         schemas.updated_by
       FROM target_app_database_schemas schemas
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = schemas.target_app_id
       WHERE cta.company_id = $1
         AND cta.deleted_at IS NULL
         AND schemas.deleted_at IS NULL
@@ -342,8 +341,7 @@ export async function getDatabaseSchemaById(session: AdminSession, schemaId: str
         schemas.created_by,
         schemas.updated_by
       FROM target_app_database_schemas schemas
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = schemas.target_app_id
       WHERE schemas.id = $1
         AND cta.company_id = $2
         AND cta.deleted_at IS NULL
@@ -388,8 +386,7 @@ export async function getActiveDatabaseSchemasForTargetApp(
         schemas.version,
         schemas.updated_at
       FROM target_app_database_schemas schemas
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = schemas.target_app_id
       WHERE schemas.target_app_id = $1
         AND cta.company_id = $2
         AND cta.deleted_at IS NULL
@@ -606,10 +603,9 @@ export async function updateDatabaseSchema(
               AND existing.database_name = $1
           )
         END
-      FROM guided_workflow_target_apps gta
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      FROM company_target_applications cta
       WHERE schemas.id = $6
-        AND schemas.target_app_id = gta.id
+        AND schemas.target_app_id = cta.id
       RETURNING
         schemas.id,
         schemas.target_app_id,

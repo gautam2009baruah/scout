@@ -112,8 +112,7 @@ export async function GET(request: NextRequest) {
         ) as schedule_last_error
       FROM orchestration_triggers ot
       INNER JOIN orchestrations o ON ot.orchestration_id = o.id
-      LEFT JOIN guided_workflow_target_apps ta ON ta.id = o.target_app_id
-      LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = o.target_app_id
       WHERE 1 = 1
     `;
 

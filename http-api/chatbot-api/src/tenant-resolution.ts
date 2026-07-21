@@ -75,82 +75,19 @@ export class TenantResolver {
     const cached = this.getFromCache(this.targetAppCache, cacheKey);
     if (cached) return cached;
 
-    let row: { id: string; name: string } | null = null;
-
-    // Primary path for normalized schema (guided_workflow_target_apps -> company_target_applications).
-    const primary = await getPool().query<{ id: string; name: string }>(
+    const result = await getPool().query<{ id: string; name: string }>(
       `
-        SELECT gta.id, cta.name
-        FROM guided_workflow_target_apps gta
-        INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-        WHERE cta.company_id = $1
-          AND cta.deleted_at IS NULL
-          AND gta.deleted_at IS NULL
-          AND lower(regexp_replace(trim(cta.name), '\\s+', ' ', 'g')) = $2
+        SELECT id, name
+        FROM company_target_applications
+        WHERE company_id = $1
+          AND deleted_at IS NULL
+          AND lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) = $2
         LIMIT 1
       `,
       [companyId, normalized]
     );
 
-    row = primary.rows[0] || null;
-
-    if (!row) {
-      try {
-        // Legacy fallback for older schemas where guided_workflow_target_apps carries name/company_id.
-        const fallback = await getPool().query<{ id: string; name: string }>(
-          `
-            SELECT id, name
-            FROM guided_workflow_target_apps
-            WHERE company_id = $1
-              AND (deleted_at IS NULL OR deleted_at > now())
-              AND lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) = $2
-            LIMIT 1
-          `,
-          [companyId, normalized]
-        );
-        row = fallback.rows[0] || null;
-      } catch {
-        row = null;
-      }
-    }
-
-    if (!row) {
-      // Final fallback directly against canonical target app table.
-      try {
-        const canonical = await getPool().query<{ id: string; name: string }>(
-          `
-            SELECT id, name
-            FROM company_target_applications
-            WHERE company_id = $1
-              AND deleted_at IS NULL
-              AND lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) = $2
-            LIMIT 1
-          `,
-          [companyId, normalized]
-        );
-
-        const app = canonical.rows[0] || null;
-        if (app) {
-          // Convert canonical target app -> guided target app id when available.
-          const mapped = await getPool().query<{ id: string }>(
-            `
-              SELECT id
-              FROM guided_workflow_target_apps
-              WHERE target_app_id = $1
-                AND deleted_at IS NULL
-              LIMIT 1
-            `,
-            [app.id]
-          );
-
-          const guided = mapped.rows[0];
-          row = guided ? { id: guided.id, name: app.name } : null;
-        }
-      } catch {
-        row = null;
-      }
-    }
-
+    const row = result.rows[0] || null;
     if (!row) {
       throw new Error(`Target app not found for name: ${targetAppName}`);
     }

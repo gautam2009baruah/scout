@@ -158,7 +158,7 @@ export async function upsertChatbotLifecycleSettings(session: AdminSession, inpu
         updated_at = now(),
         deleted_at = NULL
       RETURNING id,
-                (SELECT cta.company_id FROM guided_workflow_target_apps gta INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id WHERE gta.id = chatbot_lifecycle_settings.target_app_id) AS company_id,
+                (SELECT company_id FROM company_target_applications WHERE id = chatbot_lifecycle_settings.target_app_id) AS company_id,
                 target_app_id, max_context_messages, max_context_tokens, inactivity_timeout_seconds,
                 reset_on_logout_event, reset_on_user_change, reset_on_target_app_change
     `,
@@ -192,9 +192,8 @@ export async function resetChatbotLifecycleSettings(session: AdminSession, targe
       WHERE target_app_id = $2
         AND EXISTS (
           SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = chatbot_lifecycle_settings.target_app_id
+          FROM company_target_applications cta
+          WHERE cta.id = chatbot_lifecycle_settings.target_app_id
             AND cta.company_id = $1
             AND cta.deleted_at IS NULL
         )
@@ -385,8 +384,7 @@ async function canUseCompanyLevelApiKeys(session: AdminSession, companyId: strin
       SELECT EXISTS (
         SELECT 1
         FROM user_target_app_access uta
-        INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
-        INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+        INNER JOIN company_target_applications cta ON cta.id = uta.target_app_id
         WHERE uta.user_id = $1
           AND cta.company_id = $2
           AND uta.deleted_at IS NULL
@@ -433,8 +431,7 @@ async function assertUniqueApiKeyNamePerTargetApp(
     `
       SELECT k.id
       FROM chatbot_api_keys k
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = k.target_app_id
       WHERE cta.company_id = $1
         AND (($2::uuid IS NULL AND k.target_app_id IS NULL) OR k.target_app_id = $2)
         AND lower(trim(k.name)) = $3
@@ -539,8 +536,7 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
         k.created_at,
         k.updated_at
       FROM chatbot_api_keys k
-      LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
-      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = k.target_app_id
       INNER JOIN chatbot_api_key_environments env ON env.id = k.environment_id
       WHERE cta.company_id = $1
       ORDER BY CASE WHEN COALESCE(k.status, 'active') = 'revoked' THEN 1 ELSE 0 END ASC, k.created_at DESC
@@ -638,7 +634,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         chatbot_api_keys.key_prefix,
         chatbot_api_keys.target_app_id,
         chatbot_api_keys.environment_id,
-        (SELECT name FROM company_target_applications WHERE id = (SELECT target_app_id FROM guided_workflow_target_apps WHERE id = chatbot_api_keys.target_app_id)) AS target_app_name,
+        (SELECT name FROM company_target_applications WHERE id = chatbot_api_keys.target_app_id) AS target_app_name,
         (SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_api_keys.environment_id) AS environment,
         COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
         chatbot_api_keys.status,
@@ -707,9 +703,8 @@ export async function updateChatbotApiKey(
       WHERE id = $1
         AND EXISTS (
           SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = chatbot_api_keys.target_app_id
+          FROM company_target_applications cta
+          WHERE cta.id = chatbot_api_keys.target_app_id
             AND cta.company_id = $2
             AND cta.deleted_at IS NULL
         )
@@ -854,9 +849,8 @@ export async function updateChatbotApiKey(
       WHERE id = $${index}
         AND EXISTS (
           SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = chatbot_api_keys.target_app_id
+          FROM company_target_applications cta
+          WHERE cta.id = chatbot_api_keys.target_app_id
             AND cta.company_id = $${index + 1}
             AND cta.deleted_at IS NULL
         )
@@ -867,9 +861,8 @@ export async function updateChatbotApiKey(
         chatbot_api_keys.target_app_id,
         chatbot_api_keys.environment_id,
         (SELECT cta.name
-         FROM guided_workflow_target_apps gta
-         INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-         WHERE gta.id = chatbot_api_keys.target_app_id) AS target_app_name,
+         FROM company_target_applications cta
+         WHERE cta.id = chatbot_api_keys.target_app_id) AS target_app_name,
         COALESCE((SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_api_keys.environment_id), '') AS environment,
         COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(chatbot_api_keys.status, CASE WHEN chatbot_api_keys.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
@@ -904,9 +897,8 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
       WHERE k.id = $1
         AND EXISTS (
           SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = k.target_app_id
+          FROM company_target_applications cta
+          WHERE cta.id = k.target_app_id
             AND cta.company_id = $2
             AND cta.deleted_at IS NULL
         )
@@ -941,9 +933,8 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
       WHERE id = $4
         AND EXISTS (
           SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = chatbot_api_keys.target_app_id
+          FROM company_target_applications cta
+          WHERE cta.id = chatbot_api_keys.target_app_id
             AND cta.company_id = $5
             AND cta.deleted_at IS NULL
         )
@@ -986,8 +977,7 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
         k.created_at,
         k.updated_at
       FROM chatbot_api_keys k
-      LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
-      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = k.target_app_id
       LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
       WHERE k.id = $1
         AND cta.company_id = $2
@@ -1092,9 +1082,8 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
       WHERE id = $1
         AND EXISTS (
           SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = chatbot_api_key_environments.target_app_id
+          FROM company_target_applications cta
+          WHERE cta.id = chatbot_api_key_environments.target_app_id
             AND cta.company_id = $2
             AND cta.deleted_at IS NULL
         )
@@ -1143,9 +1132,8 @@ export async function deleteChatbotKeyEnvironment(session: AdminSession, id: str
       WHERE id = $1
         AND EXISTS (
           SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = chatbot_api_key_environments.target_app_id
+          FROM company_target_applications cta
+          WHERE cta.id = chatbot_api_key_environments.target_app_id
             AND cta.company_id = $2
             AND cta.deleted_at IS NULL
         )
@@ -1263,8 +1251,7 @@ export async function listChatbotEmbedPackages(
         p.created_at,
         p.updated_at
       FROM chatbot_embed_packages p
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = p.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = p.target_app_id
       INNER JOIN chatbot_api_keys k
         ON k.target_app_id = p.target_app_id
        AND k.environment_id = p.environment_id
@@ -1298,9 +1285,8 @@ export async function getChatbotEmbedPackageSecret(
       WHERE id = $2
         AND EXISTS (
           SELECT 1
-          FROM guided_workflow_target_apps gta
-          INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-          WHERE gta.id = chatbot_embed_packages.target_app_id
+          FROM company_target_applications cta
+          WHERE cta.id = chatbot_embed_packages.target_app_id
             AND cta.company_id = $1
             AND cta.deleted_at IS NULL
         )
@@ -1356,8 +1342,7 @@ export async function resolveChatbotApiKeyContext(
         k.name,
         k.key_prefix
       FROM chatbot_api_keys k
-      LEFT JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
-      LEFT JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = k.target_app_id
       LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
       WHERE cta.company_id = $1
         AND k.key_hash = $2
@@ -1424,8 +1409,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         COALESCE(env.normalized_name, '') AS environment,
         k.target_app_id
       FROM chatbot_api_keys k
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = k.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = k.target_app_id
       LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
       WHERE k.target_app_id = $1
         AND k.key_hash = $2
@@ -1520,7 +1504,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
       RETURNING
         chatbot_embed_packages.id,
         chatbot_embed_packages.target_app_id,
-        (SELECT name FROM company_target_applications WHERE id = (SELECT target_app_id FROM guided_workflow_target_apps WHERE id = chatbot_embed_packages.target_app_id)) AS target_app_name,
+        (SELECT name FROM company_target_applications WHERE id = chatbot_embed_packages.target_app_id) AS target_app_name,
         chatbot_embed_packages.environment_id,
         (SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_embed_packages.environment_id) AS environment,
         chatbot_embed_packages.user_id_placeholder,

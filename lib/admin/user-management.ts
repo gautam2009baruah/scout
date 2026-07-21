@@ -311,8 +311,7 @@ export async function getEmployeePage(filters: EmployeeFilters) {
               'targetAppIds', COALESCE((
                 SELECT array_agg(uta.target_app_id ORDER BY uta.target_app_id)
                 FROM user_target_app_access uta
-                INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
-                INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+                INNER JOIN company_target_applications cta ON cta.id = uta.target_app_id
                 WHERE uta.user_id = users.id
                   AND cta.company_id = member_roles.company_id
                   AND uta.deleted_at IS NULL
@@ -646,10 +645,9 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
     const targetAppIds = Array.from(new Set(input.targetAppIds ?? []));
     if (targetAppIds.length > 0) {
       const validApps = await client.query<{ id: string }>(
-        `SELECT gta.id
-         FROM guided_workflow_target_apps gta
-         INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-         WHERE cta.company_id = $1 AND gta.id = ANY($2::uuid[])`,
+        `SELECT cta.id
+         FROM company_target_applications cta
+         WHERE cta.company_id = $1 AND cta.id = ANY($2::uuid[])`,
         [primaryCompanyId, targetAppIds]
       );
       if (validApps.rowCount !== targetAppIds.length) {
@@ -659,9 +657,8 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
     await client.query(
       `UPDATE user_target_app_access uta
        SET deleted_at = NOW(), deleted_by = $3, updated_at = NOW(), updated_by = $3
-       FROM guided_workflow_target_apps gta
-       INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
-       WHERE uta.target_app_id = gta.id
+       FROM company_target_applications cta
+       WHERE uta.target_app_id = cta.id
          AND uta.user_id = $1 AND cta.company_id = $2
          AND uta.deleted_at IS NULL`,
       [employeeId, primaryCompanyId, session.user.id]

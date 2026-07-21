@@ -497,9 +497,8 @@ async function assertUserCompanyAccess(input: { companyId: string; userId: strin
   const scoped = await pool.query<{ allowed: boolean }>(
     `SELECT EXISTS (
        SELECT 1
-       FROM guided_workflow_target_apps app
-       INNER JOIN company_target_applications cta ON cta.id = app.target_app_id
-       WHERE app.id = $2
+       FROM company_target_applications cta
+       WHERE cta.id = $2
          AND cta.company_id = $1
          AND cta.deleted_at IS NULL
      ) AS allowed`,

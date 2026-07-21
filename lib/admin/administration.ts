@@ -521,19 +521,15 @@ export async function listCompanyTargetApplications(session: AdminSession): Prom
         AND (
           NOT EXISTS (
             SELECT 1 FROM user_target_app_access uta
-            INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
-            INNER JOIN company_target_applications scoped_cta ON scoped_cta.id = gta.target_app_id
+            INNER JOIN company_target_applications scoped_cta ON scoped_cta.id = uta.target_app_id
             WHERE uta.user_id = $2 AND uta.deleted_at IS NULL
               AND scoped_cta.company_id = company_target_applications.company_id
               AND scoped_cta.deleted_at IS NULL
           )
           OR EXISTS (
             SELECT 1 FROM user_target_app_access uta
-            INNER JOIN guided_workflow_target_apps gta ON gta.id = uta.target_app_id
-            INNER JOIN company_target_applications scoped_cta ON scoped_cta.id = gta.target_app_id
             WHERE uta.user_id = $2 AND uta.deleted_at IS NULL
-              AND scoped_cta.id = company_target_applications.id
-              AND scoped_cta.deleted_at IS NULL
+              AND uta.target_app_id = company_target_applications.id
           )
         )
       ORDER BY companies.name ASC, company_target_applications.name ASC
@@ -578,20 +574,6 @@ export async function createCompanyTargetApplication(
         RETURNING id
       `,
       [input.companyId, name, baseUrl, session.user.id]
-    );
-
-    await client.query(
-      `
-        INSERT INTO guided_workflow_target_apps (
-          target_app_id,
-          allowed_origins_json,
-          player_config_json,
-          created_by,
-          updated_by
-        )
-        VALUES ($1, '[]'::jsonb, '{}'::jsonb, $2, $2)
-      `,
-      [result.rows[0].id, session.user.id]
     );
 
     await client.query("COMMIT");

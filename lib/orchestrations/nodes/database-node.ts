@@ -405,8 +405,7 @@ async function getActiveSchemaById(input: {
           schemas.database_type,
           schemas.schema_json
         FROM target_app_database_schemas schemas
-        INNER JOIN guided_workflow_target_apps gta ON gta.id = schemas.target_app_id
-        INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+        INNER JOIN company_target_applications cta ON cta.id = schemas.target_app_id
         WHERE schemas.id = $1
           AND cta.company_id = $2
           AND cta.deleted_at IS NULL

@@ -78,8 +78,7 @@ export async function getEffectiveChatbotLifecycleSettings(companyId: string, ta
       SELECT settings.id, cta.company_id, settings.target_app_id, settings.max_context_messages, settings.max_context_tokens, settings.inactivity_timeout_seconds,
              reset_on_logout_event, reset_on_user_change, reset_on_target_app_change
       FROM chatbot_lifecycle_settings settings
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = settings.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = settings.target_app_id
       WHERE cta.company_id = $1
         AND settings.deleted_at IS NULL
         AND ($2::uuid IS NULL OR settings.target_app_id = $2)
@@ -112,8 +111,7 @@ export async function listChatbotLifecycleSettings(companyId: string) {
       SELECT settings.id, cta.company_id, settings.target_app_id, settings.max_context_messages, settings.max_context_tokens, settings.inactivity_timeout_seconds,
              reset_on_logout_event, reset_on_user_change, reset_on_target_app_change
       FROM chatbot_lifecycle_settings settings
-      INNER JOIN guided_workflow_target_apps gta ON gta.id = settings.target_app_id
-      INNER JOIN company_target_applications cta ON cta.id = gta.target_app_id
+      INNER JOIN company_target_applications cta ON cta.id = settings.target_app_id
       WHERE cta.company_id = $1
         AND settings.deleted_at IS NULL
       ORDER BY settings.updated_at DESC
