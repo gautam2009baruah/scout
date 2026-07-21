@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Save, ShieldCheck, Trash2, X } from "lucide-react";
+import { Pencil, Save, ShieldCheck, Trash2, UserCog, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import type { RoleSummary } from "@/lib/admin/administration";
 import type { AdminModule } from "@/lib/admin/permissions";
@@ -111,11 +111,15 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
   return (
     <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold tracking-normal text-slate-950">Roles</h2>
-          <p className="mt-1 text-sm text-slate-500">Manage roles for the selected company.</p>
+        <div className="flex items-center gap-3">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
+            <UserCog className="h-5 w-5" />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold tracking-normal text-slate-950">Roles</h2>
+            <p className="mt-1 text-sm text-slate-500">Manage roles for the selected company.</p>
+          </div>
         </div>
-        <ShieldCheck className="h-5 w-5 text-slate-500" />
       </div>
 
       {feedback.message ? (
