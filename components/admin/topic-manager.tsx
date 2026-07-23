@@ -2,9 +2,10 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, ListTree, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./topic-tree";
+import { TopicTreeList } from "./topic-tree-list";
 import type { RoleSummary } from "@/lib/admin/administration";
 import type { TopicAccessGrant, TopicRow, TopicTreeNode, TopicUserOption } from "@/lib/admin/content-structure";
 
@@ -297,6 +298,19 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [editUserIds, setEditUserIds] = useState<string[]>([]);
   const [editTargetAppIds, setEditTargetAppIds] = useState<string[]>([]);
   const [handledDeepLinkKey, setHandledDeepLinkKey] = useState<string | null>(null);
+  const [treeView, setTreeView] = useState<"diagram" | "list">("diagram");
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("scout-content-structure-view");
+    if (stored === "diagram" || stored === "list") {
+      setTreeView(stored);
+    }
+  }, []);
+
+  function selectTreeView(view: "diagram" | "list") {
+    setTreeView(view);
+    window.localStorage.setItem("scout-content-structure-view", view);
+  }
 
   const rootParentOptions = useMemo(
     () => topics.filter((topic) => topic.companyId === createCompanyId),
@@ -1232,15 +1246,51 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
   return (
     <div className="grid gap-6">
-      <section>
-        <TopicTree
-          accessibleTargetAppIds={targetApps.map((app) => app.id)}
-          canCreateRoot={canManageAccess}
-          onOpenMenu={openContextMenu}
-          selectedCompanyId={selectedCompanyId}
-          selectedCompanyName={selectedCompanyName}
-          tree={visibleTree}
-        />
+      <section className="space-y-3">
+        <div className="flex justify-end">
+          <div className="inline-flex h-8 items-center overflow-hidden rounded-full border border-slate-300/40 bg-white shadow-sm">
+            <button
+              aria-pressed={treeView === "diagram"}
+              className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-semibold transition ${treeView === "diagram" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}
+              onClick={() => selectTreeView("diagram")}
+              title="Graphical org-chart layout"
+              type="button"
+            >
+              <Workflow className="h-3.5 w-3.5" />
+              Diagram view
+            </button>
+            <button
+              aria-pressed={treeView === "list"}
+              className={`inline-flex h-8 items-center gap-1.5 border-l border-slate-200/70 px-3 text-xs font-semibold transition ${treeView === "list" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}
+              onClick={() => selectTreeView("list")}
+              title="Compact, indented list with expand/collapse"
+              type="button"
+            >
+              <ListTree className="h-3.5 w-3.5" />
+              List view
+            </button>
+          </div>
+        </div>
+
+        {treeView === "diagram" ? (
+          <TopicTree
+            accessibleTargetAppIds={targetApps.map((app) => app.id)}
+            canCreateRoot={canManageAccess}
+            onOpenMenu={openContextMenu}
+            selectedCompanyId={selectedCompanyId}
+            selectedCompanyName={selectedCompanyName}
+            tree={visibleTree}
+          />
+        ) : (
+          <TopicTreeList
+            accessibleTargetAppIds={targetApps.map((app) => app.id)}
+            canCreateRoot={canManageAccess}
+            onOpenMenu={openContextMenu}
+            selectedCompanyId={selectedCompanyId}
+            selectedCompanyName={selectedCompanyName}
+            tree={visibleTree}
+          />
+        )}
       </section>
 
       {toast ? (
