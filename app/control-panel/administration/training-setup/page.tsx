@@ -29,10 +29,12 @@ export default async function TrainingSetupPage() {
     listCompanyTargetApplications(session),
     listGuidedWorkflowRecordingSessions(session)
   ]);
+  const appBaseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
 
   return (
     <AdminShell active={MODULE_KEYS.workflowTrainingSetup} session={session}>
       <GuidedWorkflowTrainingSetup
+        appBaseUrl={appBaseUrl}
         companies={companies}
         recordingSessions={recordingSessions}
         selectedCompanyId={session.user.tenantId}

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { Bot, KeyRound, Pencil, Plus, RefreshCw, Star, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
+import { Bot, HelpCircle, KeyRound, Pencil, Plus, RefreshCw, Star, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 
 type AIConfig = {
   active: {
@@ -98,13 +98,35 @@ function readMessage(response: Response, fallback: string) {
   return response.json().then((body) => (typeof body?.message === "string" ? body.message : fallback)).catch(() => fallback);
 }
 
+const embeddingEndpointHints: Record<string, string> = {
+  local_bge: "This is filled in with the usual local Ollama embedding endpoint — edit it if your server runs somewhere else. It's saved and used exactly as typed, so a wrong value will make requests fail.",
+  openai: "This is filled in with the standard OpenAI embeddings endpoint — edit it to point at Azure OpenAI or a compatible proxy. It's saved and used exactly as typed, so a wrong value will make requests fail.",
+  gemini: "This is filled in with the standard Gemini embeddings endpoint for the model above — edit it for a different API version, region, or proxy. It's saved and used exactly as typed, so a wrong value will make requests fail.",
+  custom: "Required. Enter the full URL Scout should send requests to."
+};
+
+function defaultEmbeddingEndpointFor(provider: string, model: string) {
+  switch (provider) {
+    case "local_bge":
+      return "http://localhost:11434/api/embed";
+    case "openai":
+      return "https://api.openai.com/v1/embeddings";
+    case "gemini":
+      return `https://generativelanguage.googleapis.com/v1beta/models/${model.replace(/^models\//, "").trim() || "gemini-embedding-001"}:batchEmbedContents`;
+    case "custom":
+      return "";
+    default:
+      return "";
+  }
+}
+
 function buildEmbeddingDraft(option: ProviderOption): EmbeddingDraft {
   return {
     id: null,
     provider: option.key,
     model: option.default_model || "",
     dimension: String(option.default_dimension || ""),
-    endpoint: "",
+    endpoint: defaultEmbeddingEndpointFor(option.key, option.default_model || ""),
     api_key: "",
     is_active: true,
     is_primary: false
@@ -116,11 +138,48 @@ function buildLlmDraft(option: ProviderOption): LLMDraft {
     id: null,
     provider: option.key,
     model: option.default_model || "",
-    endpoint: "",
+    endpoint: defaultLlmEndpointFor(option.key, option.default_model || ""),
     api_key: "",
     is_active: true,
     is_primary: false
   };
+}
+
+const llmEndpointHints: Record<string, string> = {
+  ollama: "This is filled in with the usual Ollama endpoint — edit it if your server runs somewhere else. It's saved and used exactly as typed, so a wrong value will make requests fail.",
+  openai: "This is filled in with the standard OpenAI endpoint — edit it to point at Azure OpenAI or a compatible proxy. It's saved and used exactly as typed, so a wrong value will make requests fail.",
+  gemini: "This is filled in with the standard Gemini endpoint for the model above — edit it for a different API version, region, or proxy. It's saved and used exactly as typed, so a wrong value will make requests fail.",
+  anthropic: "This is filled in with the standard Anthropic endpoint — edit it to point at a different API version or proxy. It's saved and used exactly as typed, so a wrong value will make requests fail.",
+  custom: "Required. Enter the full URL Scout should send requests to.",
+  mock: "Not used by the mock provider."
+};
+
+function defaultLlmEndpointFor(provider: string, model: string) {
+  switch (provider) {
+    case "ollama":
+      return "http://localhost:11434";
+    case "openai":
+      return "https://api.openai.com/v1/chat/completions";
+    case "gemini":
+      return `https://generativelanguage.googleapis.com/v1beta/models/${model.trim() || "gemini-2.5-flash"}:generateContent`;
+    case "anthropic":
+      return "https://api.anthropic.com/v1/messages";
+    case "custom":
+      return "";
+    default:
+      return "";
+  }
+}
+
+function HintTooltip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <HelpCircle className="h-3.5 w-3.5 cursor-help text-slate-400" tabIndex={0} />
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-64 -translate-x-1/2 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-normal normal-case leading-4 text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-within:opacity-100">
+        {text}
+      </span>
+    </span>
+  );
 }
 
 export function AIConfigurationForm({ companyName, config, embeddingProviders, llmProviders }: AIConfigurationFormProps) {
@@ -247,7 +306,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
       provider: configItem.provider,
       model: configItem.model,
       dimension: configItem.dimension ? String(configItem.dimension) : "",
-      endpoint: configItem.endpoint,
+      endpoint: configItem.endpoint || defaultEmbeddingEndpointFor(configItem.provider, configItem.model),
       api_key: configItem.api_key,
       is_active: configItem.is_active,
       is_primary: configItem.is_primary
@@ -260,7 +319,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
       id: configItem.id,
       provider: configItem.provider,
       model: configItem.model,
-      endpoint: configItem.endpoint,
+      endpoint: configItem.endpoint || defaultLlmEndpointFor(configItem.provider, configItem.model),
       api_key: configItem.api_key,
       is_active: configItem.is_active,
       is_primary: configItem.is_primary
@@ -374,11 +433,13 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                     className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
                     onChange={(event) => {
                       const option = embeddingProviderMap.get(event.target.value);
+                      const nextModel = option?.default_model || embeddingDraft.model;
                       setEmbeddingDraft((prev) => ({
                         ...prev,
                         provider: event.target.value,
-                        model: option?.default_model || prev.model,
-                        dimension: option?.default_dimension ? String(option.default_dimension) : prev.dimension
+                        model: nextModel,
+                        dimension: option?.default_dimension ? String(option.default_dimension) : prev.dimension,
+                        endpoint: defaultEmbeddingEndpointFor(event.target.value, nextModel)
                       }));
                     }}
                     value={embeddingDraft.provider}
@@ -402,7 +463,10 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Endpoint</span>
+                  <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    Endpoint
+                    <HintTooltip text={embeddingEndpointHints[embeddingDraft.provider] ?? "This is saved and used exactly as typed — a wrong value will make requests fail."} />
+                  </span>
                   <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="Endpoint" value={embeddingDraft.endpoint} />
                 </label>
 
@@ -519,10 +583,12 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                     className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
                     onChange={(event) => {
                       const option = llmProviderMap.get(event.target.value);
+                      const nextModel = option?.default_model || llmDraft.model;
                       setLlmDraft((prev) => ({
                         ...prev,
                         provider: event.target.value,
-                        model: option?.default_model || prev.model
+                        model: nextModel,
+                        endpoint: defaultLlmEndpointFor(event.target.value, nextModel)
                       }));
                     }}
                     value={llmDraft.provider}
@@ -539,7 +605,10 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                 </label>
 
                 <label className="block md:col-span-2 xl:col-span-1">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">Endpoint</span>
+                  <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    Endpoint
+                    <HintTooltip text={llmEndpointHints[llmDraft.provider] ?? "This is saved and used exactly as typed — a wrong value will make requests fail."} />
+                  </span>
                   <input className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setLlmDraft((prev) => ({ ...prev, endpoint: event.target.value }))} placeholder="Endpoint" value={llmDraft.endpoint} />
                 </label>
               </div>

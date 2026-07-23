@@ -9,15 +9,8 @@ type CompanyOption = { id: string; name: string };
 const initialState = { status: "idle", message: "" } as const;
 const pluginBrowsers = ["Brave", "Chrome", "Edge", "Firefox", "Opera", "Safari"];
 
-function getScoutBaseUrl() {
-  if (typeof window !== "undefined") {
-    return window.location.origin;
-  }
-
-  return "http://localhost:3000";
-}
-
-export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, selectedCompanyId, targetApps }: {
+export function GuidedWorkflowTrainingSetup({ appBaseUrl, companies, recordingSessions, selectedCompanyId, targetApps }: {
+  appBaseUrl: string;
   companies: CompanyOption[];
   recordingSessions: GuidedWorkflowRecordingSessionRow[];
   selectedCompanyId: string;
@@ -64,7 +57,7 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
     .filter((session) => !appliedSessionFilter || session.id === appliedSessionFilter);
   const [configTopicId, setConfigTopicId] = useState<string | null>(null);
   const configTopic = configTopicId ? sessions.flatMap((session) => session.topics.map((topic) => ({ session, topic }))).find(({ topic }) => topic.id === configTopicId) : null;
-  const recorderConfigTopic = configTopic ? recorderConfigForTopic(configTopic.topic, configTopic.session) : null;
+  const recorderConfigTopic = configTopic ? recorderConfigForTopic(configTopic.topic, configTopic.session, appBaseUrl) : null;
   const duplicateTopicTitle = topicDialog
     ? sessions.find((session) => session.id === topicDialog.sessionId)
         ?.topics.some((topic) => topic.id !== topicDialog.topic?.id && topic.title.trim().toLowerCase() === topicDialog.title.trim().toLowerCase()) ?? false
@@ -727,12 +720,12 @@ export function GuidedWorkflowTrainingSetup({ companies, recordingSessions, sele
   );
 }
 
-function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWorkflowRecordingSessionRow) {
+function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWorkflowRecordingSessionRow, appBaseUrl: string) {
   const recorderToken = topic.recorderConfig?.recorderToken;
   if (!recorderToken) return null;
 
   return {
-    scoutBaseUrl: getScoutBaseUrl(),
+    scoutBaseUrl: appBaseUrl,
     recorderToken,
     sessionTitle: `${session.title} / ${topic.title}`,
     recordingSessionId: session.id,

@@ -107,7 +107,11 @@ class OllamaProvider implements LLMProvider {
 
   constructor(config: AIProviderConfig) {
     this.model = config.llm_model || "qwen3:0.6b";
-    this.endpoint = config.llm_endpoint || "http://localhost:11434";
+    this.endpoint = config.llm_endpoint;
+
+    if (!this.endpoint) {
+      throw new Error("LLM_ENDPOINT is required when LLM_PROVIDER=ollama.");
+    }
   }
 
   async generate_answer(system_prompt: string, user_prompt: string, context: LLMContextItem[] | string) {
@@ -226,13 +230,19 @@ class OpenAIProvider implements LLMProvider {
   provider = "openai";
   model: string;
   private apiKey: string;
+  private endpoint: string;
 
   constructor(config: AIProviderConfig) {
     this.model = config.llm_model || "gpt-4.1-mini";
     this.apiKey = config.llm_api_key;
+    this.endpoint = config.llm_endpoint;
 
     if (!this.apiKey) {
       throw new Error("LLM_API_KEY or OPENAI_API_KEY is required when LLM_PROVIDER=openai.");
+    }
+
+    if (!this.endpoint) {
+      throw new Error("LLM_ENDPOINT is required when LLM_PROVIDER=openai.");
     }
   }
 
@@ -243,7 +253,7 @@ class OpenAIProvider implements LLMProvider {
       return INSUFFICIENT_CONTEXT_MESSAGE;
     }
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(this.endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -269,7 +279,7 @@ class OpenAIProvider implements LLMProvider {
   }
 
   get_model_info() {
-    return { provider: this.provider, model: this.model };
+    return { provider: this.provider, model: this.model, endpoint: this.endpoint };
   }
 }
 
@@ -277,13 +287,19 @@ class GeminiProvider implements LLMProvider {
   provider = "gemini";
   model: string;
   private apiKey: string;
+  private endpoint: string;
 
   constructor(config: AIProviderConfig) {
     this.model = config.llm_model || "gemini-2.5-flash";
     this.apiKey = config.llm_api_key;
+    this.endpoint = config.llm_endpoint;
 
     if (!this.apiKey) {
       throw new Error("LLM_API_KEY or GEMINI_API_KEY is required when LLM_PROVIDER=gemini.");
+    }
+
+    if (!this.endpoint) {
+      throw new Error("LLM_ENDPOINT is required when LLM_PROVIDER=gemini.");
     }
   }
 
@@ -295,10 +311,11 @@ class GeminiProvider implements LLMProvider {
     }
 
     const timeout = timeoutSignal(30000);
+    const url = this.endpoint.includes("key=") ? this.endpoint : `${this.endpoint}${this.endpoint.includes("?") ? "&" : "?"}key=${this.apiKey}`;
 
     try {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:generateContent?key=${this.apiKey}`,
+        url,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -342,7 +359,7 @@ class GeminiProvider implements LLMProvider {
   }
 
   get_model_info() {
-    return { provider: this.provider, model: this.model };
+    return { provider: this.provider, model: this.model, endpoint: this.endpoint };
   }
 }
 
@@ -350,13 +367,19 @@ class AnthropicProvider implements LLMProvider {
   provider = "anthropic";
   model: string;
   private apiKey: string;
+  private endpoint: string;
 
   constructor(config: AIProviderConfig) {
     this.model = config.llm_model || "claude-3-5-haiku-latest";
     this.apiKey = config.llm_api_key;
+    this.endpoint = config.llm_endpoint;
 
     if (!this.apiKey) {
       throw new Error("LLM_API_KEY is required when LLM_PROVIDER=anthropic.");
+    }
+
+    if (!this.endpoint) {
+      throw new Error("LLM_ENDPOINT is required when LLM_PROVIDER=anthropic.");
     }
   }
 
@@ -367,7 +390,7 @@ class AnthropicProvider implements LLMProvider {
       return INSUFFICIENT_CONTEXT_MESSAGE;
     }
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch(this.endpoint, {
       method: "POST",
       headers: {
         "x-api-key": this.apiKey,
@@ -396,7 +419,7 @@ class AnthropicProvider implements LLMProvider {
   }
 
   get_model_info() {
-    return { provider: this.provider, model: this.model };
+    return { provider: this.provider, model: this.model, endpoint: this.endpoint };
   }
 }
 

@@ -1,6 +1,6 @@
 declare const chrome: any;
 
-type MessageHandler = (message: unknown, sender: unknown) => void | Promise<void>;
+type MessageHandler = (message: unknown, sender: unknown) => unknown;
 
 const runtime = chrome?.runtime;
 const storage = chrome?.storage;
@@ -11,8 +11,11 @@ export const browserApi = {
   },
 
   onMessage(handler: MessageHandler) {
-    runtime?.onMessage?.addListener?.((message: unknown, sender: unknown) => {
-      void handler(message, sender);
+    runtime?.onMessage?.addListener?.((message: unknown, sender: unknown, sendResponse: (response?: unknown) => void) => {
+      Promise.resolve(handler(message, sender))
+        .then((result) => sendResponse(result))
+        .catch(() => sendResponse(undefined));
+      return true;
     });
   },
 

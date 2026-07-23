@@ -934,22 +934,20 @@ async function renderToolbar() {
           type: "SCOUT_RECORDING_SYNC",
           recorderConfig: recorderMeta.recorderConfig,
         });
-        window.setTimeout(async () => {
-          syncInProgress = false;
-          const after = await getState();
-          const afterMeta = await getRecorderMeta();
-          const afterPending = Math.max(0, after.actions.length - (afterMeta.recorderStatus?.postedCount ?? 0));
-          if (afterMeta.recorderStatus?.lastError) {
-            showToast(afterMeta.recorderStatus.lastError, "error");
-          } else if (beforePending === 0) {
-            showToast("No pending steps to sync.", "info");
-          } else if (after.actions.length === 0 || afterPending === 0) {
-            showToast(`Synced ${beforePending} step${beforePending === 1 ? "" : "s"} to Scout and cleared local recording.`, "success");
-          } else {
-            showToast(`${beforePending - afterPending} synced, ${afterPending} still pending.`, "error");
-          }
-          await renderToolbar();
-        }, 900);
+        syncInProgress = false;
+        const after = await getState();
+        const afterMeta = await getRecorderMeta();
+        const afterPending = Math.max(0, after.actions.length - (afterMeta.recorderStatus?.postedCount ?? 0));
+        if (afterMeta.recorderStatus?.lastError) {
+          showToast(afterMeta.recorderStatus.lastError, "error");
+        } else if (beforePending === 0) {
+          showToast("No pending steps to sync.", "info");
+        } else if (after.actions.length === 0 || afterPending === 0) {
+          showToast(`Synced ${beforePending} step${beforePending === 1 ? "" : "s"} to Scout and cleared local recording.`, "success");
+        } else {
+          showToast(`${beforePending - afterPending} synced, ${afterPending} still pending.`, "error");
+        }
+        await renderToolbar();
       } catch {
         syncInProgress = false;
         showToast("Unable to sync to Scout.", "error");

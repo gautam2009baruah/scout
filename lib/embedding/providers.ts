@@ -55,7 +55,11 @@ class LocalBGEProvider implements EmbeddingProvider {
   constructor(config: AIProviderConfig) {
     this.model = config.embedding_model || "nomic-embed-text";
     this.dimensions = Number(config.embedding_dimension || 768);
-    this.endpoint = config.embedding_endpoint || "http://localhost:11434/api/embed";
+    this.endpoint = config.embedding_endpoint;
+
+    if (!this.endpoint) {
+      throw new Error("EMBEDDING_ENDPOINT is required when EMBEDDING_PROVIDER=local_bge.");
+    }
   }
 
   async embed_text(text: string) {
@@ -113,14 +117,20 @@ class OpenAIEmbeddingProvider implements EmbeddingProvider {
   model: string;
   dimensions: number;
   private apiKey: string;
+  private endpoint: string;
 
   constructor(config: AIProviderConfig) {
     this.model = config.embedding_model || "text-embedding-3-small";
     this.dimensions = Number(config.embedding_dimension || 1536);
     this.apiKey = config.embedding_api_key;
+    this.endpoint = config.embedding_endpoint;
 
     if (!this.apiKey) {
       throw new Error("EMBEDDING_API_KEY or OPENAI_API_KEY is required when EMBEDDING_PROVIDER=openai.");
+    }
+
+    if (!this.endpoint) {
+      throw new Error("EMBEDDING_ENDPOINT is required when EMBEDDING_PROVIDER=openai.");
     }
   }
 
@@ -136,7 +146,7 @@ class OpenAIEmbeddingProvider implements EmbeddingProvider {
       body.dimensions = this.dimensions;
     }
 
-    const response = await fetch("https://api.openai.com/v1/embeddings", {
+    const response = await fetch(this.endpoint, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
@@ -156,7 +166,7 @@ class OpenAIEmbeddingProvider implements EmbeddingProvider {
   }
 
   get_model_info() {
-    return { provider: this.provider, model: this.model, dimensions: this.dimensions };
+    return { provider: this.provider, model: this.model, dimensions: this.dimensions, endpoint: this.endpoint };
   }
 }
 
@@ -165,14 +175,20 @@ class GeminiEmbeddingProvider implements EmbeddingProvider {
   model: string;
   dimensions: number;
   private apiKey: string;
+  private endpoint: string;
 
   constructor(config: AIProviderConfig) {
     this.model = normalizeEmbeddingModel("gemini", config.embedding_model);
     this.dimensions = Number(config.embedding_dimension || 768);
     this.apiKey = config.embedding_api_key;
+    this.endpoint = config.embedding_endpoint;
 
     if (!this.apiKey) {
       throw new Error("EMBEDDING_API_KEY or GEMINI_API_KEY is required when EMBEDDING_PROVIDER=gemini.");
+    }
+
+    if (!this.endpoint) {
+      throw new Error("EMBEDDING_ENDPOINT is required when EMBEDDING_PROVIDER=gemini.");
     }
   }
 
@@ -183,8 +199,9 @@ class GeminiEmbeddingProvider implements EmbeddingProvider {
 
   async embed_batch(texts: string[]) {
     const modelResource = `models/${this.model}`;
+    const url = this.endpoint.includes("key=") ? this.endpoint : `${this.endpoint}${this.endpoint.includes("?") ? "&" : "?"}key=${this.apiKey}`;
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(this.model)}:batchEmbedContents?key=${this.apiKey}`,
+      url,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -207,7 +224,7 @@ class GeminiEmbeddingProvider implements EmbeddingProvider {
   }
 
   get_model_info() {
-    return { provider: this.provider, model: this.model, dimensions: this.dimensions };
+    return { provider: this.provider, model: this.model, dimensions: this.dimensions, endpoint: this.endpoint };
   }
 }
 

@@ -8,6 +8,7 @@ import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkfl
 import HealingSuggestionReviewer from "./healing-suggestion-reviewer-panel";
 
 type GuidedWorkflowManagerProps = {
+  appBaseUrl: string;
   guides: GuidedWorkflowRow[];
   selectedCompanyId: string;
   selectedCompanyName?: string;
@@ -51,15 +52,7 @@ type HealingSuggestionSummary = {
   step_id: string;
 };
 
-function getScoutBaseUrl() {
-  if (typeof window !== "undefined") {
-    return window.location.origin;
-  }
-
-  return "http://localhost:3000";
-}
-
-export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompanyName, recordingSessions, targetApps }: GuidedWorkflowManagerProps) {
+export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, selectedCompanyName, recordingSessions, targetApps }: GuidedWorkflowManagerProps) {
   const [apps, setApps] = useState(targetApps);
   const [sessions, setSessions] = useState(recordingSessions);
   const [items, setItems] = useState(guides);
@@ -88,14 +81,14 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
   const filterApps = apps.filter((app) => app.companyId === selectedCompanyId);
   const filteredSessions = useMemo(() => sessions.filter((session) => {
     const matchesCompany = session.companyId === selectedCompanyId;
-    const matchesTargetApp = session.targetAppId === filters.targetAppId;
+    const matchesTargetApp = session.companyTargetApplicationId === filters.targetAppId;
     const filterTitle = filters.title.trim().toLowerCase();
     const matchesTitle = !filterTitle || session.title.toLowerCase().includes(filterTitle) || session.topics.some((topic) => topic.title.toLowerCase().includes(filterTitle));
     return matchesCompany && matchesTargetApp && matchesTitle;
   }), [filters.targetAppId, filters.title, selectedCompanyId, sessions]);
   const selectedSession = useMemo(() => sessions.find((session) => session.id === selectedSessionId) ?? null, [sessions, selectedSessionId]);
   const selectedTopic = useMemo(() => sessions.flatMap((session) => session.topics).find((topic) => topic.id === selectedTopicId) ?? null, [sessions, selectedTopicId]);
-  const selectedRecorderConfig = selectedSession && selectedTopic ? recorderConfigForTopic(selectedTopic, selectedSession) : null;
+  const selectedRecorderConfig = selectedSession && selectedTopic ? recorderConfigForTopic(selectedTopic, selectedSession, appBaseUrl) : null;
 
   useEffect(() => {
     const nextApps = apps.filter((app) => app.companyId === selectedCompanyId);
@@ -131,6 +124,14 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
     setEditor(editorFromGuide(guide));
   }, [items, selectedId, selectedTopic?.guideId]);
 
+  const [sessionDetailsRefreshToken, setSessionDetailsRefreshToken] = useState(0);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const selectedSessionRef = useRef(selectedSession);
+  selectedSessionRef.current = selectedSession;
+
   useEffect(() => {
     if (!selectedTopicId) {
       setSessionDetails({ session: null, actions: [] });
@@ -146,11 +147,18 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
         if (cancelled) return;
 
         setSessionDetails({
-          session: selectedSession ?? null,
+          session: selectedSessionRef.current ?? null,
           actions: Array.isArray(body?.actions) ? body.actions : []
         });
         if (body?.topic) {
-          setSessions((current) => current.map((session) => session.id === body.topic.recordingSessionId ? { ...session, topics: session.topics.map((topic) => topic.id === body.topic.id ? body.topic : topic) } : session));
+          setSessions((current) => {
+            const session = current.find((item) => item.id === body.topic.recordingSessionId);
+            const existingTopic = session?.topics.find((topic) => topic.id === body.topic.id);
+            if (existingTopic && JSON.stringify(existingTopic) === JSON.stringify(body.topic)) {
+              return current;
+            }
+            return current.map((item) => item.id === body.topic.recordingSessionId ? { ...item, topics: item.topics.map((topic) => topic.id === body.topic.id ? body.topic : topic) } : item);
+          });
         }
 
         if (body?.topic?.guideId) {
@@ -168,8 +176,8 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
             });
             setSelectedId(guideBody.guide.id);
             setEditor((current) => {
-              const displayedGuide = items.find((guide) => guide.id === selectedId);
-              const hasLocalEdits = Boolean(displayedGuide && selectedId === guideBody.guide.id && editorHasChanges(current, displayedGuide));
+              const displayedGuide = itemsRef.current.find((guide) => guide.id === selectedIdRef.current);
+              const hasLocalEdits = Boolean(displayedGuide && selectedIdRef.current === guideBody.guide.id && editorHasChanges(current, displayedGuide));
               return hasLocalEdits ? current : editorFromGuide(guideBody.guide);
             });
           }
@@ -182,13 +190,11 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
     }
 
     void refreshSessionDetails();
-    const intervalId = window.setInterval(() => void refreshSessionDetails(), 5000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
     };
-  }, [items, selectedId, selectedSession, selectedTopicId]);
+  }, [selectedTopicId, sessionDetailsRefreshToken]);
 
   function selectGuide(guide: GuidedWorkflowRow) {
     setSelectedId(guide.id);
@@ -646,12 +652,14 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
         </Panel>
 
         <SessionDetailsPanel
+          appBaseUrl={appBaseUrl}
           convertTopic={convertTopic}
           deleteSession={deleteSession}
           deleteStep={hardDeleteStep}
           editor={editor}
           guides={items}
           moveStep={moveStep}
+          onRefresh={() => setSessionDetailsRefreshToken((current) => current + 1)}
           publishTopicGuide={publishTopicGuide}
           recorderConfig={selectedRecorderConfig}
           setTopicRecording={setTopicRecording}
@@ -691,13 +699,15 @@ export function GuidedWorkflowManager({ guides, selectedCompanyId, selectedCompa
   );
 }
 
-function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, guides, moveStep, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
+function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteSession, deleteStep, editor, guides, moveStep, onRefresh, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
+  appBaseUrl: string;
   convertTopic(topicId: string): void;
   deleteSession(sessionId: string): void;
   deleteStep(index: number): void;
   editor: EditorState;
   guides: GuidedWorkflowRow[];
   moveStep(index: number, direction: -1 | 1): void;
+  onRefresh(): void;
   publishTopicGuide(topic: GuidedWorkflowTopicRow): void;
   recorderConfig: { scoutBaseUrl: string; recorderToken: string; sessionTitle: string; recordingSessionId: string; topicId: string; ingestPath: string } | null;
   setTopicRecording(topic: GuidedWorkflowTopicRow, action: "halt" | "restart"): void;
@@ -715,6 +725,7 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
   const [introDraft, setIntroDraft] = useState("");
   const [healingReviewStepId, setHealingReviewStepId] = useState<string | null>(null);
   const [pendingHealingCounts, setPendingHealingCounts] = useState<Record<string, number>>({});
+  const [healingRefreshToken, setHealingRefreshToken] = useState(0);
 
   useEffect(() => {
     if (!selectedTopic?.guideId) {
@@ -754,13 +765,11 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
     }
 
     void loadPendingHealingCounts();
-    const intervalId = window.setInterval(() => void loadPendingHealingCounts(), 15000);
 
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
     };
-  }, [selectedTopic?.guideId]);
+  }, [selectedTopic?.guideId, healingRefreshToken]);
 
   if (!selectedSession || !selectedTopic) {
     return (
@@ -796,8 +805,19 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
           <div className="min-w-0 flex-1">
             <p className="text-lg font-semibold text-slate-950">{selectedSession.title}</p>
             <p className="mt-1 text-sm font-semibold text-slate-700">{selectedTopic.title}</p>
-            <p className="mt-2 text-sm text-slate-500">
-              <span className="font-medium text-slate-700">Synced actions:</span> {syncedActionCount} • <span className="font-medium text-slate-700">Created:</span> {formatDate(selectedSession.createdAt)}
+            <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+              <span><span className="font-medium text-slate-700">Synced actions:</span> {syncedActionCount} • <span className="font-medium text-slate-700">Created:</span> {formatDate(selectedSession.createdAt)}</span>
+              <button
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-slate-200 px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                onClick={() => {
+                  onRefresh();
+                  setHealingRefreshToken((current) => current + 1);
+                }}
+                title="Check for newly synced actions from the trainer"
+                type="button"
+              >
+                <RefreshCw className="h-3 w-3" />Refresh
+              </button>
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -861,7 +881,7 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
                 )}
               </div>
             ) : configTab === "snippet" && guidePublished ? (
-              <button className="button-secondary h-8 gap-2 px-3 text-xs" onClick={() => copyText("install-snippet", installSnippet(selectedSession.targetAppId ?? ""))} type="button">
+              <button className="button-secondary h-8 gap-2 px-3 text-xs" onClick={() => copyText("install-snippet", installSnippet(selectedSession.targetAppId ?? "", appBaseUrl))} type="button">
                 {copiedKey === "install-snippet" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copiedKey === "install-snippet" ? "Copied" : "Copy snippet"}
               </button>
             ) : null}
@@ -881,7 +901,7 @@ function SessionDetailsPanel({ convertTopic, deleteSession, deleteStep, editor, 
           ) : guidePublished ? (
             <div>
               <p className="mt-3 text-xs text-slate-500">Paste this into the target app to show the guided navigation player.</p>
-              <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-white">{installSnippet(selectedSession.targetAppId ?? "")}</pre>
+              <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-white">{installSnippet(selectedSession.targetAppId ?? "", appBaseUrl)}</pre>
             </div>
           ) : null}
         </div>
@@ -1208,12 +1228,12 @@ function stepListPreview(step: GuideStep) {
   return words.length > 8 ? `${words.slice(0, 8).join(" ")} .....` : text;
 }
 
-function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWorkflowRecordingSessionRow) {
+function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWorkflowRecordingSessionRow, appBaseUrl: string) {
   const recorderToken = topic.recorderConfig?.recorderToken;
   if (!recorderToken) return null;
 
   return {
-    scoutBaseUrl: getScoutBaseUrl(),
+    scoutBaseUrl: appBaseUrl,
     recorderToken,
     sessionTitle: `${session.title} / ${topic.title}`,
     recordingSessionId: session.id,
@@ -1249,8 +1269,8 @@ function downloadJson(filename: string, value: unknown) {
   URL.revokeObjectURL(url);
 }
 
-function installSnippet(targetAppId: string) {
-  const baseUrl = getScoutBaseUrl();
+function installSnippet(targetAppId: string, appBaseUrl: string) {
+  const baseUrl = appBaseUrl;
   const playerVersion = "20260701-tooltip-rect-guard";
 
   return `<script src="${baseUrl}/scout-smart-adoption-player.js?v=${playerVersion}"></script>

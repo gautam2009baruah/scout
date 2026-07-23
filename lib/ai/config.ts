@@ -68,16 +68,17 @@ export function normalizeEmbeddingModel(provider: EmbeddingProviderName, model: 
 
 function envConfig(): AIProviderConfig {
   const embeddingProvider = (process.env.EMBEDDING_PROVIDER || DEFAULT_AI_CONFIG.embedding_provider) as EmbeddingProviderName;
+  const llmProvider = (process.env.LLM_PROVIDER || DEFAULT_AI_CONFIG.llm_provider) as LLMProviderName;
 
   return {
     embedding_provider: embeddingProvider,
     embedding_model: normalizeEmbeddingModel(embeddingProvider, process.env.EMBEDDING_MODEL || DEFAULT_AI_CONFIG.embedding_model),
     embedding_dimension: Number(process.env.EMBEDDING_DIMENSIONS || DEFAULT_AI_CONFIG.embedding_dimension),
-    embedding_endpoint: process.env.EMBEDDING_ENDPOINT || DEFAULT_AI_CONFIG.embedding_endpoint,
+    embedding_endpoint: process.env.EMBEDDING_ENDPOINT || (embeddingProvider === DEFAULT_AI_CONFIG.embedding_provider ? DEFAULT_AI_CONFIG.embedding_endpoint : ""),
     embedding_api_key: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || "",
-    llm_provider: (process.env.LLM_PROVIDER || DEFAULT_AI_CONFIG.llm_provider) as LLMProviderName,
+    llm_provider: llmProvider,
     llm_model: process.env.LLM_MODEL || DEFAULT_AI_CONFIG.llm_model,
-    llm_endpoint: process.env.LLM_ENDPOINT || DEFAULT_AI_CONFIG.llm_endpoint,
+    llm_endpoint: process.env.LLM_ENDPOINT || (llmProvider === DEFAULT_AI_CONFIG.llm_provider ? DEFAULT_AI_CONFIG.llm_endpoint : ""),
     llm_api_key: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || ""
   };
 }
@@ -119,11 +120,11 @@ export async function getAIProviderConfig(companyId?: string): Promise<AIProvide
           embedding_provider: companyEmbedding.provider,
           embedding_model: normalizeEmbeddingModel(companyEmbedding.provider, companyEmbedding.model || env.embedding_model),
           embedding_dimension: Number(companyEmbedding.dimension || env.embedding_dimension),
-          embedding_endpoint: companyEmbedding.endpoint || env.embedding_endpoint,
+          embedding_endpoint: companyEmbedding.endpoint || (companyEmbedding.provider === env.embedding_provider ? env.embedding_endpoint : ""),
           embedding_api_key: companyEmbedding.api_key || env.embedding_api_key,
           llm_provider: companyLlm.provider,
           llm_model: companyLlm.model || env.llm_model,
-          llm_endpoint: companyLlm.endpoint || env.llm_endpoint,
+          llm_endpoint: companyLlm.endpoint || (companyLlm.provider === env.llm_provider ? env.llm_endpoint : ""),
           llm_api_key: companyLlm.api_key || env.llm_api_key
         };
       }
@@ -159,11 +160,11 @@ export async function getAIProviderConfig(companyId?: string): Promise<AIProvide
         embedding_provider: activeEmbedding.provider,
         embedding_model: normalizeEmbeddingModel(activeEmbedding.provider, activeEmbedding.model || env.embedding_model),
         embedding_dimension: Number(activeEmbedding.dimension || env.embedding_dimension),
-        embedding_endpoint: activeEmbedding.endpoint || env.embedding_endpoint,
+        embedding_endpoint: activeEmbedding.endpoint || (activeEmbedding.provider === env.embedding_provider ? env.embedding_endpoint : ""),
         embedding_api_key: activeEmbedding.api_key || env.embedding_api_key,
         llm_provider: activeLLM.provider,
         llm_model: activeLLM.model || env.llm_model,
-        llm_endpoint: activeLLM.endpoint || env.llm_endpoint,
+        llm_endpoint: activeLLM.endpoint || (activeLLM.provider === env.llm_provider ? env.llm_endpoint : ""),
         llm_api_key: activeLLM.api_key || env.llm_api_key
       };
     }

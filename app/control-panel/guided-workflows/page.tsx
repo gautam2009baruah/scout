@@ -24,6 +24,7 @@ export default async function GuidedWorkflowsPage() {
   requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
   const selectedCompanyName = session.availableCompanies.find((company) => company.companyId === session.user.tenantId)?.companyName ?? "";
+  const appBaseUrl = process.env.APP_BASE_URL || "http://localhost:3000";
 
   const [guidesResult, targetAppsResult, recordingSessionsResult] = await Promise.allSettled([
     listGuidedWorkflows(session),
@@ -50,6 +51,7 @@ export default async function GuidedWorkflowsPage() {
   return (
     <AdminShell active={MODULE_KEYS.guidedWorkflows} session={session}>
       <GuidedWorkflowManager
+        appBaseUrl={appBaseUrl}
         guides={guides}
         selectedCompanyId={session.user.tenantId}
         selectedCompanyName={selectedCompanyName}
