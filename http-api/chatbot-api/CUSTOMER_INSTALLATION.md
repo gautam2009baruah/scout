@@ -3,7 +3,7 @@
 **Document type:** Implementation handover  
 **Audience:** Customer implementation teams, Scout platform administrators, DevOps, security, and support teams  
 **Widget:** ScoutChatbot universal hosted widget  
-**Widget loader version:** 1.1.0  
+**Widget loader version:** 1.1.1  
 **Last updated:** 14 July 2026
 
 ---
@@ -94,8 +94,8 @@ npm run db:migrate
 
 | Setting | Required? | Meaning |
 |---|---|---|
-| `targetAppId` | Required for guided workflows; recommended otherwise | UUID from `guided_workflow_target_apps.id` |
-| `targetAppName` | Required when target-app-scoped retrieval or workflows are used | Exact `guided_workflow_target_apps.name` |
+| `targetAppId` | Required for guided workflows; recommended otherwise | UUID from `company_target_applications.id` |
+| `targetAppName` | Required when target-app-scoped retrieval or workflows are used | Exact `company_target_applications.name` |
 
 If both values are omitted, the chatbot operates at the company-global level. Content assigned only to a target application may not be available globally.
 
@@ -179,8 +179,8 @@ A target application represents the customer site in Scout. It connects workflow
 Lookup:
 
 ```sql
-SELECT id, company_id, name, base_url, allowed_origins_json
-FROM guided_workflow_target_apps
+SELECT id, company_id, name, base_url
+FROM company_target_applications
 WHERE company_id = '<company_uuid>'
 ORDER BY name;
 ```
@@ -188,12 +188,10 @@ ORDER BY name;
 If it does not exist, create it through Scout's target-application administration UI. A database administrator may provision it directly only when following the project's normal audit requirements:
 
 ```sql
-INSERT INTO guided_workflow_target_apps (
+INSERT INTO company_target_applications (
   company_id,
   name,
   base_url,
-  allowed_origins_json,
-  player_config_json,
   created_by,
   updated_by
 )
@@ -201,15 +199,11 @@ VALUES (
   '<company_uuid>',
   'Customer Portal',
   'https://portal.customer.com',
-  '["https://portal.customer.com"]'::jsonb,
-  '{}'::jsonb,
   '<admin_user_uuid>',
   '<admin_user_uuid>'
 )
 RETURNING id;
 ```
-
-Use origins only, without page paths, in `allowed_origins_json`.
 
 ### 5.4 User access to the target application
 
@@ -604,7 +598,7 @@ Create this second file in the same static-assets directory:
   var loader = document.createElement("script");
   loader.id = "scout-chatbot-loader";
   loader.src = config.scoutUrl.replace(/\/$/, "") +
-    "/scout-chatbot.js?v=1.1.0";
+    "/scout-chatbot.js?v=1.1.1";
   loader.async = true;
 
   loader.onload = function () {
@@ -669,7 +663,7 @@ The NexusVendor reference application uses the same pattern:
 nexusvendor-enterprise-portal/index.html
   -> /scout-chatbot-config.local.js
   -> /scout-chatbot-install.js
-  -> http://localhost:3000/scout-chatbot.js?v=1.1.0
+  -> http://localhost:3000/scout-chatbot.js?v=1.1.1
   -> http://localhost:3000/embed/scout-chatbot
   -> http://localhost:4200/v1/chat/query
 ```
@@ -688,7 +682,7 @@ If the customer does not want two local files, the configuration and installatio
 Add the loader after the customer's primary application markup, immediately before the closing `</body>` tag. This ensures the page is available before the widget is installed and avoids blocking the application startup.
 
 ```html
-<script src="https://scout.example.com/scout-chatbot.js?v=1.1.0"></script>
+<script src="https://scout.example.com/scout-chatbot.js?v=1.1.1"></script>
 <script>
   window.ScoutChatbot.install({
     scoutUrl: "https://scout.example.com",
@@ -715,7 +709,7 @@ For environments that inject configuration during deployment, keep values outsid
 
 ```html
 <script src="/scout-chatbot-config.js"></script>
-<script src="https://scout.example.com/scout-chatbot.js?v=1.1.0"></script>
+<script src="https://scout.example.com/scout-chatbot.js?v=1.1.1"></script>
 <script>
   window.ScoutChatbot.install(window.CustomerScoutChatbotConfig);
 </script>
@@ -777,7 +771,7 @@ export function ScoutChatbotInstall() {
 
     const script = document.createElement('script');
     script.id = 'scout-chatbot-loader';
-    script.src = 'https://scout.example.com/scout-chatbot.js?v=1.1.0';
+    script.src = 'https://scout.example.com/scout-chatbot.js?v=1.1.1';
     script.async = true;
 
     let widget: { destroy(): void } | undefined;
@@ -916,7 +910,7 @@ The generated local configuration is excluded from source control. This script c
 Check:
 
 1. Browser developer console for script or CSP errors.
-2. `https://scout.example.com/scout-chatbot.js?v=1.1.0` returns JavaScript with HTTP 200.
+2. `https://scout.example.com/scout-chatbot.js?v=1.1.1` returns JavaScript with HTTP 200.
 3. Installation runs after `document.body` exists.
 4. The loader is installed only once.
 5. The configured `zIndex` is higher than the customer's overlays.
@@ -933,7 +927,7 @@ Use `ScoutChatbot.install(...)` from the universal loader. Do not mount a React 
 
 ### 14.4 Chatbot cannot be dragged or resized
 
-1. Confirm loader version `1.1.0` or later.
+1. Confirm loader version `1.1.1` or later.
 2. Hard-refresh the page and clear any CDN cache for `scout-chatbot.js`.
 3. Drag using the chatbot header, not the message area.
 4. Resize using the bottom-right resize control.
@@ -988,7 +982,7 @@ Provide the exact active company name. Confirm it with the `companies` lookup qu
 
 Confirm:
 
-- `targetAppName` exactly matches `guided_workflow_target_apps.name` for that company;
+- `targetAppName` exactly matches `company_target_applications.name` for that company;
 - it was not created under another company;
 - the API cache has refreshed;
 - `targetAppId` and `targetAppName` describe the same record.
@@ -1056,7 +1050,7 @@ Another process is listening on the configured port. Either stop the duplicate p
 
 ### 14.19 Browser shows an old widget after deployment
 
-Use a versioned loader URL, such as `scout-chatbot.js?v=1.1.0`, invalidate the CDN cache, and hard-refresh. Maintain controlled cache headers and increment the version query when publishing loader behavior changes.
+Use a versioned loader URL, such as `scout-chatbot.js?v=1.1.1`, invalidate the CDN cache, and hard-refresh. Maintain controlled cache headers and increment the version query when publishing loader behavior changes.
 
 ---
 

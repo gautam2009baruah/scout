@@ -205,9 +205,17 @@ function topologicalSort(
 
 async function loadChatbotWorkflowCandidates(
   companyId: string,
-  userId: string,
   targetAppId: string
 ): Promise<ChatbotWorkflowCandidate[]> {
+  // Chatbot callers are always scoped to a specific target app — never fall
+  // back to every orchestration in the company. userId is an opaque,
+  // client-supplied identifier logged for audit only; it must never be
+  // matched against internal user-scoping tables (see getOrchestrationPage's
+  // own userId filter, which is for the admin control panel's RBAC).
+  if (!targetAppId) {
+    return [];
+  }
+
   const activeChatbotTriggers = (await getTriggers({
     triggerType: "chatbot",
   })).filter((trigger) => trigger.status === "active" || trigger.status === "error");
@@ -216,8 +224,7 @@ async function loadChatbotWorkflowCandidates(
   );
   const page = await getOrchestrationPage({
     companyId,
-    userId,
-    targetAppId: targetAppId || undefined,
+    targetAppId,
     status: "published",
     page: 1,
     pageSize: 100,
@@ -1040,7 +1047,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ suggestion: null });
       }
 
-      const candidates = await loadChatbotWorkflowCandidates(companyId, userId, targetAppId);
+      const candidates = await loadChatbotWorkflowCandidates(companyId, targetAppId);
       const match = await findEligibleOrchestration(rawMessage, candidates, { forceActionMode: false });
       // Suggestions are review-only and cannot execute, so favor recall while
       // still requiring a meaningful orchestration match.
@@ -1229,7 +1236,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const candidates = await loadChatbotWorkflowCandidates(companyId, userId, targetAppId);
+    const candidates = await loadChatbotWorkflowCandidates(companyId, targetAppId);
 
     if (candidates.length === 0) {
       return NextResponse.json({

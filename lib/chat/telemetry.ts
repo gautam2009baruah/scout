@@ -37,24 +37,6 @@ async function resolveCanonicalTargetAppId(targetAppId?: string) {
     return null;
   }
 
-  // Newer runtime paths pass guided_workflow_target_apps.id.
-  const guided = await getPool().query<{ target_app_id: string | null }>(
-    `
-      SELECT target_app_id
-      FROM guided_workflow_target_apps
-      WHERE id = $1
-        AND deleted_at IS NULL
-      LIMIT 1
-    `,
-    [normalized]
-  );
-
-  const mappedCanonical = guided.rows[0]?.target_app_id;
-  if (mappedCanonical && isUuid(mappedCanonical)) {
-    return mappedCanonical;
-  }
-
-  // Some callers may already provide company_target_applications.id.
   const canonical = await getPool().query<{ id: string }>(
     `
       SELECT id

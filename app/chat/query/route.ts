@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { answerChatQuery, ChatQueryError } from "@/lib/chat/query";
 import { recordChatQueryTelemetry } from "@/lib/chat/telemetry";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
+import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 
 export const runtime = "nodejs";
 
@@ -38,6 +39,19 @@ export async function POST(request: Request) {
       { message: error instanceof Error ? error.message : "Invalid scoped identifier payload.", requestId },
       { status: 400 }
     );
+  }
+
+  try {
+    await assertChatbotApiKeyAccess(request, {
+      companyId: resolvedCompanyId,
+      targetAppId: resolvedTargetAppId,
+      userId: body.user_id,
+    });
+  } catch (error) {
+    if (error instanceof ChatbotApiKeyAccessError) {
+      return NextResponse.json({ message: error.message, requestId }, { status: error.statusCode });
+    }
+    throw error;
   }
 
   try {

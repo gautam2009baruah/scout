@@ -1,5 +1,5 @@
 (function () {
-  const DEFAULTS = { scoutBaseUrl: "", targetAppId: "", autoShowLauncher: true, userId: "" };
+  const DEFAULTS = { scoutBaseUrl: "", targetAppId: "", autoShowLauncher: true, userId: "", apiKey: "" };
   const PLAYER_VERSION = "20260701-tooltip-rect-guard";
   const GOAL_TIMEOUT_MS = 45000;
   const AUTO_CLICK_PREVIEW_MS = 350;
@@ -1885,7 +1885,8 @@
   async function loadGuides(options) {
     const url = new URL("/api/guided-workflow-player/guides", options.scoutBaseUrl || window.location.origin);
     url.searchParams.set("targetAppId", options.targetAppId);
-    const response = await fetch(url.toString());
+    const headers = options.apiKey ? { "X-Api-Key": options.apiKey } : {};
+    const response = await fetch(url.toString(), { headers });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload && payload.message ? payload.message : "Unable to load guided workflows.");
     return payload.guides || [];

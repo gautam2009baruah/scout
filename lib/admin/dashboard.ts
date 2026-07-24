@@ -262,48 +262,46 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
           ) AS training_sessions,
           (SELECT COUNT(*)
            FROM guided_workflow_guides gw
-           WHERE status = 'draft'
-             AND company_id = $1
+           INNER JOIN company_target_applications cta_gw ON cta_gw.id = gw.target_app_id
+           WHERE gw.status = 'draft'
+             AND cta_gw.company_id = $1
              AND (
-               gw.target_app_id IS NULL
-               OR NOT EXISTS (
+               NOT EXISTS (
                  SELECT 1
                  FROM user_target_app_access uta
                  INNER JOIN company_target_applications sa_cta ON sa_cta.id = uta.target_app_id
                  WHERE uta.user_id = $2
                    AND uta.deleted_at IS NULL
-                   AND sa_cta.company_id = gw.company_id
+                   AND sa_cta.company_id = cta_gw.company_id
                )
                OR EXISTS (
                  SELECT 1
                  FROM user_target_app_access uta
-                 INNER JOIN guided_workflow_target_apps gta2 ON gta2.id = gw.target_app_id
                  WHERE uta.user_id = $2
                    AND uta.deleted_at IS NULL
-                   AND uta.target_app_id = gta2.target_app_id
+                   AND uta.target_app_id = gw.target_app_id
                )
              )) AS draft_guides,
           (SELECT COUNT(*)
            FROM guided_workflow_guides gw
-           WHERE status = 'published'
-             AND company_id = $1
+           INNER JOIN company_target_applications cta_gw ON cta_gw.id = gw.target_app_id
+           WHERE gw.status = 'published'
+             AND cta_gw.company_id = $1
              AND (
-               gw.target_app_id IS NULL
-               OR NOT EXISTS (
+               NOT EXISTS (
                  SELECT 1
                  FROM user_target_app_access uta
                  INNER JOIN company_target_applications sa_cta ON sa_cta.id = uta.target_app_id
                  WHERE uta.user_id = $2
                    AND uta.deleted_at IS NULL
-                   AND sa_cta.company_id = gw.company_id
+                   AND sa_cta.company_id = cta_gw.company_id
                )
                OR EXISTS (
                  SELECT 1
                  FROM user_target_app_access uta
-                 INNER JOIN guided_workflow_target_apps gta2 ON gta2.id = gw.target_app_id
                  WHERE uta.user_id = $2
                    AND uta.deleted_at IS NULL
-                   AND uta.target_app_id = gta2.target_app_id
+                   AND uta.target_app_id = gw.target_app_id
                )
              )) AS published_guides
       `,

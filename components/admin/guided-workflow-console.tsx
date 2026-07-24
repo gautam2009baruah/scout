@@ -66,7 +66,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     targetAppId: "",
     appName: "",
     baseUrl: "",
-    allowedOrigins: "",
     sessionTitle: "New training session"
   });
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(recordingSessions[0]?.id ?? null);
@@ -214,7 +213,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
       targetAppId,
       appName: app?.name ?? "",
       baseUrl: app?.baseUrl ?? "",
-      allowedOrigins: app?.allowedOrigins.join("\n") ?? "",
     }));
   }
 
@@ -227,7 +225,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
         companyId: selectedCompanyId,
         name: setupForm.appName,
         baseUrl: setupForm.baseUrl,
-        allowedOrigins: splitLines(setupForm.allowedOrigins),
       })
     });
     const body = await response.json().catch(() => null);
@@ -245,7 +242,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
       targetAppId: body.targetApp.id,
       appName: body.targetApp.name,
       baseUrl: body.targetApp.baseUrl,
-      allowedOrigins: body.targetApp.allowedOrigins.join("\n"),
     }));
     return body.targetApp.id as string;
   }
@@ -1240,10 +1236,6 @@ function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWo
     topicId: topic.id,
     ingestPath: "/api/guided-workflow-recorder/actions"
   };
-}
-
-function splitLines(value: string) {
-  return value.split(/\r?\n|,/).map((item) => item.trim()).filter(Boolean);
 }
 
 function formatDate(value: string | null | undefined) {

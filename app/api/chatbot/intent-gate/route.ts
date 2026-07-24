@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
+import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 
 export const runtime = "nodejs";
 
@@ -466,28 +467,27 @@ function parseClassifierJson(text: string): { intent: IntentLabel; confidence: n
   }
 }
 
-async function assertUserCompanyAccess(input: { companyId: string; userId: string; targetAppId?: string }) {
+// userId is an opaque, client-supplied identifier logged for audit only —
+// it belongs to the client's own application and is never present in our
+// control panel database, so it must never be matched against internal
+// tables (users, user_company_roles). Authorization here is scoped
+// entirely to companyId + targetAppId.
+async function assertCompanyAndTargetAppAccess(input: { companyId: string; targetAppId?: string }) {
   const pool = getPool();
 
-  const companyUser = await pool.query<{ allowed: boolean }>(
+  const company = await pool.query<{ allowed: boolean }>(
     `SELECT EXISTS (
        SELECT 1
-       FROM users u
-       INNER JOIN user_company_roles ucr
-         ON ucr.user_id = u.id
-        AND ucr.company_id = $1
-        AND ucr.deleted_at IS NULL
-        AND ucr.status = 'active'
-       WHERE u.id = $2
-         AND u.deleted_at IS NULL
-         AND u.status = 'active'
-         AND u.can_view_chatbot = true
+       FROM companies
+       WHERE id = $1
+         AND deleted_at IS NULL
+         AND status = 'active'
      ) AS allowed`,
-    [input.companyId, input.userId]
+    [input.companyId]
   );
 
-  if (!companyUser.rows[0]?.allowed) {
-    throw new Error("User does not have chatbot access for this company.");
+  if (!company.rows[0]?.allowed) {
+    throw new Error("Company was not found or is not active.");
   }
 
   if (!input.targetAppId) {
@@ -525,7 +525,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Missing required fields: companyId, userId, message" }, { status: 400 });
     }
 
-    await assertUserCompanyAccess({ companyId, userId, targetAppId: targetAppId || undefined });
+    await assertChatbotApiKeyAccess(request, { companyId, targetAppId: targetAppId || undefined, userId });
+    await assertCompanyAndTargetAppAccess({ companyId, targetAppId: targetAppId || undefined });
 
     let aiIntent: IntentLabel | null = null;
     let aiConfidence = 0;
@@ -630,6 +631,10 @@ export async function POST(request: NextRequest) {
       reason: aiReason,
     });
   } catch (error) {
+    if (error instanceof ChatbotApiKeyAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
+
     return NextResponse.json(
       {
         message: "Failed to classify intent.",

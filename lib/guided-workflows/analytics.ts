@@ -56,12 +56,13 @@ export async function recordWorkflowAnalyticsEvents(events: WorkflowAnalyticsEve
         analytics_logging_enabled: boolean | null;
       }>(
         `
-          SELECT guided_workflow_guides.company_id,
+          SELECT company_target_applications.company_id,
                  guided_workflow_guides.topic_id,
                  guided_workflow_guides.version,
                  guided_workflow_topics.analytics_logging_enabled
           FROM guided_workflow_guides
           LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
+          LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_guides.target_app_id
           WHERE guided_workflow_guides.id = $1
         `,
         [event.workflowId]

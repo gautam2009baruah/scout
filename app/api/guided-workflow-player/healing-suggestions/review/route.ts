@@ -63,7 +63,7 @@ async function handleApprove(request: NextRequest) {
 
     // Get the suggestion
     const suggestionResult = await client.query(
-      `SELECT 
+      `SELECT
         s.*,
         w.steps_json,
         w.recorded_actions_json,
@@ -71,9 +71,10 @@ async function handleApprove(request: NextRequest) {
         w.title,
         w.description,
         w.status,
-        w.company_id
+        cta.company_id
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
+       LEFT JOIN company_target_applications cta ON cta.id = w.target_app_id
        WHERE s.id = $1 AND s.status = 'pending' AND s.deleted_at IS NULL`,
       [suggestionId]
     );
@@ -133,12 +134,11 @@ async function handleApprove(request: NextRequest) {
 
     // Log the approval
     await client.query(
-      `INSERT INTO guided_workflow_healing_audit 
-       (company_id, workflow_id, step_id, event_type, healing_source, confidence_score, 
+      `INSERT INTO guided_workflow_healing_audit
+       (workflow_id, step_id, event_type, healing_source, confidence_score,
         attempted_selector_candidates, success, page_url, user_id)
-       VALUES ($1, $2, $3, 'approved', $4, $5, $6, true, $7, $8)`,
+       VALUES ($1, $2, 'approved', $3, $4, $5, true, $6, $7)`,
       [
-        originalWorkflow.company_id,
         suggestion.workflow_id,
         suggestion.step_id,
         editedSelectorCandidates ? "manual" : suggestion.healing_source,
@@ -221,7 +221,7 @@ async function handleReject(request: NextRequest) {
 
     // Get the suggestion
     const suggestionResult = await client.query(
-      `SELECT s.*, w.company_id
+      `SELECT s.*
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
        WHERE s.id = $1 AND s.status = 'pending' AND s.deleted_at IS NULL`,
@@ -237,8 +237,8 @@ async function handleReject(request: NextRequest) {
 
     // Update the suggestion status
     await client.query(
-      `UPDATE guided_workflow_healing_suggestions 
-       SET 
+      `UPDATE guided_workflow_healing_suggestions
+       SET
          status = 'rejected',
          reviewed_by = $1,
          reviewed_at = now(),
@@ -249,12 +249,11 @@ async function handleReject(request: NextRequest) {
 
     // Log the rejection
     await client.query(
-      `INSERT INTO guided_workflow_healing_audit 
-       (company_id, workflow_id, step_id, event_type, healing_source, confidence_score, 
+      `INSERT INTO guided_workflow_healing_audit
+       (workflow_id, step_id, event_type, healing_source, confidence_score,
         attempted_selector_candidates, success, error_message, page_url, user_id)
-       VALUES ($1, $2, $3, 'rejected', $4, $5, $6, false, $7, $8, $9)`,
+       VALUES ($1, $2, 'rejected', $3, $4, $5, false, $6, $7, $8)`,
       [
-        suggestion.company_id,
         suggestion.workflow_id,
         suggestion.step_id,
         suggestion.healing_source,
@@ -298,7 +297,7 @@ async function handleDelete(request: NextRequest) {
 
     // Get the suggestion info for audit log
     const suggestionResult = await client.query(
-      `SELECT s.*, w.company_id
+      `SELECT s.*
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
        WHERE s.id = $1 AND s.deleted_at IS NULL`,
@@ -314,12 +313,11 @@ async function handleDelete(request: NextRequest) {
 
     // Log the deletion in audit
     await client.query(
-      `INSERT INTO guided_workflow_healing_audit 
-       (company_id, workflow_id, step_id, event_type, healing_source, confidence_score, 
+      `INSERT INTO guided_workflow_healing_audit
+       (workflow_id, step_id, event_type, healing_source, confidence_score,
         attempted_selector_candidates, success, error_message, page_url, user_id)
-       VALUES ($1, $2, $3, 'deleted', $4, $5, $6, false, $7, $8, $9)`,
+       VALUES ($1, $2, 'deleted', $3, $4, $5, false, $6, $7, $8)`,
       [
-        suggestion.company_id,
         suggestion.workflow_id,
         suggestion.step_id,
         suggestion.healing_source,

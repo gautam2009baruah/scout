@@ -39,9 +39,7 @@ export async function POST(request: Request) {
       {
         companyId: String(body.companyId ?? ""),
         name: String(body.name ?? ""),
-        baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : "",
-        allowedOrigins: Array.isArray(body.allowedOrigins) ? body.allowedOrigins.map(String).filter(Boolean) : [],
-        playerConfig: typeof body.playerConfig === "object" && body.playerConfig ? body.playerConfig : {}
+        baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : ""
       },
       auth.session
     );

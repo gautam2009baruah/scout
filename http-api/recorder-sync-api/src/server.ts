@@ -122,8 +122,7 @@ const server = http.createServer(async (request, response) => {
 
     const result = await appendRecordedActionByToken(
       String(payload.recorderToken ?? payload.recorder_token ?? ""),
-      payload.action,
-      request.headers.origin
+      payload.action
     );
 
     return sendJson(request, response, 200, result);

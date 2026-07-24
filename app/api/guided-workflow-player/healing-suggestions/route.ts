@@ -19,7 +19,23 @@ type HealingSuggestionRequest = {
   pageTitle: string;
 };
 
+function corsHeaders(request: Request) {
+  const origin = request.headers.get("origin") || "*";
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, Authorization",
+    "Vary": "Origin",
+  };
+}
+
+export async function OPTIONS(request: NextRequest) {
+  return new Response(null, { status: 204, headers: corsHeaders(request) });
+}
+
 export async function POST(request: NextRequest) {
+  const headers = corsHeaders(request);
+
   try {
     const targetBaseUrl = (process.env.SMART_FINDER_API_URL || "http://localhost:4302").replace(/\/$/, "");
     const response = await fetch(`${targetBaseUrl}/v1/healing-suggestions`, {
@@ -36,7 +52,8 @@ export async function POST(request: NextRequest) {
     return new Response(text, {
       status: response.status,
       headers: {
-        "Content-Type": response.headers.get("content-type") || "application/json; charset=utf-8"
+        "Content-Type": response.headers.get("content-type") || "application/json; charset=utf-8",
+        ...headers
       }
     });
   } catch (error) {
@@ -45,12 +62,13 @@ export async function POST(request: NextRequest) {
         error: "Standalone smart finder API is unavailable",
         message: error instanceof Error ? error.message : "Unknown error"
       },
-      { status: 503 }
+      { status: 503, headers }
     );
   }
 }
 
 export async function GET(request: NextRequest) {
+  const headers = corsHeaders(request);
   try {
     const searchParams = request.nextUrl.searchParams;
     const workflowId = searchParams.get("workflowId");
@@ -66,7 +84,7 @@ export async function GET(request: NextRequest) {
 
     const selectClause = `
       SELECT
-        s.id, s.company_id, s.workflow_id, s.step_id, s.step_order,
+        s.id, cta.company_id, s.workflow_id, s.step_id, s.step_order,
         s.original_selector_candidates, s.original_element_identity,
         s.proposed_selector_candidates, s.proposed_element_identity,
         s.confidence_score, s.healing_source, s.healing_reason,
@@ -80,9 +98,8 @@ export async function GET(request: NextRequest) {
     let fromWhereClause = `
       FROM guided_workflow_healing_suggestions s
       JOIN guided_workflow_guides w ON s.workflow_id = w.id
-      JOIN companies c ON s.company_id = c.id
-      LEFT JOIN guided_workflow_target_apps ta ON w.target_app_id = ta.id
-      LEFT JOIN company_target_applications cta ON cta.id = ta.target_app_id
+      LEFT JOIN company_target_applications cta ON cta.id = w.target_app_id
+      JOIN companies c ON c.id = cta.company_id
       LEFT JOIN users u ON s.reviewed_by = u.id
       LEFT JOIN guided_workflow_topics t ON w.topic_id = t.id AND t.deleted_at IS NULL
       LEFT JOIN guided_workflow_recording_sessions rs ON t.recording_session_id = rs.id AND rs.deleted_at IS NULL
@@ -103,7 +120,7 @@ export async function GET(request: NextRequest) {
 
     if (companyId) {
       params.push(companyId);
-      fromWhereClause += ` AND s.company_id = $${params.length}`;
+      fromWhereClause += ` AND cta.company_id = $${params.length}`;
     }
 
     if (targetAppId) {
@@ -135,7 +152,7 @@ export async function GET(request: NextRequest) {
         pageSize,
         total: countResult.rows[0]?.total ?? 0,
       },
-    });
+    }, { headers });
   } catch (error) {
     console.error("[Healing Suggestions API] Error:", error);
     return NextResponse.json(
@@ -143,7 +160,7 @@ export async function GET(request: NextRequest) {
         error: "Internal server error",
         message: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

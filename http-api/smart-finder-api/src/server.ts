@@ -79,15 +79,13 @@ async function saveSuggestion(body: SaveSuggestionRequest) {
   }
 
   const workflowResult = await getPool().query(
-    `SELECT company_id FROM guided_workflow_guides WHERE id = $1`,
+    `SELECT id FROM guided_workflow_guides WHERE id = $1`,
     [workflowId]
   );
 
   if (workflowResult.rows.length === 0) {
     return { status: 404, body: { error: "Workflow not found" } };
   }
-
-  const companyId = workflowResult.rows[0].company_id;
 
   const existingResult = await getPool().query(
     `SELECT id FROM guided_workflow_healing_suggestions
@@ -128,9 +126,9 @@ async function saveSuggestion(body: SaveSuggestionRequest) {
 
     await getPool().query(
       `INSERT INTO guided_workflow_healing_audit
-       (company_id, workflow_id, step_id, event_type, healing_source, confidence_score, attempted_selector_candidates, success, page_url)
-       VALUES ($1, $2, $3, 'attempt', $4, $5, $6, true, $7)`,
-      [companyId, workflowId, stepId, healingSource, confidenceScore, JSON.stringify(proposedSelectorCandidates), pageUrl]
+       (workflow_id, step_id, event_type, healing_source, confidence_score, attempted_selector_candidates, success, page_url)
+       VALUES ($1, $2, 'attempt', $3, $4, $5, true, $6)`,
+      [workflowId, stepId, healingSource, confidenceScore, JSON.stringify(proposedSelectorCandidates), pageUrl]
     );
 
     return { status: 200, body: { success: true, suggestionId: existingResult.rows[0].id } };
@@ -138,13 +136,12 @@ async function saveSuggestion(body: SaveSuggestionRequest) {
 
   const insertResult = await getPool().query(
     `INSERT INTO guided_workflow_healing_suggestions
-     (company_id, workflow_id, step_id, step_order, original_selector_candidates, original_element_identity,
+     (workflow_id, step_id, step_order, original_selector_candidates, original_element_identity,
       proposed_selector_candidates, proposed_element_identity, confidence_score, healing_source, healing_reason,
       ai_provider, ai_model, page_url, page_title, status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending')
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'pending')
      RETURNING id`,
     [
-      companyId,
       workflowId,
       stepId,
       stepOrder,
@@ -166,9 +163,9 @@ async function saveSuggestion(body: SaveSuggestionRequest) {
 
   await getPool().query(
     `INSERT INTO guided_workflow_healing_audit
-     (company_id, workflow_id, step_id, event_type, healing_source, confidence_score, attempted_selector_candidates, success, page_url)
-     VALUES ($1, $2, $3, 'attempt', $4, $5, $6, true, $7)`,
-    [companyId, workflowId, stepId, healingSource, confidenceScore, JSON.stringify(proposedSelectorCandidates), pageUrl]
+     (workflow_id, step_id, event_type, healing_source, confidence_score, attempted_selector_candidates, success, page_url)
+     VALUES ($1, $2, 'attempt', $3, $4, $5, true, $6)`,
+    [workflowId, stepId, healingSource, confidenceScore, JSON.stringify(proposedSelectorCandidates), pageUrl]
   );
 
   return { status: 200, body: { success: true, suggestionId } };

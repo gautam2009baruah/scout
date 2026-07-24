@@ -21,8 +21,6 @@ export type GuidedWorkflowTargetAppRow = {
   companyName: string;
   name: string;
   baseUrl: string;
-  allowedOrigins: string[];
-  playerConfig: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
 };
@@ -264,12 +262,12 @@ function accessCondition(session: AdminSession, params: unknown[]) {
 
   return `
     AND (
-      guided_workflow_guides.company_id = $${tenantParam}
+      target_app_source.company_id = $${tenantParam}
       OR EXISTS (
         SELECT 1
         FROM user_company_roles
         WHERE user_company_roles.user_id = $${userParam}
-          AND user_company_roles.company_id = guided_workflow_guides.company_id
+          AND user_company_roles.company_id = target_app_source.company_id
           AND user_company_roles.deleted_at IS NULL
       )
     )
@@ -279,7 +277,7 @@ function accessCondition(session: AdminSession, params: unknown[]) {
 const guideSelect = `
   SELECT
     guided_workflow_guides.id,
-    guided_workflow_guides.company_id,
+    target_app_source.company_id,
     companies.name AS company_name,
     guided_workflow_guides.target_app_id,
     target_app_source.name AS target_app_name,
@@ -296,9 +294,8 @@ const guideSelect = `
     guided_workflow_guides.created_at,
     guided_workflow_guides.updated_at
   FROM guided_workflow_guides
-  INNER JOIN companies ON companies.id = guided_workflow_guides.company_id
-  LEFT JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = guided_workflow_guides.target_app_id
-  LEFT JOIN company_target_applications target_app_source ON target_app_source.id = guided_workflow_target_apps.target_app_id
+  LEFT JOIN company_target_applications target_app_source ON target_app_source.id = guided_workflow_guides.target_app_id
+  LEFT JOIN companies ON companies.id = target_app_source.company_id
   LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
   LEFT JOIN users ON users.id = guided_workflow_guides.created_by
 `;
@@ -310,15 +307,10 @@ const targetAppSelect = `
     companies.name AS company_name,
     company_target_applications.name,
     company_target_applications.base_url,
-    COALESCE(guided_workflow_target_apps.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
-    COALESCE(guided_workflow_target_apps.player_config_json, '{}'::jsonb) AS player_config_json,
     company_target_applications.created_at,
     company_target_applications.updated_at
   FROM company_target_applications
   INNER JOIN companies ON companies.id = company_target_applications.company_id
-  LEFT JOIN guided_workflow_target_apps
-    ON guided_workflow_target_apps.target_app_id = company_target_applications.id
-   AND guided_workflow_target_apps.deleted_at IS NULL
 `;
 
 const recordingSessionSelect = `
@@ -328,21 +320,14 @@ const recordingSessionSelect = `
     companies.name AS company_name,
     guided_workflow_recording_sessions.company_target_application_id,
     company_target_applications.name AS company_target_application_name,
-    target_app_map.id AS target_app_id,
-    target_app_map.name AS target_app_name,
+    company_target_applications.id AS target_app_id,
+    company_target_applications.name AS target_app_name,
     guided_workflow_recording_sessions.title,
     guided_workflow_recording_sessions.created_at,
     guided_workflow_recording_sessions.updated_at
   FROM guided_workflow_recording_sessions
   LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_recording_sessions.company_target_application_id
   LEFT JOIN companies ON companies.id = company_target_applications.company_id
-  LEFT JOIN LATERAL (
-    SELECT guided_workflow_target_apps.id, company_target_applications.name
-    FROM guided_workflow_target_apps
-    WHERE guided_workflow_target_apps.target_app_id = company_target_applications.id
-    ORDER BY guided_workflow_target_apps.updated_at DESC
-    LIMIT 1
-  ) AS target_app_map ON true
 `;
 
 function tokenHash(token: string) {
@@ -359,8 +344,6 @@ function mapTargetApp(row: {
   company_name: string;
   name: string;
   base_url: string;
-  allowed_origins_json: string[];
-  player_config_json: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
 }): GuidedWorkflowTargetAppRow {
@@ -370,8 +353,6 @@ function mapTargetApp(row: {
     companyName: row.company_name,
     name: row.name,
     baseUrl: row.base_url,
-    allowedOrigins: row.allowed_origins_json ?? [],
-    playerConfig: row.player_config_json ?? {},
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   };
@@ -520,8 +501,6 @@ export async function createGuidedWorkflowTargetApp(input: {
   companyId: string;
   name: string;
   baseUrl?: string;
-  allowedOrigins?: string[];
-  playerConfig?: Record<string, unknown>;
 }, session: AdminSession) {
   await assertCompanyAccess(input.companyId, session);
   const name = input.name.trim();
@@ -547,64 +526,6 @@ export async function createGuidedWorkflowTargetApp(input: {
   const canonicalTargetAppId = canonicalTargetApp.rows[0]?.id;
   if (!canonicalTargetAppId) {
     throw new GuidedWorkflowError("Unable to create target app.");
-  }
-
-  const existingScopedApp = await withPoolRetry(() =>
-    getPool().query<{ id: string }>(
-      `
-        SELECT id
-        FROM guided_workflow_target_apps
-        WHERE target_app_id = $1
-        ORDER BY updated_at DESC
-        LIMIT 1
-      `,
-      [canonicalTargetAppId]
-    )
-  );
-
-  let scopedAppId = existingScopedApp.rows[0]?.id ?? null;
-  if (scopedAppId) {
-    await withPoolRetry(() =>
-      getPool().query(
-        `
-          UPDATE guided_workflow_target_apps
-          SET allowed_origins_json = $2::jsonb,
-              player_config_json = $3::jsonb,
-              updated_by = $4,
-              updated_at = now()
-          WHERE id = $1
-        `,
-        [
-          scopedAppId,
-          JSON.stringify(input.allowedOrigins ?? []),
-          JSON.stringify(input.playerConfig ?? {}),
-          session.user.id
-        ]
-      )
-    );
-  } else {
-    const createdScopedApp = await withPoolRetry(() =>
-      getPool().query<{ id: string }>(
-        `
-          INSERT INTO guided_workflow_target_apps (
-            target_app_id,
-            allowed_origins_json,
-            player_config_json,
-            created_by,
-            updated_by
-          )
-          VALUES ($1, $2::jsonb, $3::jsonb, $4, $4)
-          RETURNING id
-        `,
-        [
-          canonicalTargetAppId,
-          JSON.stringify(input.allowedOrigins ?? []),
-          JSON.stringify(input.playerConfig ?? {}),
-          session.user.id
-        ]
-      )
-    );
-    scopedAppId = createdScopedApp.rows[0]?.id ?? null;
   }
 
   const apps = await listGuidedWorkflowTargetApps(session);
@@ -674,12 +595,12 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
   const params: unknown[] = [];
   const access = session.user.isAdminRole ? "" : `
     AND (
-      guided_workflow_topics.company_id = $1
+      cta.company_id = $1
       OR EXISTS (
         SELECT 1
         FROM user_company_roles
         WHERE user_company_roles.user_id = $2
-          AND user_company_roles.company_id = guided_workflow_topics.company_id
+          AND user_company_roles.company_id = cta.company_id
           AND user_company_roles.deleted_at IS NULL
       )
     )
@@ -696,7 +617,7 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
       `
         SELECT
           guided_workflow_topics.id,
-          guided_workflow_topics.company_id,
+          cta.company_id,
           guided_workflow_topics.recording_session_id,
           guided_workflow_topics.guide_id,
           guided_workflow_topics.recorder_config_json,
@@ -711,8 +632,8 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
           guided_workflow_topics.updated_at
         FROM guided_workflow_topics
         INNER JOIN guided_workflow_recording_sessions ON guided_workflow_recording_sessions.id = guided_workflow_topics.recording_session_id
-        INNER JOIN companies ON companies.id = guided_workflow_topics.company_id
         INNER JOIN company_target_applications cta ON cta.id = guided_workflow_recording_sessions.company_target_application_id
+        INNER JOIN companies ON companies.id = cta.company_id
         LEFT JOIN guided_workflow_guides ON guided_workflow_guides.id = guided_workflow_topics.guide_id
         WHERE companies.deleted_at IS NULL
           AND guided_workflow_recording_sessions.deleted_at IS NULL
@@ -723,7 +644,7 @@ export async function listGuidedWorkflowTopics(session: AdminSession) {
               SELECT 1 FROM user_target_app_access uta
               INNER JOIN company_target_applications scope_cta ON scope_cta.id = uta.target_app_id
               WHERE uta.user_id = $${targetUserParam} AND uta.deleted_at IS NULL
-                AND scope_cta.company_id = guided_workflow_topics.company_id
+                AND scope_cta.company_id = cta.company_id
                 AND scope_cta.deleted_at IS NULL
             )
             OR EXISTS (
@@ -777,11 +698,6 @@ export async function createGuidedWorkflowRecordingSession(input: {
     throw new GuidedWorkflowError("Target application was not found for this company.", 404);
   }
 
-  await ensureGuidedWorkflowTargetApp(
-    companyTargetApplication.id,
-    session.user.id
-  );
-
   const result = await getPool().query<{ id: string }>(
     `
       INSERT INTO guided_workflow_recording_sessions (
@@ -800,40 +716,6 @@ export async function createGuidedWorkflowRecordingSession(input: {
   return {
     session: sessions.find((item) => item.id === result.rows[0].id)!
   };
-}
-
-async function ensureGuidedWorkflowTargetApp(targetAppId: string, userId: string) {
-  const existing = await getPool().query<{ id: string }>(
-    `
-      SELECT id
-      FROM guided_workflow_target_apps
-      WHERE target_app_id = $1
-      ORDER BY updated_at DESC
-      LIMIT 1
-    `,
-    [targetAppId]
-  );
-
-  if (existing.rows[0]?.id) {
-    return existing.rows[0].id;
-  }
-
-  const created = await getPool().query<{ id: string }>(
-    `
-      INSERT INTO guided_workflow_target_apps (
-        target_app_id,
-        allowed_origins_json,
-        player_config_json,
-        created_by,
-        updated_by
-      )
-      VALUES ($1, '[]'::jsonb, '{}'::jsonb, $2, $2)
-      RETURNING id
-    `,
-    [targetAppId, userId]
-  );
-
-  return created.rows[0].id;
 }
 
 export async function updateGuidedWorkflowRecordingSession(id: string, input: {
@@ -963,7 +845,6 @@ export async function createGuidedWorkflowTopic(input: {
   const result = await getPool().query<{ id: string }>(
     `
       INSERT INTO guided_workflow_topics (
-        company_id,
         recording_session_id,
         title,
         description,
@@ -974,11 +855,10 @@ export async function createGuidedWorkflowTopic(input: {
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $8)
       RETURNING id
     `,
     [
-      recordingSession.companyId,
       recordingSession.id,
       title,
       description,
@@ -1155,7 +1035,7 @@ export async function listRecordedActionsForTopic(topicId: string, session: Admi
   return result.rows.map((row) => stripLegacyStepState(row.action_json));
 }
 
-export async function appendRecordedActionByToken(token: string, action: RecordedAction, origin?: string) {
+export async function appendRecordedActionByToken(token: string, action: RecordedAction) {
   if (!token || !action || typeof action !== "object") {
     throw new GuidedWorkflowError("Recorder token and action are required.");
   }
@@ -1166,22 +1046,19 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
     await client.query("BEGIN");
     const topicResult = await client.query<{
       id: string;
-      company_id: string;
       recording_session_id: string;
       target_app_id: string | null;
       guide_id: string | null;
       title: string;
       actions_count: number;
       next_action_index: number;
-      allowed_origins_json: string[] | null;
       recording_enabled: boolean;
     }>(
       `
         SELECT
           guided_workflow_topics.id,
-          guided_workflow_topics.company_id,
           guided_workflow_topics.recording_session_id,
-          target_app_map.id AS target_app_id,
+          company_target_applications.id AS target_app_id,
           guided_workflow_topics.guide_id,
           guided_workflow_topics.recording_enabled,
           guided_workflow_topics.title,
@@ -1194,18 +1071,10 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
             SELECT COALESCE(MAX(action_index) + 1, 0)::int
             FROM guided_workflow_recorded_actions
             WHERE guided_workflow_recorded_actions.recording_session_id = guided_workflow_topics.recording_session_id
-          ) AS next_action_index,
-          target_app_map.allowed_origins_json
+          ) AS next_action_index
         FROM guided_workflow_topics
         INNER JOIN guided_workflow_recording_sessions ON guided_workflow_recording_sessions.id = guided_workflow_topics.recording_session_id
         LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_recording_sessions.company_target_application_id
-        LEFT JOIN LATERAL (
-          SELECT guided_workflow_target_apps.id, guided_workflow_target_apps.allowed_origins_json
-          FROM guided_workflow_target_apps
-          WHERE guided_workflow_target_apps.target_app_id = company_target_applications.id
-          ORDER BY guided_workflow_target_apps.updated_at DESC
-          LIMIT 1
-        ) AS target_app_map ON true
         WHERE guided_workflow_topics.recorder_token_hash = $1
           AND guided_workflow_topics.deleted_at IS NULL
           AND guided_workflow_recording_sessions.deleted_at IS NULL
@@ -1230,26 +1099,19 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
       throw new GuidedWorkflowError("This training topic is no longer accepting recordings. Contact your administrator to restart training and provide a new recorder config.", 409);
     }
 
-    const allowedOrigins = topic.allowed_origins_json ?? [];
-
-    if (origin && allowedOrigins.length > 0 && !allowedOrigins.includes(origin)) {
-      throw new GuidedWorkflowError("This origin is not allowed for the recording session.", 403);
-    }
-
     const nextIndex = Number(topic.next_action_index);
     const cleanAction: RecordedAction = stripLegacyStepState(action);
     await client.query(
       `
         INSERT INTO guided_workflow_recorded_actions (
-          company_id,
           recording_session_id,
           topic_id,
           action_index,
           action_json
         )
-        VALUES ($1, $2, $3, $4, $5::jsonb)
+        VALUES ($1, $2, $3, $4::jsonb)
       `,
-      [topic.company_id, topic.recording_session_id, topic.id, nextIndex, JSON.stringify(cleanAction)]
+      [topic.recording_session_id, topic.id, nextIndex, JSON.stringify(cleanAction)]
     );
     await client.query(
       `
@@ -1319,7 +1181,6 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
       const guideResult = await client.query<{ id: string }>(
         `
           INSERT INTO guided_workflow_guides (
-            company_id,
             target_app_id,
             topic_id,
             title,
@@ -1328,11 +1189,10 @@ export async function appendRecordedActionByToken(token: string, action: Recorde
             recorded_actions_json,
             steps_json
           )
-          VALUES ($1, $2, $3, $4, $5, 'draft', $6::jsonb, $7::jsonb)
+          VALUES ($1, $2, $3, $4, 'draft', $5::jsonb, $6::jsonb)
           RETURNING id
         `,
         [
-          topic.company_id,
           topic.target_app_id,
           topic.id,
           generated.title,
@@ -1405,7 +1265,6 @@ export async function createGuidedWorkflow(input: {
   const result = await getPool().query<{ id: string }>(
     `
       INSERT INTO guided_workflow_guides (
-        company_id,
         target_app_id,
         topic_id,
         title,
@@ -1418,11 +1277,10 @@ export async function createGuidedWorkflow(input: {
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $10)
       RETURNING id
     `,
     [
-      input.companyId,
       input.targetAppId || null,
       input.topicId || null,
       generated.title,
@@ -1691,29 +1549,9 @@ export async function createGuideFromRecordingSession(topicId: string, session: 
   return guide;
 }
 
-export async function getPublishedGuidesForPlayer(input: { targetAppId: string; origin?: string }) {
+export async function getPublishedGuidesForPlayer(input: { targetAppId: string }) {
   if (!input.targetAppId) {
     throw new GuidedWorkflowError("Target app is required.");
-  }
-
-  const appResult = await getPool().query<{ allowed_origins_json: string[] }>(
-    `
-      SELECT allowed_origins_json
-      FROM guided_workflow_target_apps
-      WHERE id = $1
-    `,
-    [input.targetAppId]
-  );
-  const app = appResult.rows[0];
-
-  if (!app) {
-    throw new GuidedWorkflowError("Target app was not found.", 404);
-  }
-
-  const allowedOrigins = app.allowed_origins_json ?? [];
-
-  if (input.origin && allowedOrigins.length > 0 && !allowedOrigins.includes(input.origin)) {
-    throw new GuidedWorkflowError("This origin is not allowed for this target app.", 403);
   }
 
   const result = await getPool().query<{
@@ -1733,7 +1571,7 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
   }>(
     `
       SELECT guided_workflow_guides.id,
-             guided_workflow_guides.company_id,
+             company_target_applications.company_id,
              guided_workflow_guides.topic_id,
              guided_workflow_guides.title,
              guided_workflow_guides.description,
@@ -1747,6 +1585,7 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
              guided_workflow_guides.updated_at
       FROM guided_workflow_guides
       LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
+      LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_guides.target_app_id
       WHERE guided_workflow_guides.target_app_id = $1
         AND guided_workflow_guides.status = 'published'
         AND (guided_workflow_topics.id IS NULL OR guided_workflow_topics.deleted_at IS NULL)
@@ -1774,7 +1613,7 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
   );
 }
 
-export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId: string; origin?: string }): Promise<PlayerTrainingSession[]> {
+export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId: string }): Promise<PlayerTrainingSession[]> {
   await getPublishedGuidesForPlayer(input);
 
   const result = await getPool().query<{
@@ -1816,14 +1655,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
         ON guided_workflow_topics.recording_session_id = guided_workflow_recording_sessions.id
       INNER JOIN guided_workflow_guides
         ON guided_workflow_guides.id = guided_workflow_topics.guide_id
-      LEFT JOIN company_target_applications
-        ON company_target_applications.id = guided_workflow_recording_sessions.company_target_application_id
-      WHERE EXISTS (
-          SELECT 1
-          FROM guided_workflow_target_apps rs_app
-          WHERE rs_app.target_app_id = company_target_applications.id
-            AND rs_app.id = $1
-        )
+      WHERE guided_workflow_recording_sessions.company_target_application_id = $1
         AND guided_workflow_guides.target_app_id = $1
         AND guided_workflow_guides.status = 'published'
         AND guided_workflow_recording_sessions.deleted_at IS NULL

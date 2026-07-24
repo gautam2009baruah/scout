@@ -9,7 +9,7 @@ declare global {
     ScoutAdoptionPlayer?: {
       smartRuntime?: boolean;
       version?: string;
-      init(config: { scoutBaseUrl?: string; targetAppId: string; autoShowLauncher?: boolean }): Promise<{
+      init(config: { scoutBaseUrl?: string; targetAppId: string; apiKey?: string; autoShowLauncher?: boolean }): Promise<{
         version?: string;
         guides: unknown[];
         play(guideId?: string): void;

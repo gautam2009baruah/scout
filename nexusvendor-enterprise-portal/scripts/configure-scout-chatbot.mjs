@@ -37,40 +37,19 @@ try {
   userId = userResult.rows[0]?.id;
   if (!userId) throw new Error("No active company user with chatbot access was found.");
 
-  const existingApp = await client.query(
-    "SELECT id FROM guided_workflow_target_apps WHERE company_id = $1 AND lower(name) = lower($2) ORDER BY created_at ASC LIMIT 1",
-    [companyId, targetAppName]
+  const createdApp = await client.query(
+    `INSERT INTO company_target_applications (company_id, name, base_url, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $4)
+     ON CONFLICT (company_id, lower(name)) WHERE deleted_at IS NULL
+     DO UPDATE SET base_url = EXCLUDED.base_url, updated_by = EXCLUDED.updated_by, updated_at = now()
+     RETURNING id`,
+    [companyId, targetAppName, "http://localhost:4173", userId]
   );
-  targetAppId = existingApp.rows[0]?.id;
-  if (!targetAppId) {
-    const createdApp = await client.query(
-      `INSERT INTO guided_workflow_target_apps
-       (company_id, name, base_url, allowed_origins_json, player_config_json, created_by, updated_by)
-       VALUES ($1, $2, $3, $4::jsonb, '{}'::jsonb, $5, $5)
-       RETURNING id`,
-      [companyId, targetAppName, "http://localhost:4173", JSON.stringify(["http://localhost:4173"]), userId]
-    );
-    targetAppId = createdApp.rows[0].id;
-  }
-
-  const legacyApp = await client.query(
-    "SELECT id FROM company_target_applications WHERE company_id = $1 AND lower(name) = lower($2) AND deleted_at IS NULL LIMIT 1",
-    [companyId, targetAppName]
-  );
-  if (!legacyApp.rows[0]) {
-    await client.query(
-      `INSERT INTO company_target_applications (id, company_id, name, base_url, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, $5, $5)`,
-      [targetAppId, companyId, targetAppName, "http://localhost:4173", userId]
-    );
-  } else if (legacyApp.rows[0].id !== targetAppId) {
-    throw new Error("Target app exists with mismatched current and legacy IDs.");
-  }
+  targetAppId = createdApp.rows[0].id;
 
   const scopedAccess = await client.query(
     `SELECT 1 FROM user_target_app_access
-     INNER JOIN guided_workflow_target_apps ON guided_workflow_target_apps.id = user_target_app_access.target_app_id
-     INNER JOIN company_target_applications ON company_target_applications.id = guided_workflow_target_apps.target_app_id
+     INNER JOIN company_target_applications ON company_target_applications.id = user_target_app_access.target_app_id
      WHERE user_target_app_access.user_id = $1
        AND user_target_app_access.deleted_at IS NULL
        AND company_target_applications.company_id = $2

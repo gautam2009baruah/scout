@@ -6,8 +6,23 @@ import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/
 
 export const runtime = "nodejs";
 
+function corsHeaders(request: Request) {
+  const origin = request.headers.get("origin") || "*";
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, Authorization",
+    "Vary": "Origin",
+  };
+}
+
+export async function OPTIONS(request: Request) {
+  return new Response(null, { status: 204, headers: corsHeaders(request) });
+}
+
 export async function GET(request: Request) {
   const searchParams = new URL(request.url).searchParams;
+  const headers = corsHeaders(request);
 
   try {
     const companyIdentifier = searchParams.get("companyId") || searchParams.get("company_id") || "";
@@ -15,10 +30,7 @@ export async function GET(request: Request) {
     const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
     const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
 
-    const input = {
-      targetAppId,
-      origin: request.headers.get("origin") ?? undefined
-    };
+    const input = { targetAppId };
     const userId = searchParams.get("userId") || searchParams.get("user_id") || "";
 
     await assertChatbotApiKeyAccess(request, {
@@ -40,16 +52,16 @@ export async function GET(request: Request) {
       getPublishedTrainingSessionsForPlayer(input)
     ]);
 
-    return NextResponse.json({ guides, sessions });
+    return NextResponse.json({ guides, sessions }, { headers });
   } catch (error) {
     if (error instanceof ChatbotApiKeyAccessError) {
-      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+      return NextResponse.json({ message: error.message }, { status: error.statusCode, headers });
     }
     if (error instanceof ScopedTargetAppAccessError) {
-      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+      return NextResponse.json({ message: error.message }, { status: error.statusCode, headers });
     }
     if (error instanceof GuidedWorkflowError) {
-      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+      return NextResponse.json({ message: error.message }, { status: error.statusCode, headers });
     }
 
     throw error;

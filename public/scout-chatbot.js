@@ -1,7 +1,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "1.1.0";
+  var VERSION = "1.1.1";
   var instances = [];
   var playerPromise = null;
 
@@ -168,15 +168,16 @@
         global.ScoutAdoptionPlayer.init({
           scoutBaseUrl: config.scoutUrl,
           targetAppId: config.targetAppId,
+          apiKey: config.apiKey,
           autoShowLauncher: false
         }).then(resolve).catch(reject);
       }
       if (global.ScoutAdoptionPlayer) return initialize();
       var script = document.createElement("script");
-      script.src = config.scoutUrl.replace(/\/$/, "") + "/scout-orchestration-player.js";
+      script.src = config.scoutUrl.replace(/\/$/, "") + "/scout-smart-adoption-player.js";
       script.async = true;
       script.onload = initialize;
-      script.onerror = function () { reject(new Error("Scout orchestration player failed to load.")); };
+      script.onerror = function () { reject(new Error("Scout guided workflow player failed to load.")); };
       document.head.appendChild(script);
     });
     return playerPromise;

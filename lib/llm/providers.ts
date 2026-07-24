@@ -339,8 +339,15 @@ class GeminiProvider implements LLMProvider {
         throw new Error(typeof payload?.error?.message === "string" ? payload.error.message : "Gemini LLM request failed.");
       }
 
+      // Gemini 2.5 models think by default: content.parts can include a
+      // `thought: true` reasoning-trace part alongside the real answer part.
+      // For short conclusions (like a refusal) the thought and the answer are
+      // often the same sentence, so joining every part without filtering
+      // silently duplicates the text. Only the non-thought parts are the
+      // actual answer.
       return payload?.candidates?.[0]?.content?.parts
-        ?.map((part: { text?: string }) => part.text ?? "")
+        ?.filter((part: { thought?: boolean }) => part.thought !== true)
+        .map((part: { text?: string }) => part.text ?? "")
         .join("")
         .trim() || INSUFFICIENT_CONTEXT_MESSAGE;
     } catch (error) {

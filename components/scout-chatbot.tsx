@@ -264,7 +264,7 @@ declare global {
     ScoutAdoptionPlayer?: {
       smartRuntime?: boolean;
       version?: string;
-      init(config: { scoutBaseUrl?: string; targetAppId: string; autoShowLauncher?: boolean }): Promise<ScoutAdoptionPlayerHandle>;
+      init(config: { scoutBaseUrl?: string; targetAppId: string; apiKey?: string; autoShowLauncher?: boolean }): Promise<ScoutAdoptionPlayerHandle>;
     };
   }
 }
@@ -1178,7 +1178,7 @@ export function ScoutChatbot({
             status: "ready",
             message: sessions.length === 0 && guides.length === 0 ? `No published guided workflows found${targetAppName ? ` for ${targetAppName}` : ""}.` : ""
           });
-          void getPlayerHandle({ scoutBaseUrl, targetAppId: workflowTargetAppId }, playerHandleRef).catch(() => undefined);
+          void getPlayerHandle({ scoutBaseUrl, targetAppId: workflowTargetAppId, apiKey }, playerHandleRef).catch(() => undefined);
         }
       } catch (error) {
         if (controller.signal.aborted || ignore) {
@@ -2171,7 +2171,7 @@ export function ScoutChatbot({
 
       const response = await fetch(intentGateEndpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...apiKeyHeaders },
         body: JSON.stringify({
           companyId,
           userId,
@@ -2220,7 +2220,7 @@ export function ScoutChatbot({
     try {
       await fetch(intentGateEndpoint, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...apiKeyHeaders },
         body: JSON.stringify({
           decisionId: input.decisionId,
           companyId,
@@ -2444,7 +2444,7 @@ export function ScoutChatbot({
       }
     } else if (targetAppId) {
       try {
-        const player = await getPlayerHandle({ scoutBaseUrl, targetAppId }, playerHandleRef);
+        const player = await getPlayerHandle({ scoutBaseUrl, targetAppId, apiKey }, playerHandleRef);
         player.play(workflow.id);
       } catch (error) {
         setWorkflowsState({
@@ -2602,6 +2602,7 @@ export function ScoutChatbot({
       headers: {
         "Content-Type": "application/json",
         "X-Request-Id": requestId,
+        ...apiKeyHeaders,
       },
       body: JSON.stringify({
         company_id: companyId,
@@ -4646,7 +4647,7 @@ function delay(ms: number) {
 }
 
 async function getPlayerHandle(
-  config: { scoutBaseUrl: string; targetAppId: string },
+  config: { scoutBaseUrl: string; targetAppId: string; apiKey?: string },
   handleRef: { current: ScoutAdoptionPlayerHandle | null }
 ) {
   if (handleRef.current?.version === SCOUT_PLAYER_VERSION) {
@@ -4663,6 +4664,7 @@ async function getPlayerHandle(
   const handle = await window.ScoutAdoptionPlayer.init({
     scoutBaseUrl: config.scoutBaseUrl,
     targetAppId: config.targetAppId,
+    apiKey: config.apiKey,
     autoShowLauncher: false
   });
   handleRef.current = handle;

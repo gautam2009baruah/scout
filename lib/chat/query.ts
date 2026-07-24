@@ -111,6 +111,9 @@ function buildSystemPrompt() {
     "Every factual claim must be supported by retrieved evidence.",
     "If evidence is weak or missing, return the insufficient-context response.",
     "Keep the answer concise and cite-ready.",
+    "Match the answer's scope to what the question actually asks — a broad or open-ended question (e.g. \"tell me about this company\") deserves a brief, high-level overview, not a recitation of every retrieved fact.",
+    "Only include a detail if the question calls for it. Do not add procedural, governance, compliance, or operational specifics (approval chains, precedence rules, record-keeping requirements, and similar) unless the user specifically asked about process, governance, or compliance.",
+    "When retrieved context mixes relevant and irrelevant material, select only what answers the question and leave the rest out, even though it was retrieved.",
     "Conversation history may clarify what the current question is referring to (e.g. pronouns or short follow-ups like \"and its start date\"), but conversation history is never a source of facts — every factual claim must still come only from the retrieved document context."
   ].join(" ");
 }
