@@ -879,30 +879,47 @@
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
-          // Check if this is a Scout tooltip
-          if (node.nodeType === Node.ELEMENT_NODE && 
-              (node.classList?.contains('scout-adoption-tooltip') || 
-               node.querySelector?.('.scout-adoption-tooltip'))) {
-            
+          // Check if this is a Scout tooltip (the node itself, or a wrapper containing one)
+          const tooltipEl = node.nodeType === Node.ELEMENT_NODE
+            ? (node.classList?.contains('scout-adoption-tooltip') ? node : node.querySelector?.('.scout-adoption-tooltip'))
+            : null;
+          if (tooltipEl) {
+
             console.log('🎯 Scout tooltip detected');
             console.log(`   Mode: ${hasAutoFillData ? 'AUTO-FILL + TRACKING' : 'TRACKING ONLY'}`);
-            
+
             // Poll for Scout to focus the element (adaptive polling handles timing)
             let attempts = 0;
-            const maxAttempts = 140; // 140 attempts × 50ms = 7 seconds max
-            
+            const maxAttempts = 140; // 140 attempts × 50ms = 7 seconds hard cap
+            // Scout removes and recreates this exact tooltip node on every step
+            // transition (see clear()/createTooltip() in scout-smart-adoption-player.js),
+            // so once THIS tooltip is gone the step has moved on. Keep polling for a
+            // short 1s grace period after that (step transitions are near-instant, so
+            // this comfortably covers the gap between "old tooltip removed" and "new
+            // tooltip inserted") rather than the old behavior of always running the
+            // full 7s regardless of how long ago this step actually ended.
+            const tooltipCloseGraceMs = 1000;
+            let tooltipRemovedAt = null;
+
             const pollForFocus = () => {
               attempts++;
-              
+
+              const tooltipStillOpen = document.contains(tooltipEl);
+              if (!tooltipStillOpen && tooltipRemovedAt === null) {
+                tooltipRemovedAt = Date.now();
+                console.log('   🚪 This step\'s tooltip closed — polling for up to 1 more second');
+              }
+              const pastGracePeriod = tooltipRemovedAt !== null && (Date.now() - tooltipRemovedAt) >= tooltipCloseGraceMs;
+
               // Check if Scout has focused an input element
-              if (document.activeElement && 
+              if (document.activeElement &&
                   ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-                
+
                 const element = document.activeElement;
                 const elementKey = element.id || element.name || `${element.tagName}_${element.type}_${attempts}`;
-                
+
                 console.log(`   ✅ Element focused after ${attempts * 50}ms`);
-                
+
                 // ALWAYS track the element (for data capture)
                 if (!window.__scoutDataCaptureElements.includes(element)) {
                   window.__scoutDataCaptureElements.push(element);
@@ -910,7 +927,7 @@
                 } else {
                   console.log(`   ⏭️ Already tracked this element`);
                 }
-                
+
                 // Try auto-fill ONLY if we have captured data AND haven't filled this element yet
                 if (hasAutoFillData && !filledElements.has(element)) {
                   // Check if we're within the delay period after last fill
@@ -927,19 +944,25 @@
                     }
                   }
                 }
-                
-                // IMPORTANT: Continue polling to catch multiple controls in the same step
-                if (attempts < maxAttempts) {
+
+                // Continue polling to catch multiple controls in the same step —
+                // but only while this step's tooltip is still open (or within its
+                // short close grace period) and we haven't hit the hard cap.
+                if (attempts < maxAttempts && !pastGracePeriod) {
                   setTimeout(pollForFocus, 50);
+                } else if (pastGracePeriod) {
+                  console.log(`   ⏹️ Stopped polling — tooltip closed ${tooltipCloseGraceMs}ms ago`);
                 }
-                
-              } else if (attempts < maxAttempts) {
+
+              } else if (attempts < maxAttempts && !pastGracePeriod) {
                 setTimeout(pollForFocus, 50);
+              } else if (pastGracePeriod) {
+                console.log(`   ⏹️ Stopped polling — tooltip closed ${tooltipCloseGraceMs}ms ago`);
               } else {
                 console.log(`   ⏱️ Polling timeout after ${attempts * 50}ms`);
               }
             };
-            
+
             pollForFocus();
           }
         }
