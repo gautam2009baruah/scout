@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
-import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import { ListTree, RotateCcw, Workflow, ZoomIn, ZoomOut } from "lucide-react";
 import type { TopicTreeNode } from "@/lib/admin/content-structure";
 
 type D3TopicNode = {
@@ -39,10 +39,12 @@ export type TopicActionTarget = TopicCreateTarget & {
 type TopicTreeProps = {
   canCreateRoot: boolean;
   onOpenMenu: (target: TopicActionTarget) => void;
+  onSelectTreeView: (view: "diagram" | "list") => void;
   selectedCompanyId: string;
   selectedCompanyName?: string;
   tree: TopicTreeNode[];
   accessibleTargetAppIds: string[];
+  treeView: "diagram" | "list";
 };
 
 function toD3Node(nodes: TopicTreeNode[]): D3TopicNode {
@@ -79,7 +81,7 @@ function toChildNode(node: TopicTreeNode): D3TopicNode {
   };
 }
 
-export function TopicTree({ accessibleTargetAppIds, canCreateRoot, onOpenMenu, selectedCompanyId, selectedCompanyName, tree }: TopicTreeProps) {
+export function TopicTree({ accessibleTargetAppIds, canCreateRoot, onOpenMenu, onSelectTreeView, selectedCompanyId, selectedCompanyName, tree, treeView }: TopicTreeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -327,8 +329,27 @@ export function TopicTree({ accessibleTargetAppIds, canCreateRoot, onOpenMenu, s
     <div className="space-y-3">
       {/* Controls Row */}
       <div className="flex items-center gap-2">
-        <div className="inline-flex h-8 items-center rounded-full border border-slate-300/30 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm">
-          Company: {selectedCompanyName || "Selected company"}
+        <div className="inline-flex h-8 items-center overflow-hidden rounded-full border border-slate-300/40 bg-white shadow-sm">
+          <button
+            aria-pressed={treeView === "diagram"}
+            className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-semibold transition ${treeView === "diagram" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}
+            onClick={() => onSelectTreeView("diagram")}
+            title="Graphical org-chart layout"
+            type="button"
+          >
+            <Workflow className="h-3.5 w-3.5" />
+            Diagram view
+          </button>
+          <button
+            aria-pressed={treeView === "list"}
+            className={`inline-flex h-8 items-center gap-1.5 border-l border-slate-200/70 px-3 text-xs font-semibold transition ${treeView === "list" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}
+            onClick={() => onSelectTreeView("list")}
+            title="Compact, indented list with expand/collapse"
+            type="button"
+          >
+            <ListTree className="h-3.5 w-3.5" />
+            List view
+          </button>
         </div>
         <div className="inline-flex h-8 items-center overflow-hidden rounded-full border border-slate-300/40 bg-white shadow-sm">
         <button

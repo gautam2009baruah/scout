@@ -1247,48 +1247,27 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   return (
     <div className="grid gap-6">
       <section className="space-y-3">
-        <div className="flex justify-end">
-          <div className="inline-flex h-8 items-center overflow-hidden rounded-full border border-slate-300/40 bg-white shadow-sm">
-            <button
-              aria-pressed={treeView === "diagram"}
-              className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-semibold transition ${treeView === "diagram" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}
-              onClick={() => selectTreeView("diagram")}
-              title="Graphical org-chart layout"
-              type="button"
-            >
-              <Workflow className="h-3.5 w-3.5" />
-              Diagram view
-            </button>
-            <button
-              aria-pressed={treeView === "list"}
-              className={`inline-flex h-8 items-center gap-1.5 border-l border-slate-200/70 px-3 text-xs font-semibold transition ${treeView === "list" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"}`}
-              onClick={() => selectTreeView("list")}
-              title="Compact, indented list with expand/collapse"
-              type="button"
-            >
-              <ListTree className="h-3.5 w-3.5" />
-              List view
-            </button>
-          </div>
-        </div>
-
         {treeView === "diagram" ? (
           <TopicTree
             accessibleTargetAppIds={targetApps.map((app) => app.id)}
             canCreateRoot={canManageAccess}
             onOpenMenu={openContextMenu}
+            onSelectTreeView={selectTreeView}
             selectedCompanyId={selectedCompanyId}
             selectedCompanyName={selectedCompanyName}
             tree={visibleTree}
+            treeView={treeView}
           />
         ) : (
           <TopicTreeList
             accessibleTargetAppIds={targetApps.map((app) => app.id)}
             canCreateRoot={canManageAccess}
             onOpenMenu={openContextMenu}
+            onSelectTreeView={selectTreeView}
             selectedCompanyId={selectedCompanyId}
             selectedCompanyName={selectedCompanyName}
             tree={visibleTree}
+            treeView={treeView}
           />
         )}
       </section>
