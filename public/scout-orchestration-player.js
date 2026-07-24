@@ -289,6 +289,33 @@
   }
 
   /**
+   * Records a client-run step (workflow, data_capture, end) against the execution so it
+   * shows up in the triggers-monitoring dashboard. Server-run node types (condition,
+   * variable, notification, api_call, database) are logged by the /continue route itself.
+   * Best-effort only — a logging failure must never interrupt the orchestration.
+   */
+  async function logNodeExecution(executionId, step, status, output, errorMessage) {
+    try {
+      await fetch(`${config.apiBaseUrl}/api/orchestrations/execute/${executionId}/log-step`, {
+        method: 'POST',
+        headers: config.apiKey
+          ? { 'Content-Type': 'application/json', 'X-Api-Key': config.apiKey }
+          : { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodeId: step.id,
+          nodeType: step.nodeType,
+          nodeLabel: step.label,
+          status,
+          output: output || null,
+          errorMessage: errorMessage || null,
+        }),
+      });
+    } catch (logError) {
+      console.warn('⚠️ Failed to log node execution (non-fatal):', logError);
+    }
+  }
+
+  /**
    * Start orchestration execution
    */
   async function handleStartExecution(payload) {
@@ -559,7 +586,9 @@
                   idx === i ? { ...s, status: 'skipped', completedAt: new Date().toISOString() } : s
                 ),
               });
-              
+
+              await logNodeExecution(executionId, step, 'skipped');
+
               // Stop execution gracefully
               return;
             }
@@ -679,6 +708,13 @@
             ),
           });
 
+          // Server-side node types (condition, variable, notification, api_call, database)
+          // are already logged by the /continue route above — only log the ones this
+          // player runs itself.
+          if (step.nodeType === 'workflow' || step.nodeType === 'data_capture' || step.nodeType === 'end') {
+            await logNodeExecution(executionId, step, 'completed', stepResult);
+          }
+
           console.log(`✅ Step completed: ${step.label}`);
 
           // Reset sliding timeout after successful step completion
@@ -706,6 +742,8 @@
               ),
             });
 
+            await logNodeExecution(executionId, step, 'skipped', null, 'Cancelled by user');
+
             // Stop execution
             return;
           }
@@ -723,6 +761,10 @@
                 : s
             ),
           });
+
+          if (step.nodeType === 'workflow' || step.nodeType === 'data_capture' || step.nodeType === 'end') {
+            await logNodeExecution(executionId, step, 'failed', null, stepError.message || 'Unknown error');
+          }
         }
       }
 
@@ -1803,17 +1845,41 @@
   }
 
   /**
+   * True if a recorded step actually corresponds to an input/select/textarea control
+   * (same test smartMatchFields already uses below) rather than a click/navigate step.
+   */
+  function isCapturableWorkflowStep(step) {
+    const stepIdentity = step.elementIdentity || {};
+    const isInputElement = stepIdentity.tagName && ['input', 'select', 'textarea'].includes(stepIdentity.tagName.toLowerCase());
+    const isInputStep = ['input', 'change', 'select', 'click', 'manual-select'].includes(step.type);
+    if (!isInputStep && !isInputElement) return false;
+    if (!step.selectorCandidates?.length && !stepIdentity.selectorCandidates?.length) return false;
+    return true;
+  }
+
+  /**
    * Capture fields from workflow steps (only fields that Scout Player highlighted)
    * Uses the tracked elements list instead of selectors
    */
   function captureFieldsFromWorkflowSteps(steps) {
     const fields = [];
-    
+
     // Use tracked elements instead of selectors
-    const trackedElements = window.__scoutDataCaptureElements || [];
+    let trackedElements = window.__scoutDataCaptureElements || [];
     console.log(`🔍 Processing ${trackedElements.length} Scout-tracked elements...`);
     console.log(`   Tracked elements:`, trackedElements.map(el => `${el.tagName}[${el.type || 'no-type'}]`).join(', '));
-    
+
+    // The focus-polling monitor keeps watching for up to 7s after each tooltip and
+    // never stops early when a step advances or the guide finishes, so it can pick
+    // up stray focus events beyond the guide's actual trained fields. Cap to the
+    // number of steps that really are input controls so we never report more
+    // captured fields than the guide actually highlighted.
+    const expectedFieldCount = Array.isArray(steps) ? steps.filter(isCapturableWorkflowStep).length : 0;
+    if (expectedFieldCount > 0 && trackedElements.length > expectedFieldCount) {
+      console.warn(`⚠️ Tracked ${trackedElements.length} elements but the guide only highlights ${expectedFieldCount} — dropping the extra ${trackedElements.length - expectedFieldCount} (likely stray focus after the guide's last step)`);
+      trackedElements = trackedElements.slice(0, expectedFieldCount);
+    }
+
     if (trackedElements.length === 0) {
       console.warn('⚠️ No elements were tracked during workflow execution!');
       return fields;

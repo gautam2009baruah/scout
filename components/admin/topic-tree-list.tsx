@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, ListTree, MoreVertical, Plus, Workflow } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen, ListTree, MoreHorizontal, Workflow } from "lucide-react";
 import type { TopicTreeNode } from "@/lib/admin/content-structure";
 import type { TopicActionTarget } from "./topic-tree";
 
@@ -75,8 +75,21 @@ function TopicListRow({
           ) : null}
         </span>
 
-        <span className={`flex h-5 w-5 shrink-0 items-center justify-center ${restricted ? "text-slate-300" : "text-amber-500"}`}>
-          {hasChildren && !collapsed ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+        <span className={`relative flex h-7 w-7 shrink-0 items-center justify-center ${restricted ? "text-slate-300" : "text-amber-500"}`}>
+          {hasChildren && !collapsed ? <FolderOpen className="h-10 w-10" /> : <Folder className="h-10 w-10" />}
+          <button
+            aria-label={`Actions for ${node.name}`}
+            className={`absolute -left-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full border bg-white shadow-sm transition ${
+              restricted
+                ? "cursor-not-allowed border-slate-200 text-slate-300"
+                : "border-slate-500 text-slate-600 opacity-40 hover:bg-slate-900 hover:text-white hover:opacity-100 group-hover:opacity-100"
+            }`}
+            disabled={restricted}
+            onClick={openMenu}
+            type="button"
+          >
+            <MoreHorizontal className="h-3 w-3" />
+          </button>
         </span>
 
         <span className={`truncate text-sm font-medium ${restricted ? "text-slate-400" : "text-slate-800"}`}>
@@ -91,15 +104,6 @@ function TopicListRow({
 
         <span className="flex-1" />
 
-        <button
-          aria-label={`Actions for ${node.name}`}
-          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition ${restricted ? "cursor-not-allowed text-slate-300" : "text-slate-400 opacity-0 hover:bg-slate-200 hover:text-slate-900 group-hover:opacity-100"}`}
-          disabled={restricted}
-          onClick={openMenu}
-          type="button"
-        >
-          <MoreVertical className="h-3.5 w-3.5" />
-        </button>
       </div>
 
       {hasChildren && !collapsed ? (
@@ -180,21 +184,21 @@ export function TopicTreeList({ accessibleTargetAppIds, canCreateRoot, onOpenMen
         </div>
       </div>
       <div className="flex items-center gap-1.5 rounded-md py-1.5 pr-1.5">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-slate-700">
-          <FolderOpen className="h-4 w-4" />
+        <span className="relative flex h-7 w-7 shrink-0 items-center justify-center text-slate-700">
+          <FolderOpen className="h-10 w-10" />
+          {canCreateRoot && selectedCompanyId ? (
+            <button
+              aria-label="Actions for Base"
+              className="absolute -right-2 -top-2 flex h-4 w-4 items-center justify-center rounded-full border border-slate-500 bg-white text-slate-600 opacity-40 shadow-sm transition hover:bg-slate-900 hover:text-white hover:opacity-100"
+              onClick={openRootMenu}
+              type="button"
+            >
+              <MoreHorizontal className="h-3 w-3" />
+            </button>
+          ) : null}
         </span>
         <span className="text-sm font-bold text-slate-900">Base</span>
         <span className="flex-1" />
-        {canCreateRoot && selectedCompanyId ? (
-          <button
-            aria-label="Create folder at root"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 transition hover:bg-slate-200 hover:text-slate-900"
-            onClick={openRootMenu}
-            type="button"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        ) : null}
       </div>
 
       {selectedCompanyId && tree.length === 0 ? (

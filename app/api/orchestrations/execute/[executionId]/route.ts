@@ -2,7 +2,7 @@
 // Returns execution plan for client-side execution using Scout Player
 
 import { NextRequest, NextResponse } from "next/server";
-import { getOrchestrationById, getNodes, getConnections } from "@/lib/orchestrations/db";
+import { getOrchestrationById, getNodes, getConnections, createNodeExecution } from "@/lib/orchestrations/db";
 import { createTriggerLog, updateTriggerLastTriggered } from "@/lib/orchestrations/triggers";
 import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
 import { getCurrentAdminSession } from "@/lib/admin/session";
@@ -94,6 +94,21 @@ export async function POST(
     // Fetch nodes and connections
     const nodes = await getNodes(orchestrationId);
     const connections = await getConnections(orchestrationId);
+
+    // Log the trigger node immediately so the triggers-monitoring dashboard has at
+    // least one step recorded even before the client finishes running the rest of
+    // the plan (which logs its own steps via /continue and /log-step).
+    const triggerNode = nodes.find((n) => n.nodeType === "trigger");
+    if (triggerNode) {
+      await createNodeExecution({
+        executionId,
+        nodeId: triggerNode.id,
+        nodeType: "trigger",
+        nodeLabel: triggerNode.label,
+        status: "completed",
+        output: { trigger: { input: triggerData || {} } },
+      });
+    }
 
     // Build execution plan
     const executionPlan = await buildExecutionPlan(nodes, connections, executionContext, triggerData, session);

@@ -4,7 +4,7 @@ import { executeVariableNode } from "@/lib/orchestrations/nodes/variable-node";
 import { executeNotificationNode } from "@/lib/orchestrations/nodes/notification-node";
 import { executeApiCallNode } from "@/lib/orchestrations/nodes/api-call-node";
 import { executeDatabaseNode } from "@/lib/orchestrations/nodes/database-node";
-import { getExecutionById, getOrchestrationById } from "@/lib/orchestrations/db";
+import { getExecutionById, getOrchestrationById, createNodeExecution, updateNodeExecution } from "@/lib/orchestrations/db";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 
@@ -87,46 +87,72 @@ export async function POST(
     console.log(`   Context keys: ${Object.keys(context).join(', ')}`);
 
     let output: any = {};
-    
-    // Execute server-side node based on type
-    switch (step.nodeType) {
-      case 'condition':
-        console.log('🔀 [SERVER] Executing condition node...');
-        const conditionResult = await executeConditionNode(step.config, context);
-        console.log('✅ [SERVER] Condition result:', conditionResult);
-        output = conditionResult;
-        break;
-        
-      case 'variable':
-        console.log('📊 [SERVER] Executing variable node...');
-        console.log('📊 [SERVER] Variable config:', JSON.stringify(step.config, null, 2));
-        const variableResult = await executeVariableNode(step.config, context);
-        console.log('✅ [SERVER] Variable result:', variableResult);
-        output = variableResult;
-        break;
-        
-      case 'notification':
-        console.log('📧 [SERVER] Executing notification node...');
-        output = await executeNotificationNode(step.config, context);
-        console.log('✅ [SERVER] Notification result:', output);
-        break;
 
-      case 'api_call':
-        console.log('🌐 [SERVER] Executing API call node...');
-        output = await executeApiCallNode(step.config, context);
-        console.log('✅ [SERVER] API call result:', output);
-        break;
+    // Log this node's execution so it shows up in the triggers-monitoring dashboard
+    // (previously only server-run `engine.execute()` orchestrations wrote to
+    // orchestration_node_executions — client-driven executions never logged anything).
+    const nodeExecution = await createNodeExecution({
+      executionId,
+      nodeId: step.id || `node-${nodeIndex}`,
+      nodeType: step.nodeType,
+      nodeLabel: step.label || step.nodeType,
+      status: "running",
+      input: context,
+    });
 
-      case 'database':
-        console.log('🗄️ [SERVER] Executing database node...');
-        output = await executeDatabaseNode(step.config, context);
-        console.log('✅ [SERVER] Database node result:', output);
-        break;
-        
-      default:
-        console.warn(`⚠️  [SERVER] Unknown node type: ${step.nodeType}`);
-        output = { success: true, message: "Unknown node type" };
+    try {
+      // Execute server-side node based on type
+      switch (step.nodeType) {
+        case 'condition':
+          console.log('🔀 [SERVER] Executing condition node...');
+          const conditionResult = await executeConditionNode(step.config, context);
+          console.log('✅ [SERVER] Condition result:', conditionResult);
+          output = conditionResult;
+          break;
+
+        case 'variable':
+          console.log('📊 [SERVER] Executing variable node...');
+          console.log('📊 [SERVER] Variable config:', JSON.stringify(step.config, null, 2));
+          const variableResult = await executeVariableNode(step.config, context);
+          console.log('✅ [SERVER] Variable result:', variableResult);
+          output = variableResult;
+          break;
+
+        case 'notification':
+          console.log('📧 [SERVER] Executing notification node...');
+          output = await executeNotificationNode(step.config, context);
+          console.log('✅ [SERVER] Notification result:', output);
+          break;
+
+        case 'api_call':
+          console.log('🌐 [SERVER] Executing API call node...');
+          output = await executeApiCallNode(step.config, context);
+          console.log('✅ [SERVER] API call result:', output);
+          break;
+
+        case 'database':
+          console.log('🗄️ [SERVER] Executing database node...');
+          output = await executeDatabaseNode(step.config, context);
+          console.log('✅ [SERVER] Database node result:', output);
+          break;
+
+        default:
+          console.warn(`⚠️  [SERVER] Unknown node type: ${step.nodeType}`);
+          output = { success: true, message: "Unknown node type" };
+      }
+    } catch (nodeError) {
+      await updateNodeExecution(nodeExecution.id, {
+        status: "failed",
+        errorMessage: nodeError instanceof Error ? nodeError.message : "Unknown error",
+      });
+      throw nodeError;
     }
+
+    await updateNodeExecution(nodeExecution.id, {
+      status: output && output.success === false ? "failed" : "completed",
+      output,
+      errorMessage: output && output.success === false ? (output.error || null) : null,
+    });
 
     return NextResponse.json({
       success: true,
