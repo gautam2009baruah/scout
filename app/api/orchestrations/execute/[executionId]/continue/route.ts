@@ -4,8 +4,25 @@ import { executeVariableNode } from "@/lib/orchestrations/nodes/variable-node";
 import { executeNotificationNode } from "@/lib/orchestrations/nodes/notification-node";
 import { executeApiCallNode } from "@/lib/orchestrations/nodes/api-call-node";
 import { executeDatabaseNode } from "@/lib/orchestrations/nodes/database-node";
+import { getExecutionById, getOrchestrationById } from "@/lib/orchestrations/db";
+import { getCurrentAdminSession } from "@/lib/admin/session";
+import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 
 export const runtime = "nodejs";
+
+function corsHeaders(request: Request) {
+  const origin = request.headers.get("origin") || "*";
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, Authorization",
+    "Vary": "Origin",
+  };
+}
+
+export async function OPTIONS(request: Request) {
+  return new Response(null, { status: 204, headers: corsHeaders(request) });
+}
 
 /**
  * Continue orchestration execution after client-side node completes
@@ -21,6 +38,7 @@ export async function POST(
   request: NextRequest,
   routeContext: { params: Promise<{ executionId: string }> }
 ) {
+  const headers = corsHeaders(request);
   try {
     const { executionId } = await routeContext.params;
     const body = await request.json().catch(() => null);
@@ -28,11 +46,40 @@ export async function POST(
     if (!body || typeof body.nodeIndex !== 'number' || !body.context || !body.step) {
       return NextResponse.json(
         { error: "nodeIndex, step, and context are required" },
-        { status: 400 }
+        { status: 400, headers }
       );
     }
 
     const { nodeIndex, step, context } = body;
+
+    // Verify the caller is actually allowed to drive this execution — either an
+    // admin session (in-context testing from the control panel) or a valid embed
+    // API key scoped to the company/target app the execution was created under.
+    const execution = await getExecutionById(executionId);
+    if (!execution) {
+      return NextResponse.json({ error: "Execution not found" }, { status: 404, headers });
+    }
+
+    const session = await getCurrentAdminSession();
+    if (!session) {
+      const orchestration = await getOrchestrationById(execution.orchestrationId);
+      const triggerData = execution.triggerData as Record<string, unknown> | null;
+      try {
+        await assertChatbotApiKeyAccess(request, {
+          companyId: typeof triggerData?.companyId === "string" ? triggerData.companyId : undefined,
+          targetAppId: typeof triggerData?.targetAppId === "string" ? triggerData.targetAppId : undefined,
+        });
+      } catch (error) {
+        if (error instanceof ChatbotApiKeyAccessError) {
+          return NextResponse.json({ error: error.message }, { status: error.statusCode, headers });
+        }
+        throw error;
+      }
+
+      if (!orchestration || (triggerData?.companyId && orchestration.companyId !== triggerData.companyId)) {
+        return NextResponse.json({ error: "Execution was not found for this company." }, { status: 404, headers });
+      }
+    }
 
     console.log(`\n🔄 [SERVER] Execution request for: ${executionId}`);
     console.log(`   Node index: ${nodeIndex}`);
@@ -84,16 +131,16 @@ export async function POST(
     return NextResponse.json({
       success: true,
       output,
-    });
+    }, { headers });
 
   } catch (error) {
     console.error("❌ [SERVER] Execution failed:", error);
     return NextResponse.json(
-      { 
+      {
         error: "Server execution failed",
         message: error instanceof Error ? error.message : "Unknown error"
       },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

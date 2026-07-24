@@ -1439,6 +1439,68 @@ export async function POST(request: NextRequest) {
       triggeredBy: userId,
     });
 
+    // Orchestrations with a "workflow" or "data_capture" node touch the live DOM
+    // (playing a guide / reading captured field values in the user's own tab) and
+    // can only run client-side, via the orchestration player script. Everything
+    // else (pure API/DB/notification automations) keeps running server-side as
+    // before — no behavior change for that class of orchestration.
+    const orchestrationNodes = await getNodes(selected.id);
+    const requiresClientExecution = orchestrationNodes.some(
+      (node) => node.nodeType === "workflow" || node.nodeType === "data_capture"
+    );
+
+    if (requiresClientExecution) {
+      const clientExecutionAnswer = `Starting "${selected.name}" now — follow along in this window.`;
+      await persistExchange(clientExecutionAnswer, {
+        intent: "execute_plan",
+        executionId: execution.id,
+        clientExecution: true,
+      });
+
+      return NextResponse.json({
+        answer: clientExecutionAnswer,
+        conversationId: persistedConversationId,
+        intent: "execute_plan",
+        confidence: match.confidence,
+        matchedOrchestrationIds: [selected.id],
+        matchedOrchestrationNames: [selected.name],
+        needsClarification: false,
+        clarifyingQuestions: [],
+        requireUserConfirmation: false,
+        plan,
+        clientExecution: {
+          executionId: execution.id,
+          orchestrationId: selected.id,
+          orchestrationName: selected.name,
+          targetAppId: targetAppId || undefined,
+          scoutBaseUrl: `${request.nextUrl.protocol}//${request.nextUrl.host}`,
+          triggerData: {
+            triggerType: "chatbot",
+            companyId,
+            targetAppId: targetAppId || undefined,
+            conversationId: persistedConversationId,
+            userMessage: message,
+            confidence: match.confidence,
+            orchestrationName: selected.name,
+          },
+          context: variableExtraction.values,
+        },
+        metadata: {
+          selectedOrchestrationId: selected.id,
+          selectedOrchestrationName: selected.name,
+          executionId: execution.id,
+          extractedVariables: variableExtraction.values,
+          matchReason: match.reason,
+          normalizedMessage: message,
+          originalMessage: rawMessage,
+          conversationResolution: {
+            usedLLM: contextResolution.usedLLM,
+            confidence: contextResolution.confidence,
+          },
+        },
+      });
+    }
+
     const executionResult = await executeChatbotExecution({
       execution,
       orchestrationId: selected.id,

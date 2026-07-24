@@ -1,9 +1,10 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "1.1.1";
+  var VERSION = "1.1.2";
   var instances = [];
   var playerPromise = null;
+  var orchestrationPlayerLoaded = false;
 
   function install(options) {
     var config = Object.assign({
@@ -25,6 +26,7 @@
     }
 
     var scoutOrigin = new URL(config.scoutUrl, global.location.href).origin;
+    ensureOrchestrationPlayer(config, scoutOrigin);
     var configuredPosition = config.theme && (config.theme.position === "bottom-left" || config.theme.position === "bottom-right")
       ? config.theme.position
       : config.position;
@@ -181,6 +183,26 @@
       document.head.appendChild(script);
     });
     return playerPromise;
+  }
+
+  // Loads the client-side orchestration engine (handles SCOUT_START_EXECUTION,
+  // runs workflow/data_capture nodes in this same tab, defers other node types
+  // back to the server). Mirrors the <script src="/scout-orchestration-player.js">
+  // include the admin app loads globally via its own layout — the customer embed
+  // needs the same listener registered on the host page.
+  function ensureOrchestrationPlayer(config, scoutOrigin) {
+    if (orchestrationPlayerLoaded || global.ScoutOrchestrationConfig) return;
+    orchestrationPlayerLoaded = true;
+    global.ScoutOrchestrationConfig = {
+      apiBaseUrl: scoutOrigin,
+      scoutPlayerUrl: scoutOrigin + "/scout-smart-adoption-player.js",
+      targetAppId: config.targetAppId || null
+    };
+    var script = document.createElement("script");
+    script.src = scoutOrigin + "/scout-orchestration-player.js";
+    script.async = true;
+    script.onerror = function () { console.error("Scout orchestration player failed to load."); };
+    document.head.appendChild(script);
   }
 
   global.ScoutChatbot = { install: install, version: VERSION };

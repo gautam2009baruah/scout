@@ -311,23 +311,25 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     setState({ status: "success", message: "Session title updated." });
   }
 
-  async function deleteSession(sessionId: string) {
-    if (!window.confirm("Delete this recording session?")) return;
+  async function deleteTopic(topicId: string) {
+    if (!window.confirm("Delete this training topic and its guide?")) return;
 
-    const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${sessionId}`, { method: "DELETE" });
+    const response = await fetch(`/api/admin/guided-workflow-topics/${topicId}`, { method: "DELETE" });
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to delete session." });
+      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to delete topic." });
       return;
     }
 
-    setSessions((current) => current.filter((session) => session.id !== sessionId));
-    if (selectedSessionId === sessionId) {
-      const nextSelection = sessions.find((session) => session.id !== sessionId)?.id ?? null;
-      setSelectedSessionId(nextSelection);
+    setSessions((current) => current.map((session) => ({
+      ...session,
+      topics: session.topics.filter((topic) => topic.id !== topicId)
+    })));
+    if (selectedTopicId === topicId) {
+      setSelectedTopicId(null);
     }
-    setState({ status: "success", message: "Recording session deleted." });
+    setState({ status: "success", message: "Training topic deleted." });
   }
 
   async function applyTopicRecording(topic: GuidedWorkflowTopicRow, action: "halt" | "restart") {
@@ -650,7 +652,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
         <SessionDetailsPanel
           appBaseUrl={appBaseUrl}
           convertTopic={convertTopic}
-          deleteSession={deleteSession}
+          deleteTopic={deleteTopic}
           deleteStep={hardDeleteStep}
           editor={editor}
           guides={items}
@@ -695,10 +697,10 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   );
 }
 
-function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteSession, deleteStep, editor, guides, moveStep, onRefresh, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
+function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep, editor, guides, moveStep, onRefresh, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
   appBaseUrl: string;
   convertTopic(topicId: string): void;
-  deleteSession(sessionId: string): void;
+  deleteTopic(topicId: string): void;
   deleteStep(index: number): void;
   editor: EditorState;
   guides: GuidedWorkflowRow[];
@@ -833,7 +835,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteSession, deleteSt
             >
               <Play className="h-4 w-4" />Publish
             </button>
-            <button className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-700" onClick={() => deleteSession(selectedSession.id)} type="button">
+            <button className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-700" onClick={() => deleteTopic(selectedTopic.id)} type="button">
               <Trash2 className="h-4 w-4" />Delete
             </button>
           </div>
@@ -851,7 +853,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteSession, deleteSt
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
               <button className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${configTab === "recorder" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100"}`} onClick={() => setConfigTab("recorder")} type="button"><Clipboard className="h-3.5 w-3.5" />Recorder config</button>
-              <button className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${configTab === "snippet" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100"} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!guidePublished} onClick={() => setConfigTab("snippet")} type="button"><Copy className="h-3.5 w-3.5" />Install snippet</button>
+              {/* <button className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${configTab === "snippet" ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-100"} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!guidePublished} onClick={() => setConfigTab("snippet")} type="button"><Copy className="h-3.5 w-3.5" />Install snippet</button> */}
             </div>
             {configTab === "recorder" && selectedTopic ? (
               <div className="flex flex-wrap gap-2">

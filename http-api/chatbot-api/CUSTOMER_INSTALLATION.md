@@ -3,7 +3,7 @@
 **Document type:** Implementation handover  
 **Audience:** Customer implementation teams, Scout platform administrators, DevOps, security, and support teams  
 **Widget:** ScoutChatbot universal hosted widget  
-**Widget loader version:** 1.1.1  
+**Widget loader version:** 1.1.2  
 **Last updated:** 14 July 2026
 
 ---
@@ -598,7 +598,7 @@ Create this second file in the same static-assets directory:
   var loader = document.createElement("script");
   loader.id = "scout-chatbot-loader";
   loader.src = config.scoutUrl.replace(/\/$/, "") +
-    "/scout-chatbot.js?v=1.1.1";
+    "/scout-chatbot.js?v=1.1.2";
   loader.async = true;
 
   loader.onload = function () {
@@ -663,7 +663,7 @@ The NexusVendor reference application uses the same pattern:
 nexusvendor-enterprise-portal/index.html
   -> /scout-chatbot-config.local.js
   -> /scout-chatbot-install.js
-  -> http://localhost:3000/scout-chatbot.js?v=1.1.1
+  -> http://localhost:3000/scout-chatbot.js?v=1.1.2
   -> http://localhost:3000/embed/scout-chatbot
   -> http://localhost:4200/v1/chat/query
 ```
@@ -682,7 +682,7 @@ If the customer does not want two local files, the configuration and installatio
 Add the loader after the customer's primary application markup, immediately before the closing `</body>` tag. This ensures the page is available before the widget is installed and avoids blocking the application startup.
 
 ```html
-<script src="https://scout.example.com/scout-chatbot.js?v=1.1.1"></script>
+<script src="https://scout.example.com/scout-chatbot.js?v=1.1.2"></script>
 <script>
   window.ScoutChatbot.install({
     scoutUrl: "https://scout.example.com",
@@ -709,7 +709,7 @@ For environments that inject configuration during deployment, keep values outsid
 
 ```html
 <script src="/scout-chatbot-config.js"></script>
-<script src="https://scout.example.com/scout-chatbot.js?v=1.1.1"></script>
+<script src="https://scout.example.com/scout-chatbot.js?v=1.1.2"></script>
 <script>
   window.ScoutChatbot.install(window.CustomerScoutChatbotConfig);
 </script>
@@ -771,7 +771,7 @@ export function ScoutChatbotInstall() {
 
     const script = document.createElement('script');
     script.id = 'scout-chatbot-loader';
-    script.src = 'https://scout.example.com/scout-chatbot.js?v=1.1.1';
+    script.src = 'https://scout.example.com/scout-chatbot.js?v=1.1.2';
     script.async = true;
 
     let widget: { destroy(): void } | undefined;
@@ -910,7 +910,7 @@ The generated local configuration is excluded from source control. This script c
 Check:
 
 1. Browser developer console for script or CSP errors.
-2. `https://scout.example.com/scout-chatbot.js?v=1.1.1` returns JavaScript with HTTP 200.
+2. `https://scout.example.com/scout-chatbot.js?v=1.1.2` returns JavaScript with HTTP 200.
 3. Installation runs after `document.body` exists.
 4. The loader is installed only once.
 5. The configured `zIndex` is higher than the customer's overlays.
@@ -927,7 +927,7 @@ Use `ScoutChatbot.install(...)` from the universal loader. Do not mount a React 
 
 ### 14.4 Chatbot cannot be dragged or resized
 
-1. Confirm loader version `1.1.1` or later.
+1. Confirm loader version `1.1.2` or later.
 2. Hard-refresh the page and clear any CDN cache for `scout-chatbot.js`.
 3. Drag using the chatbot header, not the message area.
 4. Resize using the bottom-right resize control.
@@ -1050,7 +1050,7 @@ Another process is listening on the configured port. Either stop the duplicate p
 
 ### 14.19 Browser shows an old widget after deployment
 
-Use a versioned loader URL, such as `scout-chatbot.js?v=1.1.1`, invalidate the CDN cache, and hard-refresh. Maintain controlled cache headers and increment the version query when publishing loader behavior changes.
+Use a versioned loader URL, such as `scout-chatbot.js?v=1.1.2`, invalidate the CDN cache, and hard-refresh. Maintain controlled cache headers and increment the version query when publishing loader behavior changes.
 
 ---
 

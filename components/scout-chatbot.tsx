@@ -2759,6 +2759,10 @@ export function ScoutChatbot({
       pendingRouterConfirmationRef.current = null;
     }
 
+    if (body?.clientExecution && typeof body.clientExecution === "object") {
+      dispatchOrchestrationExecution({ ...body.clientExecution, apiKey });
+    }
+
     if (typeof body?.answer === "string" || typeof body?.message === "string") {
       return {
         role: "assistant",
@@ -4644,6 +4648,19 @@ function estimateWorkflowDuration(stepCount: number) {
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+// Hands an orchestration execution off to the client-side orchestration player
+// (public/scout-orchestration-player.js), which runs workflow/data_capture nodes
+// in this same tab and defers other node types back to the server per-step.
+function dispatchOrchestrationExecution(payload: Record<string, unknown>) {
+  window.dispatchEvent(new CustomEvent("SCOUT_MINIMIZE_CHATBOT", { bubbles: true, cancelable: false }));
+
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: "SCOUT_START_EXECUTION", payload }, "*");
+  } else {
+    window.dispatchEvent(new CustomEvent("SCOUT_START_EXECUTION", { detail: payload, bubbles: true, cancelable: false }));
+  }
 }
 
 async function getPlayerHandle(

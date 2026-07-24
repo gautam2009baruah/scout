@@ -59,7 +59,6 @@ export type WorkflowExecutionResult = {
 export async function executeGuidedWorkflow(
   options: WorkflowExecutionOptions
 ): Promise<WorkflowExecutionResult> {
-  const pool = getPool();
   const executionId = crypto.randomUUID();
   const startedAt = new Date().toISOString();
 
@@ -74,27 +73,6 @@ export async function executeGuidedWorkflow(
     if (workflow.status !== "published") {
       throw new Error(`Workflow is not published: ${workflow.status}`);
     }
-
-    // Create execution record in workflow analytics
-    await pool.query(
-      `INSERT INTO workflow_analytics 
-       (id, execution_id, workflow_id, workflow_version, user_id, event_type, status, metadata, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-      [
-        crypto.randomUUID(),
-        executionId,
-        workflow.id,
-        1, // Version tracking can be enhanced
-        options.userId || "orchestration-system",
-        "workflow_start",
-        "initiated",
-        JSON.stringify({
-          parameters: options.parameters,
-          targetUrl: options.targetUrl,
-          orchestrationTriggered: true,
-        }),
-      ]
-    );
 
     // Workflow is ready for immediate execution
     // For client-side workflows, we return the guide configuration
@@ -117,23 +95,6 @@ export async function executeGuidedWorkflow(
       },
     };
   } catch (error) {
-    // Record failure
-    await pool.query(
-      `INSERT INTO workflow_analytics 
-       (id, execution_id, workflow_id, user_id, event_type, status, error_message, metadata, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-      [
-        crypto.randomUUID(),
-        executionId,
-        options.workflowId,
-        options.userId || "orchestration-system",
-        "workflow_failed",
-        "failed",
-        error instanceof Error ? error.message : "Unknown error",
-        JSON.stringify({ parameters: options.parameters }),
-      ]
-    );
-
     return {
       success: false,
       executionId,

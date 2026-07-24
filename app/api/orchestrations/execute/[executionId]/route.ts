@@ -6,26 +6,54 @@ import { getOrchestrationById, getNodes, getConnections } from "@/lib/orchestrat
 import { createTriggerLog, updateTriggerLastTriggered } from "@/lib/orchestrations/triggers";
 import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
+import type { AdminSession } from "@/lib/admin/auth";
 import type { OrchestrationNode } from "@/shared/orchestrationTypes";
 import type { ExecutionStep } from "@/shared/orchestrationPlayerTypes";
+
+export const runtime = "nodejs";
+
+function corsHeaders(request: Request) {
+  const origin = request.headers.get("origin") || "*";
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, Authorization",
+    "Vary": "Origin",
+  };
+}
+
+export async function OPTIONS(request: Request) {
+  return new Response(null, { status: 204, headers: corsHeaders(request) });
+}
+
+// Used only for the chatbot-facing (non-admin) auth path below, to satisfy
+// getGuidedWorkflowById's session param the same way lib/guided-workflows/executor.ts does.
+const chatbotFallbackSession: AdminSession = {
+  user: {
+    id: "system",
+    tenantId: "system",
+    name: "System",
+    email: "system@example.com",
+    roleId: "system",
+    isAdminRole: true,
+    isActive: true,
+    mustChangePassword: false,
+  },
+  tenant: { tenantId: "system", slug: "system", name: "System" },
+  modules: [],
+  availableCompanies: [],
+  expiresAt: new Date(Date.now() + 60_000),
+};
 
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ executionId: string }> }
 ) {
+  const headers = corsHeaders(request);
   try {
     // Await params (Next.js 15+ requirement)
     const { executionId } = await context.params;
-
-    // Verify admin session (for now, execution requires admin access)
-    // TODO: Add proper user-level authentication for orchestration execution
-    const session = await getCurrentAdminSession();
-    if (!session) {
-      return NextResponse.json(
-        { error: "Authentication required" },
-        { status: 401 }
-      );
-    }
 
     const { orchestrationId, context: executionContext, triggerData } = await request.json();
 
@@ -34,8 +62,33 @@ export async function POST(
     if (!orchestration) {
       return NextResponse.json(
         { error: "Orchestration not found" },
-        { status: 404 }
+        { status: 404, headers }
       );
+    }
+
+    // Chatbot-triggered (external, no admin login) executions authenticate via the
+    // same embed API key used for /chat/query, /api/chatbot/intent-gate, etc.
+    // Admin-triggered executions (in-context testing from the control panel) keep
+    // using the admin session, since that's what layout.tsx's global script serves.
+    let session: AdminSession | null = await getCurrentAdminSession();
+    if (!session) {
+      try {
+        await assertChatbotApiKeyAccess(request, {
+          companyId: typeof triggerData?.companyId === "string" ? triggerData.companyId : undefined,
+          targetAppId: typeof triggerData?.targetAppId === "string" ? triggerData.targetAppId : undefined,
+        });
+      } catch (error) {
+        if (error instanceof ChatbotApiKeyAccessError) {
+          return NextResponse.json({ error: error.message }, { status: error.statusCode, headers });
+        }
+        throw error;
+      }
+
+      if (triggerData?.companyId && orchestration.companyId !== triggerData.companyId) {
+        return NextResponse.json({ error: "Orchestration was not found for this company." }, { status: 404, headers });
+      }
+
+      session = chatbotFallbackSession;
     }
 
     // Fetch nodes and connections
@@ -66,16 +119,16 @@ export async function POST(
       executionPlan,
       context: executionContext,
       triggerData,
-    });
+    }, { headers });
 
   } catch (error) {
     console.error("❌ In-context execution error:", error);
     return NextResponse.json(
-      { 
-        error: "Execution failed", 
-        details: error instanceof Error ? error.message : "Unknown error" 
+      {
+        error: "Execution failed",
+        details: error instanceof Error ? error.message : "Unknown error"
       },
-      { status: 500 }
+      { status: 500, headers }
     );
   }
 }

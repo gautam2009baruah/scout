@@ -295,7 +295,12 @@
     const { executionId, orchestrationId, orchestrationName, triggerData, targetAppId, scoutBaseUrl } = payload;
     let context = payload.context || {};
     const resumeFromStep = payload._resumeFrom || 0; // Resume from this step if navigated
-    
+
+    // Declared here (not inside the try block) so the catch block below can
+    // still clear the sliding timeout if execution fails before/while it's running.
+    let timeoutId = null;
+    let orchestrationCancelled = false;
+
     // Initialize context scopes if not present
     if (!context.variables) {
       context.variables = {};
@@ -326,6 +331,9 @@
     if (scoutBaseUrl) {
       config.apiBaseUrl = scoutBaseUrl;
     }
+    if (payload.apiKey) {
+      config.apiKey = payload.apiKey;
+    }
 
     console.log('🎬 Starting in-context execution:', { executionId, orchestrationName, targetAppId });
     if (resumeFromStep > 0) {
@@ -343,7 +351,9 @@
         // Fetch execution plan
         const response = await fetch(`${config.apiBaseUrl}/api/orchestrations/execute/${executionId}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: config.apiKey
+            ? { 'Content-Type': 'application/json', 'X-Api-Key': config.apiKey }
+            : { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orchestrationId,
             context,
@@ -375,8 +385,6 @@
 
       // Sliding timeout mechanism (resets on each step completion)
       const timeoutDuration = executionPlan[0]?.timeout || 300000; // Default 5 minutes
-      let timeoutId = null;
-      let orchestrationCancelled = false;
 
       const resetSlidingTimeout = () => {
         if (timeoutId) {
@@ -1604,6 +1612,7 @@
     const handle = await window.ScoutAdoptionPlayer.init({
       scoutBaseUrl: config.apiBaseUrl,
       targetAppId: config.targetAppId || 'default-app',
+      apiKey: config.apiKey,
       autoShowLauncher: false
     });
     
@@ -2348,7 +2357,9 @@
 
     const response = await fetch(`${config.apiBaseUrl}/api/orchestrations/execute/${executionId}/continue`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: config.apiKey
+        ? { 'Content-Type': 'application/json', 'X-Api-Key': config.apiKey }
+        : { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         nodeIndex: nodeIndex,
         step: step,  // Include step config for server execution
