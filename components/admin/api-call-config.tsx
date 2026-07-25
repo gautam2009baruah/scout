@@ -297,17 +297,17 @@ export function ApiCallConfig({ config, updateConfig }: any) {
           rows={Array.isArray(config.pathVariables) ? config.pathVariables : []}
           onAdd={() => addRow("pathVariables", { name: "", value: "" })}
           renderRow={(row, index) => (
-            <div className="grid grid-cols-2 gap-2" key={`path-${index}`}>
+            <div className="grid grid-cols-1 gap-2" key={`path-${index}`}>
               <input
                 type="text"
-                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 placeholder="orderId"
                 value={row.name || ""}
                 onChange={(e) => updateRow("pathVariables", index, { name: e.target.value })}
               />
               <input
                 type="text"
-                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 placeholder="{{variables.orderId}}"
                 value={row.value || ""}
                 onChange={(e) => updateRow("pathVariables", index, { value: e.target.value })}
@@ -322,17 +322,17 @@ export function ApiCallConfig({ config, updateConfig }: any) {
           rows={Array.isArray(config.queryParameters) ? config.queryParameters : []}
           onAdd={() => addRow("queryParameters", { key: "", value: "", enabled: true })}
           renderRow={(row, index) => (
-            <div className="grid grid-cols-3 gap-2" key={`query-${index}`}>
+            <div className="grid grid-cols-1 gap-2" key={`query-${index}`}>
               <input
                 type="text"
-                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 placeholder="limit"
                 value={row.key || ""}
                 onChange={(e) => updateRow("queryParameters", index, { key: e.target.value })}
               />
               <input
                 type="text"
-                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 placeholder="50"
                 value={row.value || ""}
                 onChange={(e) => updateRow("queryParameters", index, { value: e.target.value })}
@@ -355,17 +355,17 @@ export function ApiCallConfig({ config, updateConfig }: any) {
           rows={Array.isArray(config.headers) ? config.headers : []}
           onAdd={() => addRow("headers", { key: "", value: "", enabled: true, secret: false })}
           renderRow={(row, index) => (
-            <div className="grid grid-cols-5 gap-2" key={`header-${index}`}>
+            <div className="grid grid-cols-1 gap-2" key={`header-${index}`}>
               <input
                 type="text"
-                className="col-span-2 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 placeholder="X-Correlation-Id"
                 value={row.key || ""}
                 onChange={(e) => updateRow("headers", index, { key: e.target.value })}
               />
               <input
                 type="text"
-                className="col-span-2 rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
                 placeholder="{{variables.correlationId}}"
                 value={row.value || ""}
                 onChange={(e) => updateRow("headers", index, { value: e.target.value })}
@@ -432,17 +432,17 @@ export function ApiCallConfig({ config, updateConfig }: any) {
             rows={Array.isArray(config.urlEncodedFields) ? config.urlEncodedFields : []}
             onAdd={() => addRow("urlEncodedFields", { key: "", value: "", enabled: true })}
             renderRow={(row, index) => (
-              <div className="grid grid-cols-3 gap-2" key={`urlenc-${index}`}>
+              <div className="grid grid-cols-1 gap-2" key={`urlenc-${index}`}>
                 <input
                   type="text"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                   placeholder="field"
                   value={row.key || ""}
                   onChange={(e) => updateRow("urlEncodedFields", index, { key: e.target.value })}
                 />
                 <input
                   type="text"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                   placeholder="value"
                   value={row.value || ""}
                   onChange={(e) => updateRow("urlEncodedFields", index, { value: e.target.value })}
@@ -469,7 +469,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
               onAdd={() => addRow("formDataFields", { key: "", value: "", isFile: false, enabled: true })}
               renderRow={(row, index) => (
                 <div className="space-y-2" key={`form-${index}`}>
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-1 gap-2">
                     <input
                       type="text"
                       className="rounded border border-slate-300 px-2 py-1.5 text-sm"
@@ -495,24 +495,24 @@ export function ApiCallConfig({ config, updateConfig }: any) {
                     </label>
                   </div>
                   {row.isFile ? (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 gap-2">
                       <input
                         type="text"
-                        className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                         placeholder="C:/path/file.pdf"
                         value={row.filePath || ""}
                         onChange={(e) => updateRow("formDataFields", index, { filePath: e.target.value })}
                       />
                       <input
                         type="text"
-                        className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                         placeholder="file.pdf (optional)"
                         value={row.fileName || ""}
                         onChange={(e) => updateRow("formDataFields", index, { fileName: e.target.value })}
                       />
                       <input
                         type="text"
-                        className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                         placeholder="application/pdf"
                         value={row.contentType || ""}
                         onChange={(e) => updateRow("formDataFields", index, { contentType: e.target.value })}
@@ -537,24 +537,24 @@ export function ApiCallConfig({ config, updateConfig }: any) {
               rows={Array.isArray(config.fileUploads) ? config.fileUploads : []}
               onAdd={() => addRow("fileUploads", { fieldName: "", filePath: "", fileName: "", contentType: "", enabled: true })}
               renderRow={(row, index) => (
-                <div className="grid grid-cols-5 gap-2" key={`upload-${index}`}>
+                <div className="grid grid-cols-1 gap-2" key={`upload-${index}`}>
                   <input
                     type="text"
-                    className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                     placeholder="field"
                     value={row.fieldName || ""}
                     onChange={(e) => updateRow("fileUploads", index, { fieldName: e.target.value })}
                   />
                   <input
                     type="text"
-                    className="col-span-2 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                     placeholder="C:/path/file.png"
                     value={row.filePath || ""}
                     onChange={(e) => updateRow("fileUploads", index, { filePath: e.target.value })}
                   />
                   <input
                     type="text"
-                    className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                     placeholder="file name"
                     value={row.fileName || ""}
                     onChange={(e) => updateRow("fileUploads", index, { fileName: e.target.value })}
@@ -608,7 +608,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
         </div>
 
         {config.auth?.type === "api_key" && (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2">
             <select
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
               value={config.auth?.apiKey?.location || "header"}
@@ -645,7 +645,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
         )}
 
         {config.auth?.type === "basic" && (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2">
             <input
               type="text"
               className="rounded border border-slate-300 px-2 py-1.5 text-sm"
@@ -672,10 +672,10 @@ export function ApiCallConfig({ config, updateConfig }: any) {
               value={config.auth?.oauth2?.accessToken || ""}
               onChange={(e) => setAuthNested("oauth2", { accessToken: e.target.value })}
             />
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2">
               <input
                 type="text"
-                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 placeholder="Token URL"
                 value={config.auth?.oauth2?.tokenUrl || ""}
                 onChange={(e) => setAuthNested("oauth2", { tokenUrl: e.target.value })}
@@ -726,10 +726,10 @@ export function ApiCallConfig({ config, updateConfig }: any) {
             rows={Array.isArray(config.auth?.customHeaders) ? config.auth.customHeaders : []}
             onAdd={() => setAuth({ customHeaders: [...(config.auth?.customHeaders || []), { key: "", value: "", secret: true }] })}
             renderRow={(row, index) => (
-              <div className="grid grid-cols-4 gap-2" key={`auth-h-${index}`}>
+              <div className="grid grid-cols-1 gap-2" key={`auth-h-${index}`}>
                 <input
                   type="text"
-                  className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                   placeholder="Header"
                   value={row.key || ""}
                   onChange={(e) => {
@@ -740,7 +740,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
                 />
                 <input
                   type={row.secret ? "password" : "text"}
-                  className="col-span-2 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                   placeholder="Value"
                   value={row.value || ""}
                   onChange={(e) => {
@@ -777,7 +777,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
       </Section>
 
       <Section title="Advanced Settings" open={!!openSections.advanced} onToggle={() => toggleSection("advanced")}>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2">
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">Timeout (ms)</label>
             <input
@@ -836,10 +836,10 @@ export function ApiCallConfig({ config, updateConfig }: any) {
               Enabled
             </label>
           </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2">
             <input
               type="text"
-              className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
               placeholder="Certificate path"
               value={config.auth?.mtls?.certPath || ""}
               onChange={(e) => setAuthNested("mtls", { certPath: e.target.value })}
@@ -876,7 +876,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
       </Section>
 
       <Section title="Response Handling" open={!!openSections.response} onToggle={() => toggleSection("response")}>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2">
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">Success status codes</label>
             <input
@@ -914,17 +914,17 @@ export function ApiCallConfig({ config, updateConfig }: any) {
           rows={Array.isArray(config.responseFieldMappings) ? config.responseFieldMappings : []}
           onAdd={() => addRow("responseFieldMappings", { outputKey: "", jsonPath: "" })}
           renderRow={(row, index) => (
-            <div className="grid grid-cols-2 gap-2" key={`map-${index}`}>
+            <div className="grid grid-cols-1 gap-2" key={`map-${index}`}>
               <input
                 type="text"
-                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                 placeholder="customerEmail"
                 value={row.outputKey || ""}
                 onChange={(e) => updateRow("responseFieldMappings", index, { outputKey: e.target.value })}
               />
               <input
                 type="text"
-                className="rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm font-mono"
                 placeholder="data.customer.email"
                 value={row.jsonPath || ""}
                 onChange={(e) => updateRow("responseFieldMappings", index, { jsonPath: e.target.value })}
