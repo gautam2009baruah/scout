@@ -4422,7 +4422,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
     "{{workflow.currentNode}}",
   ];
 
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ email: true });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [testState, setTestState] = useState<Record<string, { loading: boolean; status: "idle" | "success" | "error"; message: string }>>({});
   const [senderProviders, setSenderProviders] = useState<Array<{ id: string; provider: string; name: string; from_name: string | null; from_email: string }>>([]);
 
