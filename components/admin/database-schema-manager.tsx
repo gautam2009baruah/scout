@@ -487,22 +487,24 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
             <h2 className="text-xl font-semibold tracking-tight text-slate-950">Database Schema Setup</h2>
             <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-slate-500">Organization: {companyName}</p>
           </div>
-          <a
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-            href="/api/admin/database-executor/download"
-          >
-            <Download className="h-4 w-4" />
-            Download Node.js Project
-          </a>
-          <button
-            className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white p-2 text-slate-600 transition hover:bg-slate-50"
-            type="button"
-            onClick={() => setDownloadHelpOpen((current) => !current)}
-            title="Hosting help"
-            aria-expanded={downloadHelpOpen}
-          >
-            <HelpCircle className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <a
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              href="/api/admin/database-executor/download"
+            >
+              <Download className="h-4 w-4" />
+              Download Node.js Project
+            </a>
+            <button
+              className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white p-2 text-slate-600 transition hover:bg-slate-50"
+              type="button"
+              onClick={() => setDownloadHelpOpen((current) => !current)}
+              title="Hosting help"
+              aria-expanded={downloadHelpOpen}
+            >
+              <HelpCircle className="h-4 w-4" />
+            </button>
+          </div>
           {downloadHelpOpen ? (
             <div className="absolute right-6 top-16 z-50 max-h-[calc(100vh-6rem)] w-[min(46rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
               <div className="flex items-start justify-between gap-3">
