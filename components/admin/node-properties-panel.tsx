@@ -5748,7 +5748,7 @@ function DataFormatterConfig({ config, updateConfig }: any) {
         />
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3">
         <div>
           <label className="mb-1 block text-sm font-semibold text-slate-700">Format <span className="text-red-500">*</span></label>
           <select
@@ -5804,7 +5804,7 @@ function DataFormatterConfig({ config, updateConfig }: any) {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3">
         <div>
           <label className="mb-1 block text-sm font-semibold text-slate-700">Maximum Rows</label>
           <input
@@ -6250,7 +6250,7 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
         Keep orchestration flow one-way. Use status updates for progress and this section for final response shaping.
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3">
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-1">Display Mode</label>
           <select
@@ -6309,7 +6309,7 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3">
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-1">Final Response Variable Path</label>
           <input
