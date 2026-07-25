@@ -4771,67 +4771,67 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
 
   const renderDeliveryAndRetry = (channelKey: string) => {
     const channel = channels[channelKey] || {};
+    const retriesEnabled = channel.retry?.enabled !== false;
     return (
       <div className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 mb-1">Delivery mode</label>
+          <select
+            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            value={channel.delivery?.mode || "immediate"}
+            onChange={(e) => setChannelNested(channelKey, "delivery", { mode: e.target.value })}
+          >
+            <option value="immediate">Immediate</option>
+            <option value="scheduled">Scheduled</option>
+          </select>
+        </div>
+        {channel.delivery?.mode === "scheduled" && (
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Delivery mode</label>
-            <select
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Scheduled at</label>
+            <input
+              type="datetime-local"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={channel.delivery?.mode || "immediate"}
-              onChange={(e) => setChannelNested(channelKey, "delivery", { mode: e.target.value })}
-            >
-              <option value="immediate">Immediate</option>
-              <option value="scheduled">Scheduled</option>
-            </select>
+              value={channel.delivery?.scheduledAt || ""}
+              onChange={(e) => setChannelNested(channelKey, "delivery", { scheduledAt: e.target.value })}
+            />
           </div>
-          {channel.delivery?.mode === "scheduled" && (
+        )}
+        <label className="flex h-9 min-w-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3" htmlFor={`${channelKey}-retry-enabled`}>
+          <input
+            id={`${channelKey}-retry-enabled`}
+            type="checkbox"
+            className="h-4 w-4 shrink-0 rounded border-slate-300"
+            checked={retriesEnabled}
+            onChange={(e) => setChannelNested(channelKey, "retry", { enabled: e.target.checked })}
+          />
+          <span className="truncate text-xs font-medium text-slate-700" title="Enable retries">Enable retries</span>
+        </label>
+        {retriesEnabled && (
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Scheduled at</label>
+              <label className="mb-1 block truncate text-xs font-semibold text-slate-700" title="Max attempts">Max attempts</label>
               <input
-                type="datetime-local"
+                type="number"
+                min={1}
+                max={10}
                 className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                value={channel.delivery?.scheduledAt || ""}
-                onChange={(e) => setChannelNested(channelKey, "delivery", { scheduledAt: e.target.value })}
+                value={channel.retry?.maxAttempts ?? 2}
+                onChange={(e) => setChannelNested(channelKey, "retry", { maxAttempts: Number(e.target.value || 2) })}
               />
             </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <label className="col-span-2 flex h-9 min-w-0 items-center gap-2 rounded-md border border-slate-200 bg-white px-3" htmlFor={`${channelKey}-retry-enabled`}>
-            <input
-              id={`${channelKey}-retry-enabled`}
-              type="checkbox"
-              className="h-4 w-4 shrink-0 rounded border-slate-300"
-              checked={channel.retry?.enabled !== false}
-              onChange={(e) => setChannelNested(channelKey, "retry", { enabled: e.target.checked })}
-            />
-            <span className="truncate text-xs font-medium text-slate-700" title="Enable retries">Enable retries</span>
-          </label>
-          <div>
-            <label className="mb-1 block truncate text-xs font-semibold text-slate-700" title="Max attempts">Max attempts</label>
-            <input
-              type="number"
-              min={1}
-              max={10}
-              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={channel.retry?.maxAttempts ?? 2}
-              onChange={(e) => setChannelNested(channelKey, "retry", { maxAttempts: Number(e.target.value || 2) })}
-            />
+            <div>
+              <label className="mb-1 block truncate text-xs font-semibold text-slate-700" title="Retry delay (seconds)">Retry delay (sec)</label>
+              <input
+                type="number"
+                min={0}
+                max={300}
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                value={channel.retry?.delaySeconds ?? 2}
+                onChange={(e) => setChannelNested(channelKey, "retry", { delaySeconds: Number(e.target.value || 0) })}
+              />
+            </div>
           </div>
-          <div>
-            <label className="mb-1 block truncate text-xs font-semibold text-slate-700" title="Retry delay (seconds)">Retry delay (sec)</label>
-            <input
-              type="number"
-              min={0}
-              max={300}
-              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={channel.retry?.delaySeconds ?? 2}
-              onChange={(e) => setChannelNested(channelKey, "retry", { delaySeconds: Number(e.target.value || 0) })}
-            />
-          </div>
-        </div>
+        )}
       </div>
     );
   };
@@ -5050,31 +5050,40 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                       </div>
                       <div className="space-y-2">
                         {(Array.isArray(channel.attachments) ? channel.attachments : []).map((attachment: any, index: number) => (
-                          <div key={index} className="flex items-center gap-2 rounded border border-slate-200 p-2 bg-slate-50">
-                            <input
-                              type="text"
-                              className="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm"
-                              placeholder="Name"
-                              value={attachment.name || ""}
-                              onChange={(e) => updateListItem("email", "attachments", index, { name: e.target.value })}
-                            />
-                            <input
-                              type="text"
-                              className="flex-[2] min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm"
-                              placeholder="URL"
-                              value={attachment.url || ""}
-                              onChange={(e) => updateListItem("email", "attachments", index, { url: e.target.value })}
-                            />
-                            <input
-                              type="text"
-                              className="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm"
-                              placeholder="Content type"
-                              value={attachment.contentType || ""}
-                              onChange={(e) => updateListItem("email", "attachments", index, { contentType: e.target.value })}
-                            />
+                          <div key={index} className="rounded border border-slate-200 p-2 bg-slate-50 space-y-2">
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">Name</label>
+                              <input
+                                type="text"
+                                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                                placeholder="invoice.pdf"
+                                value={attachment.name || ""}
+                                onChange={(e) => updateListItem("email", "attachments", index, { name: e.target.value })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">URL</label>
+                              <input
+                                type="text"
+                                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                                placeholder="https://..."
+                                value={attachment.url || ""}
+                                onChange={(e) => updateListItem("email", "attachments", index, { url: e.target.value })}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-slate-700 mb-1">Content type</label>
+                              <input
+                                type="text"
+                                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                                placeholder="application/pdf"
+                                value={attachment.contentType || ""}
+                                onChange={(e) => updateListItem("email", "attachments", index, { contentType: e.target.value })}
+                              />
+                            </div>
                             <button
                               type="button"
-                              className="shrink-0 text-xs text-red-600 hover:text-red-700"
+                              className="text-xs text-red-600 hover:text-red-700"
                               onClick={() => removeListItem("email", "attachments", index)}
                             >
                               Remove
