@@ -688,6 +688,35 @@ export function ApiCallConfig({ config, updateConfig }: any) {
                 <option value="client_credentials">client_credentials</option>
                 <option value="password">password</option>
               </select>
+              {config.auth?.oauth2?.grantType === "password" && (
+                <>
+                  <input
+                    type="text"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    placeholder="Username"
+                    value={config.auth?.oauth2?.username || ""}
+                    onChange={(e) => setAuthNested("oauth2", { username: e.target.value })}
+                  />
+                  <input
+                    type="password"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    placeholder="Password"
+                    value={config.auth?.oauth2?.password || ""}
+                    onChange={(e) => setAuthNested("oauth2", { password: e.target.value })}
+                  />
+                </>
+              )}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Client credentials style</label>
+                <select
+                  className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  value={config.auth?.oauth2?.authStyle || "basic"}
+                  onChange={(e) => setAuthNested("oauth2", { authStyle: e.target.value })}
+                >
+                  <option value="basic">Basic (Authorization header)</option>
+                  <option value="body">Body (client_id + client_secret in form)</option>
+                </select>
+              </div>
               <input
                 type="text"
                 className="rounded border border-slate-300 px-2 py-1.5 text-sm"

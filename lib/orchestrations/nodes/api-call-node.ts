@@ -80,7 +80,7 @@ export async function executeApiCallNode(
         responseHeaders: response.responseHeaders,
         responseBody: response.responseBody,
         parsedJson: response.parsedJson,
-        rawResponse: response.rawResponse,
+        ...(config.includeRawResponse !== false ? { rawResponse: response.rawResponse } : {}),
         executionDurationMs: durationMs,
         attempts: attempt,
       };
