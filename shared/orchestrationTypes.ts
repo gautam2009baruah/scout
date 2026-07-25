@@ -296,7 +296,6 @@ export type NotificationNodeConfig = {
       subject?: string;
       body?: string;
       bodyFormat?: "rich_text" | "plain_text";
-      template?: string;
       attachments?: Array<{
         name?: string;
         url?: string;
@@ -338,10 +337,6 @@ export type NotificationNodeConfig = {
     };
     teams?: {
       enabled: boolean;
-      connection?: string;
-      workspace?: string;
-      team?: string;
-      channel?: string;
       mentions?: string;
       title?: string;
       message?: string;
@@ -363,10 +358,6 @@ export type NotificationNodeConfig = {
     };
     slack?: {
       enabled: boolean;
-      connection?: string;
-      workspace?: string;
-      channel?: string;
-      directMessageRecipient?: string;
       mentions?: string;
       message?: string;
       messageFormat?: "plain_text" | "block_kit";
@@ -845,7 +836,7 @@ export type ChatbotTriggerConfig = {
   }>;
   allowedRoles?: string[]; // Roles that can trigger this (empty = all)
   allowedUsers?: string[]; // Specific user emails (empty = all)
-  minConfidence: number; // Auto-match strictness threshold (0-1), not a hard truth
+  minConfidence: number; // Auto-match strictness threshold (0-1); gates workflow-router intent matching
   enabled: boolean;
 };
 

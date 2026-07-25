@@ -50,6 +50,7 @@ type ChatbotWorkflowCandidate = {
   }>;
   triggerPhrases: string[];
   examplePhrases: string[];
+  minConfidence: number;
   executionContract: Array<{
     label: string;
     nodeType: string;
@@ -275,6 +276,9 @@ async function loadChatbotWorkflowCandidates(
         examplePhrases: Array.isArray(triggerConfig?.examplePhrases)
           ? triggerConfig.examplePhrases.filter((phrase): phrase is string => typeof phrase === "string")
           : [],
+        minConfidence: typeof triggerConfig?.minConfidence === "number"
+          ? Math.max(0, Math.min(1, triggerConfig.minConfidence))
+          : 0.6,
         executionContract: sortedNodes.map((node) => buildNodeExecutionContract({
           label: node!.label,
           nodeType: node!.nodeType,
@@ -633,6 +637,15 @@ function scoreDirectPhraseMatch(message: string, phrases: string[]): number {
   return Math.max(0, Math.min(1, best));
 }
 
+// Trigger phrases are configured as authoritative; example phrases are meant
+// to be illustrative, so an exact example match counts for slightly less than
+// an exact trigger-phrase match.
+function computeDirectPhraseSignal(message: string, candidate: ChatbotWorkflowCandidate): number {
+  const directTriggerMatchScore = scoreDirectPhraseMatch(message, candidate.triggerPhrases);
+  const directExampleMatchScore = scoreDirectPhraseMatch(message, candidate.examplePhrases);
+  return Math.max(directTriggerMatchScore, directExampleMatchScore * 0.9);
+}
+
 function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflowCandidate): number {
   const messageTokens = new Set(tokenize(message));
   if (messageTokens.size === 0) {
@@ -656,15 +669,13 @@ function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflow
   const triggerPhraseScore = scorePhraseSimilarity(message, candidate.triggerPhrases);
   // Example phrases are a soft signal only. They influence ranking but never dominate.
   const examplePhraseScore = scorePhraseSimilarity(message, candidate.examplePhrases);
-  const directTriggerMatchScore = scoreDirectPhraseMatch(message, candidate.triggerPhrases);
-  const directExampleMatchScore = scoreDirectPhraseMatch(message, candidate.examplePhrases);
 
   const blendedScore = Math.max(
     0,
     Math.min(1, baseScore * 0.7 + triggerPhraseScore * 0.2 + examplePhraseScore * 0.1)
   );
 
-  const directPhraseSignal = Math.max(directTriggerMatchScore, directExampleMatchScore * 0.9);
+  const directPhraseSignal = computeDirectPhraseSignal(message, candidate);
   if (directPhraseSignal >= 0.9) {
     return Math.max(blendedScore, 0.85);
   }
@@ -697,6 +708,9 @@ async function findEligibleCandidateWithAi(
       description: candidate.description,
       triggerPhrases: candidate.triggerPhrases,
       examplePhrases: candidate.examplePhrases,
+      // 0-1: how closely the message directly matches this orchestration's
+      // configured trigger/example phrases. See systemPrompt for how to weigh it.
+      phraseMatchScore: Number(computeDirectPhraseSignal(message, candidate).toFixed(2)),
       nodeSummary: candidate.nodeSummary,
       requiredVariables: candidate.requiredVariables.map((item) => ({
         name: item.name,
@@ -713,7 +727,7 @@ async function findEligibleCandidateWithAi(
     const systemPrompt = [
       "You are an orchestration intent router.",
       "Your task is to select the orchestration whose capabilities can satisfy the user's request.",
-      "Match based on semantic meaning, not exact words, phrase overlap, or keyword count.",
+      "Match based on semantic meaning, not exact words, phrase overlap, or keyword count, EXCEPT where phraseMatchScore says otherwise below.",
       "An orchestration may contain multiple internal steps.",
       "The user does not need to explicitly mention every internal step.",
       "Select an orchestration when the requested action is one of its primary supported capabilities.",
@@ -721,6 +735,9 @@ async function findEligibleCandidateWithAi(
       "Infer related business meanings when reasonable; for example target app, application, app record, and application details can refer to the same stored entity.",
       "Do not reject an orchestration merely because the user did not mention downstream implementation steps such as formatting, notification, or email.",
       "Use overall goal fit based on name, description, trigger phrases, example phrases, node summary, required inputs, and execution contract.",
+      "Each candidate has a phraseMatchScore (0-1) showing how closely the message directly matches its configured trigger/example phrases.",
+      "Treat a phraseMatchScore of 0.7 or higher as strong evidence for that orchestration and raise your confidence accordingly, even if the broader semantic framing differs.",
+      "For candidates with a low phraseMatchScore, fall back to semantic judgment as described above.",
       "Select no orchestration only when none of the available capabilities can reasonably satisfy the request.",
       'Return JSON only: {"selectedOrchestrationId":"id or null","matchedId":"string-or-empty","matchedIndex":number-or-null,"confidence":0-1,"reason":"brief semantic reason","matchedCapabilities":["capability"]}.',
     ].join(" ");
@@ -756,7 +773,9 @@ async function findEligibleCandidateWithAi(
       return null;
     }
 
-    if (confidence < 0.3) {
+    // Auto-match Strictness, configured per-trigger, is the real accept bar —
+    // it replaces what used to be a fixed 0.3 floor.
+    if (confidence < candidate.minConfidence) {
       return null;
     }
 
@@ -784,6 +803,31 @@ async function findEligibleOrchestration(
     semanticMessages.push(options.alternateMessage.trim());
   }
 
+  // Fast path: a strong, direct match to a candidate's configured trigger or
+  // example phrases is treated as authoritative and skips the LLM call
+  // entirely, so those phrases reliably drive the match rather than being
+  // one field among many in a semantic prompt.
+  let bestDirectMatch: { candidate: ChatbotWorkflowCandidate; signal: number } | null = null;
+  for (const semanticMessage of semanticMessages) {
+    for (const candidate of candidates) {
+      const signal = computeDirectPhraseSignal(semanticMessage, candidate);
+      if (!bestDirectMatch || signal > bestDirectMatch.signal) {
+        bestDirectMatch = { candidate, signal };
+      }
+    }
+  }
+  if (
+    bestDirectMatch
+    && bestDirectMatch.signal >= 0.9
+    && bestDirectMatch.signal >= bestDirectMatch.candidate.minConfidence
+  ) {
+    return {
+      candidate: bestDirectMatch.candidate,
+      confidence: Number(bestDirectMatch.signal.toFixed(2)),
+      reason: "Matched a configured trigger/example phrase",
+    };
+  }
+
   let bestAiMatch: { candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null = null;
   for (const semanticMessage of semanticMessages) {
     const aiMatch = await findEligibleCandidateWithAi(semanticMessage, candidates);
@@ -806,8 +850,15 @@ async function findEligibleOrchestration(
     }
   }
 
-  const scoreThreshold = options?.forceActionMode ? 0.25 : 0.35;
-  if (!best || best.score < scoreThreshold) {
+  if (!best) {
+    return null;
+  }
+
+  // Auto-match Strictness, configured per-trigger, is the real accept bar;
+  // forceActionMode (explicit action requests) gets a permissive margin off it.
+  const strictnessMargin = options?.forceActionMode ? 0.15 : 0;
+  const scoreThreshold = Math.max(0.15, best.candidate.minConfidence - strictnessMargin);
+  if (best.score < scoreThreshold) {
     return null;
   }
 
@@ -1050,10 +1101,11 @@ export async function POST(request: NextRequest) {
       const candidates = await loadChatbotWorkflowCandidates(companyId, targetAppId);
       const match = await findEligibleOrchestration(rawMessage, candidates, { forceActionMode: false });
       // Suggestions are review-only and cannot execute, so favor recall while
-      // still requiring a meaningful orchestration match.
+      // still requiring a meaningful orchestration match. A trigger configured
+      // stricter than this floor keeps its own higher bar.
       const minimumSuggestionConfidence = 0.7;
 
-      if (!match || match.confidence < minimumSuggestionConfidence) {
+      if (!match || match.confidence < Math.max(minimumSuggestionConfidence, match.candidate.minConfidence)) {
         return NextResponse.json({ suggestion: null });
       }
 

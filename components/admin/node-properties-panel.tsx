@@ -159,9 +159,12 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     );
   };
 
-  // Update local config (not saved until Save clicked)
+  // Update local config (not saved until Save clicked). Uses the functional
+  // updater form so multiple effects/handlers calling this within the same
+  // render cycle (e.g. several default-seeding effects firing on mount)
+  // compose instead of each overwriting the others based on a stale snapshot.
   const updateLocalConfig = (updates: Record<string, any>) => {
-    setLocalConfig({ ...localConfig, ...updates });
+    setLocalConfig((prev: Record<string, any>) => ({ ...prev, ...updates }));
     setValidationError(null); // Clear validation error when user makes changes
   };
 
@@ -948,6 +951,41 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
     }
   }, [examplePhrases, requiredVariables]);
 
+  // Seed default config values for the active trigger type on mount (and
+  // whenever the trigger type changes) so they persist even if the user
+  // never touches these fields before saving. Fields with security/nested
+  // shape (http_api auth, rate limit, replay protection) are intentionally
+  // left to their own dedicated setup flow rather than defaulted here.
+  useEffect(() => {
+    if (triggerType === "schedule") {
+      updateConfig({
+        scheduleType: config.scheduleType || "daily",
+        timezone: config.timezone || detectDefaultCuratedTimeZone(),
+        enabled: config.enabled !== false,
+      });
+    } else if (triggerType === "chatbot") {
+      updateConfig({
+        minConfidence: config.minConfidence ?? 0.6,
+        enabled: config.enabled !== false,
+      });
+    } else if (triggerType === "email") {
+      updateConfig({
+        pollingIntervalMinutes: config.pollingIntervalMinutes || 5,
+        unreadOnly: config.unreadOnly !== false,
+        markAsProcessed: config.markAsProcessed !== false,
+        enabled: config.enabled !== false,
+      });
+    } else if (triggerType === "http_api") {
+      updateConfig({
+        maxPayloadBytes: Number(config.maxPayloadBytes || 1048576),
+        requireBody: config.requireBody === true,
+        enforceHttps: config.enforceHttps !== false,
+        status: config.status || "active",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggerType]);
+
   useEffect(() => {
     if (triggerType !== "schedule") return;
 
@@ -1529,7 +1567,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               onChange={(e) => updateConfig({ minConfidence: parseFloat(e.target.value) })}
             />
             <p className="text-xs text-slate-500 mt-1">
-              Auto-match threshold (strictness), not a hard truth. Lower values are more permissive.
+              Minimum confidence required to auto-select this orchestration from a chat message. Lower values are more permissive.
             </p>
           </div>
 
@@ -1686,9 +1724,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">What happens after endpoint creation?</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>Endpoint names are checked for duplicate conflicts and reserved words before publish.</p>
-                <p>This endpoint is hosted by the Scout server deployment. You share this URL with consumers.</p>
-                <p>One-click external hosting to a separate server is not available in this screen yet.</p>
+                <p>Endpoint names are checked for duplicate conflicts and reserved words before publish. This endpoint is hosted by the Scout server deployment. You share this URL with consumers.</p>
               </div>
             </details>
           </div>
@@ -1705,8 +1741,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Method selection help</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>Requests using methods outside this list are rejected.</p>
-                <p>If "Require Request Body" is enabled, it applies only to methods that typically carry body payloads (POST/PUT/PATCH/DELETE).</p>
+                <p>Requests using methods outside this list are rejected. If "Require Request Body" is enabled, it applies only to methods that typically carry body payloads (POST/PUT/PATCH/DELETE).</p>
               </div>
             </details>
           </div>
@@ -1723,8 +1758,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Max payload help</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>Requests larger than this size are rejected with an invalid input response.</p>
-                <p>Example: 1048576 bytes is roughly 1 MB.</p>
+                <p>Requests larger than this size are rejected with an invalid input response. Example: 1048576 bytes is roughly 1 MB.</p>
               </div>
             </details>
           </div>
@@ -1748,8 +1782,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Rate limit help</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>Defines how many requests are allowed within one rate window.</p>
-                <p>Example: 60 requests with a 60-second window means at most 60 requests per minute.</p>
+                <p>Defines how many requests are allowed within one rate window. Example: 60 requests with a 60-second window means at most 60 requests per minute.</p>
               </div>
             </details>
           </div>
@@ -1768,8 +1801,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Allowed content types help</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>Only these Content-Type values are accepted. Others are rejected.</p>
-                <p>Use standard MIME values such as application/json or multipart/form-data.</p>
+                <p>Only these Content-Type values are accepted. Others are rejected. Use standard MIME values such as application/json or multipart/form-data.</p>
               </div>
             </details>
           </div>
@@ -1792,8 +1824,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Allowed headers help</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>These headers are expected/accepted for consumer integrations.</p>
-                <p>Headers are optional unless your auth mode requires specific headers.</p>
+                <p>These headers are expected/accepted for consumer integrations. Headers are optional unless your auth mode requires specific headers.</p>
               </div>
             </details>
           </div>
@@ -1816,9 +1847,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Allowed query parameters help</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>These query parameters are accepted by this endpoint format.</p>
-                <p>They are optional unless your downstream orchestration logic expects them.</p>
-                <p>Example: source=erp&version=v2</p>
+                <p>These query parameters are accepted by this endpoint format. They are optional unless your downstream orchestration logic expects them. Example: source=erp&version=v2</p>
               </div>
             </details>
           </div>
@@ -1841,8 +1870,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Path parameter help</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>These names map to extra path segments after /apitrigger/shortName/.</p>
-                <p>Example: /apitrigger/invoice/acme/123 maps accountId=acme, orderId=123.</p>
+                <p>These names map to extra path segments after /apitrigger/shortName/. Example: /apitrigger/invoice/acme/123 maps accountId=acme, orderId=123.</p>
               </div>
             </details>
           </div>
@@ -2453,6 +2481,19 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
   }>>([]);
   const [fetchingWorkflowId, setFetchingWorkflowId] = useState<string | null>(null);
   const workflowCacheRef = useRef<Map<string, any>>(new Map());
+
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      waitForCompletion: config.waitForCompletion !== false,
+      continueOnFailure: config.continueOnFailure === true,
+      autoFillFromDataCapture: config.autoFillFromDataCapture === true,
+      autoAdvancement: config.autoAdvancement === true,
+      timeout: Number(config.timeout || 300000),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Get trigger type from trigger node
   const triggerType = (() => {
@@ -3334,6 +3375,19 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
 function DataCaptureConfig({ config, updateConfig }: any) {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      mode: config.mode || "hybrid",
+      showReviewScreen: config.showReviewScreen !== false,
+      allowEdit: config.allowEdit !== false,
+      autoReviewTimeout: config.autoReviewTimeout || 0,
+      outputVariable: config.outputVariable || "capturedData",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="space-y-4">
       <div>
@@ -3461,6 +3515,18 @@ function AIExtractionConfig({ config, updateConfig }: any) {
 
   // Active LLM provider (from AI Configuration), shown for reference
   const [activeProvider, setActiveProvider] = useState<{ provider: string; model: string } | null>(null);
+
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      input: config.input || "",
+      prompt: config.prompt || "",
+      clarificationTimeoutMinutes: config.clarificationTimeoutMinutes ?? 15,
+      outputVariable: config.outputVariable || "extracted",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -3739,6 +3805,17 @@ function AIDecisionConfig({ config, updateConfig }: any) {
   useEffect(() => {
     updateConfig({ decisions });
   }, [decisions]);
+
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      provider: config.provider || "openai",
+      input: config.input || "",
+      defaultDecision: config.defaultDecision || "",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -4224,6 +4301,17 @@ function HumanApprovalConfig({ config, updateConfig }: any) {
     updateConfig({ fields });
   }, [fields]);
 
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      title: config.title || "",
+      description: config.description || "",
+      approverEmail: config.approverEmail || "",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="space-y-4">
       <div>
@@ -4423,7 +4511,6 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
         subject: config.channel === "email" ? (config.subject || "Notification") : "Notification",
         body: config.channel === "email" ? (config.message || "") : "",
         bodyFormat: "rich_text",
-        template: config.template || "",
         attachments: [],
         priority: "normal",
         delivery: { mode: "immediate", scheduledAt: "" },
@@ -4447,10 +4534,6 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
       },
       teams: {
         enabled: config.channel === "teams",
-        connection: "",
-        workspace: "",
-        team: "",
-        channel: "",
         mentions: "",
         title: config.channel === "teams" ? (config.subject || "Orchestration Notification") : "Orchestration Notification",
         message: config.channel === "teams" ? (config.message || "") : "",
@@ -4462,10 +4545,6 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
       },
       slack: {
         enabled: config.channel === "slack",
-        connection: "",
-        workspace: "",
-        channel: "",
-        directMessageRecipient: "",
         mentions: "",
         message: config.channel === "slack" ? (config.message || "") : "",
         messageFormat: "plain_text",
@@ -4505,7 +4584,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
     };
 
     updateConfig({ channels: defaults });
-  }, [config.channels, config.channel, config.message, config.recipient, config.subject, config.template, updateConfig]);
+  }, [config.channels, config.channel, config.message, config.recipient, config.subject, updateConfig]);
 
   const channels = config.channels || {};
 
@@ -4590,15 +4669,15 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
     teams: {
       message: getError(channels.teams?.enabled && !String(channels.teams?.message || "").trim(), "Message is required"),
       webhook: getError(
-        channels.teams?.enabled && !String(channels.teams?.webhookUrl || channels.teams?.connection || "").trim(),
-        "Webhook URL or connection is required"
+        channels.teams?.enabled && !String(channels.teams?.webhookUrl || "").trim(),
+        "Webhook URL is required"
       ),
     },
     slack: {
       message: getError(channels.slack?.enabled && !String(channels.slack?.message || "").trim(), "Message is required"),
       webhook: getError(
-        channels.slack?.enabled && !String(channels.slack?.webhookUrl || channels.slack?.connection || "").trim(),
-        "Webhook URL or connection is required"
+        channels.slack?.enabled && !String(channels.slack?.webhookUrl || "").trim(),
+        "Webhook URL is required"
       ),
     },
     sms: {
@@ -4771,8 +4850,8 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                 <span className="text-slate-500 truncate max-w-[220px] text-right">
                   {entry.key === "email" && (channels.email?.to || "No recipients")}
                   {entry.key === "internal" && (channels.internal?.users || channels.internal?.roles || channels.internal?.teams || channels.internal?.groups || "No recipients")}
-                  {entry.key === "teams" && (channels.teams?.team || channels.teams?.channel || channels.teams?.webhookUrl || "No destination")}
-                  {entry.key === "slack" && (channels.slack?.channel || channels.slack?.directMessageRecipient || channels.slack?.webhookUrl || "No destination")}
+                  {entry.key === "teams" && (channels.teams?.webhookUrl || "No destination")}
+                  {entry.key === "slack" && (channels.slack?.webhookUrl || "No destination")}
                   {entry.key === "sms" && (channels.sms?.recipients || "No recipients")}
                   {entry.key === "whatsapp" && (channels.whatsapp?.recipients || "No recipients")}
                 </span>
@@ -4835,34 +4914,33 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
 
                 {entry.key === "email" && (
                   <div className="grid grid-cols-1 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Sender provider</label>
-                      <select
-                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
-                        value={channel.senderCredentialId || ""}
-                        onChange={(e) => {
-                          const selectedId = e.target.value;
-                          const selectedProvider = senderProviders.find((provider) => provider.id === selectedId);
-                          const autoFromName = selectedProvider?.from_name || selectedProvider?.name || "";
-
-                          setChannel("email", {
-                            senderCredentialId: selectedId,
-                            fromName: autoFromName,
-                          });
-                        }}
-                      >
-                        <option value="">Select active provider</option>
-                        {senderProviders.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.provider.toUpperCase()} - {provider.name}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="mt-1 text-xs text-slate-500">Active sender providers scoped to this target app.</p>
-                      {channelErrors.email.senderCredentialId && <p className="mt-1 text-xs text-red-600">{channelErrors.email.senderCredentialId}</p>}
-                    </div>
-
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Sender provider <span className="text-red-500">*</span></label>
+                        <select
+                          className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
+                          value={channel.senderCredentialId || ""}
+                          onChange={(e) => {
+                            const selectedId = e.target.value;
+                            const selectedProvider = senderProviders.find((provider) => provider.id === selectedId);
+                            const autoFromName = selectedProvider?.from_name || selectedProvider?.name || "";
+
+                            setChannel("email", {
+                              senderCredentialId: selectedId,
+                              fromName: autoFromName,
+                            });
+                          }}
+                        >
+                          <option value="">Select active provider</option>
+                          {senderProviders.map((provider) => (
+                            <option key={provider.id} value={provider.id}>
+                              {provider.provider.toUpperCase()} - {provider.name}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-slate-500">Active sender providers scoped to this target app.</p>
+                        {channelErrors.email.senderCredentialId && <p className="mt-1 text-xs text-red-600">{channelErrors.email.senderCredentialId}</p>}
+                      </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">From name</label>
                         <input
@@ -4924,7 +5002,20 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                       {renderVariableButtons("email", "subject")}
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Message body <span className="text-red-500">*</span></label>
+                      <textarea
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.body ? "border-red-400" : "border-slate-300"}`}
+                        rows={5}
+                        value={channel.body || ""}
+                        onChange={(e) => setChannel("email", { body: e.target.value })}
+                        placeholder="Use variables like {{variables.referenceId}} and {{trigger.timestamp}}"
+                      />
+                      {channelErrors.email.body && <p className="mt-1 text-xs text-red-600">{channelErrors.email.body}</p>}
+                      {renderVariableButtons("email", "body")}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">Body format</label>
                         <select
@@ -4935,16 +5026,6 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                           <option value="rich_text">Rich text</option>
                           <option value="plain_text">Plain text</option>
                         </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Template</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.template || ""}
-                          onChange={(e) => setChannel("email", { template: e.target.value })}
-                          placeholder="template name"
-                        />
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">Priority</label>
@@ -4958,19 +5039,6 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                           <option value="high">High</option>
                         </select>
                       </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Message body <span className="text-red-500">*</span></label>
-                      <textarea
-                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.body ? "border-red-400" : "border-slate-300"}`}
-                        rows={5}
-                        value={channel.body || ""}
-                        onChange={(e) => setChannel("email", { body: e.target.value })}
-                        placeholder="Use variables like {{variables.referenceId}} and {{trigger.timestamp}}"
-                      />
-                      {channelErrors.email.body && <p className="mt-1 text-xs text-red-600">{channelErrors.email.body}</p>}
-                      {renderVariableButtons("email", "body")}
                     </div>
 
                     <div>
@@ -5175,59 +5243,28 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
 
                 {entry.key === "teams" && (
                   <div className="grid grid-cols-1 gap-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Connection or workspace</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.connection || channel.workspace || ""}
-                          onChange={(e) => setChannel("teams", { connection: e.target.value, workspace: e.target.value })}
-                          placeholder="workspace alias"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Team and channel</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="text"
-                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                            value={channel.team || ""}
-                            onChange={(e) => setChannel("teams", { team: e.target.value })}
-                            placeholder="Team"
-                          />
-                          <input
-                            type="text"
-                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                            value={channel.channel || ""}
-                            onChange={(e) => setChannel("teams", { channel: e.target.value })}
-                            placeholder="Channel"
-                          />
-                        </div>
-                      </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Webhook URL <span className="text-red-500">*</span></label>
+                      <input
+                        type="text"
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.teams.webhook ? "border-red-400" : "border-slate-300"}`}
+                        value={channel.webhookUrl || ""}
+                        onChange={(e) => setChannel("teams", { webhookUrl: e.target.value })}
+                        placeholder="https://outlook.office.com/webhook/..."
+                      />
+                      <p className="mt-1 text-xs text-slate-500">Incoming webhook URL for the destination Teams channel. This is the only thing that determines where the message goes.</p>
+                      {channelErrors.teams.webhook && <p className="mt-1 text-xs text-red-600">{channelErrors.teams.webhook}</p>}
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Recipients or mentions</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.mentions || ""}
-                          onChange={(e) => setChannel("teams", { mentions: e.target.value })}
-                          placeholder="@ops-team, @john"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Title</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.title || ""}
-                          onChange={(e) => setChannel("teams", { title: e.target.value })}
-                          placeholder="Workflow update"
-                        />
-                      </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Title</label>
+                      <input
+                        type="text"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        value={channel.title || ""}
+                        onChange={(e) => setChannel("teams", { title: e.target.value })}
+                        placeholder="Workflow update"
+                      />
                     </div>
 
                     <div>
@@ -5244,6 +5281,17 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Mentions</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.mentions || ""}
+                          onChange={(e) => setChannel("teams", { mentions: e.target.value })}
+                          placeholder="@ops-team, @john"
+                        />
+                        <p className="mt-1 text-xs text-slate-500">Prepended to the message text.</p>
+                      </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">Message format</label>
                         <select
@@ -5291,73 +5339,28 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                       </div>
                     </div>
 
-                    <details className="rounded border border-slate-200 bg-slate-50 p-2">
-                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">Advanced options</summary>
-                      <div className="mt-2">
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Webhook URL <span className="text-red-500">*</span></label>
-                        <input
-                          type="text"
-                          className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.teams.webhook ? "border-red-400" : "border-slate-300"}`}
-                          value={channel.webhookUrl || ""}
-                          onChange={(e) => setChannel("teams", { webhookUrl: e.target.value })}
-                          placeholder="https://outlook.office.com/webhook/..."
-                        />
-                        {channelErrors.teams.webhook && <p className="mt-1 text-xs text-red-600">{channelErrors.teams.webhook}</p>}
-                      </div>
-                    </details>
-
                     {renderDeliveryAndRetry("teams")}
 
                     <details className="rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
                       <summary className="cursor-pointer font-semibold text-slate-700">Learn more</summary>
-                      <p className="mt-2">Adaptive Card mode supports richer layout and action buttons. Use mentions for key recipients. Webhook URL remains available under advanced options.</p>
+                      <p className="mt-2">Adaptive Card mode supports richer layout and action buttons. Use mentions for key recipients.</p>
                     </details>
                   </div>
                 )}
 
                 {entry.key === "slack" && (
                   <div className="grid grid-cols-1 gap-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Connection or workspace</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.connection || channel.workspace || ""}
-                          onChange={(e) => setChannel("slack", { connection: e.target.value, workspace: e.target.value })}
-                          placeholder="workspace alias"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Channel or DM recipient</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="text"
-                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                            value={channel.channel || ""}
-                            onChange={(e) => setChannel("slack", { channel: e.target.value })}
-                            placeholder="#channel"
-                          />
-                          <input
-                            type="text"
-                            className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                            value={channel.directMessageRecipient || ""}
-                            onChange={(e) => setChannel("slack", { directMessageRecipient: e.target.value })}
-                            placeholder="@user"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 mb-1">Mentions</label>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Webhook URL <span className="text-red-500">*</span></label>
                       <input
                         type="text"
-                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                        value={channel.mentions || ""}
-                        onChange={(e) => setChannel("slack", { mentions: e.target.value })}
-                        placeholder="@ops, <!here>"
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.slack.webhook ? "border-red-400" : "border-slate-300"}`}
+                        value={channel.webhookUrl || ""}
+                        onChange={(e) => setChannel("slack", { webhookUrl: e.target.value })}
+                        placeholder="https://hooks.slack.com/services/..."
                       />
+                      <p className="mt-1 text-xs text-slate-500">Incoming webhook URL for the destination Slack channel. This is the only thing that determines where the message goes.</p>
+                      {channelErrors.slack.webhook && <p className="mt-1 text-xs text-red-600">{channelErrors.slack.webhook}</p>}
                     </div>
 
                     <div>
@@ -5374,6 +5377,17 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Mentions</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.mentions || ""}
+                          onChange={(e) => setChannel("slack", { mentions: e.target.value })}
+                          placeholder="@ops, <!here>"
+                        />
+                        <p className="mt-1 text-xs text-slate-500">Prepended to the message text.</p>
+                      </div>
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">Message format</label>
                         <select
@@ -5423,28 +5437,16 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
 
                     <details className="rounded border border-slate-200 bg-slate-50 p-2">
                       <summary className="cursor-pointer text-xs font-semibold text-slate-700">Advanced options</summary>
-                      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Thread timestamp</label>
-                          <input
-                            type="text"
-                            className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                            value={channel.threadTs || ""}
-                            onChange={(e) => setChannel("slack", { threadTs: e.target.value })}
-                            placeholder="1731106130.111900"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold text-slate-700 mb-1">Webhook URL <span className="text-red-500">*</span></label>
-                          <input
-                            type="text"
-                            className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.slack.webhook ? "border-red-400" : "border-slate-300"}`}
-                            value={channel.webhookUrl || ""}
-                            onChange={(e) => setChannel("slack", { webhookUrl: e.target.value })}
-                            placeholder="https://hooks.slack.com/services/..."
-                          />
-                          {channelErrors.slack.webhook && <p className="mt-1 text-xs text-red-600">{channelErrors.slack.webhook}</p>}
-                        </div>
+                      <div className="mt-2">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">Thread timestamp</label>
+                        <input
+                          type="text"
+                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                          value={channel.threadTs || ""}
+                          onChange={(e) => setChannel("slack", { threadTs: e.target.value })}
+                          placeholder="1731106130.111900"
+                        />
+                        <p className="mt-1 text-xs text-slate-500">Reply within an existing thread instead of posting a new message.</p>
                       </div>
                     </details>
 
@@ -5710,6 +5712,22 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
 function DataFormatterConfig({ config, updateConfig }: any) {
   const format = String(config.format || "pretty_json");
   const columns = Array.isArray(config.columns) ? config.columns.join(", ") : "";
+
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      inputVariablePath: String(config.inputVariablePath || ""),
+      format: String(config.format || "pretty_json"),
+      outputVariable: String(config.outputVariable || "formattedData"),
+      columns: Array.isArray(config.columns) ? config.columns : [],
+      customTemplate: String(config.customTemplate || ""),
+      maxRows: Number(config.maxRows || 100),
+      emptyText: String(config.emptyText ?? "No data available."),
+      nullText: String(config.nullText ?? ""),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -6206,6 +6224,22 @@ function DatabaseConfigLegacy({ config, updateConfig, targetAppId }: any) {
 
 function EndConfig({ config, updateConfig, supportsMessage }: any) {
   const displayMode = String(config.displayMode || "text");
+
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      displayMode: String(config.displayMode || "text"),
+      displayDataPath: String(config.displayDataPath || ""),
+      displayColumnPaths: Array.isArray(config.displayColumnPaths) ? config.displayColumnPaths : [],
+      responseVariablePath: String(config.responseVariablePath || ""),
+      includeNodeResponses: config.includeNodeResponses !== false,
+      displayMessage: config.displayMessage === true,
+      message: config.message || "",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
