@@ -4914,44 +4914,42 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
 
                 {entry.key === "email" && (
                   <div className="grid grid-cols-1 gap-3">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">Sender provider <span className="text-red-500">*</span></label>
-                        <select
-                          className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
-                          value={channel.senderCredentialId || ""}
-                          onChange={(e) => {
-                            const selectedId = e.target.value;
-                            const selectedProvider = senderProviders.find((provider) => provider.id === selectedId);
-                            const autoFromName = selectedProvider?.from_name || selectedProvider?.name || "";
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Sender provider <span className="text-red-500">*</span></label>
+                      <select
+                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
+                        value={channel.senderCredentialId || ""}
+                        onChange={(e) => {
+                          const selectedId = e.target.value;
+                          const selectedProvider = senderProviders.find((provider) => provider.id === selectedId);
+                          const autoFromName = selectedProvider?.from_name || selectedProvider?.name || "";
 
-                            setChannel("email", {
-                              senderCredentialId: selectedId,
-                              fromName: autoFromName,
-                            });
-                          }}
-                        >
-                          <option value="">Select active provider</option>
-                          {senderProviders.map((provider) => (
-                            <option key={provider.id} value={provider.id}>
-                              {provider.provider.toUpperCase()} - {provider.name}
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-xs text-slate-500">Active sender providers scoped to this target app.</p>
-                        {channelErrors.email.senderCredentialId && <p className="mt-1 text-xs text-red-600">{channelErrors.email.senderCredentialId}</p>}
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">From name</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.fromName || ""}
-                          onChange={(e) => setChannel("email", { fromName: e.target.value })}
-                          placeholder="Scout Notifications"
-                        />
-                        <p className="mt-1 text-xs text-slate-500">Auto-filled from selected provider; you can override it.</p>
-                      </div>
+                          setChannel("email", {
+                            senderCredentialId: selectedId,
+                            fromName: autoFromName,
+                          });
+                        }}
+                      >
+                        <option value="">Select active provider</option>
+                        {senderProviders.map((provider) => (
+                          <option key={provider.id} value={provider.id}>
+                            {provider.provider.toUpperCase()} - {provider.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-slate-500">Active sender providers scoped to this target app.</p>
+                      {channelErrors.email.senderCredentialId && <p className="mt-1 text-xs text-red-600">{channelErrors.email.senderCredentialId}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">From name</label>
+                      <input
+                        type="text"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        value={channel.fromName || ""}
+                        onChange={(e) => setChannel("email", { fromName: e.target.value })}
+                        placeholder="Scout Notifications"
+                      />
+                      <p className="mt-1 text-xs text-slate-500">Auto-filled from selected provider; you can override it.</p>
                     </div>
 
                     <div>
@@ -4966,27 +4964,25 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                       {channelErrors.email.to && <p className="mt-1 text-xs text-red-600">{channelErrors.email.to}</p>}
                     </div>
 
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">CC</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.cc || ""}
-                          onChange={(e) => setChannel("email", { cc: e.target.value })}
-                          placeholder="optional"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">BCC</label>
-                        <input
-                          type="text"
-                          className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-                          value={channel.bcc || ""}
-                          onChange={(e) => setChannel("email", { bcc: e.target.value })}
-                          placeholder="optional"
-                        />
-                      </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">CC</label>
+                      <input
+                        type="text"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        value={channel.cc || ""}
+                        onChange={(e) => setChannel("email", { cc: e.target.value })}
+                        placeholder="optional"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">BCC</label>
+                      <input
+                        type="text"
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                        value={channel.bcc || ""}
+                        onChange={(e) => setChannel("email", { bcc: e.target.value })}
+                        placeholder="optional"
+                      />
                     </div>
 
                     <div>
@@ -5006,7 +5002,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                       <label className="block text-xs font-semibold text-slate-700 mb-1">Message body <span className="text-red-500">*</span></label>
                       <textarea
                         className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.body ? "border-red-400" : "border-slate-300"}`}
-                        rows={5}
+                        rows={2}
                         value={channel.body || ""}
                         onChange={(e) => setChannel("email", { body: e.target.value })}
                         placeholder="Use variables like {{variables.referenceId}} and {{trigger.timestamp}}"
@@ -5054,33 +5050,31 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                       </div>
                       <div className="space-y-2">
                         {(Array.isArray(channel.attachments) ? channel.attachments : []).map((attachment: any, index: number) => (
-                          <div key={index} className="rounded border border-slate-200 p-2 space-y-2 bg-slate-50">
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                              <input
-                                type="text"
-                                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                                placeholder="Name"
-                                value={attachment.name || ""}
-                                onChange={(e) => updateListItem("email", "attachments", index, { name: e.target.value })}
-                              />
-                              <input
-                                type="text"
-                                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                                placeholder="URL"
-                                value={attachment.url || ""}
-                                onChange={(e) => updateListItem("email", "attachments", index, { url: e.target.value })}
-                              />
-                              <input
-                                type="text"
-                                className="rounded border border-slate-300 px-2 py-1.5 text-sm"
-                                placeholder="Content type"
-                                value={attachment.contentType || ""}
-                                onChange={(e) => updateListItem("email", "attachments", index, { contentType: e.target.value })}
-                              />
-                            </div>
+                          <div key={index} className="flex items-center gap-2 rounded border border-slate-200 p-2 bg-slate-50">
+                            <input
+                              type="text"
+                              className="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              placeholder="Name"
+                              value={attachment.name || ""}
+                              onChange={(e) => updateListItem("email", "attachments", index, { name: e.target.value })}
+                            />
+                            <input
+                              type="text"
+                              className="flex-[2] min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              placeholder="URL"
+                              value={attachment.url || ""}
+                              onChange={(e) => updateListItem("email", "attachments", index, { url: e.target.value })}
+                            />
+                            <input
+                              type="text"
+                              className="flex-1 min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                              placeholder="Content type"
+                              value={attachment.contentType || ""}
+                              onChange={(e) => updateListItem("email", "attachments", index, { contentType: e.target.value })}
+                            />
                             <button
                               type="button"
-                              className="text-xs text-red-600 hover:text-red-700"
+                              className="shrink-0 text-xs text-red-600 hover:text-red-700"
                               onClick={() => removeListItem("email", "attachments", index)}
                             >
                               Remove
