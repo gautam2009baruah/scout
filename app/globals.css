@@ -222,6 +222,70 @@ body {
   outline-offset: 2px;
 }
 
+button {
+  --button-hover-shadow-color: rgb(100 116 139 / 28%);
+  transition: box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+button:not(:disabled):hover {
+  box-shadow: 0 3px 10px var(--button-hover-shadow-color);
+}
+
+button:is(
+  [class~="bg-red-600"],
+  [class~="bg-red-700"],
+  [class~="text-red-600"],
+  [class~="text-red-700"],
+  [class~="text-red-800"],
+  [class~="border-red-200"],
+  [class~="border-red-300"],
+  [class~="border-red-500"]
+) {
+  --button-hover-shadow-color: rgb(239 68 68 / 30%);
+}
+
+button:is(
+  [class~="bg-amber-600"],
+  [class~="bg-yellow-500"],
+  [class~="bg-yellow-600"],
+  [class~="text-amber-700"],
+  [class~="text-yellow-700"],
+  [class~="border-amber-200"],
+  [class~="border-yellow-500"]
+) {
+  --button-hover-shadow-color: rgb(245 158 11 / 30%);
+}
+
+button:is(
+  [class~="bg-emerald-500"],
+  [class~="bg-emerald-600"],
+  [class~="bg-emerald-700"],
+  [class~="bg-emerald-800"],
+  [class~="bg-green-600"],
+  [class~="bg-green-700"],
+  [class~="text-emerald-600"],
+  [class~="text-emerald-700"],
+  [class~="text-green-700"],
+  [class~="text-green-800"]
+) {
+  --button-hover-shadow-color: rgb(16 185 129 / 30%);
+}
+
+button:is(
+  [class~="bg-blue-600"],
+  [class~="bg-blue-700"],
+  [class~="bg-teal-600"],
+  [class~="bg-teal-700"],
+  [class~="bg-slate-900"],
+  [class~="bg-slate-950"],
+  [class~="text-blue-600"],
+  [class~="text-blue-700"],
+  [class~="border-blue-500"],
+  [class~="border-blue-600"]
+) {
+  --button-hover-shadow-color: rgb(37 99 235 / 30%);
+}
+
 @media (max-width: 639px) {
   .admin-content h1 {
     font-size: 1.5rem;

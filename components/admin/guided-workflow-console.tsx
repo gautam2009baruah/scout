@@ -516,7 +516,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     });
   }
 
-  async function hardDeleteStep(index: number) {
+  async function applyStepDeletion(index: number) {
     if (!selected) return;
     const step = editor.steps[index];
     if (!step) return;
@@ -556,6 +556,20 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
         : session));
     }
     setState({ status: "success", message: "Step deleted." });
+  }
+
+  function confirmStepDeletion(index: number) {
+    if (!editor.steps[index]) return;
+
+    setConfirmDialog({
+      message: "Deleting this step will also affect any orchestration where this guide is set up. Do you want to continue?",
+      confirmLabel: "Delete step",
+      confirmClassName: "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700",
+      onConfirm: () => {
+        setConfirmDialog(null);
+        void applyStepDeletion(index);
+      }
+    });
   }
 
   function exportGuide() {
@@ -653,7 +667,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
           appBaseUrl={appBaseUrl}
           convertTopic={convertTopic}
           deleteTopic={deleteTopic}
-          deleteStep={hardDeleteStep}
+          deleteStep={confirmStepDeletion}
           editor={editor}
           guides={items}
           moveStep={moveStep}
@@ -724,6 +738,14 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   const [healingReviewStepId, setHealingReviewStepId] = useState<string | null>(null);
   const [pendingHealingCounts, setPendingHealingCounts] = useState<Record<string, number>>({});
   const [healingRefreshToken, setHealingRefreshToken] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshResetTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (refreshResetTimer.current !== null) {
+      window.clearTimeout(refreshResetTimer.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!selectedTopic?.guideId) {
@@ -806,15 +828,25 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
             <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
               <span><span className="font-medium text-slate-700">Synced actions:</span> {syncedActionCount} • <span className="font-medium text-slate-700">Created:</span> {formatDate(selectedSession.createdAt)}</span>
               <button
-                className="inline-flex h-6 items-center gap-1 rounded-full border border-slate-200 px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                className="inline-flex h-6 items-center gap-1 rounded-full border border-slate-200 px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-wait disabled:opacity-70"
+                disabled={isRefreshing}
                 onClick={() => {
+                  setIsRefreshing(true);
                   onRefresh();
                   setHealingRefreshToken((current) => current + 1);
+                  if (refreshResetTimer.current !== null) {
+                    window.clearTimeout(refreshResetTimer.current);
+                  }
+                  refreshResetTimer.current = window.setTimeout(() => {
+                    setIsRefreshing(false);
+                    refreshResetTimer.current = null;
+                  }, 750);
                 }}
                 title="Check for newly synced actions from the trainer"
                 type="button"
               >
-                <RefreshCw className="h-3 w-3" />Refresh
+                <RefreshCw className={`h-3 w-3 ${isRefreshing ? "animate-spin" : ""}`} />
+                {isRefreshing ? "Refreshing" : "Refresh"}
               </button>
             </p>
           </div>
