@@ -231,7 +231,7 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
         {schemasError ? <p className="mt-1 text-xs text-red-600">{schemasError}</p> : null}
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4">
         <div>
           <label className="mb-1 block text-sm font-semibold text-slate-700">
             Output Variable <span className="text-red-500">*</span>
@@ -448,7 +448,7 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
         setHelpOpen((current) => ({ ...current, tryout: open }));
       }}>
         <summary className="cursor-pointer text-sm font-semibold text-slate-900">Try out</summary>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
+        <div className="mt-3 grid gap-4">
           <div className="space-y-3">
             <div>
               <label className="mb-1 block text-sm font-semibold text-slate-700">Schema</label>
