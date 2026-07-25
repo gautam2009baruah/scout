@@ -27,10 +27,10 @@ const AUTH_TYPES = [
 
 export function ApiCallConfig({ config, updateConfig }: any) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    request: true,
-    authentication: true,
+    request: false,
+    authentication: false,
     advanced: false,
-    response: true,
+    response: false,
   });
 
   const [testState, setTestState] = useState<{
