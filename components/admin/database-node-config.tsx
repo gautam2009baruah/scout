@@ -64,10 +64,10 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
   const [previewError, setPreviewError] = useState("");
   const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null);
   const [helpOpen, setHelpOpen] = useState({
-    overview: true,
-    examples: true,
-    safety: true,
-    tryout: true,
+    overview: false,
+    examples: false,
+    safety: false,
+    tryout: false,
   });
 
   const selectedTargetAppId = String(targetAppId || "").trim();
@@ -291,7 +291,7 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
         />
       </div>
 
-      <details className="rounded-lg border border-amber-200 bg-amber-50 p-3" open>
+      <details className="rounded-lg border border-amber-200 bg-amber-50 p-3">
         <summary className="cursor-pointer text-sm font-semibold text-amber-900">Field Guide: which value goes where</summary>
         <div className="mt-3 space-y-3 text-xs text-amber-900">
           <p><strong>User Request Variable Path</strong>: raw user question from chatbot.</p>
