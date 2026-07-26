@@ -160,6 +160,7 @@ export type DataCaptureNodeConfig = {
 
 export type AIExtractionNodeConfig = {
   type: "ai_extraction";
+  extractionMode?: "predefined" | "instruction" | "hybrid";
   inputType?: "email" | "document" | "text" | "variables";
   input?: string; // template text (supports {{variable}} interpolation)
   inputSource?: string; // legacy: single variable path

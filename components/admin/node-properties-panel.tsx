@@ -3531,6 +3531,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
   // never touches these fields before saving.
   useEffect(() => {
     updateConfig({
+      extractionMode: config.extractionMode || "predefined",
       input: config.input || "",
       prompt: config.prompt || "",
       clarificationTimeoutMinutes: config.clarificationTimeoutMinutes ?? 15,
@@ -3594,15 +3595,33 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           you can reference in later nodes.
         </p>
         <ol className="list-decimal pl-4 space-y-1 mt-2">
-          <li>Put the text to analyze in <strong>Input Text</strong> using variables from the trigger or earlier nodes.</li>
-          <li>List the <strong>Fields to Extract</strong>, each with a short description.</li>
+          <li>Provide the source value in <strong>Input Data</strong> using variables from the trigger or earlier nodes.</li>
+          <li>Choose predefined fields, a runtime instruction, or both.</li>
           <li>Reference results downstream as <code className="bg-slate-100 px-1 rounded">{`{{output.field}}`}</code>.</li>
         </ol>
       </CollapsibleHelp>
 
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Input Text <span className="text-red-500">*</span>
+          Extraction Mode
+        </label>
+        <select
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={config.extractionMode || "predefined"}
+          onChange={(e) => updateConfig({ extractionMode: e.target.value })}
+        >
+          <option value="predefined">Predefined fields</option>
+          <option value="instruction">Runtime instruction</option>
+          <option value="hybrid">Predefined + runtime instruction</option>
+        </select>
+        <p className="mt-1 text-xs text-slate-500">
+          Runtime mode lets the chatbot user decide which fields to extract for each uploaded file.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Input Data <span className="text-red-500">*</span>
         </label>
         <input
           type="text"
@@ -3649,6 +3668,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
         </CollapsibleHelp>
       </div>
 
+      {config.extractionMode !== "instruction" && (
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-2">
           Fields to Extract <span className="text-red-500">*</span>
@@ -3736,6 +3756,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           </button>
         </div>
       </div>
+      )}
 
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
@@ -3750,6 +3771,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
         />
       </div>
 
+      {config.extractionMode !== "instruction" && (
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Clarification Expiry Timeout (minutes)
@@ -3766,6 +3788,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           How long a chatbot clarification stays valid before the node expires and must ask again.
         </p>
       </div>
+      )}
 
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
