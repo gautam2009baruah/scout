@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import { executeAIExtractionNode } from "@/lib/orchestrations/nodes/ai-extraction-node";
-import { executeAIDecisionNode } from "@/lib/orchestrations/nodes/ai-decision-node";
+import { executeAITaskNode } from "@/lib/orchestrations/nodes/ai-task-node";
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
 
     if (nodeType === "ai_extraction") {
       result = await executeAIExtractionNode(config, context || {});
-    } else if (nodeType === "ai_decision") {
-      result = await executeAIDecisionNode(config, context || {});
+    } else if (nodeType === "ai_task") {
+      result = await executeAITaskNode(config, context || {});
     } else {
       return NextResponse.json(
         { message: `Unsupported node type: ${nodeType}` },
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
       usage: {
         method: "POST",
         body: {
-          nodeType: "ai_extraction | ai_decision",
+          nodeType: "ai_extraction | ai_task",
           config: {
             ai_extraction: {
               inputSource: "sourceVariable (path in context)",
@@ -82,22 +82,15 @@ export async function GET(request: NextRequest) {
               },
               outputVariable: "extractedData",
             },
-            ai_decision: {
-              inputSource: "sourceVariable (path in context)",
-              prompt: "Analyze the input and decide the action",
-              decisions: [
-                {
-                  label: "Approve",
-                  description: "When data is valid",
-                  outputHandle: "approved",
-                },
-                {
-                  label: "Reject",
-                  description: "When data is invalid",
-                  outputHandle: "rejected",
-                },
+            ai_task: {
+              instructionMode: "static | chat | hybrid",
+              instruction: "Summarize the content in 3 bullet points",
+              input: "{{sourceVariable}}",
+              outputFormat: "text | json",
+              outputFields: [
+                { key: "subject", type: "string", description: "Email subject line" },
               ],
-              defaultDecision: "rejected",
+              outputVariable: "aiTask",
             },
           },
           context: {
@@ -123,29 +116,14 @@ export async function GET(request: NextRequest) {
                 "Hi, I'm John Doe and I need help with my order. You can reach me at john@example.com or 555-1234.",
             },
           },
-          decision: {
-            nodeType: "ai_decision",
+          task: {
+            nodeType: "ai_task",
             config: {
-              inputSource: "sentiment",
-              prompt: "Classify the sentiment of this text",
-              decisions: [
-                {
-                  label: "Positive",
-                  description: "Positive sentiment",
-                  outputHandle: "positive",
-                },
-                {
-                  label: "Negative",
-                  description: "Negative sentiment",
-                  outputHandle: "negative",
-                },
-                {
-                  label: "Neutral",
-                  description: "Neutral sentiment",
-                  outputHandle: "neutral",
-                },
-              ],
-              defaultDecision: "neutral",
+              instructionMode: "static",
+              instruction: "Classify the sentiment of this text as Positive, Negative, or Neutral.",
+              input: "{{sentiment}}",
+              outputFormat: "text",
+              outputVariable: "aiTask",
             },
             context: {
               sentiment: "This product is amazing! I love it so much.",

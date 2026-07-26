@@ -36,7 +36,8 @@ const NODE_CONFIGS = [
   { type: "workflow", label: "Workflow", icon: "🔄" },
   { type: "data_capture", label: "Data Capture", icon: "📋" },
   { type: "ai_extraction", label: "AI Extraction", icon: "🤖" },
-  { type: "ai_decision", label: "AI Decision", icon: "🧠" },
+  { type: "ai_task", label: "AI Task", icon: "🧠" },
+  { type: "knowledge_search", label: "Knowledge Search", icon: "🔍" },
   { type: "condition", label: "Condition", icon: "◆" },
   { type: "human_approval", label: "Human Approval", icon: "✋" },
   { type: "notification", label: "Notification", icon: "📧" },
@@ -421,6 +422,28 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       }
     }
 
+    if (nodeType === "ai_task") {
+      if (!String(localConfig.outputVariable || "").trim()) {
+        return { valid: false, error: "AI Task output variable is required" };
+      }
+      const instructionMode = localConfig.instructionMode || "static";
+      if ((instructionMode === "static" || instructionMode === "hybrid") && !String(localConfig.instruction || "").trim()) {
+        return { valid: false, error: "AI Task instruction is required for static or hybrid mode" };
+      }
+      if (localConfig.outputFormat === "json" && (!Array.isArray(localConfig.outputFields) || localConfig.outputFields.length === 0 || localConfig.outputFields.every((f: any) => !String(f?.key || "").trim()))) {
+        return { valid: false, error: "AI Task JSON output requires at least one output field" };
+      }
+    }
+
+    if (nodeType === "knowledge_search") {
+      if (!String(localConfig.query || "").trim()) {
+        return { valid: false, error: "Knowledge Search query is required" };
+      }
+      if (!String(localConfig.outputVariable || "").trim()) {
+        return { valid: false, error: "Knowledge Search output variable is required" };
+      }
+    }
+
     if (nodeType === "database") {
       const schemaId = String(localConfig.schemaId || "").trim();
       const outputVariable = String(localConfig.outputVariable || "").trim();
@@ -748,7 +771,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} />}
         {nodeType === "data_capture" && <DataCaptureConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "ai_extraction" && <AIExtractionConfig config={localConfig} updateConfig={updateLocalConfig} />}
-        {nodeType === "ai_decision" && <AIDecisionConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "ai_task" && <AITaskConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "knowledge_search" && <KnowledgeSearchConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "condition" && <ConditionConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "human_approval" && <HumanApprovalConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "notification" && (
@@ -3852,118 +3876,360 @@ function CollapsibleHelp({ title, children }: { title: string; children: React.R
   );
 }
 
-function AIDecisionConfig({ config, updateConfig }: any) {
-  const [decisions, setDecisions] = useState<Array<{ label: string; description: string }>>(
-    config.decisions || [{ label: "", description: "" }]
+function AITaskConfig({ config, updateConfig }: any) {
+  const [outputFields, setOutputFields] = useState<Array<{ key: string; type: string; description: string }>>(
+    Array.isArray(config.outputFields) && config.outputFields.length > 0
+      ? config.outputFields.map((field: any) => ({
+          key: field?.key || "",
+          type: field?.type || "string",
+          description: field?.description || "",
+        }))
+      : [{ key: "", type: "string", description: "" }]
   );
 
-  useEffect(() => {
-    updateConfig({ decisions });
-  }, [decisions]);
+  // Active LLM provider (from AI Configuration), shown for reference
+  const [activeProvider, setActiveProvider] = useState<{ provider: string; model: string } | null>(null);
 
   // Seed default config values on mount so they persist even if the user
   // never touches these fields before saving.
   useEffect(() => {
     updateConfig({
-      provider: config.provider || "openai",
+      instructionMode: config.instructionMode || "static",
+      instruction: config.instruction || "",
       input: config.input || "",
-      defaultDecision: config.defaultDecision || "",
+      outputFormat: config.outputFormat || "text",
+      clarificationTimeoutMinutes: config.clarificationTimeoutMinutes ?? 15,
+      outputVariable: config.outputVariable || "aiTask",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/orchestrations/ai-provider")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data.success) {
+          setActiveProvider({ provider: data.provider, model: data.model });
+        }
+      })
+      .catch(() => {
+        /* non-fatal: just don't show the provider */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    updateConfig({ outputFields });
+  }, [outputFields]);
+
+  const instructionMode = config.instructionMode || "static";
+
+  return (
+    <div className="space-y-4">
+      {/* Active provider */}
+      <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
+        <div>
+          Active AI provider:{" "}
+          {activeProvider ? (
+            <span className="font-semibold">
+              {activeProvider.provider}
+              {activeProvider.model ? ` (${activeProvider.model})` : ""}
+            </span>
+          ) : (
+            <span className="italic">loading…</span>
+          )}
+        </div>
+        <div className="mt-1">
+          Change it on the <span className="font-semibold">AI Configuration</span> page.
+        </div>
+      </div>
+
+      {/* How to use */}
+      <CollapsibleHelp title="How to use this node">
+        <p>
+          AI Task performs an open-ended task — summarize a file, draft a reply,
+          rewrite some text — using an instruction and optional context, and
+          stores the result in an output variable you can reference downstream.
+        </p>
+        <ol className="list-decimal pl-4 space-y-1 mt-2">
+          <li>Choose where the instruction comes from (fixed, chat, or both).</li>
+          <li>Point Context Content at earlier output, e.g. <code className="bg-slate-100 px-1 rounded">{`{{parsedFile}}`}</code>.</li>
+          <li>Reference the result downstream as <code className="bg-slate-100 px-1 rounded">{`{{output}}`}</code> or <code className="bg-slate-100 px-1 rounded">{`{{output.field}}`}</code>.</li>
+        </ol>
+      </CollapsibleHelp>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Instruction Source
+        </label>
+        <select
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={instructionMode}
+          onChange={(e) => updateConfig({ instructionMode: e.target.value })}
+        >
+          <option value="static">Fixed instruction</option>
+          <option value="chat">Chat message is the instruction</option>
+          <option value="hybrid">Fixed instruction + chat message</option>
+        </select>
+        <p className="mt-1 text-xs text-slate-500">
+          Chat mode asks the user what to do if no chatbot message is available yet.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Instruction {instructionMode !== "chat" && <span className="text-red-500">*</span>}
+        </label>
+        <textarea
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          rows={3}
+          value={config.instruction || ""}
+          onChange={(e) => updateConfig({ instruction: e.target.value })}
+          placeholder={
+            instructionMode === "chat"
+              ? "Optional guardrails/persona, e.g. \"Keep a professional tone.\""
+              : "e.g. \"Summarize the content in 3 bullet points for a busy manager.\""
+          }
+        />
+        {instructionMode === "chat" && (
+          <p className="mt-1 text-xs text-slate-500">
+            Optional — the chat message itself is the task; this adds extra guardrails.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Context Content (optional)
+        </label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+          value={config.input || ""}
+          onChange={(e) => updateConfig({ input: e.target.value })}
+          placeholder="{{parsedFile}} or {{formatterResult}}"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          The content the task should work on, e.g. a parsed file or formatted data from an earlier node.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Output Format
+        </label>
+        <select
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={config.outputFormat || "text"}
+          onChange={(e) => updateConfig({ outputFormat: e.target.value })}
+        >
+          <option value="text">Plain text</option>
+          <option value="json">Structured fields</option>
+        </select>
+      </div>
+
+      {config.outputFormat === "json" && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-2">
+            Output Fields <span className="text-red-500">*</span>
+          </label>
+          <CollapsibleHelp title="How fields work">
+            <p>
+              Give each field a name (used downstream) and describe what it should
+              contain, e.g. a &ldquo;subject&rdquo; and &ldquo;body&rdquo; field for a drafted email.
+            </p>
+          </CollapsibleHelp>
+          <div className="space-y-3 mt-2">
+            {outputFields.map((field, index) => (
+              <div key={index} className="rounded-lg border border-slate-200 p-3 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Field name (e.g. subject)"
+                    value={field.key}
+                    onChange={(e) => {
+                      const updated = [...outputFields];
+                      updated[index].key = e.target.value;
+                      setOutputFields(updated);
+                    }}
+                  />
+                  <select
+                    className="w-28 rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                    value={field.type}
+                    onChange={(e) => {
+                      const updated = [...outputFields];
+                      updated[index].type = e.target.value;
+                      setOutputFields(updated);
+                    }}
+                  >
+                    <option value="string">String</option>
+                    <option value="number">Number</option>
+                    <option value="boolean">Boolean</option>
+                    <option value="array">Array</option>
+                    <option value="object">Object</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
+                    onClick={() => setOutputFields(outputFields.filter((_, i) => i !== index))}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Describe what this field should contain (e.g. the email subject line)"
+                  value={field.description}
+                  onChange={(e) => {
+                    const updated = [...outputFields];
+                    updated[index].description = e.target.value;
+                    setOutputFields(updated);
+                  }}
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400 hover:text-slate-700"
+              onClick={() => setOutputFields([...outputFields, { key: "", type: "string", description: "" }])}
+            >
+              <Plus className="h-4 w-4" />
+              Add Field
+            </button>
+          </div>
+        </div>
+      )}
+
+      {instructionMode === "chat" && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">
+            Clarification Expiry Timeout (minutes)
+          </label>
+          <input
+            type="number"
+            min={1}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+            value={config.clarificationTimeoutMinutes ?? 15}
+            onChange={(e) => updateConfig({ clarificationTimeoutMinutes: Number(e.target.value) || 15 })}
+            placeholder="15"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            How long the &ldquo;what would you like me to do?&rdquo; prompt stays valid before it expires.
+          </p>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Output Variable <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={config.outputVariable || "aiTask"}
+          onChange={(e) => updateConfig({ outputVariable: e.target.value })}
+          placeholder="aiTask"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Reference the result downstream as{" "}
+          <code className="bg-slate-100 px-1 rounded">
+            {config.outputFormat === "json"
+              ? `{{${config.outputVariable || "aiTask"}.${outputFields[0]?.key || "field"}}}`
+              : `{{${config.outputVariable || "aiTask"}}}`}
+          </code>
+          .
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function KnowledgeSearchConfig({ config, updateConfig }: any) {
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      query: config.query || "",
+      topK: config.topK ?? 5,
+      outputVariable: config.outputVariable || "knowledgeSearch",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
     <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">
-          AI Provider <span className="text-red-500">*</span>
-        </label>
-        <select
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.provider || "openai"}
-          onChange={(e) => updateConfig({ provider: e.target.value })}
-        >
-          <option value="openai">OpenAI</option>
-          <option value="gemini">Google Gemini</option>
-          <option value="anthropic">Anthropic Claude</option>
-          <option value="ollama">Ollama</option>
-        </select>
-      </div>
+      <CollapsibleHelp title="How to use this node">
+        <p>
+          Knowledge Search runs a real search against the company&rsquo;s indexed
+          documents and returns the most relevant passages and citations. It
+          does not summarize or answer — feed its output into an{" "}
+          <strong>AI Task</strong> node&rsquo;s &ldquo;Context Content&rdquo; field to
+          have that node reason over the retrieved passages.
+        </p>
+      </CollapsibleHelp>
 
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
-          Input Text <span className="text-red-500">*</span>
+          Search Query <span className="text-red-500">*</span>
         </label>
-        <textarea
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          rows={3}
-          value={config.input || ""}
-          onChange={(e) => updateConfig({ input: e.target.value })}
-          placeholder="{{variableName}} or text to analyze"
-        />
-        <p className="mt-1 text-xs text-slate-500">Text for AI to analyze and route</p>
-      </div>
-
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-2">
-          Decision Options <span className="text-red-500">*</span>
-        </label>
-        <div className="space-y-3">
-          {decisions.map((decision, index) => (
-            <div key={index} className="border border-slate-200 rounded-lg p-3">
-              <div className="flex items-start gap-2 mb-2">
-                <input
-                  type="text"
-                  className="flex-1 rounded border border-slate-300 px-2 py-1 text-sm font-medium"
-                  placeholder="Label (e.g., urgent, normal)"
-                  value={decision.label}
-                  onChange={(e) => {
-                    const updated = [...decisions];
-                    updated[index].label = e.target.value;
-                    setDecisions(updated);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="p-1 text-red-600 hover:bg-red-50 rounded"
-                  onClick={() => setDecisions(decisions.filter((_, i) => i !== index))}
-                >
-                  <Minus className="h-4 w-4" />
-                </button>
-              </div>
-              <textarea
-                className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
-                rows={2}
-                placeholder="Description for AI context"
-                value={decision.description}
-                onChange={(e) => {
-                  const updated = [...decisions];
-                  updated[index].description = e.target.value;
-                  setDecisions(updated);
-                }}
-              />
-            </div>
-          ))}
-          <button
-            type="button"
-            className="w-full flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-400"
-            onClick={() => setDecisions([...decisions, { label: "", description: "" }])}
-          >
-            <Plus className="h-4 w-4" />
-            Add Decision Option
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-semibold text-slate-700 mb-1">Default Decision</label>
         <input
           type="text"
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          value={config.defaultDecision || ""}
-          onChange={(e) => updateConfig({ defaultDecision: e.target.value })}
-          placeholder="Fallback if AI can't decide"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
+          value={config.query || ""}
+          onChange={(e) => updateConfig({ query: e.target.value })}
+          placeholder="{{trigger.input.userMessage}}"
         />
+        <p className="mt-1 text-xs text-slate-500">
+          What to search the knowledge base for — usually the chat message, or a summary from an earlier node.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Max Results
+        </label>
+        <input
+          type="number"
+          min={1}
+          max={20}
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={config.topK ?? 5}
+          onChange={(e) => updateConfig({ topK: Number(e.target.value) || 5 })}
+          placeholder="5"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-semibold text-slate-700 mb-1">
+          Output Variable <span className="text-red-500">*</span>
+        </label>
+        <input
+          type="text"
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          value={config.outputVariable || "knowledgeSearch"}
+          onChange={(e) => updateConfig({ outputVariable: e.target.value })}
+          placeholder="knowledgeSearch"
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Reference the retrieved text downstream as{" "}
+          <code className="bg-slate-100 px-1 rounded">
+            {`{{${config.outputVariable || "knowledgeSearch"}}}`}
+          </code>
+          , the raw passages as{" "}
+          <code className="bg-slate-100 px-1 rounded">
+            {`{{${config.outputVariable || "knowledgeSearch"}Chunks}}`}
+          </code>
+          , and citations as{" "}
+          <code className="bg-slate-100 px-1 rounded">
+            {`{{${config.outputVariable || "knowledgeSearch"}Citations}}`}
+          </code>
+          .
+        </p>
       </div>
     </div>
   );

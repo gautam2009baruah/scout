@@ -11,7 +11,8 @@ import type {
   DataCaptureNodeConfig,
   AIExtractionNodeConfig,
   ConditionNodeConfig,
-  AIDecisionNodeConfig,
+  AITaskNodeConfig,
+  KnowledgeSearchNodeConfig,
   HumanApprovalNodeConfig,
   NotificationNodeConfig,
   VariableNodeConfig,
@@ -28,7 +29,8 @@ import type {
 import { executeWorkflowNode } from "./nodes/workflow-node";
 import { executeDataCaptureNode } from "./nodes/data-capture-node";
 import { executeAIExtractionNode } from "./nodes/ai-extraction-node";
-import { executeAIDecisionNode } from "./nodes/ai-decision-node";
+import { executeAITaskNode } from "./nodes/ai-task-node";
+import { executeKnowledgeSearchNode } from "./nodes/knowledge-search-node";
 import { executeConditionNode } from "./nodes/condition-node";
 import { executeHumanApprovalNode, resumeAfterApproval } from "./nodes/human-approval-node";
 import { executeNotificationNode } from "./nodes/notification-node";
@@ -426,8 +428,11 @@ export class OrchestrationEngine {
       case "ai_extraction":
         return await executeAIExtractionNode(config as AIExtractionNodeConfig, this.context);
 
-      case "ai_decision":
-        return await executeAIDecisionNode(config as AIDecisionNodeConfig, this.context);
+      case "ai_task":
+        return await executeAITaskNode(config as AITaskNodeConfig, this.context);
+
+      case "knowledge_search":
+        return await executeKnowledgeSearchNode(config as KnowledgeSearchNodeConfig, this.context);
 
       case "condition":
         return await executeConditionNode(config as ConditionNodeConfig, this.context);
@@ -621,7 +626,8 @@ export class OrchestrationEngine {
       workflow: "Workflow",
       data_capture: "Data Capture",
       ai_extraction: "AI Extraction",
-      ai_decision: "AI Decision",
+      ai_task: "AI Task",
+      knowledge_search: "Knowledge Search",
       condition: "Condition",
       human_approval: "Human Approval",
       notification: "Notification",
@@ -992,15 +998,29 @@ export class OrchestrationEngine {
         this.context._chatbot = chatbotContext;
       }
 
-      // Database and File Parser clarifications resolve ambiguity about the
-      // node's own inputs (the pending query, or a missing file attachment)
-      // rather than producing final output directly — the node must run
-      // again now that the missing input is available. Other
-      // clarification-capable nodes already produced their final output via
-      // the LLM-resolved values above and continue to their downstream node
-      // as before.
-      if (clarificationNode?.nodeType === "database" || clarificationNode?.nodeType === "file_parser") {
-        return await this.executeNode(clarification.nodeId);
+      // Database, File Parser, and AI Task clarifications resolve ambiguity
+      // about the node's own inputs (the pending query, a missing file
+      // attachment, or a missing task instruction) rather than producing
+      // final output directly — the node must run again now that the
+      // missing input is available. Other clarification-capable nodes
+      // already produced their final output via the LLM-resolved values
+      // above and continue to their downstream node as before.
+      if (
+        clarificationNode?.nodeType === "database"
+        || clarificationNode?.nodeType === "file_parser"
+        || clarificationNode?.nodeType === "ai_task"
+      ) {
+        const rerunResult = await this.executeNode(clarification.nodeId);
+        // executeNode's recursive traversal never itself persists the
+        // execution row — only the top-level caller does (see execute()'s
+        // own tail, and the "normal" resume tail just below). Mirror that
+        // here so the DB row actually reaches "completed" instead of
+        // staying stuck at "paused" with stale context after a successful
+        // re-run and downstream completion.
+        if (rerunResult.status === "completed") {
+          await this.updateExecutionStatus("completed");
+        }
+        return rerunResult;
       }
 
       const nextNodes = this.findNextNodes(clarification.nodeId);

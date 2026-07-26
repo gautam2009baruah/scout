@@ -73,7 +73,8 @@ export type NodeType =
   | "workflow"
   | "data_capture"
   | "ai_extraction"
-  | "ai_decision"
+  | "ai_task"
+  | "knowledge_search"
   | "condition"
   | "human_approval"
   | "notification"
@@ -104,7 +105,8 @@ export type NodeConfig =
   | WorkflowNodeConfig
   | DataCaptureNodeConfig
   | AIExtractionNodeConfig
-  | AIDecisionNodeConfig
+  | AITaskNodeConfig
+  | KnowledgeSearchNodeConfig
   | ConditionNodeConfig
   | HumanApprovalNodeConfig
   | NotificationNodeConfig
@@ -178,64 +180,28 @@ export type AIExtractionNodeConfig = {
   outputVariable: string; // where to store extracted data
 };
 
-export type AIDecisionIntent =
-  | "chat"
-  | "workflow_match"
-  | "need_clarification"
-  | "propose_plan"
-  | "execute_plan"
-  | "fallback";
-
-export type AIDecisionClarificationQuestion = {
-  question: string;
-  purpose?: string;
-  inputKey?: string;
-  required?: boolean;
-};
-
-export type AIDecisionPlanStep = {
-  id: string;
-  label: string;
-  nodeType: NodeType | string;
-  reason: string;
-  inputMapping?: Record<string, string>;
-  outputVariable?: string;
-  requiresConfirmation?: boolean;
-  confidence?: number;
-  metadata?: Record<string, unknown>;
-};
-
-export type AIDecisionStructuredResult = {
-  intent: AIDecisionIntent;
-  confidence: number;
-  reason?: string;
-  message?: string;
-  selectedDecisionLabel?: string;
-  selectedDecisionHandle?: string;
-  matchedOrchestrationIds?: string[];
-  matchedOrchestrationNames?: string[];
-  needsClarification?: boolean;
-  clarifyingQuestions?: AIDecisionClarificationQuestion[];
-  requireUserConfirmation?: boolean;
-  plan?: AIDecisionPlanStep[];
-  metadata?: Record<string, unknown>;
-};
-
-export type AIDecisionOption = {
-  label: string;
+export type AITaskOutputField = {
+  key: string;
+  type: "string" | "number" | "boolean" | "array" | "object";
   description?: string;
-  outputHandle: string;
-  aliases?: string[];
-  keywords?: string[];
-  metadata?: Record<string, unknown>;
 };
 
-export type AIDecisionNodeConfig = {
-  type: "ai_decision";
-  inputSource: string; // variable expression
-  prompt: string;
-  decisions: AIDecisionOption[];
-  defaultDecision?: string;
+export type AITaskNodeConfig = {
+  type: "ai_task";
+  instructionMode: "static" | "chat" | "hybrid";
+  instruction?: string; // required for static/hybrid; optional persona/guardrail text even in chat mode
+  input?: string; // interpolated template for context content, e.g. "{{parsedFile}}" (optional)
+  outputFormat: "text" | "json";
+  outputFields?: AITaskOutputField[]; // used when outputFormat === "json"
+  outputVariable: string;
+  clarificationTimeoutMinutes?: number;
+};
+
+export type KnowledgeSearchNodeConfig = {
+  type: "knowledge_search";
+  query: string; // interpolated template, e.g. "{{trigger.input.userMessage}}"
+  topK?: number; // default 5
+  outputVariable: string; // default "knowledgeSearch"
 };
 
 export type ConditionOperator =

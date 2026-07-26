@@ -74,7 +74,8 @@ export function getIncompatibilityReason(
     workflow: "Workflow",
     data_capture: "Data Capture",
     ai_extraction: "AI Extraction",
-    ai_decision: "AI Decision",
+    ai_task: "AI Task",
+    knowledge_search: "Knowledge Search",
     condition: "Condition",
     human_approval: "Human Approval",
     notification: "Notification",
@@ -137,7 +138,7 @@ export function getAlternativeSuggestions(
   }
 
   if (nodeType === "human_approval") {
-    suggestions.push("Use AI Decision to make automated decisions based on criteria");
+    suggestions.push("Use AI Task to generate a recommendation or summary automatically");
     suggestions.push("Use Condition nodes to implement rule-based logic");
     suggestions.push("Send a Notification and use Manual trigger for approval workflows");
   }
