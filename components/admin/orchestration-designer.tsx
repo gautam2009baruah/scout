@@ -68,6 +68,7 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string | Compon
   { type: "variable", label: "Variable", icon: "📊", color: "#14b8a6" },
   { type: "data_formatter", label: "Data Formatter", icon: "{}", color: "#0891b2" },
   { type: "file_parser", label: "File Parser", icon: "📄", color: "#7c3aed" },
+  { type: "for_each", label: "For Each", icon: "🔁", color: "#0d9488" },
   { type: "end", label: "End", icon: "🏁", color: "#ef4444" },
 ];
 

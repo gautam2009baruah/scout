@@ -45,6 +45,7 @@ const NODE_CONFIGS = [
   { type: "variable", label: "Variable", icon: "📈" },
   { type: "data_formatter", label: "Data Formatter", icon: "{}" },
   { type: "file_parser", label: "File Parser", icon: "📄" },
+  { type: "for_each", label: "For Each", icon: "🔁" },
   { type: "end", label: "End", icon: "🏁" },
 ];
 
@@ -408,6 +409,18 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       }
     }
 
+    if (nodeType === "for_each") {
+      if (!String(localConfig.sourceVariablePath || "").trim()) {
+        return { valid: false, error: "For Each source variable path is required" };
+      }
+      if (!String(localConfig.outputVariable || "").trim()) {
+        return { valid: false, error: "For Each output variable is required" };
+      }
+      if (!String(localConfig.bodyNodeType || "").trim()) {
+        return { valid: false, error: "For Each requires an action to run per item" };
+      }
+    }
+
     if (nodeType === "database") {
       const schemaId = String(localConfig.schemaId || "").trim();
       const outputVariable = String(localConfig.outputVariable || "").trim();
@@ -751,6 +764,14 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "data_formatter" && <DataFormatterConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "file_parser" && <FileParserConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "for_each" && (
+          <ForEachConfig
+            config={localConfig}
+            updateConfig={updateLocalConfig}
+            companyId={companyId}
+            targetAppId={targetAppId}
+          />
+        )}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
 
         {/* Validation Error */}
@@ -5936,6 +5957,120 @@ function FileParserConfig({ config, updateConfig }: any) {
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
         In structured mode, the output is an array of row objects, usable with Data Formatter (e.g. as a CSV/HTML table) or AI Extraction. In text mode, the output is the file's full extracted text.
       </div>
+    </div>
+  );
+}
+
+const FOR_EACH_BODY_TYPES = [
+  { value: "api_call", label: "API Call" },
+  { value: "notification", label: "Notification" },
+  { value: "ai_extraction", label: "AI Extraction" },
+  { value: "variable", label: "Variable" },
+  { value: "data_formatter", label: "Data Formatter" },
+];
+
+function ForEachConfig({ config, updateConfig, companyId, targetAppId }: any) {
+  const bodyNodeType = String(config.bodyNodeType || "");
+  const bodyConfig = config.bodyConfig || {};
+
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      sourceVariablePath: String(config.sourceVariablePath || ""),
+      itemVariableName: String(config.itemVariableName || "item"),
+      maxIterations: Number(config.maxIterations || 100),
+      continueOnItemFailure: config.continueOnItemFailure !== false,
+      outputVariable: String(config.outputVariable || "loopResults"),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function updateBodyConfig(patch: Record<string, unknown>) {
+    updateConfig({ bodyConfig: { ...bodyConfig, ...patch, type: bodyNodeType } });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-xs text-teal-950">
+        Runs one action once per item in a list — e.g. call an API for every row from a File Parser node. Each iteration sees the current item at the variable name below.
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-semibold text-slate-700">Source Variable Path (array) <span className="text-red-500">*</span></label>
+        <input
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={String(config.sourceVariablePath || "")}
+          onChange={(event) => updateConfig({ sourceVariablePath: event.target.value })}
+          placeholder="e.g., rows"
+        />
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Item Variable Name</label>
+          <input
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={String(config.itemVariableName || "item")}
+            onChange={(event) => updateConfig({ itemVariableName: event.target.value })}
+            placeholder="item"
+          />
+          <p className="mt-1 text-xs text-slate-500">Reference the current row as {"{{"}{String(config.itemVariableName || "item")}.someField{"}}"} in the action below.</p>
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Max Iterations</label>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={Number(config.maxIterations || 100)}
+            onChange={(event) => updateConfig({ maxIterations: Number(event.target.value) || 100 })}
+          />
+          <p className="mt-1 text-xs text-slate-500">Hard-capped at 500 regardless of this value.</p>
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          checked={config.continueOnItemFailure !== false}
+          onChange={(event) => updateConfig({ continueOnItemFailure: event.target.checked })}
+        />
+        Continue running remaining items if one fails
+      </label>
+
+      <div>
+        <label className="mb-1 block text-sm font-semibold text-slate-700">Output Variable <span className="text-red-500">*</span></label>
+        <input
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={String(config.outputVariable || "loopResults")}
+          onChange={(event) => updateConfig({ outputVariable: event.target.value })}
+          placeholder="loopResults"
+        />
+      </div>
+
+      <div className="border-t border-slate-200 pt-4">
+        <label className="mb-1 block text-sm font-semibold text-slate-700">Action To Run Per Item <span className="text-red-500">*</span></label>
+        <select
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={bodyNodeType}
+          onChange={(event) => updateConfig({ bodyNodeType: event.target.value, bodyConfig: { type: event.target.value } })}
+        >
+          <option value="">Select an action...</option>
+          {FOR_EACH_BODY_TYPES.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {bodyNodeType === "api_call" && <ApiCallConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
+      {bodyNodeType === "notification" && (
+        <NotificationConfig config={bodyConfig} updateConfig={updateBodyConfig} companyId={companyId} targetAppId={targetAppId} />
+      )}
+      {bodyNodeType === "ai_extraction" && <AIExtractionConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
+      {bodyNodeType === "variable" && <VariableConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
+      {bodyNodeType === "data_formatter" && <DataFormatterConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
     </div>
   );
 }

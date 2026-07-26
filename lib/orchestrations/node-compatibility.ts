@@ -83,6 +83,7 @@ export function getIncompatibilityReason(
     api_call: "API Call",
     database: "Database",
     file_parser: "File Parser",
+    for_each: "For Each",
     end: "End",
   };
 

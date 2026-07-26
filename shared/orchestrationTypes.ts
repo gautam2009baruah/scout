@@ -82,6 +82,7 @@ export type NodeType =
   | "api_call"
   | "database"
   | "file_parser"
+  | "for_each"
   | "end";
 
 export type OrchestrationNode = {
@@ -112,6 +113,7 @@ export type NodeConfig =
   | ApiCallNodeConfig
   | DatabaseNodeConfig
   | FileParserNodeConfig
+  | ForEachNodeConfig
   | EndNodeConfig;
 
 export type TriggerNodeConfig = {
@@ -454,6 +456,21 @@ export type FileParserNodeConfig = {
   // attachment reference: { id, name, fileType, storagePath, sizeBytes }).
   sourceVariablePath: string;
   extractMode: "text" | "structured";
+  outputVariable: string;
+};
+
+export type ForEachBodyNodeType = "api_call" | "notification" | "ai_extraction" | "variable" | "data_formatter";
+
+export type ForEachNodeConfig = {
+  type: "for_each";
+  // Dotted path into context to the array to iterate, e.g. "rows" (from a
+  // File Parser node in "structured" mode).
+  sourceVariablePath: string;
+  itemVariableName: string; // how each element is bound in the per-iteration context, e.g. "item"
+  maxIterations: number; // soft cap the user configures; the executor hard-ceilings this regardless
+  continueOnItemFailure: boolean;
+  bodyNodeType: ForEachBodyNodeType;
+  bodyConfig: ApiCallNodeConfig | NotificationNodeConfig | AIExtractionNodeConfig | VariableNodeConfig | DataFormatterNodeConfig;
   outputVariable: string;
 };
 
