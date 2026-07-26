@@ -45,11 +45,7 @@ export async function executeWorkflowNode(
       throw new Error("Workflow ID is required");
     }
 
-    // Evaluate workflow ID (can be dynamic expression)
-    const workflowId =
-      typeof config.workflowId === "string"
-        ? config.workflowId
-        : String(evaluateExpression(config.workflowId, context));
+    const workflowId = config.workflowId;
 
     // Debug logging
     console.log("[WorkflowNode] Evaluation:", {
@@ -59,10 +55,10 @@ export async function executeWorkflowNode(
       contextSample: JSON.stringify(context).substring(0, 200),
     });
 
-    // Validate workflowId is not empty after evaluation
+    // Validate the selected workflow ID.
     if (!workflowId || workflowId.trim() === "") {
       throw new Error(
-        `Workflow ID evaluated to empty value. Config: ${JSON.stringify(config.workflowId)}, Context keys: ${Object.keys(context).join(", ")}`
+        "Workflow ID is required"
       );
     }
 

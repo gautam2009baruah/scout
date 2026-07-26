@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, LoaderCircle, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -87,6 +87,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarScrolling, setIsSidebarScrolling] = useState(false);
+  const [navigatingHref, setNavigatingHref] = useState<string | null>(null);
   const [showSessionWarning, setShowSessionWarning] = useState(false);
   const [warningCountdownSeconds, setWarningCountdownSeconds] = useState(30);
   const [isExtendingSession, setIsExtendingSession] = useState(false);
@@ -553,7 +554,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
               );
             }
 
-            return <NavLink active={active} activeHref={activeHref} collapsed key={module.key} module={module} onNavigate={closeMobileMenu} />;
+            return <NavLink active={active} activeHref={activeHref} collapsed key={module.key} module={module} navigatingHref={navigatingHref} onNavigate={(href) => { setNavigatingHref(href); closeMobileMenu?.(); }} />;
           }
 
           if (hasChildren) {
@@ -578,7 +579,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                       ) : null}
                       <div className="space-y-1 border-l border-slate-300 pl-2">
                         {group.modules.map((child) => (
-                          <NavLink active={active} activeHref={activeHref} inset key={child.key} module={child} onNavigate={closeMobileMenu} />
+                          <NavLink active={active} activeHref={activeHref} inset key={child.key} module={child} navigatingHref={navigatingHref} onNavigate={(href) => { setNavigatingHref(href); closeMobileMenu?.(); }} />
                         ))}
                       </div>
                     </div>
@@ -588,7 +589,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
             );
           }
 
-          return <NavLink key={module.key} active={active} activeHref={activeHref} module={module} onNavigate={closeMobileMenu} />;
+          return <NavLink key={module.key} active={active} activeHref={activeHref} module={module} navigatingHref={navigatingHref} onNavigate={(href) => { setNavigatingHref(href); closeMobileMenu?.(); }} />;
         })}
       </nav>
 
@@ -598,11 +599,17 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
             collapsed ? "w-10 justify-center" : "gap-3 px-3"
           }`}
           href="/control-panel/support"
-          onClick={closeMobileMenu}
+          onClick={() => {
+            if (window.location.pathname !== "/control-panel/support") {
+              setNavigatingHref("/control-panel/support");
+            }
+            closeMobileMenu?.();
+          }}
           title="Support"
         >
           <CircleHelp className="h-4 w-4 shrink-0" />
           {collapsed ? <span className="sr-only">Support</span> : <span>Support</span>}
+          {navigatingHref === "/control-panel/support" ? <LoaderCircle className="ml-auto h-4 w-4 animate-spin" /> : null}
         </Link>
       </div>
     </>
@@ -679,6 +686,15 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         </div>
       ) : null}
 
+      {navigatingHref ? (
+        <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-white/45 backdrop-blur-[1px]" role="status" aria-live="polite">
+          <div className="inline-flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-lg">
+            <LoaderCircle className="h-5 w-5 animate-spin text-blue-700" />
+            Loading…
+          </div>
+        </div>
+      ) : null}
+
       {showSessionWarning ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
@@ -716,6 +732,7 @@ function NavLink({
   collapsed,
   inset,
   module,
+  navigatingHref,
   onNavigate
 }: {
   active: AdminModuleKey;
@@ -723,7 +740,8 @@ function NavLink({
   collapsed?: boolean;
   inset?: boolean;
   module: AdminSession["modules"][number];
-  onNavigate?: () => void;
+  navigatingHref?: string | null;
+  onNavigate?: (href: string) => void;
 }) {
   const Icon = moduleIcons[module.key as keyof typeof moduleIcons] ?? LayoutDashboard;
   const isActive = module.key === active && (!activeHref || module.href === activeHref);
@@ -736,11 +754,18 @@ function NavLink({
           : "text-slate-600 hover:bg-slate-200/70 hover:text-blue-700"
       }`}
       href={module.href}
-      onClick={onNavigate}
+      onClick={() => {
+        if (!isActive) {
+          onNavigate?.(module.href);
+        }
+      }}
       title={module.name}
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      {collapsed && navigatingHref === module.href
+        ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin" />
+        : <Icon className="h-4 w-4 shrink-0" />}
       {collapsed ? <span className="sr-only">{module.name}</span> : <span className="min-w-0 truncate">{module.name}</span>}
+      {!collapsed && navigatingHref === module.href ? <LoaderCircle className="ml-auto h-4 w-4 shrink-0 animate-spin" /> : null}
     </Link>
   );
 }

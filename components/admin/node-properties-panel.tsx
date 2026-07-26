@@ -6,11 +6,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { X, Trash2, Plus, Minus, Move, Maximize2, Save, ChevronDown, ChevronRight } from "lucide-react";
+import { X, Trash2, Plus, Minus, Save, ChevronDown, ChevronRight } from "lucide-react";
 import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
 import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS, UPCOMING_TRIGGER_TYPES } from "@/shared/orchestrationTypes";
-import Draggable from "react-draggable";
 import { createPortal } from "react-dom";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { ApiCallConfig } from "./api-call-config";
@@ -50,45 +49,6 @@ const NODE_CONFIGS = [
   { type: "end", label: "End", icon: "🏁" },
 ];
 
-const PANEL_MARGIN = 16;
-const DEFAULT_PANEL_WIDTH = 384;
-const DEFAULT_PANEL_HEIGHT = 600;
-const MIN_PANEL_WIDTH = 300;
-const MIN_PANEL_HEIGHT = 400;
-
-function clampValue(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function getViewportPanelSize(width: number, height: number) {
-  if (typeof window === "undefined") {
-    return { width, height };
-  }
-
-  const maxWidth = Math.max(240, window.innerWidth - PANEL_MARGIN * 2);
-  const maxHeight = Math.max(240, window.innerHeight - PANEL_MARGIN * 2);
-
-  return {
-    width: clampValue(width, Math.min(MIN_PANEL_WIDTH, maxWidth), maxWidth),
-    height: clampValue(height, Math.min(MIN_PANEL_HEIGHT, maxHeight), maxHeight),
-  };
-}
-
-function clampPanelPosition(
-  position: { x: number; y: number },
-  width: number,
-  height: number
-) {
-  if (typeof window === "undefined") {
-    return position;
-  }
-
-  return {
-    x: clampValue(position.x, PANEL_MARGIN, Math.max(PANEL_MARGIN, window.innerWidth - width - PANEL_MARGIN)),
-    y: clampValue(position.y, PANEL_MARGIN, Math.max(PANEL_MARGIN, window.innerHeight - height - PANEL_MARGIN)),
-  };
-}
-
 interface NodePropertiesPanelProps {
   node: Node;
   nodes?: Node[]; // All nodes in the flow for context-aware suggestions
@@ -112,39 +72,6 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
   const [validationError, setValidationError] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   
-  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
-  const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
-  const [position, setPosition] = useState({ x: PANEL_MARGIN, y: PANEL_MARGIN });
-  const nodeRef = useRef<HTMLDivElement>(null);
-
-  const placePanelInViewport = useCallback((width = panelWidth, height = panelHeight) => {
-    const size = getViewportPanelSize(width, height);
-    setPanelWidth(size.width);
-    setPanelHeight(size.height);
-    setPosition((current) => clampPanelPosition(current, size.width, size.height));
-  }, [panelHeight, panelWidth]);
-
-  // Calculate initial position after mount to ensure the full panel is visible.
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const size = getViewportPanelSize(DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT);
-      setPanelWidth(size.width);
-      setPanelHeight(size.height);
-      setPosition(clampPanelPosition({ x: 32, y: 32 }, size.width, size.height));
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const handleWindowResize = () => {
-      placePanelInViewport();
-    };
-
-    window.addEventListener("resize", handleWindowResize);
-    return () => window.removeEventListener("resize", handleWindowResize);
-  }, [placePanelInViewport]);
-
   // Reset local state when node changes (different node selected)
   useEffect(() => {
     setLocalLabel(node.data.label);
@@ -566,91 +493,15 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     onClose();
   };
 
-  // Handle resize
   useEffect(() => {
-    const resizeElement = nodeRef.current;
-    if (!resizeElement) return;
-
-    let isResizing = false;
-    let startX = 0;
-    let startY = 0;
-    let startWidth = 0;
-    let startHeight = 0;
-    let resizeDirection = '';
-
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.classList.contains('resize-handle')) {
-        isResizing = true;
-        startX = e.clientX;
-        startY = e.clientY;
-        startWidth = panelWidth;
-        startHeight = panelHeight;
-        
-        // Determine resize direction from the specific handle class
-        resizeDirection = '';
-        if (target.classList.contains('resize-left') || target.classList.contains('resize-topleft') || target.classList.contains('resize-bottomleft')) {
-          resizeDirection += 'left';
-        }
-        if (target.classList.contains('resize-right') || target.classList.contains('resize-topright') || target.classList.contains('resize-bottomright')) {
-          resizeDirection += 'right';
-        }
-        if (target.classList.contains('resize-top') || target.classList.contains('resize-topleft') || target.classList.contains('resize-topright')) {
-          resizeDirection += 'top';
-        }
-        if (target.classList.contains('resize-bottom') || target.classList.contains('resize-bottomleft') || target.classList.contains('resize-bottomright')) {
-          resizeDirection += 'bottom';
-        }
-        
-        e.preventDefault();
-        e.stopPropagation();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !confirmDialog) {
+        handleClose();
       }
     };
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-      
-      const deltaX = e.clientX - startX;
-      const deltaY = e.clientY - startY;
-      
-      let newWidth = startWidth;
-      let newHeight = startHeight;
-      
-      // Handle horizontal resize
-      if (resizeDirection.includes('left')) {
-        newWidth = startWidth - deltaX;
-      } else if (resizeDirection.includes('right')) {
-        newWidth = startWidth + deltaX;
-      }
-      
-      // Handle vertical resize
-      if (resizeDirection.includes('top')) {
-        newHeight = startHeight - deltaY;
-      } else if (resizeDirection.includes('bottom')) {
-        newHeight = startHeight + deltaY;
-      }
-      
-      const size = getViewportPanelSize(newWidth, newHeight);
-      setPanelWidth(size.width);
-      setPanelHeight(size.height);
-      setPosition((current) => clampPanelPosition(current, size.width, size.height));
-    };
-
-    const handleMouseUp = () => {
-      isResizing = false;
-      resizeDirection = '';
-    };
-
-    document.addEventListener('mousedown', handleMouseDown);
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
-
-    return () => {
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [panelWidth, panelHeight]);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  });
 
   if (typeof document === "undefined") {
     return null;
@@ -658,90 +509,49 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
 
   return createPortal((
     <>
-      <Draggable
-        handle=".drag-handle"
-        nodeRef={nodeRef}
-        position={position}
-        onDrag={(e, data) => {
-          setPosition(clampPanelPosition({ x: data.x, y: data.y }, panelWidth, panelHeight));
-        }}
-        onStop={(e, data) => {
-          setPosition(clampPanelPosition({ x: data.x, y: data.y }, panelWidth, panelHeight));
-        }}
-        onStart={(e) => {
-          // Prevent dragging when clicking on resize handles
-          const target = e.target as HTMLElement;
-          if (target.classList.contains('resize-handle') || target.closest('.resize-handle')) {
-            return false;
-          }
-        }}
-      >
-      <div 
-        ref={nodeRef}
-        className="fixed bg-white border-2 border-slate-300 rounded-lg shadow-2xl"
-        style={{ 
-          top: 0,
-          left: 0,
-          width: `${panelWidth}px`,
-          height: `${panelHeight}px`,
-          zIndex: 9999
-        }}
-      >
-        
-        <div className="flex flex-col h-full">
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50 p-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="node-properties-title"
+          className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        >
           {/* Header */}
-          <div className="drag-handle bg-gradient-to-r from-slate-700 to-slate-600 p-4 cursor-move border-b-2 border-slate-500 flex-shrink-0">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Move className="h-4 w-4 text-slate-300" />
-                <h3 className="text-base font-bold text-white">Node Properties</h3>
+          <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-lg">
+                  {NODE_CONFIGS.find((n) => n.type === nodeType)?.icon}
+                </span>
+                <span className="h-6 w-px flex-shrink-0 bg-slate-200" aria-hidden="true" />
+                <h3 id="node-properties-title" className="min-w-0 truncate text-base font-semibold text-slate-900">
+                  Node Properties
+                  <span className="font-normal text-slate-500">
+                    {" "}– Configure {NODE_CONFIGS.find((n) => n.type === nodeType)?.label}
+                    {localLabel ? ` (${localLabel})` : ""}
+                  </span>
+                </h3>
               </div>
-              <div className="flex items-center gap-1">
                 <button
-                  className="text-slate-300 hover:text-white transition-colors p-1 rounded hover:bg-slate-600"
-                  onClick={() => {
-                    const size = getViewportPanelSize(DEFAULT_PANEL_WIDTH, DEFAULT_PANEL_HEIGHT);
-                    setPanelWidth(size.width);
-                    setPanelHeight(size.height);
-                    setPosition(clampPanelPosition({ x: 32, y: 32 }, size.width, size.height));
-                  }}
-                  type="button"
-                  title="Reset size"
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </button>
-                <button
-                  className="text-slate-300 hover:text-white transition-colors p-1 rounded hover:bg-slate-600"
+                  className="rounded-md p-1 text-slate-500 hover:bg-slate-100"
                   onClick={handleClose}
                   type="button"
                   title="Close"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-5 w-5" />
                 </button>
-              </div>
-            </div>
-
-            <div className="rounded-lg bg-white bg-opacity-10 backdrop-blur-sm px-3 py-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{NODE_CONFIGS.find((n) => n.type === nodeType)?.icon}</span>
-                <span className="text-sm font-semibold text-white">
-                  {NODE_CONFIGS.find((n) => n.type === nodeType)?.label}
-                </span>
-              </div>
-            </div>
           </div>
 
-          {/* Content - Scrollable */}
-          <div className="flex-1 overflow-y-auto bg-white">
-            <div className="p-4 space-y-4">
-        {/* Common: Label */}
-        <div>
+          {/* Body only scrolls when the viewport or a complex node requires it. */}
+          <div className="admin-sidebar-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div className="space-y-4">
+        <section className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 p-4 md:grid-cols-2">
+        <div className="min-w-0">
           <label className="block text-sm font-semibold text-slate-700 mb-1">
             Node Label <span className="text-red-500">*</span>
           </label>
           <input
             type="text"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
             value={localLabel}
             onChange={(e) => setLocalLabel(e.target.value)}
             placeholder="Enter a descriptive label"
@@ -750,13 +560,13 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         </div>
 
         {/* Common: Display Description for Execution Plan */}
-        <div>
+        <div className="min-w-0">
           <label className="block text-sm font-semibold text-slate-700 mb-1">
             Step Description <span className="text-slate-500 text-xs font-normal">(for execution plan)</span>
           </label>
           <input
             type="text"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
             value={localDisplayDescription}
             onChange={(e) => setLocalDisplayDescription(e.target.value)}
             placeholder="e.g., Extract rate code from email, Fill rate form, Send confirmation"
@@ -765,8 +575,14 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
             Human-readable description shown to users when orchestration is triggered
           </p>
         </div>
+        </section>
 
         {/* Node-specific configuration */}
+        <section className="node-properties-form rounded-lg border border-slate-200 p-4
+          [&>div]:grid [&>div]:grid-cols-1 [&>div]:gap-3 [&>div]:space-y-0
+          lg:[&>div]:grid-cols-2
+          [&>div>div]:min-w-0
+          [&_input]:max-w-sm [&_select]:max-w-xs [&_textarea]:max-w-lg">
         {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} orchestrationId={orchestrationId} />}
         {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} />}
         {nodeType === "data_capture" && <DataCaptureConfig config={localConfig} updateConfig={updateLocalConfig} />}
@@ -797,6 +613,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
           />
         )}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
+        </section>
 
         {/* Validation Error */}
         {validationError && (
@@ -805,57 +622,28 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
           </div>
         )}
 
-        {/* Save Button */}
-        <div className="pt-4 border-t border-slate-200">
-          <button
-            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
-            onClick={handleSave}
-            type="button"
-          >
-            <Save className="h-4 w-4" />
-            Save Changes
-          </button>
-        </div>
             </div>
           </div>
-        </div>
 
-        {/* Resize Handles - Rendered LAST so they're on top */}
-        <div 
-          className="resize-handle resize-left absolute left-0 top-0 bottom-0 cursor-ew-resize bg-blue-400 bg-opacity-0 hover:bg-opacity-40 transition-all" 
-          style={{ width: '6px', left: '-3px', zIndex: 10000 }}
-        />
-        <div 
-          className="resize-handle resize-right absolute right-0 top-0 bottom-0 cursor-ew-resize bg-blue-400 bg-opacity-0 hover:bg-opacity-40 transition-all" 
-          style={{ width: '6px', right: '-3px', zIndex: 10000 }}
-        />
-        <div 
-          className="resize-handle resize-top absolute left-0 top-0 right-0 cursor-ns-resize bg-blue-400 bg-opacity-0 hover:bg-opacity-40 transition-all" 
-          style={{ height: '6px', top: '-3px', zIndex: 10000 }}
-        />
-        <div 
-          className="resize-handle resize-bottom absolute left-0 bottom-0 right-0 cursor-ns-resize bg-blue-400 bg-opacity-0 hover:bg-opacity-40 transition-all" 
-          style={{ height: '6px', bottom: '-3px', zIndex: 10000 }}
-        />
-        {/* Corner Handles */}
-        <div 
-          className="resize-handle resize-topleft absolute cursor-nwse-resize bg-blue-500 bg-opacity-0 hover:bg-opacity-60 transition-all rounded-tl-lg" 
-          style={{ width: '12px', height: '12px', left: '-3px', top: '-3px', zIndex: 10001 }}
-        />
-        <div 
-          className="resize-handle resize-topright absolute cursor-nesw-resize bg-blue-500 bg-opacity-0 hover:bg-opacity-60 transition-all rounded-tr-lg" 
-          style={{ width: '12px', height: '12px', right: '-3px', top: '-3px', zIndex: 10001 }}
-        />
-        <div 
-          className="resize-handle resize-bottomleft absolute cursor-nesw-resize bg-blue-500 bg-opacity-0 hover:bg-opacity-60 transition-all rounded-bl-lg" 
-          style={{ width: '12px', height: '12px', left: '-3px', bottom: '-3px', zIndex: 10001 }}
-        />
-        <div 
-          className="resize-handle resize-bottomright absolute cursor-nwse-resize bg-blue-500 bg-opacity-0 hover:bg-opacity-60 transition-all rounded-br-lg" 
-          style={{ width: '12px', height: '12px', right: '-3px', bottom: '-3px', zIndex: 10001 }}
-        />
+          <div className="flex flex-shrink-0 items-center justify-end gap-3 border-t border-slate-200 bg-white px-5 py-3">
+            <button
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              onClick={handleClose}
+              type="button"
+            >
+              Cancel
+            </button>
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800"
+              onClick={handleSave}
+              type="button"
+            >
+              <Save className="h-4 w-4" />
+              Save Changes
+            </button>
+          </div>
       </div>
-    </Draggable>
+      </div>
 
     {/* Confirmation Dialog */}
     {confirmDialog && (
@@ -2527,7 +2315,6 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
     sessionTitle: string;
   }>>([]);
   const [loadingWorkflows, setLoadingWorkflows] = useState(true);
-  const [useManualInput, setUseManualInput] = useState(false);
   const [workflowSteps, setWorkflowSteps] = useState<Array<{ 
     description: string; 
     parameterName: string; 
@@ -2711,7 +2498,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
   // Fetch workflow details when workflow is selected (with caching)
   useEffect(() => {
     async function fetchWorkflowDetails() {
-      if (!config.workflowId || config.workflowId.includes("{{")) return;
+      if (!config.workflowId) return;
       
       // Check cache first
       const cached = workflowCacheRef.current.get(config.workflowId);
@@ -2808,40 +2595,15 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
     fetchWorkflowDetails();
   }, [config.workflowId]);
 
-  // Check if current value is a dynamic expression
-  const isDynamicExpression = config.workflowId?.includes("{{") && config.workflowId?.includes("}}");
-  const showManualInput = useManualInput || isDynamicExpression;
-
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="flex flex-col gap-4">
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Workflow <span className="text-red-500">*</span>
         </label>
         
-        {showManualInput ? (
-          <>
-            <input
-              type="text"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono"
-              value={config.workflowId || ""}
-              onChange={(e) => updateConfig({ workflowId: e.target.value })}
-              placeholder="{{variableName}} or workflow-id"
-            />
-            <div className="mt-1 flex items-center justify-between">
-              <p className="text-xs text-slate-500">Dynamic expression or workflow ID</p>
-              <button
-                type="button"
-                className="text-xs text-blue-600 hover:text-blue-700"
-                onClick={() => setUseManualInput(false)}
-              >
-                Select from list
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <select
+        <select
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
               value={config.workflowId || ""}
               onChange={(e) => updateConfig({ workflowId: e.target.value })}
@@ -2907,26 +2669,15 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
                 
                 return options;
               })()}
-            </select>
-            <div className="mt-1 flex items-center justify-between">
-              <p className="text-xs text-slate-500">
-                {availableWorkflows.length} published workflow{availableWorkflows.length !== 1 ? "s" : ""} available
-              </p>
-              <button
-                type="button"
-                className="text-xs text-blue-600 hover:text-blue-700"
-                onClick={() => setUseManualInput(true)}
-              >
-                Use dynamic expression
-              </button>
-            </div>
-          </>
-        )}
+        </select>
+        <p className="mt-1 text-xs text-slate-500">
+          {availableWorkflows.length} published workflow{availableWorkflows.length !== 1 ? "s" : ""} available
+        </p>
       </div>
 
       {/* Trigger Phrases Multi-Select (only show for chatbot triggers) */}
       {triggerType === "chatbot" && availableTriggerPhrases.length > 0 && (
-        <div>
+        <div className="order-2">
           <label className="block text-sm font-semibold text-slate-700 mb-1">
             Execute When User Says
           </label>
@@ -2950,7 +2701,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
 
       {/* Target URL (only show for manual triggers) */}
       {triggerType === "manual" && (
-        <div>
+        <div className="order-2">
           <label className="block text-sm font-semibold text-slate-700 mb-1">Target URL</label>
           <input
             type="text"
@@ -2977,7 +2728,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
 
       {/* Input Mapping Section (only show for manual triggers) */}
       {triggerType === "manual" && (
-        <div className="border-t pt-4">
+        <div className="order-2 border-t pt-4">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
           📥 Input Mapping
         </label>
@@ -3187,11 +2938,16 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
       </div>
       )}
 
+      </div>
+
+      <div className="flex flex-col gap-4 md:pt-6">
       {/* Output Mapping Section */}
-      <div className="border-t pt-4">
-        <label className="block text-sm font-semibold text-slate-700 mb-2">
+      <details className="group order-4 border-t pt-4">
+        <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-slate-700 hover:text-slate-900">
           📤 Workflow Results
-        </label>
+          <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-3">
         <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-slate-700">
           <p className="font-semibold mb-2 text-blue-900">💡 Capture system-generated values from the final page</p>
           <p className="mb-2">After workflow completes, capture values like invoice IDs, confirmation codes, or calculated totals.</p>
@@ -3322,9 +3078,10 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
             <strong>ℹ️ Optional:</strong> Only add result fields if you need to capture values from the final page after workflow completes.
           </div>
         )}
-      </div>
+        </div>
+      </details>
 
-      <div>
+      <div className="order-1">
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -3342,7 +3099,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
         </p>
       </div>
 
-      <div>
+      <div className="order-2">
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -3362,7 +3119,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
 
       {/* Auto-fill from Data Capture - only show if data capture node exists */}
       {hasDataCaptureNode && (
-        <div className="space-y-3">
+        <div className="order-6 space-y-3">
           <div>
             <div className="flex items-center gap-2">
               <input
@@ -3414,7 +3171,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
         </div>
       )}
 
-      <div>
+      <div className="order-3">
         <label className="block text-sm font-semibold text-slate-700 mb-1">Timeout (ms)</label>
         <input
           type="number"
@@ -3423,6 +3180,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
           onChange={(e) => updateConfig({ timeout: parseInt(e.target.value) || 300000 })}
         />
         <p className="mt-1 text-xs text-slate-500">Default: 300000 (5 minutes)</p>
+      </div>
       </div>
     </div>
   );
@@ -3445,7 +3203,8 @@ function DataCaptureConfig({ config, updateConfig }: any) {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="flex flex-col gap-4">
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Capture Mode <span className="text-red-500">*</span>
@@ -3464,52 +3223,6 @@ function DataCaptureConfig({ config, updateConfig }: any) {
           Hybrid tries DOM first, then AI fallback. Comprehensive tries all methods.
         </p>
       </div>
-
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="showReviewScreen"
-          checked={config.showReviewScreen !== false}
-          onChange={(e) => updateConfig({ showReviewScreen: e.target.checked })}
-          className="h-4 w-4"
-        />
-        <label htmlFor="showReviewScreen" className="text-sm font-medium text-slate-700">
-          Show review screen to user
-        </label>
-      </div>
-
-      {config.showReviewScreen !== false && (
-        <>
-          <div className="flex items-center gap-2 ml-6">
-            <input
-              type="checkbox"
-              id="allowEdit"
-              checked={config.allowEdit !== false}
-              onChange={(e) => updateConfig({ allowEdit: e.target.checked })}
-              className="h-4 w-4"
-            />
-            <label htmlFor="allowEdit" className="text-sm font-medium text-slate-700">
-              Allow user to edit captured values
-            </label>
-          </div>
-
-          <div className="ml-6">
-            <label className="block text-sm font-semibold text-slate-700 mb-1">
-              Auto-continue timeout (seconds)
-            </label>
-            <input
-              type="number"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              value={config.autoReviewTimeout || 0}
-              onChange={(e) => updateConfig({ autoReviewTimeout: parseInt(e.target.value) || 0 })}
-              placeholder="0 = requires user click"
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              0 = requires user to click Continue. 5 = auto-continues after 5 seconds.
-            </p>
-          </div>
-        </>
-      )}
 
       <div className="border-t border-slate-200 pt-4">
         <button
@@ -3548,6 +3261,55 @@ function DataCaptureConfig({ config, updateConfig }: any) {
               </div>
             </div>
           </div>
+        )}
+      </div>
+      </div>
+
+      <div className="flex flex-col gap-4 md:pt-6">
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="showReviewScreen"
+            checked={config.showReviewScreen !== false}
+            onChange={(e) => updateConfig({ showReviewScreen: e.target.checked })}
+            className="h-4 w-4"
+          />
+          <label htmlFor="showReviewScreen" className="text-sm font-medium text-slate-700">
+            Show review screen to user
+          </label>
+        </div>
+
+        {config.showReviewScreen !== false && (
+          <>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="allowEdit"
+                checked={config.allowEdit !== false}
+                onChange={(e) => updateConfig({ allowEdit: e.target.checked })}
+                className="h-4 w-4"
+              />
+              <label htmlFor="allowEdit" className="text-sm font-medium text-slate-700">
+                Allow user to edit captured values
+              </label>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">
+                Auto-continue timeout (seconds)
+              </label>
+              <input
+                type="number"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                value={config.autoReviewTimeout || 0}
+                onChange={(e) => updateConfig({ autoReviewTimeout: parseInt(e.target.value) || 0 })}
+                placeholder="0 = requires user click"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                0 = requires user to click Continue. 5 = auto-continues after 5 seconds.
+              </p>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -3613,7 +3375,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
   }, [schemaFields]);
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       {/* Active provider */}
       <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
         <div>
@@ -3646,7 +3408,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
         </ol>
       </CollapsibleHelp>
 
-      <div>
+      <div className="order-1">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Extraction Mode
         </label>
@@ -3664,7 +3426,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
         </p>
       </div>
 
-      <div>
+      <div className="order-3">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Input Data <span className="text-red-500">*</span>
         </label>
@@ -3714,7 +3476,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
 
       {config.extractionMode !== "instruction" && (
-      <div>
+      <div className="order-2">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
           Fields to Extract <span className="text-red-500">*</span>
         </label>
@@ -3728,10 +3490,10 @@ function AIExtractionConfig({ config, updateConfig }: any) {
         <div className="space-y-3 mt-2">
           {schemaFields.map((field, index) => (
             <div key={index} className="rounded-lg border border-slate-200 p-3 space-y-2">
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2">
                 <input
                   type="text"
-                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   placeholder="Field name (e.g. invoiceNumber)"
                   value={field.key}
                   onChange={(e) => {
@@ -3741,7 +3503,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
                   }}
                 />
                 <select
-                  className="w-28 rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                  className="w-40 rounded-lg border border-slate-300 px-2 py-2 text-sm"
                   value={field.type}
                   onChange={(e) => {
                     const updated = [...schemaFields];
@@ -3755,13 +3517,6 @@ function AIExtractionConfig({ config, updateConfig }: any) {
                   <option value="array">Array</option>
                   <option value="object">Object</option>
                 </select>
-                <button
-                  type="button"
-                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg"
-                  onClick={() => setSchemaFields(schemaFields.filter((_, i) => i !== index))}
-                >
-                  <Minus className="h-4 w-4" />
-                </button>
               </div>
               <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
                 <input
@@ -3787,6 +3542,14 @@ function AIExtractionConfig({ config, updateConfig }: any) {
                   setSchemaFields(updated);
                 }}
               />
+              <button
+                type="button"
+                className="inline-flex w-fit items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
+                onClick={() => setSchemaFields(schemaFields.filter((_, i) => i !== index))}
+              >
+                <Minus className="h-4 w-4" />
+                Remove field
+              </button>
             </div>
           ))}
           <button
@@ -3803,7 +3566,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
       )}
 
-      <div>
+      <div className="order-4">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Additional Instructions (optional)
         </label>
@@ -3817,7 +3580,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
 
       {config.extractionMode !== "instruction" && (
-      <div>
+      <div className="order-5">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Clarification Expiry Timeout (minutes)
         </label>
@@ -3835,7 +3598,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
       )}
 
-      <div>
+      <div className="order-6">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Output Variable <span className="text-red-500">*</span>
         </label>
