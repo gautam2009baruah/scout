@@ -78,7 +78,17 @@ function parseCsvRows(text: string): Array<Record<string, string>> {
 export async function executeFileParserNode(
   config: FileParserNodeConfig,
   context: Record<string, unknown>
-): Promise<{ success: boolean; output?: Record<string, unknown>; error?: string }> {
+): Promise<{
+  success: boolean;
+  output?: Record<string, unknown>;
+  error?: string;
+  paused?: boolean;
+  clarification?: {
+    message: string;
+    expiresAt: string;
+    fieldDefinitions: Array<{ key: string; type: string; description?: string }>;
+  };
+}> {
   try {
     const sourcePath = String(config.sourceVariablePath || "").trim();
     const outputVariable = String(config.outputVariable || "parsedFile").trim();
@@ -86,12 +96,26 @@ export async function executeFileParserNode(
     if (!sourcePath) throw new Error("File Parser source variable path is required");
     if (!outputVariable) throw new Error("File Parser output variable is required");
 
-    const reference = resolveVariablePath(sourcePath, context);
+    let reference = resolveVariablePath(sourcePath, context);
+
+    if (!isAttachmentReference(reference)) {
+      // After a clarification resume, the engine merges the resolved answer
+      // into context[config.outputVariable] (see engine.ts's pause-handling
+      // code, which always keys the clarification off node.config.outputVariable).
+      // Check there before concluding no file is available.
+      reference = resolveVariablePath(`${outputVariable}.attachment`, context);
+    }
 
     if (!isAttachmentReference(reference) || !reference.storagePath || !reference.fileType) {
-      throw new Error(
-        `No file attachment found at "${sourcePath}". A file must be attached to the triggering chat message.`
-      );
+      return {
+        success: false,
+        paused: true,
+        clarification: {
+          message: "Please attach a file to continue — I don't see one on your message yet.",
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+          fieldDefinitions: [{ key: "attachment", type: "file", description: "The file to parse" }],
+        },
+      };
     }
 
     const parser = getDocumentParser(reference.fileType);

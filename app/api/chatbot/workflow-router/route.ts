@@ -1218,6 +1218,7 @@ export async function POST(request: NextRequest) {
             const resumeResult = await engine.resumeAfterClarification({
               clarificationId: clarification.id,
               responseText: message,
+              attachment: attachmentReferences[0],
             });
 
             if (resumeResult.success) {

@@ -904,6 +904,7 @@ export class OrchestrationEngine {
   async resumeAfterClarification(input: {
     clarificationId: string;
     responseText: string;
+    attachment?: { id?: string; name?: string; fileType?: string; storagePath?: string; sizeBytes?: number };
   }): Promise<{
     success: boolean;
     status: "completed" | "paused" | "failed";
@@ -937,7 +938,7 @@ export class OrchestrationEngine {
         throw new Error("Clarification request expired");
       }
 
-      const resolvedValues = await resolveClarificationValues(clarification, input.responseText);
+      const resolvedValues = await resolveClarificationValues(clarification, input.responseText, input.attachment);
       const unresolvedFields = clarification.missingFields.filter((field) => !hasMeaningfulValue(resolvedValues[field.key]));
       if (unresolvedFields.length > 0) {
         throw new Error(
@@ -989,11 +990,16 @@ export class OrchestrationEngine {
           input.responseText.trim(),
         ];
         this.context._chatbot = chatbotContext;
+      }
 
-        // A Database node clarification resolves ambiguity about the pending
-        // query; the node must run again against the augmented conversation.
-        // Other clarification-capable nodes already produced their final output
-        // and therefore continue to their downstream node as before.
+      // Database and File Parser clarifications resolve ambiguity about the
+      // node's own inputs (the pending query, or a missing file attachment)
+      // rather than producing final output directly — the node must run
+      // again now that the missing input is available. Other
+      // clarification-capable nodes already produced their final output via
+      // the LLM-resolved values above and continue to their downstream node
+      // as before.
+      if (clarificationNode?.nodeType === "database" || clarificationNode?.nodeType === "file_parser") {
         return await this.executeNode(clarification.nodeId);
       }
 
@@ -1042,8 +1048,26 @@ async function resolveClarificationValues(
   clarification: {
     missingFields: Array<{ key: string; type: string; description?: string }>;
   },
-  responseText: string
+  responseText: string,
+  attachment?: { id?: string; name?: string; fileType?: string; storagePath?: string; sizeBytes?: number }
 ): Promise<Record<string, unknown>> {
+  // File-type fields never come from LLM text-mapping — a file reference
+  // can't be inferred from chat text, it comes from the attachment the user
+  // uploaded this turn (or didn't). Resolve those directly and only send
+  // the remaining fields, if any, through the existing LLM-based path.
+  const fileFields = clarification.missingFields.filter((field) => field.type === "file");
+  const otherFields = clarification.missingFields.filter((field) => field.type !== "file");
+  const fileResolved: Record<string, unknown> = {};
+  for (const field of fileFields) {
+    fileResolved[field.key] = attachment ?? null;
+  }
+
+  if (otherFields.length === 0) {
+    return fileResolved;
+  }
+
+  const otherClarification = { missingFields: otherFields };
+
   try {
     const provider = await getLLMProvider();
     const systemPrompt = [
@@ -1053,7 +1077,7 @@ async function resolveClarificationValues(
     ].join(" ");
     const userPrompt = [
       "Missing fields:",
-      clarification.missingFields
+      otherClarification.missingFields
         .map((field) => `- ${field.key} (${field.type})${field.description ? `: ${field.description}` : ""}`)
         .join("\n"),
       "",
@@ -1069,16 +1093,16 @@ async function resolveClarificationValues(
       throw new Error("Clarification response could not be parsed as JSON");
     }
 
-    const resolved: Record<string, unknown> = {};
-    for (const field of clarification.missingFields) {
+    const resolved: Record<string, unknown> = { ...fileResolved };
+    for (const field of otherClarification.missingFields) {
       const value = parsed[field.key];
       resolved[field.key] = value === undefined ? null : coerceClarificationValue(field, String(value ?? ""));
     }
 
     return resolved;
   } catch {
-    const field = clarification.missingFields[0];
-    return field ? { [field.key]: coerceClarificationValue(field, responseText) } : {};
+    const field = otherClarification.missingFields[0];
+    return field ? { ...fileResolved, [field.key]: coerceClarificationValue(field, responseText) } : fileResolved;
   }
 }
 
