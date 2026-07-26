@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { loadConfig, validateConfig } from "./config.js";
 import { createDatabaseAdapter } from "./database.js";
+import { ensureRowLimit, validateSafeSelectQuery } from "./sql-safety.js";
 import type { ExecuteSqlRequest } from "./types.js";
 
 const config = loadConfig();
@@ -24,10 +25,6 @@ function readBody(request: import("node:http").IncomingMessage): Promise<string>
     request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     request.on("error", reject);
   });
-}
-
-function isSqlSafe(sqlText: string) {
-  return String(sqlText || "").trim().length > 0;
 }
 
 function readSqlFromPayload(payload: unknown): string {
@@ -128,7 +125,7 @@ const server = createServer(async (request, response) => {
        */
       const sqlText = readSqlFromPayload(payload);
 
-      if (!isSqlSafe(sqlText)) {
+      if (!sqlText) {
         sendJson(response, 400, {
           rows: [],
           rowCount: 0,
@@ -144,8 +141,25 @@ const server = createServer(async (request, response) => {
         return;
       }
 
+      const validation = validateSafeSelectQuery(sqlText, { allowSelectStar: config.allowSelectStar });
+
+      if (!validation.valid) {
+        sendJson(response, 400, {
+          rows: [],
+          rowCount: 0,
+          durationMs: 0,
+          databaseName: config.databaseName,
+          databaseType: config.databaseType,
+          httpStatusCode: 400,
+          errorCode: "SQL_UNSAFE",
+          message: validation.error,
+        });
+        return;
+      }
+
+      const limitedSqlText = ensureRowLimit(sqlText, config.maxQueryRows);
       const startedAt = Date.now();
-      const result = await adapter.query(sqlText);
+      const result = await adapter.query(limitedSqlText);
 
       sendJson(response, 200, {
         rows: result.rows,

@@ -135,6 +135,8 @@ export type ScoutChatCitation = {
   visual_asset_type?: string;
   source_url?: string;
   download_available?: boolean;
+  guide_id?: string;
+  guide_title?: string;
 };
 
 export type ScoutWorkflowSession = {
@@ -3845,20 +3847,41 @@ function MessageBubble({
                       </div>
                       {citation.section_title ? <div className="text-slate-600">{citation.section_title}</div> : null}
                       <div className="mt-0.5 text-slate-600">{citation.preview}</div>
-                      {sourceLink ? (
-                        <a
-                          className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-sky-200 bg-white px-2 py-1 font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                          href={sourceLink.href}
-                          rel="noopener noreferrer"
-                          target="_blank"
-                          title={sourceLink.external ? sourceLink.href : `Open ${citation.document_name}`}
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          {sourceLink.external ? "Open original source" : "Open document"}
-                        </a>
-                      ) : (
-                        <div className="mt-1.5 text-[11px] text-slate-500">No source link is available for this document.</div>
-                      )}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        {sourceLink ? (
+                          <a
+                            className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-white px-2 py-1 font-semibold text-sky-700 transition hover:border-sky-300 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                            href={sourceLink.href}
+                            rel="noopener noreferrer"
+                            target="_blank"
+                            title={sourceLink.external ? sourceLink.href : `Open ${citation.document_name}`}
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                            {sourceLink.external ? "Open original source" : "Open document"}
+                          </a>
+                        ) : (
+                          <div className="text-[11px] text-slate-500">No source link is available for this document.</div>
+                        )}
+                        {citation.guide_id ? (
+                          <button
+                            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-white px-2 py-1 font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                            onClick={() =>
+                              onStartWorkflow({
+                                id: citation.guide_id!,
+                                title: citation.guide_title || citation.document_name,
+                                description: "",
+                                estimatedTime: "",
+                                steps: 0
+                              })
+                            }
+                            title={`Launch the "${citation.guide_title || citation.document_name}" guide`}
+                            type="button"
+                          >
+                            <Play className="h-3 w-3" />
+                            Launch this guide
+                          </button>
+                        ) : null}
+                      </div>
                       </div>
                     );
                   })}

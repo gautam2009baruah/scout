@@ -18,6 +18,8 @@ export type Citation = {
   visual_asset_type?: string;
   source_url?: string;
   download_available?: boolean;
+  guide_id?: string;
+  guide_title?: string;
 };
 
 function buildPreview(content: string) {

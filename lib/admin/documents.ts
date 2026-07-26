@@ -42,6 +42,7 @@ export type DocumentRow = {
   externalSourceReference: string | null;
   sourceMetadata: Record<string, unknown>;
   sourceGuideId: string | null;
+  isStale: boolean;
   version: number;
   status: DocumentStatus;
   uploadedBy: string;
@@ -435,6 +436,7 @@ function mapDocument(row: {
   external_source_reference: string | null;
   source_metadata_json: Record<string, unknown>;
   source_guide_id: string | null;
+  is_stale: boolean;
   version: number;
   status: DocumentStatus;
   uploaded_by: string;
@@ -462,6 +464,7 @@ function mapDocument(row: {
     externalSourceReference: row.external_source_reference,
     sourceMetadata: row.source_metadata_json ?? {},
     sourceGuideId: row.source_guide_id,
+    isStale: row.is_stale,
     version: row.version,
     status: row.status,
     uploadedBy: row.uploaded_by,
@@ -677,6 +680,7 @@ const documentSelect = `
     documents.external_source_reference,
     documents.source_metadata_json,
     documents.source_guide_id,
+    documents.is_stale,
     documents.version,
     documents.status,
     documents.uploaded_by,

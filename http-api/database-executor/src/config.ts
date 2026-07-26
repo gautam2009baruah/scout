@@ -23,6 +23,8 @@ export type AppConfig = {
   mssqlPassword: string;
   mssqlDatabase: string;
   mssqlEncrypt: boolean;
+  maxQueryRows: number;
+  allowSelectStar: boolean;
 };
 
 function parseNumber(value: string | undefined, fallback: number) {
@@ -70,6 +72,8 @@ export function loadConfig(): AppConfig {
     mssqlPassword: process.env.MSSQL_PASSWORD?.trim() || "",
     mssqlDatabase: process.env.MSSQL_DATABASE?.trim() || "master",
     mssqlEncrypt: parseBoolean(process.env.MSSQL_ENCRYPT, false),
+    maxQueryRows: parseNumber(process.env.MAX_QUERY_ROWS, 500),
+    allowSelectStar: parseBoolean(process.env.ALLOW_SELECT_STAR, true),
   };
 }
 

@@ -146,6 +146,9 @@ export async function generateGuideDocumentation(guideId: string, session: Admin
     session
   );
 
+  // Fresh content supersedes whatever staleness was flagged against the previous version.
+  await getPool().query("UPDATE documents SET is_stale = false WHERE id = $1", [updatedDocument.id]);
+
   await enqueueProcessingJob({
     companyId: updatedDocument.companyId,
     documentId: updatedDocument.id,
@@ -153,7 +156,7 @@ export async function generateGuideDocumentation(guideId: string, session: Admin
     maxAttempts: 3
   });
 
-  return updatedDocument;
+  return { ...updatedDocument, isStale: false };
 }
 
 export async function getGeneratedDocumentForGuide(guideId: string, session: AdminSession): Promise<DocumentRow | null> {

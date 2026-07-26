@@ -183,6 +183,37 @@ function isGreetingOnly(question: string) {
   return /^(hi|hello|hey|hola|namaste|good morning|good afternoon|good evening)$/.test(normalized);
 }
 
+// When a cited document was auto-generated from a guided workflow guide, let the
+// frontend offer to launch the actual interactive guide alongside the text answer.
+async function attachGuideInfoToCitations(citations: Citation[]): Promise<Citation[]> {
+  const documentIds = Array.from(new Set(citations.map((citation) => citation.document_id))).filter(Boolean);
+
+  if (documentIds.length === 0) {
+    return citations;
+  }
+
+  const result = await getPool().query<{ document_id: string; guide_id: string; guide_title: string }>(
+    `
+      SELECT documents.id AS document_id, guided_workflow_guides.id AS guide_id, guided_workflow_guides.title AS guide_title
+      FROM documents
+      INNER JOIN guided_workflow_guides ON guided_workflow_guides.id = documents.source_guide_id
+      WHERE documents.id = ANY($1::uuid[]) AND documents.source_guide_id IS NOT NULL
+    `,
+    [documentIds]
+  );
+
+  if (result.rows.length === 0) {
+    return citations;
+  }
+
+  const guideByDocumentId = new Map(result.rows.map((row) => [row.document_id, { guide_id: row.guide_id, guide_title: row.guide_title }]));
+
+  return citations.map((citation) => {
+    const guide = guideByDocumentId.get(citation.document_id);
+    return guide ? { ...citation, ...guide } : citation;
+  });
+}
+
 export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryResponse> {
   const companyId = input.company_id.trim();
   const userId = input.user_id.trim();
@@ -587,7 +618,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const noAnswerReason = noAnswer
     ? (blockedByEvidence ? "insufficient_context_from_grounding" : "insufficient_context_from_llm")
     : undefined;
-  const acceptedCitations = noAnswer ? [] : retrieval.citations;
+  const acceptedCitations = noAnswer ? [] : await attachGuideInfoToCitations(retrieval.citations);
   const latencyMs = Date.now() - startedAt;
   const tokenUsage = buildEstimatedTokenUsage({
     provider: provider.provider,

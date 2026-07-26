@@ -740,7 +740,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   const [healingRefreshToken, setHealingRefreshToken] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshResetTimer = useRef<number | null>(null);
-  const [generatedDocument, setGeneratedDocument] = useState<{ id: string; status: string } | null | undefined>(undefined);
+  const [generatedDocument, setGeneratedDocument] = useState<{ id: string; status: string; isStale?: boolean } | null | undefined>(undefined);
   const [documentActionPending, setDocumentActionPending] = useState(false);
   const [documentMessage, setDocumentMessage] = useState<{ status: "error" | "success"; text: string } | null>(null);
 
@@ -939,6 +939,11 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
                 <a className="underline hover:text-slate-700" href="/control-panel/content-structure">
                   View in Generated Workflow Guides
                 </a>
+              </p>
+            ) : null}
+            {generatedDocument?.isStale ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                Documentation may be out of date — the app UI has changed since this was generated. Regenerate to refresh it.
               </p>
             ) : null}
             {documentMessage ? (

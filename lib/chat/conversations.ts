@@ -32,6 +32,8 @@ export type CompactCitation = {
   section_title?: string;
   source_url?: string;
   download_available?: boolean;
+  guide_id?: string;
+  guide_title?: string;
 };
 
 export type ConversationLifecycleState = {
@@ -82,7 +84,9 @@ function sanitizeCitations(citations: Citation[]): CompactCitation[] {
     folder_path: citation.folder_path || undefined,
     section_title: citation.section_title || undefined,
     source_url: citation.source_url || undefined,
-    download_available: citation.download_available === true
+    download_available: citation.download_available === true,
+    guide_id: citation.guide_id || undefined,
+    guide_title: citation.guide_title || undefined
   }));
 }
 

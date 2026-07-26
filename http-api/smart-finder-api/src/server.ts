@@ -56,6 +56,34 @@ async function readJsonBody(request: http.IncomingMessage): Promise<unknown> {
   }
 }
 
+const STALENESS_ATTEMPT_THRESHOLD = 3;
+const STALENESS_WINDOW = "14 days";
+
+// A guide that keeps needing self-healing is a signal its target app's UI has
+// drifted from what was recorded — flag any documentation generated from it
+// so an admin knows to regenerate rather than trusting stale content.
+async function flagStalenessIfNeeded(workflowId: string) {
+  const countResult = await getPool().query<{ count: string }>(
+    `SELECT COUNT(*) AS count
+     FROM guided_workflow_healing_audit
+     WHERE workflow_id = $1
+       AND event_type = 'attempt'
+       AND created_at > now() - interval '${STALENESS_WINDOW}'`,
+    [workflowId]
+  );
+
+  if (Number(countResult.rows[0]?.count ?? 0) < STALENESS_ATTEMPT_THRESHOLD) {
+    return;
+  }
+
+  await getPool().query(
+    `UPDATE documents
+     SET is_stale = true
+     WHERE source_guide_id = $1 AND status <> 'deleted'`,
+    [workflowId]
+  );
+}
+
 async function saveSuggestion(body: SaveSuggestionRequest) {
   const {
     workflowId,
@@ -131,6 +159,8 @@ async function saveSuggestion(body: SaveSuggestionRequest) {
       [workflowId, stepId, healingSource, confidenceScore, JSON.stringify(proposedSelectorCandidates), pageUrl]
     );
 
+    await flagStalenessIfNeeded(workflowId);
+
     return { status: 200, body: { success: true, suggestionId: existingResult.rows[0].id } };
   }
 
@@ -167,6 +197,8 @@ async function saveSuggestion(body: SaveSuggestionRequest) {
      VALUES ($1, $2, 'attempt', $3, $4, $5, true, $6)`,
     [workflowId, stepId, healingSource, confidenceScore, JSON.stringify(proposedSelectorCandidates), pageUrl]
   );
+
+  await flagStalenessIfNeeded(workflowId);
 
   return { status: 200, body: { success: true, suggestionId } };
 }
