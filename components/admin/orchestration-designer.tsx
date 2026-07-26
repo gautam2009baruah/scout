@@ -39,8 +39,9 @@ import {
   Settings,
   Plus,
   X,
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Lightbulb,
   List,
   Database,
 } from "lucide-react";
@@ -161,7 +162,6 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isPropertiesOpen, setIsPropertiesOpen] = useState(false);
   const [isManualTriggerOpen, setIsManualTriggerOpen] = useState(false);
   const [manualTriggerConfig, setManualTriggerConfig] = useState<ManualTriggerConfig | null>(null);
@@ -169,6 +169,8 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   const [isListOpen, setIsListOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isNodePaletteCollapsed, setIsNodePaletteCollapsed] = useState(false);
+  const [isTipsOpen, setIsTipsOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -861,10 +863,11 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden">
+    <div className="relative flex h-[calc(100vh-8rem)] flex-col gap-0 overflow-hidden">
+      <div className="relative z-30 shrink-0">
       {/* Toolbar */}
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 shadow-sm">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-2 py-2 shadow-sm sm:px-4 sm:py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <button
             className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             onClick={() => setIsListOpen(true)}
@@ -920,8 +923,8 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
         </div>
 
         {orchestration && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">
+          <div className="flex w-full min-w-0 items-center justify-between gap-2 sm:w-auto sm:justify-end">
+            <span className="truncate text-sm font-semibold text-slate-700">
               {orchestration.name} <span className="text-xs text-slate-500">v{orchestration.version}</span>
             </span>
             {hasUnsavedChanges || savedSincePublish ? (
@@ -939,32 +942,105 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
         )}
       </div>
 
+      {orchestration && (
+        <div className={`absolute left-0 right-0 top-full z-30 border-b border-slate-200 bg-white/95 shadow-lg backdrop-blur-sm ${
+          isNodePaletteCollapsed ? "px-3 py-1" : "p-3"
+        }`}>
+          {!isNodePaletteCollapsed && (
+          <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2 lg:grid-cols-8">
+            {NODE_CONFIGS.map((nodeConfig) => {
+              const isCompatible = isNodeCompatibleWithTrigger(nodeConfig.type, currentTriggerType);
+              const reason = !isCompatible && currentTriggerType
+                ? getIncompatibilityReason(nodeConfig.type, currentTriggerType)
+                : null;
+              const NodeIcon = nodeConfig.icon;
+
+              return (
+                <button
+                  key={nodeConfig.type}
+                  className={`flex min-w-0 items-center justify-center gap-2 rounded-lg border px-2 py-2 text-xs font-semibold transition-colors ${
+                    isCompatible
+                      ? "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                      : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400 opacity-60"
+                  }`}
+                  onClick={() => isCompatible && addNode(nodeConfig.type)}
+                  disabled={!isCompatible}
+                  title={reason || `Add ${nodeConfig.label} node`}
+                  type="button"
+                >
+                  <span className="shrink-0 text-base">
+                    {typeof NodeIcon === "string" ? NodeIcon : <NodeIcon className="h-4 w-4" />}
+                  </span>
+                  <span className="truncate">{nodeConfig.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          )}
+
+          <div className={`flex items-center justify-between ${isNodePaletteCollapsed ? "" : "mt-1 border-t border-slate-100 pt-1"}`}>
+            <div className="relative">
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                onClick={() => setIsTipsOpen((open) => !open)}
+                aria-expanded={isTipsOpen}
+              >
+                <Lightbulb className="h-4 w-4" />
+                Tips
+              </button>
+
+              {isTipsOpen && (
+                <div className="absolute left-0 top-full z-40 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="font-semibold text-slate-900">Designer tips</span>
+                    <button
+                      type="button"
+                      className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      onClick={() => setIsTipsOpen(false)}
+                      aria-label="Close tips"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <ul className="list-inside list-disc space-y-1">
+                    <li>Click a node type to add it</li>
+                    <li>Drag nodes to reposition them</li>
+                    <li>Drag from a node edge to connect nodes</li>
+                    <li>Click an edge and press Delete or Backspace to remove it</li>
+                    <li>Drag an edge handle to reconnect it</li>
+                    <li>Click a node to edit its properties</li>
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              onClick={() => {
+                setIsNodePaletteCollapsed((collapsed) => !collapsed);
+                setIsTipsOpen(false);
+              }}
+              title={isNodePaletteCollapsed ? "Expand node types" : "Collapse node types"}
+            >
+              {isNodePaletteCollapsed ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronUp className="h-4 w-4" />
+              )}
+              {isNodePaletteCollapsed ? "Show node types" : "Hide node types"}
+            </button>
+          </div>
+        </div>
+      )}
+      </div>
+
       {orchestration ? (
         <div className="flex flex-1 overflow-hidden relative">
-          {/* Sidebar Toggle Button */}
-          <button
-            className="absolute left-0 top-1/2 -translate-y-1/2 z-20 bg-white border border-slate-300 rounded-r-lg p-1.5 shadow-md hover:bg-slate-50 transition-all"
-            style={{ left: isSidebarCollapsed ? '0' : '14rem' }}
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            type="button"
-            title={isSidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
-          >
-            {isSidebarCollapsed ? (
-              <ChevronRight className="h-4 w-4 text-slate-600" />
-            ) : (
-              <ChevronLeft className="h-4 w-4 text-slate-600" />
-            )}
-          </button>
-
           {/* Node Toolbox */}
           <div 
-            className="border-r border-slate-200 bg-white p-4 overflow-y-auto transition-all duration-300 ease-in-out"
-            style={{ 
-              width: isSidebarCollapsed ? '0' : '14rem',
-              minWidth: isSidebarCollapsed ? '0' : '14rem',
-              padding: isSidebarCollapsed ? '0' : '1rem',
-              opacity: isSidebarCollapsed ? 0 : 1
-            }}
+            className="hidden"
           >
             <h3 className="mb-3 text-sm font-bold text-slate-900">Node Types</h3>
             <div className="space-y-2">
@@ -1062,7 +1138,14 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                 }}
                 nodeBorderRadius={8}
               />
-              <Panel position="top-right" className="bg-white rounded-lg shadow-md p-2 text-xs text-slate-600">
+              <Panel
+                position="top-right"
+                className={`bg-white rounded-lg shadow-md p-2 text-xs text-slate-600 transition-transform ${
+                  isNodePaletteCollapsed
+                    ? "translate-y-9"
+                    : "translate-y-44 sm:translate-y-36 lg:translate-y-30"
+                }`}
+              >
                 {nodes.length} nodes, {edges.length} connections
               </Panel>
             </ReactFlow>
