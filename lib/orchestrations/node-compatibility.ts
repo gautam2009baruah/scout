@@ -16,6 +16,7 @@ const INTERACTIVE_NODES: NodeType[] = [
   "data_capture",   // Requires user to fill in data on a page
   "human_approval", // Requires human to approve/reject
   "workflow",       // Requires human to interact with guided workflow
+  "file_parser",    // Requires a file attached to a manual/chatbot trigger
 ];
 
 // Trigger types that are automated (no human in the loop)
@@ -81,6 +82,7 @@ export function getIncompatibilityReason(
     data_formatter: "Data Formatter",
     api_call: "API Call",
     database: "Database",
+    file_parser: "File Parser",
     end: "End",
   };
 
@@ -105,6 +107,10 @@ export function getIncompatibilityReason(
 
   if (nodeType === "workflow") {
     return `${nodeLabel} requires a user to interact with guided steps. ${triggerLabel} triggers run automatically in the background.`;
+  }
+
+  if (nodeType === "file_parser") {
+    return `${nodeLabel} reads a file attached to a chat message. ${triggerLabel} triggers have no user present to attach a file.`;
   }
 
   return `${nodeLabel} is not compatible with ${triggerLabel} triggers.`;
@@ -139,6 +145,11 @@ export function getAlternativeSuggestions(
     suggestions.push("Break down workflow steps into individual automation nodes");
     suggestions.push("Use AI Extraction for data extraction tasks");
     suggestions.push("Use API calls or notifications to trigger manual workflows separately");
+  }
+
+  if (nodeType === "file_parser") {
+    suggestions.push("Use a Manual or Chatbot trigger, which can carry a file attachment");
+    suggestions.push("Fetch remote data instead via an API Call node");
   }
 
   return suggestions;

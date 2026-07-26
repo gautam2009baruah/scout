@@ -18,6 +18,7 @@ import type {
   DataFormatterNodeConfig,
   ApiCallNodeConfig,
   DatabaseNodeConfig,
+  FileParserNodeConfig,
   EndNodeConfig,
   TriggerNodeConfig,
   OrchestrationTriggerType,
@@ -34,6 +35,7 @@ import { executeVariableNode } from "./nodes/variable-node";
 import { executeDataFormatterNode } from "./nodes/data-formatter-node";
 import { executeApiCallNode } from "./nodes/api-call-node";
 import { executeDatabaseNode } from "./nodes/database-node";
+import { executeFileParserNode } from "./nodes/file-parser-node";
 import { evaluateExpression, resolveVariablePath, setVariablePath } from "./expression-evaluator";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { getPool } from "@/lib/db/pool";
@@ -457,6 +459,9 @@ export class OrchestrationEngine {
           nodeId: node.id,
         });
       }
+
+      case "file_parser":
+        return await executeFileParserNode(config as FileParserNodeConfig, this.context);
 
       default:
         throw new Error(`Unknown node type: ${node.nodeType}`);

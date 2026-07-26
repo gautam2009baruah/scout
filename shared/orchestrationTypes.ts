@@ -81,6 +81,7 @@ export type NodeType =
   | "data_formatter"
   | "api_call"
   | "database"
+  | "file_parser"
   | "end";
 
 export type OrchestrationNode = {
@@ -110,6 +111,7 @@ export type NodeConfig =
   | DataFormatterNodeConfig
   | ApiCallNodeConfig
   | DatabaseNodeConfig
+  | FileParserNodeConfig
   | EndNodeConfig;
 
 export type TriggerNodeConfig = {
@@ -443,6 +445,15 @@ export type DataFormatterNodeConfig = {
   emptyText?: string;
   nullText?: string;
   maxRows?: number;
+};
+
+export type FileParserNodeConfig = {
+  type: "file_parser";
+  // Dotted path into context, e.g. "trigger.input.attachments.0" (a chat
+  // attachment reference: { id, name, fileType, storagePath, sizeBytes }).
+  sourceVariablePath: string;
+  extractMode: "text" | "structured";
+  outputVariable: string;
 };
 
 export type ApiCallAuthConfig = {

@@ -44,6 +44,7 @@ const NODE_CONFIGS = [
   { type: "database", label: "Database", icon: "🗄️" },
   { type: "variable", label: "Variable", icon: "📈" },
   { type: "data_formatter", label: "Data Formatter", icon: "{}" },
+  { type: "file_parser", label: "File Parser", icon: "📄" },
   { type: "end", label: "End", icon: "🏁" },
 ];
 
@@ -398,6 +399,15 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       }
     }
 
+    if (nodeType === "file_parser") {
+      if (!String(localConfig.sourceVariablePath || "").trim()) {
+        return { valid: false, error: "File Parser source variable path is required" };
+      }
+      if (!String(localConfig.outputVariable || "").trim()) {
+        return { valid: false, error: "File Parser output variable is required" };
+      }
+    }
+
     if (nodeType === "database") {
       const schemaId = String(localConfig.schemaId || "").trim();
       const outputVariable = String(localConfig.outputVariable || "").trim();
@@ -740,6 +750,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "database" && <DatabaseConfig config={localConfig} updateConfig={updateLocalConfig} targetAppId={targetAppId} />}
         {nodeType === "variable" && <VariableConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "data_formatter" && <DataFormatterConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "file_parser" && <FileParserConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
 
         {/* Validation Error */}
@@ -5837,6 +5848,70 @@ function DataFormatterConfig({ config, updateConfig }: any) {
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
         For a rich-text email, select <strong>HTML Table</strong> and use {"{{formattedData}}"} in the Notification body. Cell values are HTML-escaped automatically.
+      </div>
+    </div>
+  );
+}
+
+function FileParserConfig({ config, updateConfig }: any) {
+  const extractMode = String(config.extractMode || "text");
+
+  // Seed default config values on mount so they persist even if the user
+  // never touches these fields before saving.
+  useEffect(() => {
+    updateConfig({
+      sourceVariablePath: String(config.sourceVariablePath || ""),
+      extractMode: String(config.extractMode || "text"),
+      outputVariable: String(config.outputVariable || "parsedFile"),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950">
+        Reads a file attached to the triggering chat message and extracts its content. Only available on Manual and Chatbot triggers, since only those can carry a file attachment.
+      </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-semibold text-slate-700">Source Variable Path <span className="text-red-500">*</span></label>
+        <input
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={String(config.sourceVariablePath || "")}
+          onChange={(event) => updateConfig({ sourceVariablePath: event.target.value })}
+          placeholder="e.g., trigger.input.attachments.0"
+        />
+        <p className="mt-1 text-xs text-slate-500">Path to the attachment reference in context. The trigger node's attached file (if any) is available at trigger.input.attachments.0.</p>
+      </div>
+
+      <div className="grid gap-3">
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Extract Mode <span className="text-red-500">*</span></label>
+          <select
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={extractMode}
+            onChange={(event) => updateConfig({ extractMode: event.target.value })}
+          >
+            <option value="text">Plain text (PDF, DOCX, CSV, TXT, JSON, XML)</option>
+            <option value="structured">Structured rows (CSV only)</option>
+          </select>
+          {extractMode === "structured" && (
+            <p className="mt-1 text-xs text-amber-700">Structured mode only works for CSV files. Other file types will fail at runtime.</p>
+          )}
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Output Variable <span className="text-red-500">*</span></label>
+          <input
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={String(config.outputVariable || "parsedFile")}
+            onChange={(event) => updateConfig({ outputVariable: event.target.value })}
+            placeholder="parsedFile"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        In structured mode, the output is an array of row objects, usable with Data Formatter (e.g. as a CSV/HTML table) or AI Extraction. In text mode, the output is the file's full extracted text.
       </div>
     </div>
   );

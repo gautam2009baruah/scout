@@ -292,7 +292,7 @@ function defaultDocumentName(originalFilename: string) {
   return originalFilename.replace(/\.[^.]+$/, "").trim() || originalFilename;
 }
 
-function sanitizeFilename(filename: string) {
+export function sanitizeFilename(filename: string) {
   return filename
     .trim()
     .replace(/[/\\]/g, "-")

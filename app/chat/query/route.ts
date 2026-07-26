@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       question: body.question,
       conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,
       top_k: typeof body.top_k !== "undefined" ? Number(body.top_k) : undefined,
+      attachment_id: typeof body.attachment_id === "string" ? body.attachment_id : undefined,
     });
 
     return NextResponse.json(response);

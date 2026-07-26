@@ -67,6 +67,7 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string | Compon
   { type: "database", label: "Database", icon: Database, color: "#6366f1" },
   { type: "variable", label: "Variable", icon: "📊", color: "#14b8a6" },
   { type: "data_formatter", label: "Data Formatter", icon: "{}", color: "#0891b2" },
+  { type: "file_parser", label: "File Parser", icon: "📄", color: "#7c3aed" },
   { type: "end", label: "End", icon: "🏁", color: "#ef4444" },
 ];
 

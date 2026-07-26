@@ -8,6 +8,7 @@ import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/
 import type { ChatbotTriggerConfig } from "@/shared/orchestrationTypes";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
 import { appendConversationExchange, getOrCreateConversation } from "@/lib/chat/conversations";
+import { getChatAttachmentById } from "@/lib/chat/attachments";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,7 @@ type WorkflowRouterRequest = {
   continuationOnly?: boolean;
   suggestionOnly?: boolean;
   message?: string;
+  attachmentId?: string;
   workflow?: {
     id?: string;
     title?: string;
@@ -1078,6 +1080,7 @@ export async function POST(request: NextRequest) {
     const suggestionOnly = body.suggestionOnly === true;
     const continuationOnly = body.continuationOnly === true;
     const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
+    const attachmentId = typeof body.attachmentId === "string" ? body.attachmentId.trim() : "";
     const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
     const contextResolution = await resolveActionRequestFromConversation(rawMessage, history);
     const message = contextResolution.message;
@@ -1092,6 +1095,19 @@ export async function POST(request: NextRequest) {
     await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
+
+    // Tenant-scoped lookup: only ever resolve an attachment that belongs to
+    // the authenticated company, never trust a bare id from another tenant.
+    const attachment = attachmentId ? await getChatAttachmentById(attachmentId, companyId) : null;
+    const attachmentReferences = attachment
+      ? [{
+          id: attachment.id,
+          name: attachment.originalFilename,
+          fileType: attachment.fileType,
+          storagePath: attachment.storagePath,
+          sizeBytes: attachment.fileSize,
+        }]
+      : [];
 
     if (suggestionOnly) {
       if (!isExplicitActionRequest(rawMessage)) {
@@ -1463,6 +1479,7 @@ export async function POST(request: NextRequest) {
         userMessage: message,
         confidence: match.confidence,
         orchestrationName: selected.name,
+        attachments: attachmentReferences,
       },
       triggeredBy: userId,
     });

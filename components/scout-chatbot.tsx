@@ -15,6 +15,7 @@ import {
   History,
   MessageCircle,
   Network,
+  Paperclip,
   Pencil,
   Play,
   RefreshCcw,
@@ -545,6 +546,12 @@ function createActionRouterWorkflow(): ScoutWorkflowSession {
   };
 }
 
+// Mirrors CHAT_ATTACHMENT_ALLOWED_FILE_TYPES / MAX_CHAT_ATTACHMENT_SIZE_BYTES
+// in lib/chat/attachments.ts. Client-side check is fail-fast UX only; the
+// server re-validates independently and is the actual enforcement point.
+const ATTACHMENT_ALLOWED_EXTENSIONS = ["pdf", "docx", "csv", "txt", "json", "xml"];
+const ATTACHMENT_MAX_SIZE_BYTES = 10 * 1024 * 1024;
+
 export function ScoutChatbot({
   assistantName = "Scout Assistant",
   apiKey,
@@ -612,6 +619,10 @@ export function ScoutChatbot({
     error: ""
   });
   const [input, setInput] = useState("");
+  const [attachedFile, setAttachedFile] = useState<{ id: string; name: string; size: number } | null>(null);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const [actionModeArmed, setActionModeArmed] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [progressMessage, setProgressMessage] = useState("Understanding your request...");
@@ -754,6 +765,61 @@ export function ScoutChatbot({
     }
     return headers;
   }, [apiKey]);
+
+  async function handleAttachmentSelect(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+
+    setAttachmentError("");
+
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!ATTACHMENT_ALLOWED_EXTENSIONS.includes(extension)) {
+      setAttachmentError(`Unsupported file type. Allowed: ${ATTACHMENT_ALLOWED_EXTENSIONS.join(", ")}.`);
+      return;
+    }
+
+    if (file.size > ATTACHMENT_MAX_SIZE_BYTES) {
+      setAttachmentError(`File is too large. Maximum size is ${Math.floor(ATTACHMENT_MAX_SIZE_BYTES / (1024 * 1024))} MB.`);
+      return;
+    }
+
+    if (!companyId || !userId) {
+      setAttachmentError("Unable to attach a file right now.");
+      return;
+    }
+
+    setAttachmentUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("companyId", companyId);
+      if (targetAppId) formData.append("targetAppId", targetAppId);
+      formData.append("userId", userId);
+      formData.append("conversationId", activeConversationId.current || conversationSessionId || "");
+      formData.append("file", file);
+
+      const response = await fetch("/api/chatbot/attachments", {
+        method: "POST",
+        headers: { ...apiKeyHeaders },
+        body: formData
+      });
+      const body = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setAttachmentError(typeof body?.message === "string" ? body.message : "Unable to attach file.");
+        return;
+      }
+
+      setAttachedFile({ id: body.id, name: body.name, size: body.size });
+    } catch {
+      setAttachmentError("Unable to attach file.");
+    } finally {
+      setAttachmentUploading(false);
+    }
+  }
 
   async function emitActionModeTelemetry(eventType: "action_mode_invoked" | "action_mode_auto_reset", metadata?: Record<string, unknown>) {
     if (!companyId || !userId) {
@@ -1662,6 +1728,9 @@ export function ScoutChatbot({
     if (!trimmed || isTyping) {
       return;
     }
+
+    setAttachedFile(null);
+    setAttachmentError("");
 
     const userMessage = createRenderedMessage({
       id: generateMessageId(),
@@ -2611,7 +2680,8 @@ export function ScoutChatbot({
         user_id: userId,
         question,
         target_app_id: targetAppId || undefined,
-        conversation_id: activeConversationId.current || conversationSessionId || undefined
+        conversation_id: activeConversationId.current || conversationSessionId || undefined,
+        attachment_id: attachedFile?.id || undefined
       })
     });
     const body = await response.json().catch(() => null);
@@ -3230,6 +3300,27 @@ export function ScoutChatbot({
               </div>
 
               <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
+                {attachedFile ? (
+                  <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      <span className="truncate font-medium">{attachedFile.name}</span>
+                    </span>
+                    <button
+                      aria-label="Remove attachment"
+                      className="shrink-0 text-slate-400 hover:text-slate-700"
+                      onClick={() => setAttachedFile(null)}
+                      type="button"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : null}
+                {attachmentError ? (
+                  <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+                    {attachmentError}
+                  </div>
+                ) : null}
                 <form
                   className={cn(
                     "rounded-[22px] border bg-white p-2 shadow-sm focus-within:ring-4 focus-within:ring-[var(--scout-focus)]",
@@ -3254,6 +3345,23 @@ export function ScoutChatbot({
                     value={input}
                   />
                   <div className="flex items-center justify-end gap-3 px-1 pb-0.5">
+                    <input
+                      accept={ATTACHMENT_ALLOWED_EXTENSIONS.map((ext) => `.${ext}`).join(",")}
+                      className="hidden"
+                      onChange={handleAttachmentSelect}
+                      ref={attachmentInputRef}
+                      type="file"
+                    />
+                    <button
+                      aria-label="Attach a file"
+                      className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)] disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={attachmentUploading || Boolean(authBlockedMessage)}
+                      onClick={() => attachmentInputRef.current?.click()}
+                      title="Attach a file"
+                      type="button"
+                    >
+                      <Paperclip className={cn("h-4 w-4", attachmentUploading && "animate-pulse")} />
+                    </button>
                     <button
                       aria-label="Send message"
                       className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--scout-brand)] text-white transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:hover:translate-y-0"

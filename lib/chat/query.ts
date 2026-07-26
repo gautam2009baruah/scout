@@ -7,6 +7,7 @@ import { RetrievalEngine } from "@/lib/search/retrieval-engine";
 import type { Citation } from "@/lib/search/citation-engine";
 import { isAnswerGrounded, shouldRequireCitations } from "@/lib/search/grounding";
 import { appendConversationExchange, getConversationLifecycleState, getOrCreateConversation } from "./conversations";
+import { getChatAttachmentById } from "./attachments";
 import { matchChatbotTriggers, shouldCheckTriggers } from "@/lib/orchestrations/chatbot-trigger-matcher";
 import { createExecution } from "@/lib/orchestrations/db";
 import { buildEstimatedTokenUsage, recordChatQueryTelemetry } from "./telemetry";
@@ -20,6 +21,7 @@ export type ChatQueryInput = {
   conversation_id?: string;
   top_k?: number;
   external_user_trace_id?: string;
+  attachment_id?: string;
 };
 
 export type ChatQueryResponse = {
@@ -220,6 +222,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const question = input.question.trim();
   const topK = Math.min(8, Math.max(5, Number(input.top_k) || 8));
   const externalUserTraceId = String(input.external_user_trace_id || "").trim();
+  const attachmentId = input.attachment_id?.trim() || "";
 
   if (!companyId) {
     throw new ChatQueryError("Company is required.");
@@ -318,6 +321,19 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
           };
         } else {
         
+          // Tenant-scoped lookup: only ever resolve an attachment that
+          // belongs to this company, never trust a bare id.
+          const attachment = attachmentId ? await getChatAttachmentById(attachmentId, companyId) : null;
+          const attachmentReferences = attachment
+            ? [{
+                id: attachment.id,
+                name: attachment.originalFilename,
+                fileType: attachment.fileType,
+                storagePath: attachment.storagePath,
+                sizeBytes: attachment.fileSize,
+              }]
+            : [];
+
           // Create execution for matched orchestration
           const execution = await createExecution({
             orchestrationId: triggerMatch.orchestrationId,
@@ -328,7 +344,8 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
               triggerId: triggerMatch.triggerId,
               userMessage: question,
               matchedPhrase: triggerMatch.matchedPhrase,
-              confidence: triggerMatch.confidence
+              confidence: triggerMatch.confidence,
+              attachments: attachmentReferences
             },
             triggeredBy: triggerUserEmail
           });
