@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, FileText, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
 import type { Jodit as JoditInstance } from "jodit";
 import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
@@ -740,6 +740,9 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   const [healingRefreshToken, setHealingRefreshToken] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshResetTimer = useRef<number | null>(null);
+  const [generatedDocument, setGeneratedDocument] = useState<{ id: string; status: string } | null | undefined>(undefined);
+  const [documentActionPending, setDocumentActionPending] = useState(false);
+  const [documentMessage, setDocumentMessage] = useState<{ status: "error" | "success"; text: string } | null>(null);
 
   useEffect(() => () => {
     if (refreshResetTimer.current !== null) {
@@ -791,6 +794,34 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
     };
   }, [selectedTopic?.guideId, healingRefreshToken]);
 
+  useEffect(() => {
+    if (!selectedTopic?.guideId) {
+      setGeneratedDocument(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    setGeneratedDocument(undefined);
+    setDocumentMessage(null);
+
+    fetch(`/api/admin/guided-workflows/${selectedTopic.guideId}/document`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (!cancelled) {
+          setGeneratedDocument(body?.document ?? null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGeneratedDocument(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTopic?.guideId]);
+
   if (!selectedSession || !selectedTopic) {
     return (
       <section className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-500 shadow-sm">
@@ -816,6 +847,24 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
     await navigator.clipboard.writeText(value);
     setCopiedKey(key);
     window.setTimeout(() => setCopiedKey((current) => current === key ? "" : current), 1200);
+  }
+
+  async function generateDocumentation() {
+    if (!sessionGuide) return;
+    setDocumentActionPending(true);
+    setDocumentMessage(null);
+
+    const response = await fetch(`/api/admin/guided-workflows/${sessionGuide.id}/document`, { method: "POST" });
+    const body = await response.json().catch(() => null);
+    setDocumentActionPending(false);
+
+    if (!response.ok) {
+      setDocumentMessage({ status: "error", text: typeof body?.message === "string" ? body.message : "Unable to generate documentation." });
+      return;
+    }
+
+    setGeneratedDocument(body.document);
+    setDocumentMessage({ status: "success", text: "Documentation generated and queued for indexing." });
   }
 
   return (
@@ -867,11 +916,36 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
             >
               <Play className="h-4 w-4" />Publish
             </button>
+            <button
+              className="button-secondary"
+              disabled={!sessionGuide || documentActionPending}
+              onClick={generateDocumentation}
+              type="button"
+            >
+              <FileText className="h-4 w-4" />
+              {generatedDocument ? "Regenerate Documentation" : "Generate Documentation"}
+            </button>
             <button className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-700" onClick={() => deleteTopic(selectedTopic.id)} type="button">
               <Trash2 className="h-4 w-4" />Delete
             </button>
           </div>
         </div>
+
+        {generatedDocument || documentMessage ? (
+          <div className="grid gap-1">
+            {generatedDocument ? (
+              <p className="text-xs text-slate-500">
+                Documentation generated (<span className="font-medium text-slate-700">{generatedDocument.status}</span>) ·{" "}
+                <a className="underline hover:text-slate-700" href="/control-panel/content-structure">
+                  View in Generated Workflow Guides
+                </a>
+              </p>
+            ) : null}
+            {documentMessage ? (
+              <p className={`rounded-lg px-3 py-2 text-sm ${documentMessage.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{documentMessage.text}</p>
+            ) : null}
+          </div>
+        ) : null}
 
         <p className="text-xs text-slate-500">
           {syncedActionCount === 0

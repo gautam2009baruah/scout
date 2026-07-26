@@ -1,0 +1,66 @@
+import { NextResponse } from "next/server";
+import { GuidedWorkflowError } from "@/lib/admin/guided-workflows";
+import { DocumentError } from "@/lib/admin/documents";
+import { generateGuideDocumentation, getGeneratedDocumentForGuide, GuideDocumentationError } from "@/lib/guided-workflows/documentation-generator";
+import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
+import { getCurrentAdminSession } from "@/lib/admin/session";
+
+export const runtime = "nodejs";
+
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+async function requireSession() {
+  const session = await getCurrentAdminSession();
+
+  if (!session) {
+    return { response: NextResponse.json({ message: "Authentication required." }, { status: 401 }) };
+  }
+
+  if (!hasModuleAccess(session, MODULE_KEYS.guidedWorkflows)) {
+    return { response: NextResponse.json({ message: "You do not have permission to manage guided workflows." }, { status: 403 }) };
+  }
+
+  return { session };
+}
+
+function handleError(error: unknown) {
+  if (error instanceof GuidedWorkflowError || error instanceof DocumentError || error instanceof GuideDocumentationError) {
+    return NextResponse.json({ message: error.message }, { status: error.statusCode });
+  }
+
+  throw error;
+}
+
+export async function GET(_request: Request, context: RouteContext) {
+  const auth = await requireSession();
+
+  if ("response" in auth) {
+    return auth.response;
+  }
+
+  try {
+    const { id } = await context.params;
+    const document = await getGeneratedDocumentForGuide(id, auth.session);
+    return NextResponse.json({ document });
+  } catch (error) {
+    return handleError(error);
+  }
+}
+
+export async function POST(_request: Request, context: RouteContext) {
+  const auth = await requireSession();
+
+  if ("response" in auth) {
+    return auth.response;
+  }
+
+  try {
+    const { id } = await context.params;
+    const document = await generateGuideDocumentation(id, auth.session);
+    return NextResponse.json({ document });
+  } catch (error) {
+    return handleError(error);
+  }
+}

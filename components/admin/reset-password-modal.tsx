@@ -121,7 +121,7 @@ export function ResetPasswordModal({ open, onClose }: ResetPasswordModalProps) {
             </button>
           </div>
         ) : (
-          <form className="mt-5" onSubmit={submit}>
+          <form className="mt-5" method="post" onSubmit={submit}>
             <p className="mb-4 text-xs text-slate-500">{PASSWORD_REQUIREMENT_MESSAGE}</p>
 
             <div className="space-y-4">

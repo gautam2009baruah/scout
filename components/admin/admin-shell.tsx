@@ -613,7 +613,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       <div className="flex min-h-screen">
         <aside
           aria-label="Control Panel navigation"
-          className={`sticky top-0 hidden h-screen shrink-0 flex-col overflow-hidden border-r border-slate-300 bg-[#f2f4f6] transition-[width] duration-200 lg:flex ${isSidebarCollapsed ? "w-20 px-3" : "w-72 px-3"}`}
+          className={`sticky top-0 hidden h-screen shrink-0 flex-col overflow-hidden border-r border-slate-300 bg-[#f2f4f6] transition-[width] duration-200 lg:flex ${isSidebarCollapsed ? "w-20 px-3" : "w-80 px-3"}`}
         >
           {sidebarContent(isSidebarCollapsed)}
         </aside>
@@ -672,7 +672,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           />
           <aside
             aria-label="Control Panel mobile navigation"
-            className="relative flex h-full w-72 max-w-[88vw] flex-col overflow-hidden border-r border-slate-300 bg-[#f2f4f6] px-3 shadow-xl"
+            className="relative flex h-full w-80 max-w-[88vw] flex-col overflow-hidden border-r border-slate-300 bg-[#f2f4f6] px-3 shadow-xl"
           >
             {sidebarContent(false, () => setIsMobileMenuOpen(false))}
           </aside>

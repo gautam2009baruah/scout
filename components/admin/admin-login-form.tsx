@@ -47,7 +47,7 @@ export function AdminLoginForm() {
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <form className="space-y-5" method="post" onSubmit={handleSubmit}>
       <label className="block">
         <span className="text-sm font-medium text-slate-700">Email</span>
         <span className="mt-2 flex h-12 items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 shadow-sm transition focus-within:border-slate-900 focus-within:ring-4 focus-within:ring-slate-900/10">

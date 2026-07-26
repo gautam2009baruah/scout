@@ -42,7 +42,7 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <form className="rounded-lg border border-slate-200 bg-white p-6 shadow-soft-xl" onSubmit={submit}>
+    <form className="rounded-lg border border-slate-200 bg-white p-6 shadow-soft-xl" method="post" onSubmit={submit}>
       <div className="mb-6">
         <p className="text-sm font-medium text-teal-700">First login</p>
         <h1 className="mt-2 text-2xl font-semibold text-slate-950">Change your password</h1>

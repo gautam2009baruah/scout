@@ -41,6 +41,7 @@ export type DocumentRow = {
   externalSourceUrl: string | null;
   externalSourceReference: string | null;
   sourceMetadata: Record<string, unknown>;
+  sourceGuideId: string | null;
   version: number;
   status: DocumentStatus;
   uploadedBy: string;
@@ -114,6 +115,7 @@ export type CreateDocumentInput = {
   externalSourceUrl?: string | null;
   externalSourceReference?: string | null;
   sourceMetadata?: Record<string, unknown>;
+  sourceGuideId?: string | null;
   version?: number;
   status?: DocumentStatus;
 };
@@ -298,11 +300,11 @@ function sanitizeFilename(filename: string) {
     .slice(0, 180) || "document";
 }
 
-function buildDocumentStoragePath(companyId: string, folderId: string, documentId: string, filename: string) {
+export function buildDocumentStoragePath(companyId: string, folderId: string, documentId: string, filename: string) {
   return `/companies/${companyId}/folders/${folderId}/documents/${documentId}/${sanitizeFilename(filename)}`;
 }
 
-function checksumBuffer(buffer: Buffer) {
+export function checksumBuffer(buffer: Buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
@@ -432,6 +434,7 @@ function mapDocument(row: {
   external_source_url: string | null;
   external_source_reference: string | null;
   source_metadata_json: Record<string, unknown>;
+  source_guide_id: string | null;
   version: number;
   status: DocumentStatus;
   uploaded_by: string;
@@ -458,6 +461,7 @@ function mapDocument(row: {
     externalSourceUrl: row.external_source_url,
     externalSourceReference: row.external_source_reference,
     sourceMetadata: row.source_metadata_json ?? {},
+    sourceGuideId: row.source_guide_id,
     version: row.version,
     status: row.status,
     uploadedBy: row.uploaded_by,
@@ -672,6 +676,7 @@ const documentSelect = `
     documents.external_source_url,
     documents.external_source_reference,
     documents.source_metadata_json,
+    documents.source_guide_id,
     documents.version,
     documents.status,
     documents.uploaded_by,
@@ -707,6 +712,7 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
   const fileSize = Number(input.fileSize);
   const version = Number(input.version ?? 1);
   const status = input.status ?? "uploaded";
+  const sourceGuideId = input.sourceGuideId?.trim() || null;
 
   if (!input.companyId || !input.folderId || !originalFilename || !checksum || !name) {
     throw new DocumentError("Company, folder, filename, checksum, and name are required.");
@@ -766,6 +772,7 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
               external_source_url = $6,
               external_source_reference = $7,
               source_metadata_json = $8::jsonb,
+              source_guide_id = COALESCE($9, source_guide_id),
               updated_at = now()
             WHERE id = $1
           `,
@@ -777,7 +784,8 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
             status,
             externalSourceUrl,
             externalSourceReference,
-            JSON.stringify(sourceMetadata)
+            JSON.stringify(sourceMetadata),
+            sourceGuideId
           ]
         );
 
@@ -825,6 +833,7 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
             version = $13,
             status = $14::document_status,
             uploaded_by = $15,
+            source_guide_id = COALESCE($16, source_guide_id),
             error_message = NULL,
             updated_at = now()
           WHERE id = $1
@@ -844,7 +853,8 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
           JSON.stringify(sourceMetadata),
           nextVersion,
           status,
-          session.user.id
+          session.user.id,
+          sourceGuideId
         ]
       );
 
@@ -890,9 +900,10 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
           source_metadata_json,
           version,
           status,
-          uploaded_by
+          uploaded_by,
+          source_guide_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::document_storage_mode, $11, $12, $13::jsonb, $14, $15::document_status, $16)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::document_storage_mode, $11, $12, $13::jsonb, $14, $15::document_status, $16, $17)
         RETURNING id
       `,
       [
@@ -911,7 +922,8 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
         JSON.stringify(sourceMetadata),
         version,
         status,
-        session.user.id
+        session.user.id,
+        sourceGuideId
       ]
     );
 
