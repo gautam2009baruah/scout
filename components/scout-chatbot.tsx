@@ -149,6 +149,10 @@ export type ScoutWorkflowSession = {
   preWorkflowConfirmationHtml?: string;
   preWorkflowConfirmationEnabled?: boolean;
   topics?: ScoutWorkflowTopic[];
+  // When true, routes through /api/chatbot/ai-planner instead of
+  // workflow-router for this workflow session's messages. See sendMessage()'s
+  // activeOrchestrationRef branch and startOrchestration().
+  isAiPlanner?: boolean;
 };
 
 export type ScoutWorkflowActionSuggestion = {
@@ -181,6 +185,9 @@ type ScoutOrchestration = {
   name: string;
   description: string;
   nodes: ScoutOrchestrationNode[];
+  isAiPlanner?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
 };
 
 type PendingRouterConfirmation = {
@@ -1939,12 +1946,14 @@ export function ScoutChatbot({
     if (activeOrchestration) {
       showProgress("conversation_context");
       try {
-      const continuationReply = await runWorkflowRouter(
-        trimmed,
-        activeOrchestration,
-        contextWindow,
-        { allowDraftPlan: true, forceActionMode: true }
-      );
+      const continuationReply = activeOrchestration.isAiPlanner
+        ? await runAiPlanner(trimmed, contextWindow)
+        : await runWorkflowRouter(
+            trimmed,
+            activeOrchestration,
+            contextWindow,
+            { allowDraftPlan: true, forceActionMode: true }
+          );
 
       if (continuationReply.routerIntent === "fallback") {
         activeOrchestrationRef.current = null;
@@ -2527,7 +2536,7 @@ export function ScoutChatbot({
   }
 
   async function startOrchestration(orchestration: ScoutOrchestration) {
-    if (authBlockedMessage || isTyping) return;
+    if (authBlockedMessage || isTyping || orchestration.disabled) return;
 
     const workflow: ScoutWorkflowSession = {
       id: orchestration.id,
@@ -2535,7 +2544,31 @@ export function ScoutChatbot({
       description: orchestration.description,
       estimatedTime: "",
       steps: orchestration.nodes.length,
+      isAiPlanner: orchestration.isAiPlanner,
     };
+
+    if (orchestration.isAiPlanner) {
+      // No synthetic "Start workflow: X" message and no network call here —
+      // per the AI Planner's own UX, opening it just prompts the user for
+      // their actual request; PlannerAgent only runs once they type it (see
+      // the activeOrchestrationRef branch in sendMessage()).
+      activeOrchestrationRef.current = workflow;
+      reviewedOrchestrationRequestRef.current = null;
+      setOrchestrationPanelOpen(false);
+      setActiveTab("qa");
+      setMessages((current) => [
+        ...current,
+        createRenderedMessage({
+          id: generateMessageId(),
+          role: "assistant",
+          text: "Submit your query.",
+          time: formatTime(),
+        }),
+      ]);
+      inputRef.current?.focus();
+      return;
+    }
+
     const reviewedRequest = reviewedOrchestrationRequestRef.current;
     const originalRequest = reviewedRequest?.orchestrationId === orchestration.id
       ? reviewedRequest.originalText
@@ -2855,6 +2888,51 @@ export function ScoutChatbot({
       role: "assistant",
       text: `I started the workflow router flow for ${workflow.title}.`,
       time: formatTime()
+    } satisfies ScoutChatMessage;
+  }
+
+  // Sibling to runWorkflowRouter(), for the "AI Planner" workflow session
+  // specifically — see ScoutWorkflowSession.isAiPlanner. Posts to the
+  // dedicated /api/chatbot/ai-planner endpoint instead; response shaping
+  // mirrors runWorkflowRouter's (conversationId tracking, routerIntent)
+  // enough that both callers' downstream whitelist checks work unmodified,
+  // but there's no clientExecution/citations/display to handle — that
+  // endpoint only ever returns plain text.
+  async function runAiPlanner(message: string, history: ScoutChatMessage[]): Promise<ScoutChatMessage> {
+    const response = await fetch("/api/chatbot/ai-planner", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...apiKeyHeaders,
+      },
+      body: JSON.stringify({
+        message,
+        companyId,
+        userId,
+        targetAppId: targetAppId || undefined,
+        conversationId: activeConversationId.current || conversationSessionId || undefined
+      })
+    });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      const errorMessage = typeof body?.message === "string" ? body.message : "AI Planner request failed.";
+      if (isApiKeyAuthFailure(response.status, errorMessage)) {
+        blockChatbotForInvalidKey();
+      }
+      throw new Error(errorMessage);
+    }
+
+    if (typeof body?.conversationId === "string") {
+      activeConversationId.current = body.conversationId;
+      setConversationSessionId(body.conversationId);
+      onConversationChange?.(body.conversationId);
+    }
+
+    return {
+      role: "assistant",
+      text: typeof body?.answer === "string" ? body.answer : "I couldn't process that request.",
+      routerIntent: typeof body?.intent === "string" ? body.intent : undefined,
     } satisfies ScoutChatMessage;
   }
 
@@ -3186,13 +3264,21 @@ export function ScoutChatbot({
                 ) : (
                   <div className="space-y-2">
                     {orchestrations.map((orchestration) => {
-                      const expanded = expandedOrchestrations.has(orchestration.id);
+                      const expanded = expandedOrchestrations.has(orchestration.id) && !orchestration.disabled;
                       return (
-                        <section className="overflow-visible rounded-xl border border-slate-200 bg-white" key={orchestration.id}>
+                        <section className="group relative overflow-visible rounded-xl border border-slate-200 bg-white" key={orchestration.id}>
                           <button
+                            aria-disabled={orchestration.disabled || undefined}
                             aria-expanded={expanded}
-                            className="flex min-h-14 w-full items-center justify-between gap-3 px-3 py-2 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-violet-100"
-                            onClick={() => setExpandedOrchestrations((current) => toggleSetValue(current, orchestration.id))}
+                            className={cn(
+                              "flex min-h-14 w-full items-center justify-between gap-3 px-3 py-2 text-left transition focus:outline-none focus:ring-4 focus:ring-violet-100",
+                              orchestration.disabled ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50"
+                            )}
+                            disabled={orchestration.disabled}
+                            onClick={() => {
+                              if (orchestration.disabled) return;
+                              setExpandedOrchestrations((current) => toggleSetValue(current, orchestration.id));
+                            }}
                             type="button"
                           >
                             <span className="min-w-0">
@@ -3204,6 +3290,11 @@ export function ScoutChatbot({
                               {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </span>
                           </button>
+                          {orchestration.disabled && orchestration.disabledReason ? (
+                            <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 whitespace-normal break-words">
+                              {orchestration.disabledReason}
+                            </span>
+                          ) : null}
                           {expanded ? (
                             <div className="space-y-1 border-t border-slate-100 bg-slate-50/70 p-2">
                               <div className="mb-2 rounded-lg border border-violet-100 bg-white p-3">

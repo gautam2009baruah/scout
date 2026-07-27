@@ -1,0 +1,964 @@
+[
+  {
+    "name": "trigger",
+    "description": "Fixed entry point of every orchestration, not a node the planner would normally insert — the AI Planner orchestration already starts from a chat trigger, so this tool exists for schema completeness and may be excluded from what is actually offered to the planning LLM. Publishes the trigger payload (manual input, chat message, schedule tick, inbound email, or HTTP/API call) into the execution context.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "triggerType": {
+          "type": "string",
+          "enum": ["manual", "chatbot", "schedule", "email", "http_api"],
+          "description": "Which mechanism starts this orchestration. Drives compatibility checks for the rest of the graph: some node types (e.g. human_approval, file_parser, data_capture, workflow) require an interactive chatbot trigger and are rejected on schedule/email/http_api triggers."
+        },
+        "schedule": {
+          "type": "object",
+          "description": "Only meaningful when triggerType is \"schedule\".",
+          "properties": {
+            "cron": { "type": "string", "description": "Cron expression controlling when the orchestration fires." },
+            "timezone": { "type": "string", "description": "IANA timezone the cron expression is evaluated in." }
+          }
+        }
+      },
+      "required": ["triggerType"]
+    }
+  },
+  {
+    "name": "workflow",
+    "description": "Executes an existing Scout guided (browser-recorded) workflow, either by replaying it in a real, visible browser against a target URL (with real side effects on whatever site it drives) or via the standard guided-workflow executor. Use when the task should drive an existing recorded workflow rather than call an API directly.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "description": "UUID of the guided workflow to execute. Execution throws if this is blank, even though it is not marked required here — always populate it."
+        },
+        "workflowVersion": {
+          "type": "number",
+          "description": "Not referenced anywhere in the current handler; has no observable effect."
+        },
+        "targetUrl": {
+          "type": "string",
+          "description": "If present, switches execution into browser-automation mode: launches a real (visible, non-headless) Puppeteer browser and replays the workflow against this URL. The looked-up workflow must have status \"published\"."
+        },
+        "waitForCompletion": {
+          "type": "boolean",
+          "description": "Standard (non-targetUrl) mode only: poll until the workflow finishes before continuing to the next node."
+        },
+        "inputMapping": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Maps the workflow's input keys to variable expressions evaluated against context, e.g. {\"customerName\": \"{{extracted.name}}\"}."
+        },
+        "outputMapping": {
+          "type": "array",
+          "description": "Intended to capture system-generated values from the final page (fieldName/selector/dataType/required per entry), but the current handler never actually applies this mapping — has no observable effect today.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fieldName": { "type": "string", "description": "Variable name to store the captured value under." },
+              "selector": { "type": "string", "description": "CSS selector for the element to extract." },
+              "dataType": { "type": "string", "enum": ["text", "number", "date"], "description": "Type of data to extract." },
+              "required": { "type": "boolean", "description": "Whether to prompt the user if the selector is not found." }
+            },
+            "required": ["fieldName", "selector", "dataType", "required"]
+          }
+        },
+        "continueOnFailure": {
+          "type": "boolean",
+          "description": "If true, a workflow failure is captured into the node's output ({error, failed:true}) instead of failing the whole node."
+        },
+        "timeout": {
+          "type": "number",
+          "description": "Milliseconds to wait for completion in browser or wait-for-completion mode. Defaults to 300000 (5 minutes)."
+        },
+        "triggerPhrases": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "If set, this node is skipped (not failed) unless the chat trigger's matched phrase/intent is one of these."
+        },
+        "autoFillFromDataCapture": {
+          "type": "boolean",
+          "description": "Not read by the current handler; has no observable effect."
+        },
+        "autoAdvancement": {
+          "type": "boolean",
+          "description": "Not read by the current handler; has no observable effect."
+        }
+      },
+      "required": ["workflowId", "inputMapping", "continueOnFailure"]
+    }
+  },
+  {
+    "name": "data_capture",
+    "description": "Injects a visual review/capture overlay into a live browser page carried over from a preceding Workflow node, so the chat UI can show and let the user confirm data captured from that page. Requires an active browser page from an earlier workflow node — placing this node without one causes it to fail.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["dom", "ai", "hybrid", "comprehensive"],
+          "description": "Capture strategy. Actual capture logic runs client-side in the frontend player, not in the backend handler."
+        },
+        "showReviewScreen": {
+          "type": "boolean",
+          "description": "Default true. Unless explicitly false, the review overlay is injected into the page."
+        },
+        "allowEdit": {
+          "type": "boolean",
+          "description": "Default true. Whether the user can edit captured values in the review overlay."
+        },
+        "autoReviewTimeout": {
+          "type": "number",
+          "description": "Seconds before auto-continuing without user interaction; 0 means require a manual click."
+        },
+        "pageWaitMs": {
+          "type": "number",
+          "description": "Milliseconds to wait before injecting the overlay, to let dynamic page content settle first."
+        },
+        "outputVariable": {
+          "type": "string",
+          "description": "Context variable that will hold the captured data. Defaults to \"capturedData\"."
+        },
+        "continueOnFailure": {
+          "type": "boolean",
+          "description": "Declared in the node's config but not currently read by the handler."
+        }
+      },
+      "required": ["mode"]
+    }
+  },
+  {
+    "name": "ai_extraction",
+    "description": "Uses the configured LLM provider to extract structured data into a predefined schema, a runtime chat instruction, or both, from an input value or template. Can pause the orchestration to ask the chat user for missing mandatory fields (chatbot triggers only — on other trigger types it fails instead). Use for turning free text or a document into structured fields.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "extractionMode": {
+          "type": "string",
+          "enum": ["predefined", "instruction", "hybrid"],
+          "description": "Default \"predefined\". \"instruction\"/\"hybrid\" require a non-empty runtime instruction resolved from the chat message."
+        },
+        "inputType": {
+          "type": "string",
+          "enum": ["email", "document", "text", "variables"],
+          "description": "Declared for documentation purposes but not branched on by the current handler."
+        },
+        "input": {
+          "type": "string",
+          "description": "Interpolated template text to extract from, e.g. \"{{parsedFile}}\". Preferred over inputSource when both are set."
+        },
+        "inputSource": {
+          "type": "string",
+          "description": "Legacy single context-variable path to extract from; used only when `input` is blank."
+        },
+        "prompt": {
+          "type": "string",
+          "description": "Extra instructions appended to the extraction prompt. Defaults to a generic extraction instruction if omitted."
+        },
+        "clarificationTimeoutMinutes": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Minutes a pending clarification question stays active before expiring. Default 15."
+        },
+        "fields": {
+          "type": "array",
+          "description": "Preferred source of which extracted fields are mandatory (checked for a meaningful, non-empty value at runtime). Falls back to schema entries marked required when omitted.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string", "description": "Field name, matching a key in `schema`." },
+              "type": { "type": "string", "enum": ["string", "number", "boolean", "array", "object"], "description": "Expected value type." },
+              "description": { "type": "string", "description": "Human-readable description of the field, shown in clarification prompts." },
+              "required": { "type": "boolean", "description": "Whether this field is mandatory." }
+            },
+            "required": ["key", "type"]
+          }
+        },
+        "schema": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Field descriptors for predefined/hybrid extraction, e.g. {\"invoiceNumber\": {\"type\": \"string\", \"description\": \"...\"}}. Also the fallback source of mandatory fields when `fields` is omitted; a key marked required:true must be present in the extracted result."
+        },
+        "outputVariable": {
+          "type": "string",
+          "description": "Context variable to store the extracted data under. Defaults to \"extracted\" if left blank."
+        }
+      },
+      "required": ["schema", "outputVariable"]
+    }
+  },
+  {
+    "name": "ai_task",
+    "description": "Runs an open-ended LLM generation or transformation task (summarize, draft, rewrite, classify, etc.) from a static instruction, a live chat message, or both, optionally over context content resolved from earlier nodes, returning plain text or structured JSON. Use for general LLM work that isn't a fixed-schema extraction. Can pause on chatbot triggers to ask what the user wants done.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "instructionMode": {
+          "type": "string",
+          "enum": ["static", "chat", "hybrid"],
+          "description": "Where the task instruction comes from. \"static\" and \"hybrid\" require `instruction` to be set; \"chat\" resolves the instruction from the live chat message (pausing to ask for one on chatbot triggers if missing)."
+        },
+        "instruction": {
+          "type": "string",
+          "description": "Required for static/hybrid modes. Also usable as optional persona/guardrail text layered on top of a chat-mode instruction."
+        },
+        "input": {
+          "type": "string",
+          "description": "Interpolated template supplying context content for the task to work over, e.g. \"{{parsedFile}}\"."
+        },
+        "outputFormat": {
+          "type": "string",
+          "enum": ["text", "json"],
+          "description": "Controls prompt shape and response parsing."
+        },
+        "outputFields": {
+          "type": "array",
+          "description": "Required (non-empty) when outputFormat is \"json\" — defines the JSON shape the LLM must return.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string", "description": "Output field name." },
+              "type": { "type": "string", "enum": ["string", "number", "boolean", "array", "object"], "description": "Expected value type." },
+              "description": { "type": "string", "description": "Guidance for the LLM on what this field should contain." }
+            },
+            "required": ["key", "type"]
+          }
+        },
+        "outputVariable": {
+          "type": "string",
+          "description": "Context variable to store the result under. Defaults to \"aiTask\" if left blank. A sibling \"<outputVariable>Meta\" variable is also set with provider/model/instruction metadata."
+        },
+        "clarificationTimeoutMinutes": {
+          "type": "number",
+          "description": "Declared in config but not read by the current handler — chat-mode clarification always uses a fixed 15-minute expiry regardless of this value."
+        }
+      },
+      "required": ["instructionMode", "outputFormat", "outputVariable"]
+    }
+  },
+  {
+    "name": "knowledge_search",
+    "description": "Runs a retrieval-only semantic search against the target app's knowledge base (RAG) and returns ranked passages with citations. Does not itself call an LLM to synthesize an answer — pair with ai_task downstream if a generated answer is needed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Interpolated template for the search query, e.g. \"{{trigger.input.userMessage}}\"."
+        },
+        "topK": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "description": "Number of passages to retrieve. Default 5."
+        },
+        "outputVariable": {
+          "type": "string",
+          "description": "Context variable to store formatted results under. Defaults to \"knowledgeSearch\" if left blank. Sibling \"<outputVariable>Chunks\", \"<outputVariable>Citations\", and \"<outputVariable>Meta\" variables are also set."
+        }
+      },
+      "required": ["query", "outputVariable"]
+    }
+  },
+  {
+    "name": "condition",
+    "description": "Evaluates one or more variable comparisons (optionally chained with and/or) and routes the orchestration down a \"true\" or \"false\" output branch. Performs no side effects and never mutates context — use to branch the graph based on prior node output.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "description": "Evaluated left-to-right. Each condition's own `logicAfter` (default \"and\") joins it to the next condition — there is no operator precedence or grouping.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "variable": { "type": "string", "description": "Variable expression to evaluate, e.g. \"{{extracted.status}}\"." },
+              "operator": {
+                "type": "string",
+                "enum": [
+                  "equals", "not_equals", "contains", "not_contains", "contains_any", "contains_all",
+                  "not_contains_any", "greater_than", "less_than", "exists", "not_exists", "empty", "not_empty"
+                ],
+                "description": "Comparison operator. exists/not_exists/empty/not_empty ignore `value`."
+              },
+              "value": { "description": "Comparison value. Not needed for exists/not_exists/empty/not_empty operators." },
+              "logicAfter": { "type": "string", "enum": ["and", "or"], "description": "Logic operator applied between this condition and the next. Default \"and\"; ignored on the last condition." },
+              "caseSensitive": { "type": "boolean", "description": "Whether string comparisons are case-sensitive. Default false (case-insensitive)." }
+            },
+            "required": ["variable", "operator"]
+          }
+        }
+      },
+      "required": ["conditions"]
+    }
+  },
+  {
+    "name": "human_approval",
+    "description": "Pauses the orchestration and asks a named human to approve or reject, creating an approval record and sending a real email to the approver with a review link. Blocks downstream execution until the human responds; routes to an \"approved\" or \"rejected\" output branch on resume.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "approverEmail": {
+          "type": "string",
+          "description": "Email address (or a variable expression resolving to one) of the human who must approve. Must be a plausible email address — a real email is sent here."
+        },
+        "title": {
+          "type": "string",
+          "description": "Used as both this node's execution label and the approval-request email subject."
+        },
+        "description": {
+          "type": "string",
+          "description": "Additional context shown to the approver alongside the title."
+        },
+        "fields": {
+          "type": "array",
+          "description": "Rendered into the approval request UI and the notification email body — lets the approver review/edit specific values before deciding.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "Field key." },
+              "label": { "type": "string", "description": "Human-readable label shown to the approver." },
+              "type": { "type": "string", "enum": ["text", "number", "boolean", "select"], "description": "Field input type." },
+              "options": { "type": "array", "items": { "type": "string" }, "description": "Choices, when type is \"select\"." },
+              "editable": { "type": "boolean", "description": "Whether the approver can edit this field's value before approving." },
+              "defaultValue": { "description": "Value pre-filled for this field." }
+            },
+            "required": ["name", "label", "type", "editable"]
+          }
+        },
+        "timeout": {
+          "type": "number",
+          "description": "Minutes. Declared in config but not currently enforced by the handler — no automatic timeout or escalation actually occurs."
+        },
+        "escalationEmail": {
+          "type": "string",
+          "description": "Declared in config but not currently used by the handler."
+        }
+      },
+      "required": ["approverEmail", "title"]
+    }
+  },
+  {
+    "name": "notification",
+    "description": "Sends a notification through one or more channels (email, in-app/internal, Microsoft Teams, Slack, SMS, WhatsApp), each with its own recipients, message, delivery timing, and retry settings. Sends real outbound emails, webhook calls, and/or DB-persisted in-app notifications — use to alert or inform someone, not to move data between nodes.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "channel": {
+          "type": "string",
+          "enum": ["email", "teams", "slack", "internal"],
+          "description": "Legacy single-channel selector; only used when `channels` is omitted."
+        },
+        "recipient": { "type": "string", "description": "Legacy single-channel recipient; used with `channel`." },
+        "subject": { "type": "string", "description": "Legacy single-channel subject; used with `channel`." },
+        "message": { "type": "string", "description": "Legacy single-channel message body; used with `channel`." },
+        "template": { "type": "string", "description": "Legacy single-channel template reference; used with `channel`." },
+        "channels": {
+          "type": "object",
+          "description": "Preferred multi-channel configuration. At least one channel across `channels` (or the legacy `channel` field) must resolve to enabled:true.",
+          "properties": {
+            "email": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "description": "Whether the email channel is active for this send." },
+                "senderCredentialId": { "type": "string", "description": "Required when enabled — id of the configured email-sending credential/provider." },
+                "fromName": { "type": "string", "description": "Display name for the sender." },
+                "to": { "type": "string", "description": "Required when enabled. Recipient address(es); supports variable interpolation." },
+                "cc": { "type": "string", "description": "CC address(es)." },
+                "bcc": { "type": "string", "description": "BCC address(es)." },
+                "subject": { "type": "string", "description": "Email subject." },
+                "body": { "type": "string", "description": "Required when enabled. Email body; supports variable interpolation." },
+                "bodyFormat": { "type": "string", "enum": ["rich_text", "plain_text"], "description": "Body rendering format." },
+                "attachments": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": { "type": "string" },
+                      "url": { "type": "string" },
+                      "contentType": { "type": "string" }
+                    }
+                  }
+                },
+                "priority": { "type": "string", "enum": ["low", "normal", "high"] },
+                "delivery": {
+                  "type": "object",
+                  "properties": {
+                    "mode": { "type": "string", "enum": ["immediate", "scheduled"] },
+                    "scheduledAt": { "type": "string", "description": "ISO timestamp; must parse to a valid, future date to actually be scheduled — a past date is sent immediately instead." }
+                  }
+                },
+                "retry": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10, "description": "Default 2." },
+                    "delaySeconds": { "type": "integer", "minimum": 0, "maximum": 300, "description": "Fixed delay between attempts (not true exponential backoff)." }
+                  }
+                }
+              },
+              "required": ["enabled"]
+            },
+            "internal": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "description": "Whether the in-app/internal channel is active for this send." },
+                "users": { "type": "string", "description": "CSV of user ids or names to target." },
+                "roles": { "type": "string", "description": "CSV of role ids or names to target." },
+                "teams": { "type": "string", "description": "CSV of team ids or names to target." },
+                "groups": { "type": "string", "description": "CSV of group ids or names to target." },
+                "title": { "type": "string" },
+                "message": { "type": "string", "description": "Required when enabled." },
+                "notificationType": { "type": "string", "enum": ["information", "success", "warning", "critical"] },
+                "actionLabel": { "type": "string" },
+                "actionUrl": { "type": "string" },
+                "expiryDate": { "type": "string" },
+                "persistentUntilRead": { "type": "boolean" },
+                "delivery": {
+                  "type": "object",
+                  "properties": {
+                    "mode": { "type": "string", "enum": ["immediate", "scheduled"] },
+                    "scheduledAt": { "type": "string" }
+                  }
+                },
+                "retry": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+                    "delaySeconds": { "type": "integer", "minimum": 0, "maximum": 300 }
+                  }
+                }
+              },
+              "required": ["enabled"],
+              "description": "At least one of users/roles/teams/groups must resolve to at least one active user, or the send fails."
+            },
+            "teams": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "description": "Whether the Microsoft Teams channel is active for this send." },
+                "mentions": { "type": "string" },
+                "title": { "type": "string" },
+                "message": { "type": "string", "description": "Required when enabled." },
+                "messageFormat": { "type": "string", "enum": ["adaptive_card", "plain_text"] },
+                "actionButtons": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": { "label": { "type": "string" }, "url": { "type": "string" } },
+                    "required": ["label", "url"]
+                  }
+                },
+                "webhookUrl": { "type": "string", "description": "Required when enabled. Must be a valid http(s) URL — a real outbound POST is sent here." },
+                "delivery": {
+                  "type": "object",
+                  "properties": {
+                    "mode": { "type": "string", "enum": ["immediate", "scheduled"] },
+                    "scheduledAt": { "type": "string" }
+                  }
+                },
+                "retry": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+                    "delaySeconds": { "type": "integer", "minimum": 0, "maximum": 300 }
+                  }
+                }
+              },
+              "required": ["enabled"]
+            },
+            "slack": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "description": "Whether the Slack channel is active for this send." },
+                "mentions": { "type": "string" },
+                "message": { "type": "string", "description": "Required when enabled." },
+                "messageFormat": { "type": "string", "enum": ["plain_text", "block_kit"] },
+                "actionButtons": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": { "label": { "type": "string" }, "url": { "type": "string" } },
+                    "required": ["label", "url"]
+                  }
+                },
+                "threadTs": { "type": "string", "description": "Slack thread timestamp to reply into, if threading." },
+                "webhookUrl": { "type": "string", "description": "Required when enabled. Must be a valid http(s) URL — a real outbound POST is sent here." },
+                "delivery": {
+                  "type": "object",
+                  "properties": {
+                    "mode": { "type": "string", "enum": ["immediate", "scheduled"] },
+                    "scheduledAt": { "type": "string" }
+                  }
+                },
+                "retry": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+                    "delaySeconds": { "type": "integer", "minimum": 0, "maximum": 300 }
+                  }
+                }
+              },
+              "required": ["enabled"]
+            },
+            "sms": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "description": "Whether the SMS channel is active for this send." },
+                "senderId": { "type": "string" },
+                "recipients": { "type": "string", "description": "Required when enabled. Phone number(s), CSV if multiple." },
+                "message": { "type": "string", "description": "Required when enabled." },
+                "template": { "type": "string" },
+                "unicodeSupport": { "type": "boolean" },
+                "webhookUrl": { "type": "string", "description": "Must be a valid http(s) URL if set; otherwise falls back to the NOTIFICATION_SMS_WEBHOOK_URL environment variable. A real outbound POST is sent here." },
+                "delivery": {
+                  "type": "object",
+                  "properties": {
+                    "mode": { "type": "string", "enum": ["immediate", "scheduled"] },
+                    "scheduledAt": { "type": "string" }
+                  }
+                },
+                "retry": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+                    "delaySeconds": { "type": "integer", "minimum": 0, "maximum": 300 }
+                  }
+                }
+              },
+              "required": ["enabled"]
+            },
+            "whatsapp": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean", "description": "Whether the WhatsApp channel is active for this send." },
+                "businessAccount": { "type": "string" },
+                "senderNumber": { "type": "string" },
+                "recipients": { "type": "string", "description": "Required when enabled. Phone number(s), CSV if multiple." },
+                "messageType": { "type": "string", "enum": ["approved_template", "session_message"] },
+                "templateName": { "type": "string", "description": "Required when messageType is \"approved_template\"." },
+                "templateLanguage": { "type": "string" },
+                "templateVariables": { "type": "string" },
+                "body": { "type": "string", "description": "Required when messageType is \"session_message\"." },
+                "mediaAttachment": { "type": "string" },
+                "interactiveButtons": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": { "type": "string" },
+                      "actionType": { "type": "string", "enum": ["url", "reply"] },
+                      "value": { "type": "string" }
+                    },
+                    "required": ["label", "actionType", "value"]
+                  }
+                },
+                "webhookUrl": { "type": "string", "description": "Must be a valid http(s) URL if set; otherwise falls back to the NOTIFICATION_WHATSAPP_WEBHOOK_URL environment variable. A real outbound POST is sent here." },
+                "delivery": {
+                  "type": "object",
+                  "properties": {
+                    "mode": { "type": "string", "enum": ["immediate", "scheduled"] },
+                    "scheduledAt": { "type": "string" }
+                  }
+                },
+                "retry": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 10 },
+                    "delaySeconds": { "type": "integer", "minimum": 0, "maximum": 300 }
+                  }
+                }
+              },
+              "required": ["enabled"]
+            }
+          }
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "variable",
+    "description": "Sets one or more named context variables to a literal value or an evaluated expression (supports {{...}} interpolation and basic arithmetic operators). Pure in-memory operation with no side effects — use to compute or stage values for later nodes.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "variables": {
+          "type": "array",
+          "description": "At least one entry required.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "Context variable name to set; dotted names create nested paths." },
+              "value": { "type": "string", "description": "Literal string, or an expression (evaluated when it contains \"{{\" or any of + - * / ( ))." }
+            },
+            "required": ["name", "value"]
+          }
+        }
+      },
+      "required": ["variables"]
+    }
+  },
+  {
+    "name": "data_formatter",
+    "description": "Formats a value already in context into a human-presentable string (pretty JSON, HTML table, plain-text table, CSV, key/value list, or a custom template) and stores it in a new output variable. Pure in-memory transform with no side effects — use before showing data to a user or composing a message body.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "inputVariablePath": { "type": "string", "description": "Dotted context path to the value to format." },
+        "outputVariable": { "type": "string", "description": "Context variable to store the formatted string under." },
+        "format": {
+          "type": "string",
+          "enum": ["pretty_json", "html_table", "plain_text_table", "csv", "key_value", "custom_template"],
+          "description": "Defaults to \"pretty_json\" if left blank."
+        },
+        "columns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Explicit column order/selection for table/csv formats; auto-inferred from the first 25 rows when omitted."
+        },
+        "customTemplate": {
+          "type": "string",
+          "description": "Template used when format is \"custom_template\". Supports {{json}}, {{value}}, and {{rowCount}} placeholders. Defaults to \"{{json}}\"."
+        },
+        "emptyText": { "type": "string", "description": "Text shown when there is no data. Default \"No data available.\"" },
+        "nullText": { "type": "string", "description": "Text shown for null values. Default \"\" (empty string)." },
+        "maxRows": { "type": "integer", "minimum": 1, "maximum": 1000, "description": "Default 100. Rows beyond this are truncated." }
+      },
+      "required": ["inputVariablePath", "outputVariable", "format"]
+    }
+  },
+  {
+    "name": "api_call",
+    "description": "Makes a real outbound HTTP(S) request (including optional mutual-TLS) to a configured URL with flexible auth, body format, and response field mapping, with retry/backoff and a configurable failure strategy. Sends real network traffic and has side effects on whatever system it calls — use to call an external API or webhook.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "apiUrl": { "type": "string", "description": "Target URL. Supports variable interpolation, e.g. \"https://api.example.com/{{workflowId}}\"." },
+        "method": { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], "description": "Defaults to \"POST\" if left blank." },
+        "pathVariables": {
+          "type": "array",
+          "description": "Substituted into {name} and :name tokens in apiUrl.",
+          "items": {
+            "type": "object",
+            "properties": { "name": { "type": "string" }, "value": { "type": "string" } },
+            "required": ["name", "value"]
+          }
+        },
+        "queryParameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "value": { "type": "string" },
+              "enabled": { "type": "boolean", "description": "Default true; set false to skip this parameter without deleting it." }
+            },
+            "required": ["key", "value"]
+          }
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "HTTP request headers as key/value pairs."
+        },
+        "auth": {
+          "type": "object",
+          "description": "Authentication configuration. Populate only the fields relevant to `type`; unused fields are ignored. Flattened here for tool-call simplicity — the underlying config nests apiKey/basic/oauth2/mtls as sub-objects, but any of these flat fields may be set directly.",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["none", "api_key", "bearer", "basic", "oauth2", "custom_headers"],
+              "description": "Which auth mechanism to use."
+            },
+            "headerName": { "type": "string", "description": "Legacy flat field, back-compat only — prefer apiKeyName/apiKeyLocation." },
+            "value": { "type": "string", "description": "Legacy flat field, back-compat only — prefer apiKeyValue." },
+            "username": { "type": "string", "description": "Legacy flat field, back-compat only — prefer basicUsername." },
+            "password": { "type": "string", "description": "Legacy flat field, back-compat only — prefer basicPassword." },
+            "token": { "type": "string", "description": "Legacy flat field, back-compat only — prefer bearerToken." },
+            "apiKeyLocation": { "type": "string", "enum": ["header", "query"], "description": "Where to place the API key. Used when type is \"api_key\"." },
+            "apiKeyName": { "type": "string", "description": "Header or query parameter name for the API key. Used when type is \"api_key\"." },
+            "apiKeyValue": { "type": "string", "description": "The API key value. Used when type is \"api_key\"." },
+            "bearerToken": { "type": "string", "description": "Bearer token. Required when type is \"bearer\"." },
+            "basicUsername": { "type": "string", "description": "Basic auth username. Required when type is \"basic\"." },
+            "basicPassword": { "type": "string", "description": "Basic auth password. Used when type is \"basic\"." },
+            "oauth2AccessToken": { "type": "string", "description": "Pre-obtained OAuth2 access token; if set, skips the token exchange. Used when type is \"oauth2\"." },
+            "oauth2TokenUrl": { "type": "string", "description": "OAuth2 token endpoint. If set, clientId and clientSecret are required (plus username/password for the \"password\" grant type)." },
+            "oauth2ClientId": { "type": "string", "description": "OAuth2 client id. Required alongside oauth2TokenUrl." },
+            "oauth2ClientSecret": { "type": "string", "description": "OAuth2 client secret. Required alongside oauth2TokenUrl." },
+            "oauth2Scope": { "type": "string", "description": "OAuth2 scope(s) to request." },
+            "oauth2Audience": { "type": "string", "description": "OAuth2 audience parameter, if required by the token endpoint." },
+            "oauth2GrantType": { "type": "string", "enum": ["client_credentials", "password"], "description": "OAuth2 grant type." },
+            "oauth2Username": { "type": "string", "description": "Required when oauth2GrantType is \"password\"." },
+            "oauth2Password": { "type": "string", "description": "Required when oauth2GrantType is \"password\"." },
+            "oauth2AuthStyle": { "type": "string", "enum": ["basic", "body"], "description": "How client credentials are sent to the token endpoint." },
+            "customHeaders": {
+              "type": "array",
+              "description": "Used when type is \"custom_headers\".",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": { "type": "string" },
+                  "value": { "type": "string" },
+                  "secret": { "type": "boolean", "description": "If true, the value is masked in logs." }
+                },
+                "required": ["key", "value"]
+              }
+            },
+            "mtlsEnabled": { "type": "boolean", "description": "Enable mutual-TLS on top of whatever `type` auth is configured." },
+            "mtlsCertPath": { "type": "string", "description": "Local filesystem path to the client certificate. Required when mtlsEnabled is true." },
+            "mtlsKeyPath": { "type": "string", "description": "Local filesystem path to the client key. Required when mtlsEnabled is true." },
+            "mtlsCaPath": { "type": "string", "description": "Local filesystem path to a CA certificate, if needed." },
+            "mtlsPassphrase": { "type": "string", "description": "Passphrase for the client key, if it is encrypted." }
+          },
+          "required": ["type"]
+        },
+        "bodyFormat": {
+          "type": "string",
+          "enum": ["none", "json", "form_data", "url_encoded", "raw_text", "xml", "binary"],
+          "description": "Defaults to \"none\" for GET/HEAD/OPTIONS, otherwise \"json\"."
+        },
+        "requestBodyTemplate": {
+          "type": "string",
+          "description": "Request body template for json/raw_text/xml/binary formats. JSON mode supports {{expr}} interpolation with correct in-string JSON escaping; the result must remain valid JSON."
+        },
+        "formDataFields": {
+          "type": "array",
+          "description": "Used when bodyFormat is \"form_data\".",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "value": { "type": "string" },
+              "isFile": { "type": "boolean", "description": "If true, the field's value is read from local disk via filePath instead of sent literally." },
+              "filePath": { "type": "string", "description": "Required when isFile is true." },
+              "fileName": { "type": "string" },
+              "contentType": { "type": "string" },
+              "enabled": { "type": "boolean" }
+            },
+            "required": ["key"]
+          }
+        },
+        "urlEncodedFields": {
+          "type": "array",
+          "description": "Used when bodyFormat is \"url_encoded\".",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": { "type": "string" },
+              "value": { "type": "string" },
+              "enabled": { "type": "boolean" }
+            },
+            "required": ["key", "value"]
+          }
+        },
+        "binaryBodyBase64": {
+          "type": "string",
+          "description": "Base64-encoded payload for bodyFormat \"binary\". Falls back to requestBodyTemplate if omitted."
+        },
+        "fileUploads": {
+          "type": "array",
+          "description": "Additional multipart file fields, read from local disk.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fieldName": { "type": "string" },
+              "filePath": { "type": "string" },
+              "fileName": { "type": "string" },
+              "contentType": { "type": "string" },
+              "enabled": { "type": "boolean" }
+            },
+            "required": ["fieldName", "filePath"]
+          }
+        },
+        "responseMapping": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "JSONPath-ish (dot/bracket) mapping of response fields to output keys, e.g. {\"userId\": \"data.user.id\"}. Merged with responseFieldMappings."
+        },
+        "responseFieldMappings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "outputKey": { "type": "string" },
+              "jsonPath": { "type": "string" }
+            },
+            "required": ["outputKey", "jsonPath"]
+          }
+        },
+        "outputVariableName": {
+          "type": "string",
+          "description": "Sanitized to [a-zA-Z0-9_]. Default \"apiResult\"."
+        },
+        "successStatusCodes": {
+          "type": "string",
+          "description": "Comma-separated list of exact codes, \"NNN-NNN\" ranges, or \"Nxx\" wildcards. Default 2xx."
+        },
+        "includeRawResponse": {
+          "type": "boolean",
+          "description": "Default true (raw response body included unless explicitly set to false)."
+        },
+        "timeout": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 300000,
+          "description": "Request timeout in milliseconds."
+        },
+        "retryAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Additional retry attempts after the first try (total attempts = retryAttempts + 1). Only retryable failures (HTTP 408/429/5xx, or network/timeout errors) are retried."
+        },
+        "retryDelayMs": {
+          "type": "number",
+          "description": "Base delay in milliseconds for exponential backoff between retries (delay * 2^(attempt-1))."
+        },
+        "failureStrategy": {
+          "type": "string",
+          "enum": ["stop", "continue", "alert"],
+          "description": "\"stop\" fails the node on request failure. \"continue\"/\"alert\" instead report success with failure details in the output (\"alert\" additionally logs a warning)."
+        }
+      },
+      "required": ["apiUrl", "method", "auth", "timeout", "retryAttempts", "retryDelayMs", "failureStrategy"]
+    }
+  },
+  {
+    "name": "database",
+    "description": "Uses the LLM to assess whether a natural-language database request is answerable against a configured, tenant-scoped schema and, if so, generate a single safe read-only SQL SELECT query. It does NOT execute the query against any real database — the generated SQL is returned as data only, with notExecuted:true on every output path. Use to translate a user's data question into vetted SQL for a downstream execution step.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "schemaId": {
+          "type": "string",
+          "description": "Id of the configured, tenant-scoped database schema to generate SQL against. Execution throws if this is blank, even though it is not marked required here — always populate it."
+        },
+        "outputVariable": { "type": "string", "description": "Default \"databaseQuery\"." },
+        "userRequestVariablePath": {
+          "type": "string",
+          "description": "Dotted context path to the natural-language request. Default \"userMessage\"; several fallbacks (trigger.input.userMessage/message, message, query) are also tried."
+        },
+        "extractedInputVariablePath": { "type": "string", "description": "Dotted context path to previously extracted structured input, used as extra generation context. Default \"extracted\"." },
+        "additionalContextVariablePath": { "type": "string", "description": "Optional dotted context path to extra context injected into the prompts." },
+        "maxRows": { "type": "integer", "minimum": 1, "maximum": 500, "description": "Default 25. Injected as a LIMIT if the generated SQL doesn't already have one." },
+        "customInstructions": { "type": "string", "description": "Appended to both the readiness-assessment and SQL-generation prompts." },
+        "allowSelectStar": { "type": "boolean", "description": "Default false — SELECT * is rejected by SQL validation unless this is explicitly true." },
+        "clarificationTimeoutMinutes": { "type": "number", "minimum": 1, "description": "Default 15. Minutes a pending clarification question stays active." }
+      },
+      "required": ["schemaId"]
+    }
+  },
+  {
+    "name": "file_parser",
+    "description": "Parses a chat-attached file (referenced by a dotted context path) into plain text, or for CSV files into structured row objects. Pauses the orchestration to ask the user to attach a file if one isn't present yet, rather than failing outright. Only usable on interactive (chatbot) triggers — automated triggers have no live chat attachment to read.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "sourceVariablePath": {
+          "type": "string",
+          "description": "Dotted path into context to an attachment reference ({id, name, fileType, storagePath, sizeBytes}), e.g. \"trigger.input.attachments.0\"."
+        },
+        "extractMode": {
+          "type": "string",
+          "enum": ["text", "structured"],
+          "description": "\"structured\" is CSV-only; any other file type with extractMode \"structured\" fails."
+        },
+        "outputVariable": { "type": "string", "description": "Context variable to store the parsed result under." }
+      },
+      "required": ["sourceVariablePath", "extractMode", "outputVariable"]
+    }
+  },
+  {
+    "name": "for_each",
+    "description": "Iterates an array already in context, running one instance of a single allowed body node type (api_call, notification, ai_extraction, variable, or data_formatter) per item, and collects per-item results. Iteration count is hard-capped at 500 regardless of configuration, and excess items are silently truncated. Each iteration inherits whatever side effects its body node type has — e.g. one real HTTP request or notification send per item — so this can multiply external side effects up to the item count.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "sourceVariablePath": {
+          "type": "string",
+          "description": "Dotted path to the array to iterate, e.g. \"rows\" (often a file_parser node's structured output). Must resolve to an array."
+        },
+        "itemVariableName": {
+          "type": "string",
+          "description": "Context key each element is bound to per iteration, e.g. \"item\". Defaults to \"item\" if blank."
+        },
+        "maxIterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "description": "Soft cap you configure; the executor hard-ceilings at 500 regardless. Items beyond this are truncated (reported as truncated:true), not an error."
+        },
+        "continueOnItemFailure": {
+          "type": "boolean",
+          "description": "Defaults to true unless explicitly false. If false, iteration stops at the first failed item (but the node still reports success:true with partial results)."
+        },
+        "bodyNodeType": {
+          "type": "string",
+          "enum": ["api_call", "notification", "ai_extraction", "variable", "data_formatter"],
+          "description": "Which node type runs once per item. Only these five are allowed inside a loop body — interactive-only node types (data_capture, human_approval, workflow, file_parser) are not supported here."
+        },
+        "bodyConfig": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Configuration for the loop body node. Its shape depends on the sibling `bodyNodeType` field and matches that node type's own tool input_schema (minus the `type` discriminant) — e.g. if bodyNodeType is \"api_call\", bodyConfig should look like an api_call tool call's input."
+        },
+        "outputVariable": {
+          "type": "string",
+          "description": "Context variable to store the array of per-iteration results under. Defaults to \"loopResults\" if blank."
+        }
+      },
+      "required": ["sourceVariablePath", "itemVariableName", "maxIterations", "continueOnItemFailure", "bodyNodeType", "bodyConfig", "outputVariable"]
+    }
+  },
+  {
+    "name": "end",
+    "description": "Fixed finish node: assembles the orchestration's final response — selected output variables, an optional per-node response log, and an optional user-facing display message/table/JSON payload — and always completes the execution successfully. Use to end the orchestration and control what the chat user ultimately sees.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "displayMessage": {
+          "type": "boolean",
+          "description": "Whether to render `message` as the chatbot's final answer. If false or absent, the final answer defaults to \"Workflow completed successfully.\""
+        },
+        "message": {
+          "type": "string",
+          "description": "Template rendered with {{...}} interpolation against context when displayMessage is true."
+        },
+        "displayMode": {
+          "type": "string",
+          "enum": ["text", "table", "json"],
+          "description": "Default \"text\". Drives a structured `display` payload for table/json modes."
+        },
+        "displayDataPath": {
+          "type": "string",
+          "description": "Dotted context path resolved for table/json display data."
+        },
+        "displayColumnPaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional ordered table columns; inferred client-side when omitted."
+        },
+        "outputVariables": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Variable paths resolved and collected into the final response's `selectedOutputs`."
+        },
+        "responseVariablePath": {
+          "type": "string",
+          "description": "Default \"finalResponse\". Context path where the assembled response object is stored."
+        },
+        "includeNodeResponses": {
+          "type": "boolean",
+          "description": "If true, includes every node's logged output so far in the final response."
+        }
+      },
+      "required": []
+    }
+  }
+]

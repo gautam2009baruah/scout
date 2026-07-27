@@ -473,6 +473,12 @@ export class OrchestrationEngine {
       case "for_each":
         return await executeForEachNode(config as ForEachNodeConfig, this.context);
 
+      case "ai_planner":
+        // Structural no-op/terminal marker — see AiPlannerNodeConfig's doc
+        // comment. The real AI Planner conversation runs entirely outside
+        // this graph, in lib/orchestrations/planner/agent.ts.
+        return { success: true, output: {} };
+
       default:
         throw new Error(`Unknown node type: ${node.nodeType}`);
     }

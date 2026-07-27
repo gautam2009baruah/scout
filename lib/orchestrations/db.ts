@@ -19,6 +19,7 @@ import type {
 } from "@/shared/orchestrationTypes";
 import { createTrigger } from "./triggers";
 import { clearTriggerCache } from "./chatbot-trigger-matcher";
+import { indexOrchestration } from "./planner/orchestration-index";
 import type { EmailTriggerConfig, ScheduleTriggerConfig } from "@/shared/orchestrationTypes";
 import { calculateNextRunTime } from "./scheduler/cron-utils";
 import { getSchedulerService } from "./scheduler-service";
@@ -47,7 +48,20 @@ type OrchestrationRow = {
   published_at: Date | null;
   published_by: string | null;
   published_by_email: string | null;
+  ai_planner_drafting_trigger_type: string | null;
+  originating_external_user_id: string | null;
 };
+
+// Step 3b: best-effort re-index into orchestration_embeddings after a save.
+// Never allowed to fail the orchestration save itself — the AI Planner match
+// index is a matching aid, not a system of record. See ./planner/orchestration-index.ts.
+async function reindexOrchestrationBestEffort(orchestration: Orchestration, nodes: OrchestrationNode[]) {
+  try {
+    await indexOrchestration(orchestration, nodes);
+  } catch (error) {
+    console.error("⚠️ Failed to update AI Planner orchestration index:", error);
+  }
+}
 
 function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
   return {
@@ -68,6 +82,8 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
     publishedAt: row.published_at?.toISOString() || null,
     publishedById: row.published_by,
     publishedByEmail: row.published_by_email,
+    isAiPlanner: row.ai_planner_drafting_trigger_type === "chatbot",
+    originatingExternalUserId: row.originating_external_user_id,
   };
 }
 
@@ -77,11 +93,13 @@ export async function createOrchestration(data: {
   name: string;
   description?: string | null;
   variables?: Record<string, unknown>;
-  createdById: string;
+  // Optional (created_by is a nullable column): kept optional for callers
+  // that create orchestrations without a human actor in the loop.
+  createdById?: string | null;
 }): Promise<Orchestration> {
   const pool = getPool();
   const result = await pool.query<OrchestrationRow>(
-    `INSERT INTO orchestrations 
+    `INSERT INTO orchestrations
      (company_id, target_app_id, name, description, variables, created_by, updated_by)
      VALUES ($1, $2, $3, $4, $5, $6, $6)
      RETURNING *`,
@@ -91,7 +109,7 @@ export async function createOrchestration(data: {
       data.name,
       data.description || null,
       JSON.stringify(data.variables || {}),
-      data.createdById,
+      data.createdById || null,
     ]
   );
 
@@ -99,6 +117,7 @@ export async function createOrchestration(data: {
   if (!orchestration) {
     throw new Error("Failed to load created orchestration");
   }
+  await reindexOrchestrationBestEffort(orchestration, []);
   return orchestration;
 }
 
@@ -272,6 +291,7 @@ export async function updateOrchestration(
   if (!orchestration) {
     throw new Error(`Orchestration ${id} not found`);
   }
+  await reindexOrchestrationBestEffort(orchestration, await getNodes(id));
   return orchestration;
 }
 
@@ -297,7 +317,11 @@ export async function publishOrchestration(
   }
 
   const endNodes = nodes.filter(n => n.nodeType === "end");
-  if (endNodes.length === 0) {
+  const aiPlannerNodes = nodes.filter(n => n.nodeType === "ai_planner");
+  if (aiPlannerNodes.length > 1) {
+    throw new Error("Cannot publish: Orchestration must have at most one AI Planner node");
+  }
+  if (endNodes.length === 0 && aiPlannerNodes.length === 0) {
     throw new Error("Cannot publish: Orchestration must have at least one end node");
   }
 
@@ -309,6 +333,35 @@ export async function publishOrchestration(
   const triggerNode = triggerNodes[0];
   if (!triggerNode.config || Object.keys(triggerNode.config).length === 0) {
     throw new Error("Cannot publish: Trigger node must be configured");
+  }
+
+  // AI Planner drafting-entry-point scope: if this graph's (at most one)
+  // ai_planner node is checked, this orchestration is registered as THE
+  // drafting entry point for its trigger type in its (company, target app)
+  // scope — enforced unique below and via a partial unique index (see
+  // migration 137_ai_planner_node.sql). See AiPlannerNodeConfig's doc
+  // comment in shared/orchestrationTypes.ts.
+  const aiPlannerNode = aiPlannerNodes[0];
+  const aiPlannerNodeConfig = aiPlannerNode?.config as { isDraftingEntryPoint?: boolean } | undefined;
+  const draftingTriggerType =
+    aiPlannerNodeConfig?.isDraftingEntryPoint === true
+      ? ((triggerNode.config as any).triggerType as string)
+      : null;
+
+  if (draftingTriggerType) {
+    const conflict = await pool.query<{ id: string }>(
+      `
+        SELECT id FROM orchestrations
+        WHERE company_id = $1
+          AND COALESCE(target_app_id, '00000000-0000-0000-0000-000000000000'::uuid) = COALESCE($2::uuid, '00000000-0000-0000-0000-000000000000'::uuid)
+          AND ai_planner_drafting_trigger_type = $3
+          AND id <> $4
+      `,
+      [orchestration.companyId, orchestration.targetAppId, draftingTriggerType, id]
+    );
+    if ((conflict.rowCount ?? 0) > 0) {
+      throw new Error(`Cannot publish: another orchestration is already the AI Planner entry point for "${draftingTriggerType}" triggers on this target app.`);
+    }
   }
 
   // Increment version number before creating snapshot
@@ -650,18 +703,29 @@ export async function publishOrchestration(
   }
 
   // Update status to published
-  const result = await pool.query<OrchestrationRow>(
-    `UPDATE orchestrations 
-     SET status = 'published', published_at = now(), published_by = $1, updated_by = $1, updated_at = now()
-     WHERE id = $2
-     RETURNING *`,
-    [publishedById, id]
-  );
+  let result;
+  try {
+    result = await pool.query<OrchestrationRow>(
+      `UPDATE orchestrations
+       SET status = 'published', published_at = now(), published_by = $1, updated_by = $1, updated_at = now(), ai_planner_drafting_trigger_type = $3
+       WHERE id = $2
+       RETURNING *`,
+      [publishedById, id, draftingTriggerType]
+    );
+  } catch (error) {
+    // Last-resort backstop against a genuine concurrent-publish race — the
+    // pre-write check above already covers the common case.
+    if ((error as { code?: string; constraint?: string })?.constraint === "orchestrations_one_ai_planner_drafting_entry_per_scope") {
+      throw new Error(`Cannot publish: another orchestration is already the AI Planner entry point for "${draftingTriggerType}" triggers on this target app.`);
+    }
+    throw error;
+  }
 
   const updated = await getOrchestrationById(result.rows[0].id);
   if (!updated) {
     throw new Error(`Orchestration ${id} not found after publish`);
   }
+  await reindexOrchestrationBestEffort(updated, nodes);
   return updated;
 }
 

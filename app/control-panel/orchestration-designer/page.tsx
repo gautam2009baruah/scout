@@ -2,6 +2,7 @@
 // Main entry point for the visual workflow designer
 
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { AdminShell } from "@/components/admin";
 import { OrchestrationDesigner } from "@/components/admin/orchestration-designer";
@@ -34,10 +35,12 @@ export default async function OrchestrationDesignerPage() {
       active={MODULE_KEYS.orchestrationDesigner}
       session={session}
     >
-      <OrchestrationDesigner
-        selectedCompanyId={session.user.tenantId}
-        targetApps={targetApps}
-      />
+      <Suspense fallback={null}>
+        <OrchestrationDesigner
+          selectedCompanyId={session.user.tenantId}
+          targetApps={targetApps}
+        />
+      </Suspense>
     </AdminShell>
   );
 }

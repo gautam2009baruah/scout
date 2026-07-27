@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, LoaderCircle, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, ListChecks, LoaderCircle, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -25,7 +25,8 @@ const MODULE_KEYS = {
   triggersMonitoring: 13,
   searchAnalytics: 14,
   chatbotSettings: 15,
-  databaseSchemaManager: 16
+  databaseSchemaManager: 16,
+  pendingAiPlans: 17
 } as const;
 
 type AdminShellProps = {
@@ -52,7 +53,8 @@ const moduleIcons = {
   [MODULE_KEYS.triggersMonitoring]: Activity,
   [MODULE_KEYS.searchAnalytics]: BarChart3,
   [MODULE_KEYS.chatbotSettings]: SlidersHorizontal,
-  [MODULE_KEYS.databaseSchemaManager]: Database
+  [MODULE_KEYS.databaseSchemaManager]: Database,
+  [MODULE_KEYS.pendingAiPlans]: ListChecks
 } as const;
 
 const administrationMenuGroups = [
@@ -79,6 +81,7 @@ const administrationMenuGroups = [
       MODULE_KEYS.emailCredentials,
       MODULE_KEYS.triggersMonitoring,
       MODULE_KEYS.searchAnalytics,
+      MODULE_KEYS.pendingAiPlans,
     ],
   },
 ] as const;

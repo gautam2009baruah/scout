@@ -3,6 +3,7 @@ import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/c
 import { getNodes, getOrchestrationPage, getConnections } from "@/lib/orchestrations/db";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
+import { getActivePendingPlanRequest } from "@/lib/orchestrations/planner/pending-requests";
 
 export const runtime = "nodejs";
 
@@ -81,6 +82,7 @@ export async function GET(request: Request) {
     await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
+
     const page = await getOrchestrationPage({
       companyId,
       userId,
@@ -90,30 +92,43 @@ export async function GET(request: Request) {
       pageSize: 100
     });
 
+    // The pending-request lock (Step 7): while this requester has a draft
+    // awaiting admin approval, the AI Planner entry is shown disabled with
+    // an explanatory tooltip rather than letting them open a second
+    // conversation. Re-enables automatically once Step 7b resolves it,
+    // since this is just a live query, not a cached flag.
+    const pendingRequest = userId
+      ? await getActivePendingPlanRequest({ companyId, externalUserId: userId })
+      : null;
+
     const orchestrations = (await Promise.all(page.orchestrations.map(async (orchestration) => {
       const nodes = await getNodes(orchestration.id);
       const connections = await getConnections(orchestration.id);
-      
+
       // Filter to only include orchestrations with chatbot trigger
       const triggerNode = nodes.find(n => n.nodeType === "trigger");
       if (!triggerNode) return null;
-      
+
       const triggerConfig = triggerNode.config as Record<string, unknown> | null;
       if (triggerConfig?.triggerType !== "chatbot") return null;
-      
+
       // Sort nodes by topological order (following the flow direction)
       const sortedNodeIds = topologicalSort(
         nodes.map(n => ({ id: n.id, nodeType: n.nodeType })),
         connections
       );
-      
+
       const nodeMap = new Map(nodes.map(n => [n.id, n]));
       const sortedNodes = sortedNodeIds.map(id => nodeMap.get(id)!).filter(Boolean);
-      
+      const isAiPlanner = orchestration.isAiPlanner === true;
+
       return {
         id: orchestration.id,
         name: orchestration.name,
         description: orchestration.description || "",
+        isAiPlanner,
+        disabled: isAiPlanner && pendingRequest !== null,
+        disabledReason: isAiPlanner && pendingRequest !== null ? "Your existing request is in pending state." : undefined,
         nodes: sortedNodes.map((node) => ({
           id: node.id,
           label: node.label,

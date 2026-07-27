@@ -1,0 +1,1193 @@
+[
+  {
+    "name": "Trigger",
+    "type": "trigger",
+    "description": "Pseudo-start node: the entry point of an orchestration, publishing the trigger payload (manual input, chatbot message, schedule tick, inbound email, or HTTP/API call) into the execution context.",
+    "isPseudoNode": true,
+    "handlerFile": null,
+    "handlerNote": "Not a separate file in lib/orchestrations/nodes/. Handled inline in engine.ts's executeNodeByType() 'trigger' case; findTriggerNode()/getTriggerType() locate it and read its config.",
+    "configSource": "shared/orchestrationTypes.ts TriggerNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"trigger\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "triggerType",
+        "type": "OrchestrationTriggerType (\"manual\"|\"chatbot\"|\"schedule\"|\"email\"|\"http_api\")",
+        "required": true,
+        "description": "Which trigger mechanism starts this orchestration; drives node-compatibility checks (node-compatibility.ts) for the rest of the graph."
+      },
+      {
+        "field": "schedule",
+        "type": "{ cron?: string; timezone?: string }",
+        "required": false,
+        "description": "Only meaningful when triggerType is \"schedule\"."
+      }
+    ],
+    "validationRules": [
+      "None enforced in the node itself; engine.ts's isNodeCompatibleWithTrigger() uses triggerType to reject incompatible downstream nodes (data_capture, human_approval, workflow, file_parser) when triggerType is schedule/email/http_api."
+    ],
+    "outputShape": {
+      "success": "Always success:true (engine builds output directly from execution.triggerData, no failure path). Output is: { ...triggerData (spread to root), matchedPhrase, matchedIntent, trigger: { input: triggerData, timestamp, startedBy, startedAt, matchedPhrase, matchedIntent }, _system: { triggeredBy, executionId } }"
+    },
+    "preconditionsAndSideEffects": [
+      "No external calls, DB writes, or LLM calls in the node itself.",
+      "Reads execution.triggerData / execution.triggeredBy / execution.startedAt already loaded by the caller."
+    ],
+    "permissionGating": "None at node level. Access control for who/what can invoke the orchestration lives entirely at the trigger-definition level: ChatbotTriggerConfig.allowedRoles / allowedUsers (shared/orchestrationTypes.ts), enforced in lib/orchestrations/chatbot-trigger-matcher.ts, not in this pseudo-node's execution path.",
+    "riskTier": "low",
+    "riskTierRationale": "Structural pseudo-node; no side effects of its own."
+  },
+  {
+    "name": "Workflow",
+    "type": "workflow",
+    "description": "Executes an existing Scout guided (browser-recorded) workflow, either via automated Puppeteer browser replay against a target URL or via the standard guided-workflow executor, optionally waiting for completion.",
+    "handlerFile": "lib/orchestrations/nodes/workflow-node.ts",
+    "configSource": "shared/orchestrationTypes.ts WorkflowNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"workflow\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "workflowId",
+        "type": "string",
+        "required": false,
+        "description": "TS-optional, but handler throws if absent/blank — effectively required at runtime. Must be a UUID."
+      },
+      {
+        "field": "workflowVersion",
+        "type": "number",
+        "required": false,
+        "description": "Not referenced anywhere in the handler; appears unused."
+      },
+      {
+        "field": "targetUrl",
+        "type": "string",
+        "required": false,
+        "description": "Expression-evaluated. If present, switches execution into browser-automation mode against this URL."
+      },
+      {
+        "field": "waitForCompletion",
+        "type": "boolean",
+        "required": false,
+        "description": "Only applies in standard (non-targetUrl) mode; polls until the workflow finishes."
+      },
+      {
+        "field": "inputMapping",
+        "type": "Record<string, string>",
+        "required": true,
+        "description": "Maps workflow input keys to variable expressions evaluated against context."
+      },
+      {
+        "field": "outputMapping",
+        "type": "OutputMappingField[]",
+        "required": false,
+        "description": "Declared in the config type and accepted as a second parameter by the local mapWorkflowOutput() helper (which expects a Record<string,string>, not this array shape), but every call site in this handler invokes mapWorkflowOutput() with only one argument — config.outputMapping is never actually passed through, so this field is currently inert (see surprising findings)."
+      },
+      {
+        "field": "continueOnFailure",
+        "type": "boolean",
+        "required": true,
+        "description": "If true, failures are swallowed into a {error, failed:true} output instead of failing the node."
+      },
+      {
+        "field": "timeout",
+        "type": "number",
+        "required": false,
+        "description": "Milliseconds; default 300000 (5 min) when waiting for completion or in browser mode."
+      },
+      {
+        "field": "triggerPhrases",
+        "type": "string[]",
+        "required": false,
+        "description": "If set, node is skipped (not failed) unless context.matchedPhrase/matchedIntent matches one of these."
+      },
+      {
+        "field": "autoFillFromDataCapture",
+        "type": "boolean",
+        "required": false,
+        "description": "Not read by this handler file."
+      },
+      {
+        "field": "autoAdvancement",
+        "type": "boolean",
+        "required": false,
+        "description": "Not read by this handler file."
+      }
+    ],
+    "validationRules": [
+      "If triggerPhrases configured and context.matchedPhrase/matchedIntent don't match, returns { success:true, skipped:true } (soft skip, not an error).",
+      "workflowId required — throws \"Workflow ID is required\" if blank.",
+      "workflowId must match UUID regex /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, else throws with a diagnostic dump of available context keys.",
+      "In targetUrl (browser) mode: looked-up workflow must exist and have status === \"published\", else throws."
+    ],
+    "outputShape": {
+      "success": "mapWorkflowOutput(...) => { executionId, workflowId, workflowTitle, status, steps, duration, ...executionResult.output }; browser mode additionally sets output._browserPage (live Puppeteer Page handle passed to downstream nodes, e.g. data_capture).",
+      "failure": "If continueOnFailure: { error, status?, failed:true } (browser mode) or { ...output, error/timeout:true, failed:true } (standard mode with wait). Otherwise { success:false, error }."
+    },
+    "preconditionsAndSideEffects": [
+      "Browser-automation mode: runs a real Puppeteer browser (headless:false) via executeBrowserWorkflow — visible browser automation with real side effects on whatever site it drives.",
+      "Queries the `users` table (joined to `roles`) to resolve an active user to run the workflow as, in browser mode.",
+      "Reads guided workflow definition via getGuidedWorkflowById.",
+      "Standard mode calls executeGuidedWorkflow / waitForWorkflowCompletion (lib/guided-workflows/executor) which itself drives workflow execution and polling.",
+      "No LLM calls in this handler."
+    ],
+    "permissionGating": "No role/permission check gates whether this node is allowed to run. However, in browser-automation mode the handler resolves a user from the `users`/`roles` tables and hard-codes `isAdminRole: true` on the session object it builds for guided-workflow lookup, with an explicit comment that this is a trusted server-side execution context electing to treat the resolved service user as administrative for that lookup — this is a privilege-elevation implementation detail, not an execution permission gate on the node.",
+    "riskTier": "high",
+    "riskTierRationale": "Drives a real, visible browser against external sites in automation mode; resolves a privileged (isAdminRole:true) session internally."
+  },
+  {
+    "name": "Data Capture",
+    "type": "data_capture",
+    "description": "Injects a visual review/capture overlay into a live Puppeteer browser page (carried over from a prior Workflow node) so the frontend player can capture and let the user confirm data from the page.",
+    "handlerFile": "lib/orchestrations/nodes/data-capture-node.ts",
+    "configSource": "shared/orchestrationTypes.ts DataCaptureNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"data_capture\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "mode",
+        "type": "DataCaptureMode (\"dom\"|\"ai\"|\"hybrid\"|\"comprehensive\")",
+        "required": true,
+        "description": "Capture strategy; not actually branched on in this handler (see surprising findings) — actual capture logic lives in the frontend player."
+      },
+      {
+        "field": "showReviewScreen",
+        "type": "boolean",
+        "required": false,
+        "description": "Default true; if not explicitly false, injects the overlay."
+      },
+      {
+        "field": "allowEdit",
+        "type": "boolean",
+        "required": false,
+        "description": "Default true (used by showReviewScreen(), which this handler never calls)."
+      },
+      {
+        "field": "autoReviewTimeout",
+        "type": "number",
+        "required": false,
+        "description": "Seconds; 0 = require manual click (used by unused helper functions)."
+      },
+      {
+        "field": "pageWaitMs",
+        "type": "number",
+        "required": false,
+        "description": "Milliseconds to wait before injecting the overlay, for dynamic content to settle."
+      },
+      {
+        "field": "outputVariable",
+        "type": "string",
+        "required": false,
+        "description": "Default \"capturedData\"."
+      },
+      {
+        "field": "continueOnFailure",
+        "type": "boolean",
+        "required": false,
+        "description": "Declared in the type but not read anywhere in this handler."
+      }
+    ],
+    "validationRules": [
+      "Requires context._browserPage (a Puppeteer Page) from a previous node (typically Workflow with 'close browser after workflow' unchecked); throws a descriptive error if absent."
+    ],
+    "outputShape": {
+      "success": "{ [outputVariable]: {} (always an empty object — real capture happens client-side in the frontend player, not in this handler), _browserPage: page }",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "Manipulates a live Puppeteer browser page: injects DOM overlay HTML/CSS/JS via page.evaluate().",
+      "No DB writes, no HTTP calls, no LLM calls in this handler.",
+      "Keeps the browser page open and passes it forward via _browserPage."
+    ],
+    "permissionGating": "None.",
+    "riskTier": "medium",
+    "riskTierRationale": "Manipulates a live browser page and can surface captured page data, but has no external network/DB writes of its own."
+  },
+  {
+    "name": "AI Extraction",
+    "type": "ai_extraction",
+    "description": "Uses the configured LLM provider to extract structured data (predefined schema, a runtime chat instruction, or both) from an input value/template, optionally pausing to ask the chat user for missing mandatory fields.",
+    "handlerFile": "lib/orchestrations/nodes/ai-extraction-node.ts",
+    "configSource": "shared/orchestrationTypes.ts AIExtractionNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"ai_extraction\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "extractionMode",
+        "type": "\"predefined\"|\"instruction\"|\"hybrid\"",
+        "required": false,
+        "description": "Default \"predefined\" in handler."
+      },
+      {
+        "field": "inputType",
+        "type": "\"email\"|\"document\"|\"text\"|\"variables\"",
+        "required": false,
+        "description": "Declared in the type but not branched on in this handler."
+      },
+      {
+        "field": "input",
+        "type": "string",
+        "required": false,
+        "description": "Interpolated template; preferred source of input text."
+      },
+      {
+        "field": "inputSource",
+        "type": "string",
+        "required": false,
+        "description": "Legacy single variable path, used only if `input` is blank."
+      },
+      {
+        "field": "prompt",
+        "type": "string",
+        "required": false,
+        "description": "Extra instructions appended to the user prompt; defaults to a generic extraction instruction."
+      },
+      {
+        "field": "clarificationTimeoutMinutes",
+        "type": "number",
+        "required": false,
+        "description": "Minutes before a pending clarification expires; default 15, floored at 1."
+      },
+      {
+        "field": "fields",
+        "type": "Array<{ key, type, description?, required? }>",
+        "required": false,
+        "description": "Preferred source of mandatory-field checks when present."
+      },
+      {
+        "field": "schema",
+        "type": "Record<string, unknown>",
+        "required": true,
+        "description": "Field descriptors for predefined/hybrid extraction; also source of mandatory fields when `fields` is absent."
+      },
+      {
+        "field": "outputVariable",
+        "type": "string",
+        "required": true,
+        "description": "Where extracted data is stored; defaults to \"extracted\" if falsy at runtime."
+      }
+    ],
+    "validationRules": [
+      "Input must resolve to a non-null, non-empty value (from `input` expression or `inputSource` path), else throws with a usage hint.",
+      "In \"instruction\" or \"hybrid\" mode, a non-empty runtime instruction (from trigger.input.userMessage / userMessage / trigger.matchedPhrase / matchedPhrase) is required, else throws.",
+      "LLM response must parse as JSON (optionally unwrapped from a ```json fence), else throws.",
+      "If config.schema has entries with required:true, validateAgainstSchema() throws if that key is entirely absent from the parsed result (only checks key presence, not value non-emptiness).",
+      "Separately, mandatory fields (from `fields` if provided, else required schema entries) are checked for a *meaningful* value (non-null/non-empty/non-empty-array/non-empty-object). If any are missing: on a chatbot-trigger context, the node pauses and asks a clarification question instead of failing; on any other trigger type, it throws (\"Non-chat triggers must provide all mandatory inputs before continuing\")."
+    ],
+    "outputShape": {
+      "success": "{ [outputVariable]: extractedData }",
+      "paused": "{ success:true, paused:true, outputHandle:\"clarification\", output:{ [outputVariable]: partialExtractedData }, clarification:{ missingFields, message, questions, timeoutMinutes, expiresAt, fieldDefinitions } }",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "Calls getLLMProvider() then provider.generate_answer(systemPrompt, userPrompt, inputText) — one LLM call per execution.",
+      "No DB writes and no direct HTTP calls in this handler (clarification persistence, if triggered, is written by engine.ts, not here)."
+    ],
+    "permissionGating": "None.",
+    "riskTier": "low",
+    "riskTierRationale": "LLM call only; no external side effects beyond the model call itself."
+  },
+  {
+    "name": "AI Task",
+    "type": "ai_task",
+    "description": "Runs an arbitrary LLM generation/transformation task (summarize, draft, rewrite, etc.) using a configured instruction, a live chat message, or both, against optional context content resolved from earlier nodes, returning text or structured JSON.",
+    "handlerFile": "lib/orchestrations/nodes/ai-task-node.ts",
+    "configSource": "shared/orchestrationTypes.ts AITaskNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"ai_task\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "instructionMode",
+        "type": "\"static\"|\"chat\"|\"hybrid\"",
+        "required": true,
+        "description": "Determines where the task instruction comes from."
+      },
+      {
+        "field": "instruction",
+        "type": "string",
+        "required": false,
+        "description": "Required for static/hybrid modes; optional persona/guardrail text even in chat mode."
+      },
+      {
+        "field": "input",
+        "type": "string",
+        "required": false,
+        "description": "Interpolated template for context content, e.g. \"{{parsedFile}}\"."
+      },
+      {
+        "field": "outputFormat",
+        "type": "\"text\"|\"json\"",
+        "required": true,
+        "description": "Controls prompt shape and response parsing."
+      },
+      {
+        "field": "outputFields",
+        "type": "AITaskOutputField[] ({key,type,description?})",
+        "required": false,
+        "description": "Required (non-empty) when outputFormat is \"json\"."
+      },
+      {
+        "field": "outputVariable",
+        "type": "string",
+        "required": true,
+        "description": "Defaults to \"aiTask\" if falsy at runtime."
+      },
+      {
+        "field": "clarificationTimeoutMinutes",
+        "type": "number",
+        "required": false,
+        "description": "Declared in the type; not actually read by this handler — chat-mode clarification uses a hardcoded 15-minute expiry instead."
+      }
+    ],
+    "validationRules": [
+      "static mode: config.instruction required, else throws.",
+      "hybrid mode: combined (configInstruction + runtime chat message) must be non-empty, else throws \"requires a base instruction in hybrid mode\".",
+      "chat mode: resolves a runtime instruction from trigger.input.userMessage/userMessage/trigger.matchedPhrase/matchedPhrase, or (after a clarification resume) from `${outputVariable}.instruction`. If still empty: throws on non-chatbot triggers, or pauses with a clarification question (\"What would you like me to do?\") on chatbot triggers.",
+      "outputFormat \"json\" requires at least one entry in outputFields, else throws.",
+      "LLM JSON response must parse as an object, else throws \"could not produce valid structured output\"."
+    ],
+    "outputShape": {
+      "success": "{ [outputVariable]: string (text mode, code-fence-stripped) | object (json mode), [outputVariable+\"Meta\"]: { provider, model, instructionMode, instruction } }",
+      "paused": "{ success:false, paused:true, clarification:{ message, expiresAt, fieldDefinitions } } (note: success is false here, unlike ai_extraction's paused success:true)",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "Resolves companyId (via a DB lookup on company_target_applications from targetAppId when present, else a direct companyId in context) to select a possibly company-scoped LLM provider.",
+      "Calls getLLMProvider(companyId) then provider.generate_answer(...) — one LLM call per execution.",
+      "No other DB writes or HTTP calls in this handler."
+    ],
+    "permissionGating": "None.",
+    "riskTier": "low",
+    "riskTierRationale": "LLM call only; no external side effects beyond the model call itself."
+  },
+  {
+    "name": "Knowledge Search",
+    "type": "knowledge_search",
+    "description": "Runs a retrieval-only query against the company/target-app's RAG knowledge base (RetrievalEngine) and returns ranked passages plus citations; does not perform LLM synthesis itself (that's AI Task's job downstream).",
+    "handlerFile": "lib/orchestrations/nodes/knowledge-search-node.ts",
+    "configSource": "shared/orchestrationTypes.ts KnowledgeSearchNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"knowledge_search\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "query",
+        "type": "string",
+        "required": true,
+        "description": "Interpolated template, e.g. \"{{trigger.input.userMessage}}\"."
+      },
+      {
+        "field": "topK",
+        "type": "number",
+        "required": false,
+        "description": "Default 5; clamped to [1, 20]."
+      },
+      {
+        "field": "outputVariable",
+        "type": "string",
+        "required": true,
+        "description": "Defaults to \"knowledgeSearch\" if falsy at runtime."
+      }
+    ],
+    "validationRules": [
+      "query must evaluate to a non-empty string, else throws.",
+      "companyId must be resolvable — preferentially derived from targetAppId via a DB lookup (a chatbot is always scoped to one target app, never company-level), falling back to a direct companyId in context; throws if neither resolves.",
+      "userId must resolve from _system.triggeredBy or trigger.startedBy, else throws."
+    ],
+    "outputShape": {
+      "success": "{ [outputVariable]: formatted text of chunks (\"Source: name (p.N)\\ncontent\" joined by \"---\"), [outputVariable+\"Chunks\"]: raw chunk array, [outputVariable+\"Citations\"]: citations array, [outputVariable+\"Meta\"]: { query, resultCount } }",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "DB query on company_target_applications to derive companyId from targetAppId.",
+      "Calls RetrievalEngine.retrieve(companyId, userId, query, topK, targetAppId) — reads the vector/knowledge-base store; no LLM generation call in this handler."
+    ],
+    "permissionGating": "None at node level; retrieval is scoped by companyId/targetAppId (tenant isolation), not by user role.",
+    "riskTier": "low",
+    "riskTierRationale": "Read-only retrieval against the knowledge base."
+  },
+  {
+    "name": "Condition",
+    "type": "condition",
+    "description": "Evaluates one or more variable comparisons (with and/or chaining) and routes execution down the \"true\" or \"false\" output handle; performs no context mutation.",
+    "handlerFile": "lib/orchestrations/nodes/condition-node.ts",
+    "configSource": "shared/orchestrationTypes.ts ConditionNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"condition\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "conditions",
+        "type": "Array<{ variable, operator, value?, logicAfter?, caseSensitive? }>",
+        "required": true,
+        "description": "operator is one of ConditionOperator (equals, not_equals, contains, not_contains, contains_any, contains_all, not_contains_any, greater_than, less_than, exists, not_exists, empty, not_empty). logicAfter (\"and\"|\"or\", default \"and\") applies between this condition and the next. caseSensitive defaults to false."
+      }
+    ],
+    "validationRules": [
+      "conditions must be a non-empty array, else returns { success:false, error:\"No conditions defined\" } (not a thrown exception).",
+      "Conditions are evaluated left-to-right, combined pairwise via each condition's own logicAfter (no operator precedence/grouping)."
+    ],
+    "outputShape": {
+      "success": "{ success:true, outputHandle: \"true\" | \"false\" } — no `output` object is returned; context is never mutated by this node.",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "None — pure in-memory evaluation via evaluateCondition() against the existing context. No DB, HTTP, or LLM calls."
+    ],
+    "permissionGating": "None.",
+    "riskTier": "low",
+    "riskTierRationale": "Pure in-memory branching logic; no side effects."
+  },
+  {
+    "name": "Human Approval",
+    "type": "human_approval",
+    "description": "Pauses the orchestration and requests a human approve/reject decision, creating an approval record and emailing the approver a review link.",
+    "handlerFile": "lib/orchestrations/nodes/human-approval-node.ts",
+    "configSource": "shared/orchestrationTypes.ts HumanApprovalNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"human_approval\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "approverEmail",
+        "type": "string",
+        "required": true,
+        "description": "Can be a variable expression; evaluated at runtime."
+      },
+      {
+        "field": "title",
+        "type": "string",
+        "required": true,
+        "description": "Also used as the node execution's label and the email subject."
+      },
+      {
+        "field": "description",
+        "type": "string",
+        "required": false,
+        "description": ""
+      },
+      {
+        "field": "fields",
+        "type": "Array<{ name, label, type: \"text\"|\"number\"|\"boolean\"|\"select\", options?, editable, defaultValue? }>",
+        "required": false,
+        "description": "Rendered into the approval request and the notification email body."
+      },
+      {
+        "field": "timeout",
+        "type": "number",
+        "required": false,
+        "description": "Minutes. Declared in the type but not read/enforced anywhere in this handler (no timeout/escalation logic present in the file)."
+      },
+      {
+        "field": "escalationEmail",
+        "type": "string",
+        "required": false,
+        "description": "Declared in the type but not used anywhere in this handler."
+      }
+    ],
+    "validationRules": [
+      "approverEmail must evaluate to a non-empty string, else throws \"Invalid approver email\".",
+      "approverEmail must match /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/, else throws \"Invalid email format: ...\"."
+    ],
+    "outputShape": {
+      "success (initial run, always pauses)": "{ success:true, paused:true, output:{ approvalId, approvalPending:true, approver, approvalUrl } }",
+      "resume (resumeAfterApproval, called separately by the engine when a response is recorded)": "{ success:true, outputHandle: \"approved\"|\"rejected\", output:{ ...approvalResponse, approved, approvedAt, approvedBy, notes } }",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "Writes a node-execution record via createNodeExecution (orchestration_node_executions).",
+      "Writes an approval record via createApproval (orchestration approvals table).",
+      "Sends an email to approverEmail via sendEmail() (lib/admin/email) containing the approval URL; if the email send fails, the error is logged but swallowed — the approval record still exists and the node still reports success/paused.",
+      "Generates a control-panel approval URL using NEXT_PUBLIC_APP_URL (or localhost:3000 fallback)."
+    ],
+    "permissionGating": "None at the node level — approverEmail is whatever the workflow author (or an upstream variable) configures; there is no role check restricting who may be named approver or who may act on the resulting approval URL within this handler.",
+    "riskTier": "medium",
+    "riskTierRationale": "Sends a real email and creates a durable, actionable approval URL, but exists specifically as a safety gate on further action."
+  },
+  {
+    "name": "Notification",
+    "type": "notification",
+    "description": "Sends a notification through one or more channels (email, internal in-app, Microsoft Teams, Slack, SMS, WhatsApp) with per-channel retry and optional scheduled delivery; supports legacy single-channel config as well as the newer multi-channel `channels` config.",
+    "handlerFile": "lib/orchestrations/nodes/notification-node.ts",
+    "configSource": "shared/orchestrationTypes.ts NotificationNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"notification\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "channel / recipient / subject / message / template",
+        "type": "legacy single-channel fields (channel: \"email\"|\"teams\"|\"slack\"|\"internal\")",
+        "required": false,
+        "description": "Backward-compat path; normalizeChannels() maps these onto the multi-channel shape when `channels` is absent."
+      },
+      {
+        "field": "channels.email",
+        "type": "{ enabled, senderCredentialId?, fromName?, to?, cc?, bcc?, subject?, body?, bodyFormat?, attachments?[{name?,url?,contentType?}], priority?, delivery?{mode,scheduledAt}, retry?{enabled,maxAttempts,delaySeconds} }",
+        "required": false,
+        "description": ""
+      },
+      {
+        "field": "channels.internal",
+        "type": "{ enabled, users?, roles?, teams?, groups?, title?, message?, notificationType?, actionLabel?, actionUrl?, expiryDate?, persistentUntilRead?, delivery?, retry? }",
+        "required": false,
+        "description": "users/roles/teams/groups are CSV strings of ids or names used to target recipients."
+      },
+      {
+        "field": "channels.teams",
+        "type": "{ enabled, mentions?, title?, message?, messageFormat?, actionButtons?[{label,url}], webhookUrl?, delivery?, retry? }",
+        "required": false,
+        "description": ""
+      },
+      {
+        "field": "channels.slack",
+        "type": "{ enabled, mentions?, message?, messageFormat?, actionButtons?[{label,url}], threadTs?, webhookUrl?, delivery?, retry? }",
+        "required": false,
+        "description": ""
+      },
+      {
+        "field": "channels.sms",
+        "type": "{ enabled, senderId?, recipients?, message?, template?, unicodeSupport?, webhookUrl?, delivery?, retry? }",
+        "required": false,
+        "description": ""
+      },
+      {
+        "field": "channels.whatsapp",
+        "type": "{ enabled, businessAccount?, senderNumber?, recipients?, messageType?, templateName?, templateLanguage?, templateVariables?, body?, mediaAttachment?, interactiveButtons?[{label,actionType,value}], webhookUrl?, delivery?, retry? }",
+        "required": false,
+        "description": ""
+      }
+    ],
+    "validationRules": [
+      "At least one channel must resolve to enabled:true, else throws \"At least one notification channel must be enabled\".",
+      "email: `to` and `body` required (after interpolation); `senderCredentialId` required (throws \"Email sender provider is required\").",
+      "internal: `message` required; at least one of users/roles/teams/groups required; resolving those to at least one active user id is required (throws \"Unable to resolve any active internal recipients\" otherwise).",
+      "teams: webhookUrl must be a valid http(s) URL; `message` required.",
+      "slack: webhookUrl must be a valid http(s) URL; `message` required.",
+      "sms: at least one recipient required; `message` required; webhookUrl (channel-level or NOTIFICATION_SMS_WEBHOOK_URL env var) must be a valid http(s) URL.",
+      "whatsapp: at least one recipient required; approved_template messages require templateName; session_message messages require body; webhookUrl (channel-level or NOTIFICATION_WHATSAPP_WEBHOOK_URL env var) must be a valid http(s) URL.",
+      "delivery.mode === \"scheduled\": scheduledAt must parse to a valid date, else throws; if that date is already in the past it's treated as immediate instead of scheduled.",
+      "retry.maxAttempts clamped to [1,10] (default 2), retry.delaySeconds clamped to [0,300] (default varies by channel, 1-2s), with exponential-ish backoff (delaySeconds fixed per attempt, not exponential) between attempts."
+    ],
+    "outputShape": {
+      "success": "{ notificationSent:true, startedAt, completedAt, attemptedChannelCount, sentChannelCount, scheduledChannelCount, failedChannelCount, enabledChannels, channelResults:[{channel,status:\"sent\"|\"scheduled\"|\"failed\",attempts,sentAt?,scheduledFor?,error?,details?}] }",
+      "failure": "{ success:false, error: 'Notification delivery failed for N channel(s): ...', output: <same shape as success, with notificationSent:false and per-channel failure details in channelResults> } — note failure still returns a populated output object."
+    },
+    "preconditionsAndSideEffects": [
+      "email channel: calls sendEmail() (lib/admin/email), resolving companyId/targetAppId from context for the send.",
+      "internal channel: resolves recipients via multiple DB reads — `users` table by id/email, `user_company_roles` joined to `roles` by role id/name, and optional `teams`/`team_members` or `user_teams`, and `groups`/`group_members` or `user_groups` tables (existence-checked via to_regclass before querying) — then INSERTs one row per recipient into `internal_notifications`.",
+      "teams/slack channels: outbound HTTP POST to the configured webhook URL (Adaptive Card / MessageCard for Teams; plain text or Block Kit for Slack).",
+      "sms/whatsapp channels: outbound HTTP POST to a configured or env-var-fallback webhook URL.",
+      "All channels retry per their retry config with a delay between attempts (setTimeout-based wait, not true exponential backoff here — contrast with api-call-node's backoff())."
+    ],
+    "permissionGating": "None gates whether the node executes. The internal channel's users/roles/teams/groups fields are per-recipient TARGETING (who receives the notification, resolved against active users only via `status='active' AND deleted_at IS NULL`), not an execution permission check on the node itself.",
+    "riskTier": "high",
+    "riskTierRationale": "Sends real outbound messages across email/Slack/Teams/SMS/WhatsApp/webhooks — genuine external communication that generally can't be undone once sent."
+  },
+  {
+    "name": "Variable",
+    "type": "variable",
+    "description": "Sets one or more named context variables to either a literal value or an evaluated expression (supports {{...}} interpolation and basic math operators).",
+    "handlerFile": "lib/orchestrations/nodes/variable-node.ts",
+    "configSource": "shared/orchestrationTypes.ts VariableNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"variable\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "variables",
+        "type": "Array<{ name: string; value: string }>",
+        "required": true,
+        "description": "value can be a literal or an expression like \"{{capturedData.xxx}}\"."
+      }
+    ],
+    "validationRules": [
+      "variables must be a non-empty array, else throws \"At least one variable is required\".",
+      "Each variable requires a non-empty `name`, else throws.",
+      "Each variable's `value` must not be undefined or \"\", else throws \"Value is required for variable: <name>\".",
+      "A value is treated as an expression (evaluated via evaluateExpression) if it contains \"{{\" or any of + - * / ( ) ; otherwise it is stored as a literal string."
+    ],
+    "outputShape": {
+      "success": "{ [variable.name]: evaluatedValue | literalValue, ... } for every configured variable (via setVariablePath, so dotted names create nested paths).",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "None — pure in-memory context mutation. No DB, HTTP, or LLM calls."
+    ],
+    "permissionGating": "None.",
+    "riskTier": "low",
+    "riskTierRationale": "Pure in-memory context mutation."
+  },
+  {
+    "name": "Data Formatter",
+    "type": "data_formatter",
+    "description": "Formats a value from context into a human-presentable string (pretty JSON, HTML table, plain-text table, CSV, key/value list, or a custom template) and stores it in a new output variable.",
+    "handlerFile": "lib/orchestrations/nodes/data-formatter-node.ts",
+    "configSource": "shared/orchestrationTypes.ts DataFormatterNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"data_formatter\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "inputVariablePath",
+        "type": "string",
+        "required": true,
+        "description": "Dotted path resolved against context."
+      },
+      {
+        "field": "outputVariable",
+        "type": "string",
+        "required": true,
+        "description": ""
+      },
+      {
+        "field": "format",
+        "type": "\"pretty_json\"|\"html_table\"|\"plain_text_table\"|\"csv\"|\"key_value\"|\"custom_template\"",
+        "required": true,
+        "description": "Defaults to \"pretty_json\" if falsy at runtime."
+      },
+      {
+        "field": "columns",
+        "type": "string[]",
+        "required": false,
+        "description": "Explicit column order/selection for table/csv formats; auto-inferred from the first 25 rows when omitted."
+      },
+      {
+        "field": "customTemplate",
+        "type": "string",
+        "required": false,
+        "description": "Supports {{json}}, {{value}}, {{rowCount}} placeholders; defaults to \"{{json}}\"."
+      },
+      {
+        "field": "emptyText",
+        "type": "string",
+        "required": false,
+        "description": "Default \"No data available.\""
+      },
+      {
+        "field": "nullText",
+        "type": "string",
+        "required": false,
+        "description": "Default \"\" (empty string)."
+      },
+      {
+        "field": "maxRows",
+        "type": "number",
+        "required": false,
+        "description": "Default 100; clamped to [1, 1000]."
+      }
+    ],
+    "validationRules": [
+      "inputVariablePath required, else throws.",
+      "outputVariable required, else throws."
+    ],
+    "outputShape": {
+      "success": "{ [outputVariable]: formattedString, [outputVariable+\"Meta\"]: { format, inputVariablePath, rowCount, columns, truncated (true if the source array exceeded maxRows) } }",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "None — pure in-memory transform. No DB, HTTP, or LLM calls."
+    ],
+    "permissionGating": "None.",
+    "riskTier": "low",
+    "riskTierRationale": "Pure in-memory transform."
+  },
+  {
+    "name": "API Call",
+    "type": "api_call",
+    "description": "Makes an outbound HTTP(S) request (including optional mTLS) to a configured URL with flexible auth, body formats, path/query parameterization, and response field mapping, with retry/backoff and a configurable failure strategy.",
+    "handlerFile": "lib/orchestrations/nodes/api-call-node.ts",
+    "configSource": "shared/orchestrationTypes.ts ApiCallNodeConfig / ApiCallAuthConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"api_call\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "apiUrl",
+        "type": "string",
+        "required": true,
+        "description": "Expression-evaluated; e.g. \"{{workflowId}}\"."
+      },
+      {
+        "field": "method",
+        "type": "\"GET\"|\"POST\"|\"PUT\"|\"PATCH\"|\"DELETE\"|\"HEAD\"|\"OPTIONS\"",
+        "required": true,
+        "description": "Defaults to \"POST\" if falsy."
+      },
+      {
+        "field": "pathVariables",
+        "type": "Array<{name,value}>",
+        "required": false,
+        "description": "Substitutes {name} and :name tokens in the URL."
+      },
+      {
+        "field": "queryParameters",
+        "type": "Array<{key,value,enabled?}>",
+        "required": false,
+        "description": "enabled:false entries are skipped."
+      },
+      {
+        "field": "headers",
+        "type": "Record<string,string> | Array<{key,value,enabled?,secret?}>",
+        "required": false,
+        "description": "Both shapes are accepted."
+      },
+      {
+        "field": "auth",
+        "type": "ApiCallAuthConfig ({type: none|api_key|bearer|basic|oauth2|custom_headers, ...})",
+        "required": true,
+        "description": "Supports legacy flat fields and structured sub-objects (apiKey/bearerToken/basic/oauth2/customHeaders/mtls)."
+      },
+      {
+        "field": "bodyFormat",
+        "type": "\"none\"|\"json\"|\"form_data\"|\"url_encoded\"|\"raw_text\"|\"xml\"|\"binary\"",
+        "required": false,
+        "description": "Defaults to \"none\" for GET/HEAD/OPTIONS, else \"json\"."
+      },
+      {
+        "field": "requestBodyTemplate",
+        "type": "string",
+        "required": false,
+        "description": "Used for json/raw_text/xml/binary bodies; JSON mode supports {{expr}} interpolation with correct in-string JSON escaping."
+      },
+      {
+        "field": "formDataFields",
+        "type": "Array<{key,value?,isFile?,filePath?,fileName?,contentType?,enabled?}>",
+        "required": false,
+        "description": "isFile:true fields are read from local disk via readFile()."
+      },
+      {
+        "field": "urlEncodedFields",
+        "type": "Array<{key,value,enabled?}>",
+        "required": false,
+        "description": ""
+      },
+      {
+        "field": "binaryBodyBase64",
+        "type": "string",
+        "required": false,
+        "description": "Base64 payload for bodyFormat \"binary\" (falls back to requestBodyTemplate)."
+      },
+      {
+        "field": "fileUploads",
+        "type": "Array<{fieldName,filePath,fileName?,contentType?,enabled?}>",
+        "required": false,
+        "description": "Additional multipart file fields, read from local disk."
+      },
+      {
+        "field": "responseMapping",
+        "type": "Record<string,string>",
+        "required": false,
+        "description": "JSONPath-ish (dot/bracket) mapping merged with responseFieldMappings."
+      },
+      {
+        "field": "responseFieldMappings",
+        "type": "Array<{outputKey,jsonPath}>",
+        "required": false,
+        "description": ""
+      },
+      {
+        "field": "outputVariableName",
+        "type": "string",
+        "required": false,
+        "description": "Sanitized to [a-zA-Z0-9_]; default \"apiResult\"."
+      },
+      {
+        "field": "successStatusCodes",
+        "type": "string",
+        "required": false,
+        "description": "Comma list of exact codes, \"NNN-NNN\" ranges, or \"Nxx\" wildcards; default 2xx."
+      },
+      {
+        "field": "includeRawResponse",
+        "type": "boolean",
+        "required": false,
+        "description": "Default true (raw body included unless explicitly false)."
+      },
+      {
+        "field": "timeout",
+        "type": "number",
+        "required": true,
+        "description": "Milliseconds; clamped to [100, 300000]."
+      },
+      {
+        "field": "retryAttempts",
+        "type": "number",
+        "required": true,
+        "description": "Clamped to [0, 10]; total attempts = retryAttempts + 1."
+      },
+      {
+        "field": "retryDelayMs",
+        "type": "number",
+        "required": true,
+        "description": "Base delay for exponential backoff between retries (delay * 2^(attempt-1))."
+      },
+      {
+        "field": "failureStrategy",
+        "type": "\"stop\"|\"continue\"|\"alert\"",
+        "required": true,
+        "description": "stop -> node fails; continue/alert -> node reports success with failure details in output (alert additionally console.warns)."
+      }
+    ],
+    "validationRules": [
+      "apiUrl required (post-interpolation), else throws.",
+      "auth type-specific: api_key needs both name and value; bearer needs a token; basic needs a username; oauth2 with tokenUrl needs clientId+clientSecret (and username+password for the \"password\" grant type); mTLS needs certPath and keyPath.",
+      "JSON request body must remain valid JSON after variable interpolation, else throws with parse error detail.",
+      "binary body requires binaryBodyBase64 or requestBodyTemplate, else throws.",
+      "form-data file fields require filePath, else throws.",
+      "Retries only for retryable failures: HTTP 408/429/5xx, or network/timeout errors (ENOTFOUND/ECONNREFUSED/ECONNRESET/EAI_AGAIN/timeout/AbortError); auth (401/403) and JSON-parse errors are treated as non-retryable."
+    ],
+    "outputShape": {
+      "success": "{ requestMethod, requestUrl, httpStatusCode, responseHeaders, responseBody, parsedJson, rawResponse? (if includeRawResponse!==false), executionDurationMs, attempts, mappedFields, [outputVariableName]: {...all of the above, mappedFields} }",
+      "failure (failureStrategy=stop)": "{ success:false, error }",
+      "failure (failureStrategy=continue|alert)": "{ success:true, output:{ ...priorOutput, apiCallFailed:true, error, errorDetails, httpStatusCode, responseHeaders, responseBody, parsedJson, rawResponse, executionDurationMs, attempts } }"
+    },
+    "preconditionsAndSideEffects": [
+      "Sends a real outbound HTTP request to apiUrl (via fetch, or Node's https.request for mTLS).",
+      "May perform a second outbound HTTP request to an OAuth2 token endpoint to obtain a bearer token.",
+      "May read local files from disk (readFile) for form-data file fields, additional fileUploads, and mTLS cert/key/ca material.",
+      "Retries with exponential backoff on retryable failures."
+    ],
+    "permissionGating": "None. Auth headers containing secrets are masked in logs (shouldMask()/maskValue()) but this is log hygiene, not an access-control gate.",
+    "riskTier": "high",
+    "riskTierRationale": "Arbitrary outbound HTTP(S) request, potentially with real credentials/mTLS, to any URL the config specifies."
+  },
+  {
+    "name": "Database",
+    "type": "database",
+    "description": "Uses the LLM to assess whether a natural-language database request is answerable against a configured, tenant-scoped schema and, if so, generate a single safe read-only SQL SELECT query — it generates and validates SQL but does not execute it against any database.",
+    "handlerFile": "lib/orchestrations/nodes/database-node.ts",
+    "configSource": "shared/orchestrationTypes.ts DatabaseNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"database\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "schemaId",
+        "type": "string",
+        "required": false,
+        "description": "TS-optional, but handler throws if blank — effectively required."
+      },
+      {
+        "field": "outputVariable",
+        "type": "string",
+        "required": false,
+        "description": "Default \"databaseQuery\"."
+      },
+      {
+        "field": "userRequestVariablePath",
+        "type": "string",
+        "required": false,
+        "description": "Default \"userMessage\"; several context fallbacks are also tried (trigger.input.userMessage/message, message, query)."
+      },
+      {
+        "field": "extractedInputVariablePath",
+        "type": "string",
+        "required": false,
+        "description": "Default \"extracted\"."
+      },
+      {
+        "field": "additionalContextVariablePath",
+        "type": "string",
+        "required": false,
+        "description": "Optional extra context path."
+      },
+      {
+        "field": "maxRows",
+        "type": "number",
+        "required": false,
+        "description": "Default 25; clamped to [1, 500]. Injected as a LIMIT if the generated SQL doesn't already have one."
+      },
+      {
+        "field": "customInstructions",
+        "type": "string",
+        "required": false,
+        "description": "Appended to both the readiness-assessment and SQL-generation prompts."
+      },
+      {
+        "field": "allowSelectStar",
+        "type": "boolean",
+        "required": false,
+        "description": "Default false — SELECT * is rejected unless explicitly allowed."
+      },
+      {
+        "field": "clarificationTimeoutMinutes",
+        "type": "number",
+        "required": false,
+        "description": "Default 15, floored at 1."
+      }
+    ],
+    "validationRules": [
+      "schemaId required, else throws.",
+      "companyId must resolve (runtimeOptions.companyId or context companyId/trigger.input.companyId), else throws.",
+      "The resolved schema row must exist, be active, non-deleted, and belong to the resolved company/target app, else throws \"Selected database schema is unavailable or inactive for this target app.\"",
+      "An LLM readiness assessment runs first; if not ready and confidence >= 0.65 with a question present: on a chatbot-trigger context the node pauses for clarification, otherwise it throws.",
+      "Generated SQL is validated by validateSafeSelectQuery(): non-empty; single statement only (rejects multiple `;`-separated statements); must start with SELECT; rejects a denylist of keywords/patterns (insert/update/delete/drop/alter/truncate/create/grant/revoke/merge/execute/call/copy/vacuum/analyze/comment, `--`, `/*`, `*/`, `union`, `into`); must contain a FROM clause; rejects `SELECT *` unless allowSelectStar is true.",
+      "If the LLM's SQL is empty/unparseable, a fallback query is heuristically built by scoring table/column name matches against extracted fields and the request text.",
+      "A LIMIT (or FETCH FIRST ... ROWS ONLY) clause is force-appended if not already present."
+    ],
+    "outputShape": {
+      "success": "{ [outputVariable]: { schemaName, databaseType, generatedQuery, sqlValidation:{valid:true,mode:'select_only'}, generationMeta:{provider,model,userRequestPath,extractedInputPath,additionalContextPath,maxRows}, capturedInput:{userRequest,extractedInput,additionalContext}, reasoning, notExecuted:true } }",
+      "paused": "{ success:true, paused:true, outputHandle:\"clarification\", output:{ [outputVariable]: {schemaName, databaseType, capturedInput, readiness, notExecuted:true} }, clarification:{ missingFields, message, questions, timeoutMinutes, expiresAt, fieldDefinitions } }",
+      "failure": "{ success:false, error, output:{ databaseNodeError:{ message, notExecuted:true } } }"
+    },
+    "preconditionsAndSideEffects": [
+      "DB read of target_app_database_schemas joined to company_target_applications, scoped by schemaId + companyId (+ optional targetAppId) and is_active/deleted_at filters — this is the only database access in the entire handler.",
+      "Two LLM calls per execution: one for the readiness assessment, one for SQL generation (via getLLMProvider(companyId).generate_answer).",
+      "Does NOT connect to or execute against the target application's actual database — the generated SQL is returned as data only (notExecuted:true is set on every output path)."
+    ],
+    "permissionGating": "None role-based. Tenant isolation is enforced by scoping the schema lookup query to the resolved companyId (and target app), not by a user permission check.",
+    "riskTier": "medium",
+    "riskTierRationale": "Never executes SQL itself (notExecuted:true always), but generates real SQL against tenant schema metadata that a downstream step (e.g. api_call) may go on to execute."
+  },
+  {
+    "name": "File Parser",
+    "type": "file_parser",
+    "description": "Parses a chat-attached file (referenced by a dotted context path) into either plain text or, for CSV, structured row objects, pausing to ask the user to attach a file if one isn't present.",
+    "handlerFile": "lib/orchestrations/nodes/file-parser-node.ts",
+    "configSource": "shared/orchestrationTypes.ts FileParserNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"file_parser\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "sourceVariablePath",
+        "type": "string",
+        "required": true,
+        "description": "Dotted path into context to an attachment reference { id, name, fileType, storagePath, sizeBytes }, e.g. \"trigger.input.attachments.0\"."
+      },
+      {
+        "field": "extractMode",
+        "type": "\"text\"|\"structured\"",
+        "required": true,
+        "description": "structured is CSV-only."
+      },
+      {
+        "field": "outputVariable",
+        "type": "string",
+        "required": true,
+        "description": ""
+      }
+    ],
+    "validationRules": [
+      "sourceVariablePath required, else throws.",
+      "outputVariable required, else throws.",
+      "The resolved value must look like an attachment reference (has storagePath and fileType); if not found at sourceVariablePath, it also checks `${outputVariable}.attachment` (the shape the engine writes after a clarification resume). If still absent, the node pauses asking the user to attach a file rather than failing.",
+      "A parser must exist for the attachment's fileType (getDocumentParser), else throws.",
+      "extractMode \"structured\" is only supported when fileType === \"csv\"; any other file type throws."
+    ],
+    "outputShape": {
+      "success (text mode)": "{ [outputVariable]: joinedPageText, [outputVariable+\"Meta\"]: { fileName, fileType, pageCount } }",
+      "success (structured mode)": "{ [outputVariable]: Array<Record<string,string>> (parsed CSV rows), [outputVariable+\"Meta\"]: { fileName, fileType, rowCount } }",
+      "paused": "{ success:false, paused:true, clarification:{ message, expiresAt, fieldDefinitions:[{key:\"attachment\",type:\"file\",description}] } }",
+      "failure": "{ success:false, error }"
+    },
+    "preconditionsAndSideEffects": [
+      "Reads the file's bytes from blob/object storage via getStorageProvider().get_file(storagePath).",
+      "Parses the buffer via getDocumentParser(fileType).parse(buffer) (document-processing pipeline; may include OCR/PDF/DOCX parsing depending on registered parsers — not confirmed to call an LLM from this file).",
+      "Uses a hand-rolled RFC4180-aware CSV row parser included directly in this file (no external CSV dependency)."
+    ],
+    "permissionGating": "None at node level. Enforced elsewhere: node-compatibility.ts lists file_parser as an INTERACTIVE_NODE, so orchestration-level validation rejects it on automated triggers (schedule/email/http_api) since there's no live chat attachment to read in that context.",
+    "riskTier": "low",
+    "riskTierRationale": "Read-only access to a chat-attached file already in the tenant's own storage."
+  },
+  {
+    "name": "For Each",
+    "type": "for_each",
+    "description": "Iterates an array from context, running one of a fixed allow-list of body node types (API Call, Notification, AI Extraction, Variable, Data Formatter) once per item, collecting per-iteration results.",
+    "handlerFile": "lib/orchestrations/nodes/for-each-node.ts",
+    "configSource": "shared/orchestrationTypes.ts ForEachNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"for_each\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "sourceVariablePath",
+        "type": "string",
+        "required": true,
+        "description": "Dotted path to the array to iterate, e.g. \"rows\" (often a File Parser node's structured output)."
+      },
+      {
+        "field": "itemVariableName",
+        "type": "string",
+        "required": true,
+        "description": "Context key each element is bound to per iteration, e.g. \"item\"; defaults to \"item\" if blank."
+      },
+      {
+        "field": "maxIterations",
+        "type": "number",
+        "required": true,
+        "description": "User-configured soft cap; the executor hard-ceilings this regardless (see validation)."
+      },
+      {
+        "field": "continueOnItemFailure",
+        "type": "boolean",
+        "required": true,
+        "description": "Defaults to true unless explicitly false; if false, iteration stops at the first failed item."
+      },
+      {
+        "field": "bodyNodeType",
+        "type": "ForEachBodyNodeType (\"api_call\"|\"notification\"|\"ai_extraction\"|\"variable\"|\"data_formatter\")",
+        "required": true,
+        "description": "Only these five types are runnable inside a loop body — notably excludes the interactive-only nodes (data_capture, human_approval, workflow, file_parser)."
+      },
+      {
+        "field": "bodyConfig",
+        "type": "ApiCallNodeConfig | NotificationNodeConfig | AIExtractionNodeConfig | VariableNodeConfig | DataFormatterNodeConfig",
+        "required": true,
+        "description": "Config for whichever bodyNodeType is selected."
+      },
+      {
+        "field": "outputVariable",
+        "type": "string",
+        "required": true,
+        "description": "Defaults to \"loopResults\" if blank."
+      }
+    ],
+    "validationRules": [
+      "sourceVariablePath required, else throws.",
+      "outputVariable required, else throws.",
+      "bodyNodeType required, else throws.",
+      "The value at sourceVariablePath must be an array, else throws \"No array found at ... For Each requires a list to iterate.\"",
+      "maxIterations is clamped to [1, 500] (HARD_ITERATION_CEILING) regardless of the configured value — an explicit hard cap independent of user config, because each iteration can fan out a real side effect (API call, notification, LLM call) per item.",
+      "If items.length exceeds the clamped max, the excess is silently truncated (truncated:true is reported in the meta output, not an error)."
+    ],
+    "outputShape": {
+      "success": "{ [outputVariable]: Array<{ index, item, success, output?, error? }> (one entry per processed item), [outputVariable+\"Meta\"]: { totalItems, processedItems, succeeded, failed, truncated } }",
+      "failure": "{ success:false, error } — only if a top-level precondition fails (e.g. no array found); individual item failures do not fail the node unless continueOnItemFailure is false, in which case the loop stops early but still returns success:true with partial results."
+    },
+    "preconditionsAndSideEffects": [
+      "Delegates each iteration to the matching body-node executor (executeApiCallNode / executeNotificationNode / executeAIExtractionNode / executeVariableNode / executeDataFormatterNode), so it inherits whatever side effects that body type has (outbound HTTP calls, notification sends/DB writes, LLM calls) — repeated up to the clamped iteration count.",
+      "No side effects of its own beyond the delegated body node calls."
+    ],
+    "permissionGating": "None at node level. node-compatibility.ts does not list for_each as an INTERACTIVE_NODE, so it's usable with automated triggers (schedule/email/http_api) as well as interactive ones — consistent with its bodyNodeType allow-list deliberately excluding the interactive-only node types.",
+    "riskTier": "high",
+    "riskTierRationale": "Multiplies whatever side effects its body node type has (up to 500x) — inherits and amplifies the risk of api_call/notification, its two highest-risk allowed body types."
+  },
+  {
+    "name": "End",
+    "type": "end",
+    "description": "Pseudo-finish node: assembles the orchestration's final response (selected output variables, optional per-node response log, and an optional user-facing display message/table/JSON payload) and always completes the execution successfully.",
+    "isPseudoNode": true,
+    "handlerFile": null,
+    "handlerNote": "Not a separate file in lib/orchestrations/nodes/. Handled inline in engine.ts's executeNodeByType() 'end' case via the private buildEndNodeOutput() method.",
+    "configSource": "shared/orchestrationTypes.ts EndNodeConfig",
+    "inputSchema": [
+      {
+        "field": "type",
+        "type": "\"end\"",
+        "required": true,
+        "description": "Discriminant literal."
+      },
+      {
+        "field": "displayMessage",
+        "type": "boolean",
+        "required": false,
+        "description": "Whether to render `message` as the chatbot's final answer; if false/absent, the final answer defaults to \"Workflow completed successfully.\""
+      },
+      {
+        "field": "message",
+        "type": "string",
+        "required": false,
+        "description": "Template rendered with {{...}} interpolation against context when displayMessage is true."
+      },
+      {
+        "field": "displayMode",
+        "type": "\"text\"|\"table\"|\"json\"",
+        "required": false,
+        "description": "Default \"text\"; drives the structured `display` payload for table/json modes."
+      },
+      {
+        "field": "displayDataPath",
+        "type": "string",
+        "required": false,
+        "description": "Path resolved against context for table/json display data."
+      },
+      {
+        "field": "displayColumnPaths",
+        "type": "string[]",
+        "required": false,
+        "description": "Optional ordered table columns; inferred when omitted (inference itself happens client-side — this node just passes the array through)."
+      },
+      {
+        "field": "outputVariables",
+        "type": "string[]",
+        "required": false,
+        "description": "Variable paths resolved and collected into `selectedOutputs`."
+      },
+      {
+        "field": "responseVariablePath",
+        "type": "string",
+        "required": false,
+        "description": "Default \"finalResponse\"; where the assembled response object is stored."
+      },
+      {
+        "field": "includeNodeResponses",
+        "type": "boolean",
+        "required": false,
+        "description": "If true, includes the full context._nodeResponses map (every node's output logged so far) in the final response."
+      }
+    ],
+    "validationRules": [
+      "None — every field is optional and has a safe default; this node cannot fail."
+    ],
+    "outputShape": {
+      "success": "Always succeeds. Sets context[responseVariablePath] = { executionId, orchestrationId, completedAt, selectedOutputs, nodeResponses? }. Also sets context._chatbot = { ...existing, finalAnswer, finalResponsePath, display? } where display is a { type:\"table\", dataPath, data, columns } or { type:\"json\", dataPath, data } object when displayMode is table/json."
+    },
+    "preconditionsAndSideEffects": [
+      "None — pure in-memory context assembly. No DB, HTTP, or LLM calls.",
+      "Engine records this node's execution as \"completed\" and ends the run (end nodes have no outgoing connections to follow)."
+    ],
+    "permissionGating": "None.",
+    "riskTier": "low",
+    "riskTierRationale": "Pure in-memory finalization; cannot fail or produce side effects."
+  }
+]

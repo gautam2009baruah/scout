@@ -13,6 +13,7 @@
 "use client";
 
 import { useState, useCallback, useMemo, useEffect, useRef, type ComponentType } from "react";
+import { useSearchParams } from "next/navigation";
 import ReactFlow, {
   Node,
   Edge,
@@ -44,6 +45,8 @@ import {
   Lightbulb,
   List,
   Database,
+  Check,
+  Ban,
 } from "lucide-react";
 import type { NodeType, Orchestration, ManualTriggerConfig, OrchestrationTriggerType } from "@/shared/orchestrationTypes";
 import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
@@ -71,13 +74,28 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string | Compon
   { type: "data_formatter", label: "Data Formatter", icon: "{}", color: "#0891b2" },
   { type: "file_parser", label: "File Parser", icon: "📄", color: "#7c3aed" },
   { type: "for_each", label: "For Each", icon: "🔁", color: "#0d9488" },
+  { type: "ai_planner", label: "AI Planner", icon: "🧭", color: "#eab308" },
   { type: "end", label: "End", icon: "🏁", color: "#ef4444" },
 ];
+
+// Node types whose executor branches on a named output handle (see
+// condition-node.ts's outputHandle and human-approval-node.ts's
+// resumeAfterApproval outputHandle) get two labeled source handles instead
+// of one generic one, so a branch can actually be wired to a distinct edge.
+const BRANCH_HANDLES: Record<string, [string, string]> = {
+  condition: ["true", "false"],
+  human_approval: ["approved", "rejected"],
+};
+const BRANCH_HANDLE_LABELS: Record<string, [string, string]> = {
+  condition: ["TRUE", "FALSE"],
+  human_approval: ["APPROVED", "REJECTED"],
+};
 
 // Custom Node Component
 const CustomNode = ({ data, id }: { data: any; id: string }) => {
   const config = NODE_CONFIGS.find((n) => n.type === data.nodeType);
-  const isConditionNode = data.nodeType === 'condition';
+  const branchHandles = BRANCH_HANDLES[data.nodeType as string];
+  const branchLabels = BRANCH_HANDLE_LABELS[data.nodeType as string];
   const IconComponent = config?.icon;
   
   const handleDelete = (e: React.MouseEvent) => {
@@ -91,6 +109,7 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
     <div
       className="relative rounded-lg border-2 bg-white px-4 py-3 shadow-md"
       style={{ borderColor: config?.color || "#64748b", minWidth: 150 }}
+      title={data.displayDescription || undefined}
     >
       <Handle
         type="target"
@@ -98,20 +117,20 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
         className="!h-3 !w-3 !border-2 !border-white !bg-slate-700"
       />
       
-      {/* Condition node has two output handles: TRUE and FALSE */}
-      {isConditionNode ? (
+      {/* Branching node types (condition, human_approval) get two named output handles */}
+      {branchHandles ? (
         <>
           <Handle
             type="source"
             position={Position.Right}
-            id="true"
+            id={branchHandles[0]}
             style={{ top: '35%' }}
             className="!h-3 !w-3 !border-2 !border-white !bg-green-600"
           />
           <Handle
             type="source"
             position={Position.Right}
-            id="false"
+            id={branchHandles[1]}
             style={{ top: '65%' }}
             className="!h-3 !w-3 !border-2 !border-white !bg-red-600"
           />
@@ -140,11 +159,11 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
         </div>
       </div>
       
-      {/* Labels for condition handles */}
-      {isConditionNode && (
-        <div className="absolute -right-12 top-0 flex h-full flex-col justify-around text-xs font-semibold">
-          <span className="text-green-600">TRUE</span>
-          <span className="text-red-600">FALSE</span>
+      {/* Labels for branch handles */}
+      {branchLabels && (
+        <div className="absolute -right-16 top-0 flex h-full flex-col justify-around text-xs font-semibold">
+          <span className="text-green-600">{branchLabels[0]}</span>
+          <span className="text-red-600">{branchLabels[1]}</span>
         </div>
       )}
     </div>
@@ -157,6 +176,21 @@ const nodeTypes: NodeTypes = {
 };
 
 export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selectedCompanyId: string; targetApps: TargetAppOption[] }) {
+  const searchParams = useSearchParams();
+  // Step 7b: when opened from the "Pending AI Plans" queue
+  // (?orchestrationId=...&pendingRequestId=...), auto-load that
+  // orchestration and show Approve/Reject in the toolbar instead of the
+  // normal Publish/Run controls for this session.
+  const requestedOrchestrationId = searchParams.get("orchestrationId");
+  const pendingRequestId = searchParams.get("pendingRequestId");
+  const [autoLoadAttemptedFor, setAutoLoadAttemptedFor] = useState<string | null>(null);
+  const [isApprovingPendingRequest, setIsApprovingPendingRequest] = useState(false);
+  const [isRejectingPendingRequest, setIsRejectingPendingRequest] = useState(false);
+  // Step 9: "Allow [requester] to re-run this from chat" — checked by
+  // default, per the roadmap. pendingRequesterExternalUserId is fetched
+  // once so the checkbox label can name the actual requester.
+  const [allowRerunFromChat, setAllowRerunFromChat] = useState(true);
+  const [pendingRequesterExternalUserId, setPendingRequesterExternalUserId] = useState<string | null>(null);
   const [orchestration, setOrchestration] = useState<Orchestration | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -184,6 +218,104 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
+
+  // Step 7b: auto-load a specific orchestration when opened via
+  // ?orchestrationId=... (e.g. from the Pending AI Plans queue). Runs once
+  // per requested id; the existing "Load orchestration data when
+  // orchestration changes" effect below picks up nodes/edges from there.
+  useEffect(() => {
+    if (!requestedOrchestrationId || requestedOrchestrationId === autoLoadAttemptedFor) return;
+    setAutoLoadAttemptedFor(requestedOrchestrationId);
+
+    (async () => {
+      try {
+        const response = await fetch(`/api/admin/orchestrations/${requestedOrchestrationId}`);
+        if (!response.ok) {
+          throw new Error("Unable to load the requested orchestration.");
+        }
+        const data = await response.json();
+        setOrchestration(data.orchestration);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "Unable to load the requested orchestration.", "error");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestedOrchestrationId]);
+
+  // Step 9: fetch the requester's external_user_id once, purely to label
+  // the "Allow ... to re-run this from chat" checkbox meaningfully. Reuses
+  // the same endpoint the Pending AI Plans list already calls before
+  // navigating here; idempotent, so calling it again here is harmless.
+  useEffect(() => {
+    if (!pendingRequestId) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch(`/api/admin/orchestrations/planner/pending/${pendingRequestId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!cancelled) {
+          setPendingRequesterExternalUserId(data?.pendingRequest?.externalUserId ?? null);
+        }
+      } catch {
+        // Non-critical — the checkbox just falls back to a generic label.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingRequestId]);
+
+  async function approvePendingRequest() {
+    if (!pendingRequestId || !orchestration) return;
+    if (hasUnsavedChanges) {
+      const saved = await saveOrchestration();
+      if (!saved) return;
+    }
+    setIsApprovingPendingRequest(true);
+    try {
+      const response = await fetch(`/api/admin/orchestrations/planner/pending/${pendingRequestId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowRerunFromChat }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(typeof body?.message === "string" ? body.message : "Failed to approve this request.");
+      }
+      showToast("Approved, published, and the requester has been notified.", "success");
+      window.location.href = "/control-panel/pending-ai-plans";
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Failed to approve this request.", "error");
+    } finally {
+      setIsApprovingPendingRequest(false);
+    }
+  }
+
+  async function rejectPendingRequest() {
+    if (!pendingRequestId) return;
+    const reason = window.prompt("Optional: add a reason for the requester (leave blank to skip).") ?? undefined;
+    setIsRejectingPendingRequest(true);
+    try {
+      const response = await fetch(`/api/admin/orchestrations/planner/pending/${pendingRequestId}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(typeof body?.message === "string" ? body.message : "Failed to reject this request.");
+      }
+      showToast("Rejected. The requester has been notified.", "success");
+      window.location.href = "/control-panel/pending-ai-plans";
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Failed to reject this request.", "error");
+    } finally {
+      setIsRejectingPendingRequest(false);
+    }
+  }
 
   // Get current trigger type from trigger node
   const currentTriggerType = useMemo<OrchestrationTriggerType | undefined>(() => {
@@ -687,10 +819,13 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   const publishOrchestration = async () => {
     if (!orchestration || isPublishing) return;
 
-    // Validate that there's an end node
-    const hasEndNode = nodes.some((node) => (node.data as any).nodeType === 'end');
+    // Validate that there's a terminal node — an End node, or an AI Planner
+    // node (also a no-op terminal marker; see AiPlannerNodeConfig's doc
+    // comment). Mirrors publishOrchestration()'s server-side check in
+    // lib/orchestrations/db.ts.
+    const hasEndNode = nodes.some((node) => (node.data as any).nodeType === 'end' || (node.data as any).nodeType === 'ai_planner');
     if (!hasEndNode) {
-      showToast('Cannot publish: Orchestration must have an End node. Please add an End node to complete the workflow.', 'error');
+      showToast('Cannot publish: Orchestration must have an End node (or an AI Planner node). Please add one to complete the workflow.', 'error');
       return;
     }
 
@@ -720,13 +855,15 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
       return;
     }
 
-    // Validate that end node is reachable from trigger (basic connectivity check)
-    const endNode = nodes.find(n => (n.data as any).nodeType === 'end');
+    // Validate that the terminal node (End or AI Planner) is reachable from
+    // trigger (basic connectivity check).
+    const terminalNode = nodes.find(n => (n.data as any).nodeType === 'end' || (n.data as any).nodeType === 'ai_planner');
     if (nodes.length > 1) {
-      // Check if end node has incoming connections
-      const endNodeHasIncoming = edges.some(edge => edge.target === endNode?.id);
-      if (!endNodeHasIncoming) {
-        showToast('Cannot publish: End node must be connected to the workflow. It has no incoming connections.', 'error');
+      // Check if the terminal node has incoming connections
+      const terminalNodeHasIncoming = edges.some(edge => edge.target === terminalNode?.id);
+      if (!terminalNodeHasIncoming) {
+        const terminalLabel = (terminalNode?.data as any)?.nodeType === 'ai_planner' ? 'AI Planner node' : 'End node';
+        showToast(`Cannot publish: ${terminalLabel} must be connected to the workflow. It has no incoming connections.`, 'error');
         return;
       }
 
@@ -899,24 +1036,49 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                 <Save className="h-4 w-4" />
                 {isSaving ? "Saving..." : hasUnsavedChanges ? "Save Changes *" : "Save Draft"}
               </button>
-              <button
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={publishOrchestration}
-                disabled={isSaving || isPublishing}
-                type="button"
-              >
-                <Upload className="h-4 w-4" />
-                {isPublishing ? "Publishing..." : "Publish"}
-              </button>
-              {shouldShowRunButton && (
-                <button
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-                  onClick={executeOrchestration}
-                  type="button"
-                >
-                  <Play className="h-4 w-4" />
-                  Run
-                </button>
+              {pendingRequestId ? (
+                <>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSaving || isApprovingPendingRequest || isRejectingPendingRequest}
+                    onClick={approvePendingRequest}
+                    type="button"
+                  >
+                    <Check className="h-4 w-4" />
+                    {isApprovingPendingRequest ? "Approving..." : "Approve"}
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isSaving || isApprovingPendingRequest || isRejectingPendingRequest}
+                    onClick={rejectPendingRequest}
+                    type="button"
+                  >
+                    <Ban className="h-4 w-4" />
+                    {isRejectingPendingRequest ? "Rejecting..." : "Reject"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={publishOrchestration}
+                    disabled={isSaving || isPublishing}
+                    type="button"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {isPublishing ? "Publishing..." : "Publish"}
+                  </button>
+                  {shouldShowRunButton && (
+                    <button
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                      onClick={executeOrchestration}
+                      type="button"
+                    >
+                      <Play className="h-4 w-4" />
+                      Run
+                    </button>
+                  )}
+                </>
               )}
             </>
           ) : null}
@@ -941,6 +1103,26 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
           </div>
         )}
       </div>
+
+      {pendingRequestId && orchestration ? (
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 py-2 sm:px-4">
+          <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+            <input
+              checked={allowRerunFromChat}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+              onChange={(event) => setAllowRerunFromChat(event.target.checked)}
+              type="checkbox"
+            />
+            <span>
+              <span className="block font-medium">Make this available to AI Planner for future chat requests</span>
+              <span className="block text-xs text-slate-500">
+                Originally requested by {pendingRequesterExternalUserId || "this requester"} — once enabled, AI Planner can match
+                and run it for anyone who asks something similar, not only {pendingRequesterExternalUserId || "this requester"}.
+              </span>
+            </span>
+          </label>
+        </div>
+      ) : null}
 
       {orchestration && (
         <div className={`absolute left-0 right-0 top-full z-30 border-b border-slate-200 bg-white/95 shadow-lg backdrop-blur-sm ${

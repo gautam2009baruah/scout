@@ -46,6 +46,7 @@ const NODE_CONFIGS = [
   { type: "data_formatter", label: "Data Formatter", icon: "{}" },
   { type: "file_parser", label: "File Parser", icon: "📄" },
   { type: "for_each", label: "For Each", icon: "🔁" },
+  { type: "ai_planner", label: "AI Planner", icon: "🧭" },
   { type: "end", label: "End", icon: "🏁" },
 ];
 
@@ -612,6 +613,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
             targetAppId={targetAppId}
           />
         )}
+        {nodeType === "ai_planner" && <AiPlannerConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "end" && <EndConfig config={localConfig} updateConfig={updateLocalConfig} supportsMessage={supportsEndMessage} />}
         </section>
 
@@ -6482,6 +6484,57 @@ function DatabaseConfigLegacy({ config, updateConfig, targetAppId }: any) {
           Database Schema Manager
         </a>
         .
+      </div>
+    </div>
+  );
+}
+
+function AiPlannerConfig({ config, updateConfig }: any) {
+  const isDraftingEntryPoint = config.isDraftingEntryPoint === true;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        This node marks where chat users land when they ask for something new —
+        matching against existing orchestrations first, then drafting a new one
+        for admin approval. The actual conversation runs outside this graph;
+        this node never executes any logic of its own.
+      </div>
+
+      <div className="flex items-center gap-2">
+        <input
+          checked={isDraftingEntryPoint}
+          id="aiPlannerIsDraftingEntryPoint"
+          onChange={(e) => updateConfig({ isDraftingEntryPoint: e.target.checked })}
+          type="checkbox"
+        />
+        <label className="text-sm text-slate-700" htmlFor="aiPlannerIsDraftingEntryPoint">
+          Make this the AI Planner drafting entry point for this trigger type
+        </label>
+      </div>
+      <p className="text-xs text-slate-500">
+        Only one orchestration per target application and trigger type may be
+        checked. Publishing will fail if another orchestration already claims
+        this scope.
+      </p>
+
+      <div>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Match Confidence Threshold</label>
+        <input
+          className="w-full rounded border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+          disabled={!isDraftingEntryPoint}
+          max="1"
+          min="0"
+          onChange={(e) => updateConfig({ matchConfidenceThreshold: parseFloat(e.target.value) })}
+          step="0.05"
+          type="number"
+          value={config.matchConfidenceThreshold ?? 0.75}
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          Minimum semantic similarity required to match an existing orchestration
+          before drafting a new one. Only used when this node is the drafting
+          entry point.
+        </p>
       </div>
     </div>
   );

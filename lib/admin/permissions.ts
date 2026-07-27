@@ -19,7 +19,8 @@ export const MODULE_KEYS = {
   triggersMonitoring: 13,
   searchAnalytics: 14,
   chatbotSettings: 15,
-  databaseSchemaManager: 16
+  databaseSchemaManager: 16,
+  pendingAiPlans: 17
 } as const;
 
 export type AdminModuleKey = number;

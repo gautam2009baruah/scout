@@ -50,7 +50,7 @@ function getMaxRows(config: DatabaseNodeConfig): number {
   return Math.max(1, Math.min(500, Math.floor(parsed)));
 }
 
-function normalizeSchemaSummary(rawSchema: unknown): string {
+export function normalizeSchemaSummary(rawSchema: unknown): string {
   const schemaObject = (rawSchema && typeof rawSchema === "object" ? rawSchema : {}) as Record<string, unknown>;
   const rawTables = Array.isArray(schemaObject.tables) ? schemaObject.tables : [];
 
@@ -417,6 +417,49 @@ async function getActiveSchemaById(input: {
       [input.schemaId, input.companyId, input.targetAppId || null]
     )
   ).rows[0] || null;
+}
+
+export type ActiveDatabaseSchemaSummary = {
+  id: string;
+  databaseName: string;
+  databaseType: string;
+  schemaSummary: string;
+};
+
+// Session-less counterpart to lib/admin/database-schemas.ts's
+// getActiveDatabaseSchemasForTargetApp (which requires an AdminSession and is
+// only reachable from control-panel routes). This is for callers that only
+// have companyId/targetAppId to work with, e.g. the AI Planner's grounding
+// context — same tenant scoping, no admin session required.
+export async function listActiveDatabaseSchemasForTargetApp(input: {
+  companyId: string;
+  targetAppId: string;
+}): Promise<ActiveDatabaseSchemaSummary[]> {
+  const result = await getPool().query<Pick<DatabaseSchemaRow, "id" | "database_name" | "database_type" | "schema_json">>(
+    `
+      SELECT
+        schemas.id,
+        schemas.database_name,
+        schemas.database_type,
+        schemas.schema_json
+      FROM target_app_database_schemas schemas
+      INNER JOIN company_target_applications cta ON cta.id = schemas.target_app_id
+      WHERE schemas.target_app_id = $1
+        AND cta.company_id = $2
+        AND cta.deleted_at IS NULL
+        AND schemas.deleted_at IS NULL
+        AND schemas.is_active = true
+      ORDER BY schemas.database_name ASC
+    `,
+    [input.targetAppId, input.companyId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    databaseName: row.database_name,
+    databaseType: row.database_type,
+    schemaSummary: normalizeSchemaSummary(row.schema_json),
+  }));
 }
 
 export async function executeDatabaseNode(

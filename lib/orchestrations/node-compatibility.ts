@@ -44,8 +44,10 @@ export function isNodeCompatibleWithTrigger(
     return true;
   }
 
-  // Trigger and end nodes are always compatible
-  if (nodeType === "trigger" || nodeType === "end") {
+  // Trigger, end, and AI Planner nodes are always compatible — AI Planner
+  // is a structural marker usable regardless of trigger type (see
+  // shared/orchestrationTypes.ts's AiPlannerNodeConfig).
+  if (nodeType === "trigger" || nodeType === "end" || nodeType === "ai_planner") {
     return true;
   }
 
@@ -85,6 +87,7 @@ export function getIncompatibilityReason(
     database: "Database",
     file_parser: "File Parser",
     for_each: "For Each",
+    ai_planner: "AI Planner",
     end: "End",
   };
 

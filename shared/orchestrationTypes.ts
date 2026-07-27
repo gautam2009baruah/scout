@@ -62,6 +62,21 @@ export type Orchestration = {
   publishedAt: string | null;
   publishedById?: string | null;
   publishedByEmail: string | null;
+  // Derived: true iff this orchestration currently owns the checked
+  // ai_planner node designated as the drafting entry point for the
+  // "chatbot" trigger type in its (company, target app) scope — i.e.
+  // ai_planner_drafting_trigger_type = 'chatbot'. Recomputed on every
+  // publish (see publishOrchestration() in lib/orchestrations/db.ts). An
+  // orchestration can contain an ai_planner node without this being true
+  // (unchecked, or checked for a different trigger type, e.g. "manual").
+  // Unrelated to matchable_without_validation / originatingExternalUserId
+  // below, which is a separate admin-approval feature that happens to also
+  // live under the "AI Planner" name.
+  isAiPlanner: boolean;
+  // Step 9: set when an admin approved this orchestration from an AI
+  // Planner draft with "Allow [requester] to re-run this from chat"
+  // checked. Audit/provenance only — see db/migrations/135_ai_planner_step9.sql.
+  originatingExternalUserId: string | null;
 };
 
 // ============================================================================
@@ -84,6 +99,7 @@ export type NodeType =
   | "database"
   | "file_parser"
   | "for_each"
+  | "ai_planner"
   | "end";
 
 export type OrchestrationNode = {
@@ -116,6 +132,7 @@ export type NodeConfig =
   | DatabaseNodeConfig
   | FileParserNodeConfig
   | ForEachNodeConfig
+  | AiPlannerNodeConfig
   | EndNodeConfig;
 
 export type TriggerNodeConfig = {
@@ -556,6 +573,31 @@ export type DatabaseNodeConfig = {
   customInstructions?: string;
   allowSelectStar?: boolean;
   clarificationTimeoutMinutes?: number;
+};
+
+// A structural no-op/terminal marker, never executed with real logic (see
+// engine.ts's executeNodeByType — it's a trivial success case, same as
+// "end"). The actual AI Planner conversation runs entirely outside the
+// graph, in lib/orchestrations/planner/agent.ts's PlannerAgent, driven
+// purely by companyId/targetAppId — this node exists only to (a) let an
+// admin visibly opt an orchestration into being the drafting entry point
+// for chat (or, later, other trigger types), and (b) carry that entry
+// point's own settings.
+export type AiPlannerNodeConfig = {
+  type: "ai_planner";
+  // When true, and this is the only ai_planner node in a published graph,
+  // publishOrchestration() registers this orchestration as THE drafting
+  // entry point for its trigger type in its (company, target app) scope —
+  // enforced unique via orchestrations.ai_planner_drafting_trigger_type
+  // (see migration 137_ai_planner_node.sql). Leave unchecked to use this
+  // node type for some other purpose without participating in that
+  // uniqueness scope.
+  isDraftingEntryPoint: boolean;
+  // 0-1 semantic match confidence threshold used by
+  // lib/orchestrations/planner/matching.ts's findMatchingOrchestration.
+  // Only meaningful when isDraftingEntryPoint is true. Falls back to
+  // DEFAULT_MATCH_CONFIDENCE_THRESHOLD when unset.
+  matchConfidenceThreshold?: number;
 };
 
 export type EndNodeConfig = {
