@@ -640,6 +640,7 @@ export function ScoutChatbot({
   const [activeWorkflow, setActiveWorkflow] = useState<ScoutWorkflowSession | null>(null);
   const [workflowSessions, setWorkflowSessions] = useState<ScoutWorkflowSession[]>([]);
   const [expandedWorkflowSessions, setExpandedWorkflowSessions] = useState<Set<string>>(() => new Set());
+  const [workflowSearchQuery, setWorkflowSearchQuery] = useState("");
   const [workflowsState, setWorkflowsState] = useState<{ status: "idle" | "loading" | "ready" | "error"; message: string }>({
     status: "idle",
     message: ""
@@ -647,6 +648,8 @@ export function ScoutChatbot({
   const [orchestrationPanelOpen, setOrchestrationPanelOpen] = useState(false);
   const [orchestrations, setOrchestrations] = useState<ScoutOrchestration[]>([]);
   const [expandedOrchestrations, setExpandedOrchestrations] = useState<Set<string>>(() => new Set());
+  const [expandedOrchestrationText, setExpandedOrchestrationText] = useState<Set<string>>(() => new Set());
+  const [orchestrationSearchQuery, setOrchestrationSearchQuery] = useState("");
   const [orchestrationsState, setOrchestrationsState] = useState<{ status: "idle" | "loading" | "ready" | "error"; message: string }>({
     status: "idle",
     message: ""
@@ -3248,6 +3251,16 @@ export function ScoutChatbot({
                 </button>
               </div>
               <div className="scrollbar-soft min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+                <div className="mb-3">
+                  <input
+                    aria-label="Search orchestrations"
+                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-4 focus:ring-violet-100"
+                    onChange={(event) => setOrchestrationSearchQuery(event.target.value)}
+                    placeholder="Search orchestrations"
+                    value={orchestrationSearchQuery}
+                  />
+                </div>
+
                 {authBlockedMessage ? (
                   <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                     {authBlockedMessage}
@@ -3263,35 +3276,63 @@ export function ScoutChatbot({
                   )}>{orchestrationsState.message}</p>
                 ) : (
                   <div className="space-y-2">
-                    {orchestrations.map((orchestration) => {
+                    {orchestrations
+                      .filter((orchestration) => {
+                        const query = orchestrationSearchQuery.trim().toLowerCase();
+                        if (!query) return true;
+                        return orchestration.name.toLowerCase().includes(query)
+                          || (orchestration.description || "").toLowerCase().includes(query);
+                      })
+                      .map((orchestration) => {
                       const expanded = expandedOrchestrations.has(orchestration.id) && !orchestration.disabled;
+                      const textExpanded = expandedOrchestrationText.has(orchestration.id);
+                      const needsTextToggle = orchestration.name.length > 60 || (orchestration.description || "").length > 90;
                       return (
-                        <section className="group relative overflow-visible rounded-xl border border-slate-200 bg-white" key={orchestration.id}>
-                          <button
+                        <section className="group/orchestration relative overflow-visible rounded-xl border border-slate-200 bg-white" key={orchestration.id}>
+                          <div
                             aria-disabled={orchestration.disabled || undefined}
                             aria-expanded={expanded}
                             className={cn(
                               "flex min-h-14 w-full items-center justify-between gap-3 px-3 py-2 text-left transition focus:outline-none focus:ring-4 focus:ring-violet-100",
-                              orchestration.disabled ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50"
+                              orchestration.disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:bg-slate-50"
                             )}
-                            disabled={orchestration.disabled}
                             onClick={() => {
                               if (orchestration.disabled) return;
                               setExpandedOrchestrations((current) => toggleSetValue(current, orchestration.id));
                             }}
-                            type="button"
+                            onKeyDown={(event) => {
+                              if (orchestration.disabled) return;
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setExpandedOrchestrations((current) => toggleSetValue(current, orchestration.id));
+                              }
+                            }}
+                            role="button"
+                            tabIndex={orchestration.disabled ? -1 : 0}
                           >
                             <span className="min-w-0">
-                              <span className="block truncate text-sm font-semibold text-slate-900">{orchestration.name}</span>
-                              <span className="mt-0.5 block truncate text-xs text-slate-500">{orchestration.description || `${orchestration.nodes.length} nodes`}</span>
+                              <span className={cn("block text-sm font-semibold text-slate-900", textExpanded ? "whitespace-normal break-words" : "truncate")}>{orchestration.name}</span>
+                              <span className={cn("mt-0.5 block text-xs text-slate-500", textExpanded ? "whitespace-normal break-words" : "truncate")}>{orchestration.description || `${orchestration.nodes.length} nodes`}</span>
+                              {needsTextToggle ? (
+                                <button
+                                  className="mt-0.5 text-[11px] font-semibold text-violet-700 hover:text-violet-900 focus:outline-none focus:underline"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setExpandedOrchestrationText((current) => toggleSetValue(current, orchestration.id));
+                                  }}
+                                  type="button"
+                                >
+                                  {textExpanded ? "Show less" : "Show more"}
+                                </button>
+                              ) : null}
                             </span>
                             <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-500">
                               {orchestration.nodes.length}
                               {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                             </span>
-                          </button>
+                          </div>
                           {orchestration.disabled && orchestration.disabledReason ? (
-                            <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 whitespace-normal break-words">
+                            <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/orchestration:visible group-hover/orchestration:opacity-100 group-focus-within/orchestration:visible group-focus-within/orchestration:opacity-100 whitespace-normal break-words">
                               {orchestration.disabledReason}
                             </span>
                           ) : null}
@@ -3312,11 +3353,11 @@ export function ScoutChatbot({
                                 </button>
                               </div>
                               {orchestration.nodes.length > 0 ? orchestration.nodes.map((node, index) => (
-                                <div className="group relative flex min-h-10 items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-200" key={node.id} tabIndex={0}>
+                                <div className="group/node relative flex min-h-10 items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-200" key={node.id} tabIndex={0}>
                                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-50 text-[11px] font-bold text-violet-700">{index + 1}</span>
                                   <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{node.label}</span>
                                   <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{formatNodeType(node.nodeType)}</span>
-                                  <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover:visible group-hover:opacity-100 group-focus:visible group-focus:opacity-100 whitespace-normal break-words">
+                                  <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/node:visible group-hover/node:opacity-100 group-focus/node:visible group-focus/node:opacity-100 whitespace-normal break-words">
                                     {node.description || `${node.label} (${formatNodeType(node.nodeType)})`}
                                   </span>
                                 </div>
@@ -3508,6 +3549,16 @@ export function ScoutChatbot({
                 </div>
               ) : null}
 
+              <div>
+                <input
+                  aria-label="Search guided workflows"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-4 focus:ring-violet-100"
+                  onChange={(event) => setWorkflowSearchQuery(event.target.value)}
+                  placeholder="Search guided workflows"
+                  value={workflowSearchQuery}
+                />
+              </div>
+
               {workflowsState.status === "loading" ? (
                 <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500">Loading workflows...</p>
               ) : workflowsState.message ? (
@@ -3520,14 +3571,29 @@ export function ScoutChatbot({
               ) : null}
 
               <div className="grid gap-2">
-                {workflowSessions.map((session) => {
-                  const isExpanded = expandedWorkflowSessions.has(session.id);
-                  const topics = session.topics ?? [];
+                {workflowSessions
+                  .map((session) => {
+                    const allTopics = session.topics ?? [];
+                    const query = workflowSearchQuery.trim().toLowerCase();
+                    if (!query) return { session, topics: allTopics, queryMatched: false };
+                    const sessionMatches = session.title.toLowerCase().includes(query);
+                    const matchingTopics = allTopics.filter((topic) =>
+                      topic.title.toLowerCase().includes(query) || (topic.description || "").toLowerCase().includes(query)
+                    );
+                    return {
+                      session,
+                      topics: sessionMatches ? allTopics : matchingTopics,
+                      queryMatched: sessionMatches || matchingTopics.length > 0
+                    };
+                  })
+                  .filter((entry) => !workflowSearchQuery.trim() || entry.queryMatched)
+                  .map(({ session, topics, queryMatched }) => {
+                  const isExpanded = expandedWorkflowSessions.has(session.id) || queryMatched;
 
                   return (
-                    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white" key={session.id}>
+                    <div className="overflow-visible rounded-lg border border-slate-200 bg-white" key={session.id}>
                       <button
-                        className="flex min-h-11 w-full items-center justify-between gap-3 px-3 text-left text-sm font-semibold text-slate-950 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-t-lg px-3 text-left text-sm font-semibold text-slate-950 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                         onClick={() => toggleWorkflowSession(session.id)}
                         type="button"
                       >
@@ -3539,12 +3605,12 @@ export function ScoutChatbot({
                       </button>
 
                       {isExpanded && (
-                        <div className="border-t border-slate-100 bg-slate-50/70 p-2">
+                        <div className="rounded-b-lg border-t border-slate-100 bg-slate-50/70 p-2">
                           {topics.length > 0 ? (
                             <div className="grid gap-1.5">
                               {topics.map((topic, index) => (
                                 <button
-                                  className="flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                                  className="group/topic relative flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                                   key={topic.id}
                                   onClick={() => startWorkflowTopic(topic)}
                                   type="button"
@@ -3557,12 +3623,17 @@ export function ScoutChatbot({
                                     <Play className="h-3 w-3 fill-current" />
                                     {topic.steps} steps
                                   </span>
+                                  {topic.description ? (
+                                    <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/topic:visible group-hover/topic:opacity-100 group-focus/topic:visible group-focus/topic:opacity-100 whitespace-normal break-words">
+                                      {topic.description}
+                                    </span>
+                                  ) : null}
                                 </button>
                               ))}
                             </div>
                           ) : (
                             <button
-                              className="flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                              className="group/topic relative flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                               onClick={() => startWorkflow(session)}
                               type="button"
                             >
@@ -3571,6 +3642,11 @@ export function ScoutChatbot({
                                 <Play className="h-3 w-3 fill-current" />
                                 {session.steps} steps
                               </span>
+                              {session.description ? (
+                                <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/topic:visible group-hover/topic:opacity-100 group-focus/topic:visible group-focus/topic:opacity-100 whitespace-normal break-words">
+                                  {session.description}
+                                </span>
+                              ) : null}
                             </button>
                           )}
                         </div>
