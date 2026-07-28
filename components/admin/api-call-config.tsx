@@ -99,7 +99,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
       retryDelayMs: Number(config.retryDelayMs || 1000),
       failureStrategy: config.failureStrategy || "stop",
       successStatusCodes: config.successStatusCodes || "200-299",
-      outputVariableName: config.outputVariableName || "apiResult",
+      outputVariableName: config.outputVariableName || "",
       responseFieldMappings: Array.isArray(config.responseFieldMappings)
         ? config.responseFieldMappings
         : Object.entries(config.responseMapping || {}).map(([outputKey, jsonPath]) => ({ outputKey, jsonPath: String(jsonPath) })),
@@ -925,7 +925,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
             <input
               type="text"
               className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
-              value={config.outputVariableName || "apiResult"}
+              value={config.outputVariableName || ""}
               onChange={(e) => setTopLevel({ outputVariableName: e.target.value })}
               placeholder="apiResult"
             />

@@ -65,9 +65,11 @@ interface NodePropertiesPanelProps {
 
 export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestrationId, companyId, targetAppId, onClose, onUpdate, onDelete, onDatabaseSave }: NodePropertiesPanelProps) {
   const nodeType = node.data.nodeType as NodeType;
+  const defaultNodeLabel = NODE_CONFIGS.find((item) => item.type === nodeType)?.label || "";
+  const editableNodeLabel = node.data.label === defaultNodeLabel ? "" : (node.data.label || "");
   
   // Local state for editing (not saved until Save button clicked)
-  const [localLabel, setLocalLabel] = useState(node.data.label);
+  const [localLabel, setLocalLabel] = useState(editableNodeLabel);
   const [localDisplayDescription, setLocalDisplayDescription] = useState(node.data.displayDescription || "");
   const [localConfig, setLocalConfig] = useState(node.data.config || {});
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -75,7 +77,9 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
   
   // Reset local state when node changes (different node selected)
   useEffect(() => {
-    setLocalLabel(node.data.label);
+    const nextNodeType = node.data.nodeType as NodeType;
+    const nextDefaultLabel = NODE_CONFIGS.find((item) => item.type === nextNodeType)?.label || "";
+    setLocalLabel(node.data.label === nextDefaultLabel ? "" : (node.data.label || ""));
     setLocalDisplayDescription(node.data.displayDescription || "");
     setLocalConfig(node.data.config || {});
     setValidationError(null);
@@ -118,6 +122,73 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     // Node-specific validations
     if (nodeType === "end" && supportsEndMessage && localConfig.displayMessage && !localConfig.message?.trim()) {
       return { valid: false, error: "Message is required when 'Display message' is checked" };
+    }
+
+    if (nodeType === "workflow" && !String(localConfig.workflowId || "").trim()) {
+      return { valid: false, error: "Workflow selection is required" };
+    }
+
+    if (nodeType === "trigger") {
+      if (!String(localConfig.triggerType || "").trim()) {
+        return { valid: false, error: "Trigger type is required" };
+      }
+      if (localConfig.triggerType === "email" && !String(localConfig.emailCredentialId || "").trim()) {
+        return { valid: false, error: "Email inbox is required" };
+      }
+      if (localConfig.triggerType === "manual") {
+        const inputFields = Array.isArray(localConfig.inputFields) ? localConfig.inputFields : [];
+        for (let index = 0; index < inputFields.length; index += 1) {
+          if (!String(inputFields[index]?.name || "").trim()) {
+            return { valid: false, error: `Input field ${index + 1}: Field name is required` };
+          }
+          if (!String(inputFields[index]?.label || "").trim()) {
+            return { valid: false, error: `Input field ${index + 1}: Label is required` };
+          }
+        }
+      }
+    }
+
+    if (nodeType === "data_capture" && !String(localConfig.outputVariable || "").trim()) {
+      return { valid: false, error: "Data Capture output variable name is required" };
+    }
+
+    if (nodeType === "ai_extraction") {
+      if (!String(localConfig.input || "").trim()) {
+        return { valid: false, error: "AI Extraction input data is required" };
+      }
+      if (!String(localConfig.outputVariable || "").trim()) {
+        return { valid: false, error: "AI Extraction output variable is required" };
+      }
+      if (localConfig.extractionMode !== "instruction") {
+        const fields = Array.isArray(localConfig.fields) ? localConfig.fields : [];
+        if (fields.length === 0 || fields.every((field: any) => !String(field?.key || "").trim())) {
+          return { valid: false, error: "AI Extraction requires at least one field to extract" };
+        }
+      }
+    }
+
+    if (nodeType === "human_approval") {
+      if (!String(localConfig.title || "").trim()) {
+        return { valid: false, error: "Approval title is required" };
+      }
+      if (!String(localConfig.approverEmail || "").trim()) {
+        return { valid: false, error: "Approver email is required" };
+      }
+    }
+
+    if (nodeType === "variable") {
+      const variables = Array.isArray(localConfig.variables) ? localConfig.variables : [];
+      if (variables.length === 0) {
+        return { valid: false, error: "At least one variable is required" };
+      }
+      for (let index = 0; index < variables.length; index += 1) {
+        if (!String(variables[index]?.name || "").trim()) {
+          return { valid: false, error: `Variable ${index + 1}: Name is required` };
+        }
+        if (!String(variables[index]?.value || "").trim()) {
+          return { valid: false, error: `Variable ${index + 1}: Value is required` };
+        }
+      }
     }
 
     // Condition node validations
@@ -341,6 +412,9 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     if (nodeType === "for_each") {
       if (!String(localConfig.sourceVariablePath || "").trim()) {
         return { valid: false, error: "For Each source variable path is required" };
+      }
+      if (!String(localConfig.itemVariableName || "").trim()) {
+        return { valid: false, error: "For Each item variable name is required" };
       }
       if (!String(localConfig.outputVariable || "").trim()) {
         return { valid: false, error: "For Each output variable is required" };
@@ -681,7 +755,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
 // ============================================================================
 
 function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestrationId }: any) {
-  const [triggerType, setTriggerType] = useState(config.triggerType || "manual");
+  const [triggerType, setTriggerType] = useState(config.triggerType || "");
   const [inputFields, setInputFields] = useState<any[]>(config.inputFields || []);
   const [examplePhrases, setExamplePhrases] = useState<string[]>(config.examplePhrases || []);
   const [requiredVariables, setRequiredVariables] = useState<any[]>(config.requiredVariables || []);
@@ -994,6 +1068,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
           value={triggerType}
           onChange={(e) => handleTriggerTypeChange(e.target.value)}
         >
+          <option value="" disabled>Select a trigger type</option>
           {TRIGGER_TYPES.map((type) => {
             const isUpcoming = UPCOMING_TRIGGER_TYPES.includes(type);
             return (
@@ -3243,7 +3318,7 @@ function DataCaptureConfig({ config, updateConfig }: any) {
       showReviewScreen: config.showReviewScreen !== false,
       allowEdit: config.allowEdit !== false,
       autoReviewTimeout: config.autoReviewTimeout || 0,
-      outputVariable: config.outputVariable || "capturedData",
+      outputVariable: config.outputVariable || "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -3333,12 +3408,12 @@ function DataCaptureConfig({ config, updateConfig }: any) {
             <div className="mt-4 space-y-4 pl-6">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-1">
-                  Output Variable Name
+                  Output Variable Name <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
-                  value={config.outputVariable || "capturedData"}
+                  value={config.outputVariable || ""}
                   onChange={(e) => updateConfig({ outputVariable: e.target.value })}
                   placeholder="capturedData"
                 />
@@ -3389,7 +3464,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       input: config.input || "",
       prompt: config.prompt || "",
       clarificationTimeoutMinutes: config.clarificationTimeoutMinutes ?? 15,
-      outputVariable: config.outputVariable || "extracted",
+      outputVariable: config.outputVariable || "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -3657,7 +3732,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
         <input
           type="text"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.outputVariable || "extracted"}
+          value={config.outputVariable || ""}
           onChange={(e) => updateConfig({ outputVariable: e.target.value })}
           placeholder="extracted"
         />
@@ -3715,7 +3790,7 @@ function AITaskConfig({ config, updateConfig }: any) {
       input: config.input || "",
       outputFormat: config.outputFormat || "text",
       clarificationTimeoutMinutes: config.clarificationTimeoutMinutes ?? 15,
-      outputVariable: config.outputVariable || "aiTask",
+      outputVariable: config.outputVariable || "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -3952,7 +4027,7 @@ function AITaskConfig({ config, updateConfig }: any) {
         <input
           type="text"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.outputVariable || "aiTask"}
+          value={config.outputVariable || ""}
           onChange={(e) => updateConfig({ outputVariable: e.target.value })}
           placeholder="aiTask"
         />
@@ -3978,7 +4053,7 @@ function KnowledgeSearchConfig({ config, updateConfig }: any) {
     updateConfig({
       query: config.query || "",
       topK: config.topK ?? 5,
-      outputVariable: config.outputVariable || "knowledgeSearch",
+      outputVariable: config.outputVariable || "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -4036,7 +4111,7 @@ function KnowledgeSearchConfig({ config, updateConfig }: any) {
         <input
           type="text"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          value={config.outputVariable || "knowledgeSearch"}
+          value={config.outputVariable || ""}
           onChange={(e) => updateConfig({ outputVariable: e.target.value })}
           placeholder="knowledgeSearch"
         />
@@ -4662,7 +4737,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
         to: config.channel === "email" ? (config.recipient || "") : "",
         cc: "",
         bcc: "",
-        subject: config.channel === "email" ? (config.subject || "Notification") : "Notification",
+        subject: config.channel === "email" ? (config.subject || "") : "",
         body: config.channel === "email" ? (config.message || "") : "",
         bodyFormat: "rich_text",
         attachments: [],
@@ -4676,7 +4751,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
         roles: "",
         teams: "",
         groups: "",
-        title: config.channel === "internal" ? (config.subject || "Orchestration Notification") : "Orchestration Notification",
+        title: config.channel === "internal" ? (config.subject || "") : "",
         message: config.channel === "internal" ? (config.message || "") : "",
         notificationType: "information",
         actionLabel: "",
@@ -4689,7 +4764,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
       teams: {
         enabled: config.channel === "teams",
         mentions: "",
-        title: config.channel === "teams" ? (config.subject || "Orchestration Notification") : "Orchestration Notification",
+        title: config.channel === "teams" ? (config.subject || "") : "",
         message: config.channel === "teams" ? (config.message || "") : "",
         messageFormat: "adaptive_card",
         actionButtons: [],
@@ -4726,7 +4801,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
         recipients: "",
         messageType: "session_message",
         templateName: "",
-        templateLanguage: "en",
+        templateLanguage: "",
         templateVariables: "",
         body: "",
         mediaAttachment: "",
@@ -5883,11 +5958,11 @@ function DataFormatterConfig({ config, updateConfig }: any) {
     updateConfig({
       inputVariablePath: String(config.inputVariablePath || ""),
       format: String(config.format || "pretty_json"),
-      outputVariable: String(config.outputVariable || "formattedData"),
+      outputVariable: String(config.outputVariable || ""),
       columns: Array.isArray(config.columns) ? config.columns : [],
       customTemplate: String(config.customTemplate || ""),
       maxRows: Number(config.maxRows || 100),
-      emptyText: String(config.emptyText ?? "No data available."),
+      emptyText: String(config.emptyText ?? ""),
       nullText: String(config.nullText ?? ""),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5931,8 +6006,9 @@ function DataFormatterConfig({ config, updateConfig }: any) {
           <label className="mb-1 block text-sm font-semibold text-slate-700">Empty Result Text</label>
           <input
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={String(config.emptyText ?? "No data available.")}
+            value={String(config.emptyText ?? "")}
             onChange={(event) => updateConfig({ emptyText: event.target.value })}
+            placeholder="No data available."
           />
         </div>
         <div>
@@ -5994,7 +6070,7 @@ function DataFormatterConfig({ config, updateConfig }: any) {
         <label className="mb-1 block text-sm font-semibold text-slate-700">Output Variable <span className="text-red-500">*</span></label>
         <input
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          value={String(config.outputVariable || "formattedData")}
+          value={String(config.outputVariable || "")}
           onChange={(event) => updateConfig({ outputVariable: event.target.value })}
           placeholder="formattedData"
         />
@@ -6013,7 +6089,7 @@ function FileParserConfig({ config, updateConfig }: any) {
     updateConfig({
       sourceVariablePath: String(config.sourceVariablePath || ""),
       extractMode: String(config.extractMode || "text"),
-      outputVariable: String(config.outputVariable || "parsedFile"),
+      outputVariable: String(config.outputVariable || ""),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -6061,7 +6137,7 @@ function FileParserConfig({ config, updateConfig }: any) {
           <label className="mb-1 block text-sm font-semibold text-slate-700">Output Variable <span className="text-red-500">*</span></label>
           <input
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={String(config.outputVariable || "parsedFile")}
+            value={String(config.outputVariable || "")}
             onChange={(event) => updateConfig({ outputVariable: event.target.value })}
             placeholder="parsedFile"
           />
@@ -6089,10 +6165,10 @@ function ForEachConfig({ config, updateConfig, companyId, targetAppId }: any) {
   useEffect(() => {
     updateConfig({
       sourceVariablePath: String(config.sourceVariablePath || ""),
-      itemVariableName: String(config.itemVariableName || "item"),
+      itemVariableName: String(config.itemVariableName || ""),
       maxIterations: Number(config.maxIterations || 100),
       continueOnItemFailure: config.continueOnItemFailure !== false,
-      outputVariable: String(config.outputVariable || "loopResults"),
+      outputVariable: String(config.outputVariable || ""),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -6122,10 +6198,10 @@ function ForEachConfig({ config, updateConfig, companyId, targetAppId }: any) {
 
       <div className="grid gap-3">
         <div>
-          <label className="mb-1 block text-sm font-semibold text-slate-700">Item Variable Name</label>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Item Variable Name <span className="text-red-500">*</span></label>
           <input
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={String(config.itemVariableName || "item")}
+            value={String(config.itemVariableName || "")}
             onChange={(event) => updateConfig({ itemVariableName: event.target.value })}
             placeholder="item"
           />
@@ -6158,7 +6234,7 @@ function ForEachConfig({ config, updateConfig, companyId, targetAppId }: any) {
         <label className="mb-1 block text-sm font-semibold text-slate-700">Output Variable <span className="text-red-500">*</span></label>
         <input
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          value={String(config.outputVariable || "loopResults")}
+          value={String(config.outputVariable || "")}
           onChange={(event) => updateConfig({ outputVariable: event.target.value })}
           placeholder="loopResults"
         />

@@ -96,9 +96,9 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
   useEffect(() => {
     const defaults: Record<string, unknown> = {};
     if (config?.type !== "database") defaults.type = "database";
-    if (!String(config?.outputVariable || "").trim()) defaults.outputVariable = "databaseQuery";
-    if (!String(config?.userRequestVariablePath || "").trim()) defaults.userRequestVariablePath = "userMessage";
-    if (!String(config?.extractedInputVariablePath || "").trim()) defaults.extractedInputVariablePath = "extracted";
+    if (config?.outputVariable === undefined) defaults.outputVariable = "";
+    if (config?.userRequestVariablePath === undefined) defaults.userRequestVariablePath = "";
+    if (config?.extractedInputVariablePath === undefined) defaults.extractedInputVariablePath = "";
     if (!Number.isFinite(Number(config?.maxRows))) defaults.maxRows = 25;
     if (!Number.isFinite(Number(config?.clarificationTimeoutMinutes))) defaults.clarificationTimeoutMinutes = 15;
     if (config?.allowSelectStar === undefined) defaults.allowSelectStar = false;
