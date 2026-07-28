@@ -579,11 +579,11 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         </section>
 
         {/* Node-specific configuration */}
-        <section className="node-properties-form rounded-lg border border-slate-200 p-4
+        <section className={`node-properties-form rounded-lg border border-slate-200 p-4
           [&>div]:grid [&>div]:grid-cols-1 [&>div]:gap-3 [&>div]:space-y-0
-          lg:[&>div]:grid-cols-2
+          ${nodeType === "trigger" ? "lg:[&>div]:grid-cols-[2fr_3fr]" : "lg:[&>div]:grid-cols-2"}
           [&>div>div]:min-w-0
-          [&_input]:max-w-sm [&_select]:max-w-xs [&_textarea]:max-w-lg">
+          [&_input]:max-w-sm [&_select]:max-w-xs [&_textarea]:max-w-lg`}>
         {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} orchestrationId={orchestrationId} />}
         {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} />}
         {nodeType === "data_capture" && <DataCaptureConfig config={localConfig} updateConfig={updateLocalConfig} />}
