@@ -416,11 +416,11 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
   // Get title from database if not explicitly provided
   // If activeHref is specified, find by href; otherwise find by key
-  const pageTitle = title || 
-    (activeHref 
-      ? session.modules.find(m => m.href === activeHref)?.name 
-      : session.modules.find(m => m.key === active)?.name) || 
-    "Control Panel";
+  const activeModule = activeHref
+    ? session.modules.find(m => m.href === activeHref)
+    : session.modules.find(m => m.key === active);
+  const pageTitle = title || activeModule?.name || "Control Panel";
+  const isUnderAdministration = activeModule?.parentKey === MODULE_KEYS.administration;
   
   // Group modules by parent-child relationship
   const topLevelModules = session.modules
@@ -643,6 +643,12 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                 <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 font-mono text-sm">
                   <span className="truncate text-slate-500">{session.tenant.name}</span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                  {isUnderAdministration ? (
+                    <>
+                      <span className="truncate text-slate-500">Administration</span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                    </>
+                  ) : null}
                   <h1 className="truncate font-semibold text-slate-950">{pageTitle}</h1>
                 </nav>
               </div>

@@ -704,7 +704,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   );
   
   // Email credentials for email trigger
-  type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean };
+  type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean; target_app_id: string | null };
   const [emailCredentials, setEmailCredentials] = useState<EmailCredential[]>([]);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
   const [generatedCredential, setGeneratedCredential] = useState<{
@@ -944,14 +944,11 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
           if (data.success) {
             // Filter credentials by target app if targetAppId is specified
             let credentials = data.credentials.filter((c: EmailCredential) => c.is_active);
-            
+
             if (targetAppId) {
-              credentials = credentials.filter((c: any) => {
-                const targetApps = c.target_apps || [];
-                return targetApps.some((app: any) => app.id === targetAppId);
-              });
+              credentials = credentials.filter((c: EmailCredential) => c.target_app_id === targetAppId);
             }
-            
+
             setEmailCredentials(credentials);
           } else {
             console.error('[Node Properties] Failed to load email credentials:', data.error);
