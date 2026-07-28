@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Children, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Copy, Database, Loader2, RefreshCw, X } from "lucide-react";
 import type { DatabaseNodeConfig } from "@/shared/orchestrationTypes";
 
@@ -35,6 +35,23 @@ type Props = {
   updateConfig: (updates: Record<string, unknown>) => void;
   targetAppId?: string | null;
 };
+
+function DatabaseColumns({ children }: { children: ReactNode }) {
+  const items = Children.toArray(children);
+  const leftOrder = [0, 9, 11, 5, 10, 13, 14];
+  const rightOrder = [2, 4, 6, 7, 8, 1, 3, 12];
+
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
+        {leftOrder.map((index) => items[index])}
+      </div>
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm md:border-l md:border-slate-200">
+        {rightOrder.map((index) => items[index])}
+      </div>
+    </div>
+  );
+}
 
 function parseMessage(payload: unknown, fallback: string) {
   if (payload && typeof payload === "object" && "message" in payload) {
@@ -208,7 +225,7 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
   const schemaSelectionRequired = !String(config.schemaId || "").trim();
 
   return (
-    <div className="space-y-4">
+    <DatabaseColumns>
       <div>
         <label className="mb-1 block text-sm font-semibold text-slate-700">
           Active Database Schema <span className="text-red-500">*</span>
@@ -551,6 +568,6 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
       <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
         Manage active schemas in <a href="/control-panel/administration/database-schema" className="font-semibold text-blue-700 underline hover:text-blue-800" target="_blank" rel="noreferrer">Database Schema Manager</a>.
       </div>
-    </div>
+    </DatabaseColumns>
   );
 }

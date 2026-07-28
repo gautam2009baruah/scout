@@ -242,7 +242,8 @@ export function ApiCallConfig({ config, updateConfig }: any) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
       <details className="border border-slate-300 rounded-lg bg-white">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
           Generic API Node Help
@@ -265,8 +266,10 @@ export function ApiCallConfig({ config, updateConfig }: any) {
           </ul>
         </div>
       )}
+      </div>
 
-      <Section title="Request" open={!!openSections.request} onToggle={() => toggleSection("request")}>
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
+      <Section className="order-1" title="Request" open={!!openSections.request} onToggle={() => toggleSection("request")}>
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-1">HTTP method <span className="text-red-500">*</span></label>
           <select
@@ -593,7 +596,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
         </details>
       </Section>
 
-      <Section title="Authentication" open={!!openSections.authentication} onToggle={() => toggleSection("authentication")}>
+      <Section className="order-3" title="Authentication" open={!!openSections.authentication} onToggle={() => toggleSection("authentication")}>
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-1">Authentication method</label>
           <select
@@ -805,7 +808,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
         </details>
       </Section>
 
-      <Section title="Advanced Settings" open={!!openSections.advanced} onToggle={() => toggleSection("advanced")}>
+      <Section className="order-2" title="Advanced Settings" open={!!openSections.advanced} onToggle={() => toggleSection("advanced")}>
         <div className="grid grid-cols-1 gap-2">
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">Timeout (ms)</label>
@@ -904,7 +907,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
         </details>
       </Section>
 
-      <Section title="Response Handling" open={!!openSections.response} onToggle={() => toggleSection("response")}>
+      <Section className="order-4" title="Response Handling" open={!!openSections.response} onToggle={() => toggleSection("response")}>
         <div className="grid grid-cols-1 gap-2">
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1">Success status codes</label>
@@ -1005,23 +1008,26 @@ export function ApiCallConfig({ config, updateConfig }: any) {
           </div>
         </details>
       </Section>
+      </div>
     </div>
   );
 }
 
 function Section({
+  className = "",
   title,
   open,
   onToggle,
   children,
 }: {
+  className?: string;
   title: string;
   open: boolean;
   onToggle: () => void;
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
+    <div className={`min-w-0 rounded-lg border border-slate-200 bg-white ${className}`}>
       <button
         type="button"
         onClick={onToggle}

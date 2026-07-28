@@ -37,7 +37,7 @@ const NODE_CONFIGS = [
   { type: "ai_extraction", label: "AI Extraction", icon: "🤖" },
   { type: "ai_task", label: "AI Task", icon: "🧠" },
   { type: "knowledge_search", label: "Knowledge Search", icon: "🔍" },
-  { type: "condition", label: "Condition", icon: "◆" },
+  { type: "condition", label: "Condition", icon: "❓" },
   { type: "human_approval", label: "Human Approval", icon: "✋" },
   { type: "notification", label: "Notification", icon: "📧" },
   { type: "api_call", label: "API Call", icon: "🌐" },
@@ -545,7 +545,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
           {/* Body only scrolls when the viewport or a complex node requires it. */}
           <div className="admin-sidebar-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
             <div className="space-y-4">
-        <section className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 p-4 md:grid-cols-2">
+        <section className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 p-4 md:grid-cols-[2fr_3fr]">
         <div className="min-w-0">
           <label className="block text-sm font-semibold text-slate-700 mb-1">
             Node Label <span className="text-red-500">*</span>
@@ -581,7 +581,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {/* Node-specific configuration */}
         <section className={`node-properties-form rounded-lg border border-slate-200 p-4
           [&>div]:grid [&>div]:grid-cols-1 [&>div]:gap-3 [&>div]:space-y-0
-          ${nodeType === "trigger" ? "lg:[&>div]:grid-cols-[2fr_3fr]" : "lg:[&>div]:grid-cols-2"}
+          ${nodeType === "trigger" || nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" ? "lg:[&>div]:grid-cols-[2fr_3fr]" : "lg:[&>div]:grid-cols-2"}
+          ${nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" ? "lg:[&>div>div:nth-child(2)]:border-l lg:[&>div>div:nth-child(2)]:border-slate-200 lg:[&>div>div:nth-child(2)]:pl-4" : ""}
           [&>div>div]:min-w-0
           [&_input]:max-w-sm [&_select]:max-w-xs [&_textarea]:max-w-lg`}>
         {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} orchestrationId={orchestrationId} />}
@@ -707,11 +708,26 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean; target_app_id: string | null };
   const [emailCredentials, setEmailCredentials] = useState<EmailCredential[]>([]);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
+  const [emailInboxOpen, setEmailInboxOpen] = useState(false);
+  const emailInboxRef = useRef<HTMLDivElement>(null);
   const [generatedCredential, setGeneratedCredential] = useState<{
     title: string;
     value: string;
     copied: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    if (!emailInboxOpen) return;
+
+    const closeEmailInbox = (event: MouseEvent) => {
+      if (!emailInboxRef.current?.contains(event.target as globalThis.Node)) {
+        setEmailInboxOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeEmailInbox);
+    return () => document.removeEventListener("mousedown", closeEmailInbox);
+  }, [emailInboxOpen]);
 
   const createRandomSecret = useCallback((length = 40) => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
@@ -1447,18 +1463,49 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                 </a>
               </div>
             ) : (
-              <select
-                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                value={config.emailCredentialId || ""}
-                onChange={(e) => updateConfig({ emailCredentialId: e.target.value })}
-              >
-                <option value="">Select email inbox</option>
-                {emailCredentials.map((cred) => (
-                  <option key={cred.id} value={cred.id}>
-                    {cred.name} ({cred.email_address}) - {cred.provider.toUpperCase()}
-                  </option>
-                ))}
-              </select>
+              <div ref={emailInboxRef} className="relative min-w-0 w-full">
+                <button
+                  type="button"
+                  className="flex w-full min-w-0 items-center justify-between gap-2 rounded border border-slate-300 bg-white px-3 py-2 text-left text-sm"
+                  onClick={() => setEmailInboxOpen((open) => !open)}
+                  aria-haspopup="listbox"
+                  aria-expanded={emailInboxOpen}
+                >
+                  <span className="min-w-0 whitespace-normal break-words">
+                    {(() => {
+                      const selected = emailCredentials.find((cred) => cred.id === config.emailCredentialId);
+                      return selected
+                        ? `${selected.name} (${selected.email_address}) - ${selected.provider.toUpperCase()}`
+                        : "Select email inbox";
+                    })()}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                </button>
+                {emailInboxOpen && (
+                  <div
+                    role="listbox"
+                    className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
+                  >
+                    {emailCredentials.map((cred) => (
+                      <button
+                        key={cred.id}
+                        type="button"
+                        role="option"
+                        aria-selected={config.emailCredentialId === cred.id}
+                        className={`block w-full min-w-0 whitespace-normal break-words px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+                          config.emailCredentialId === cred.id ? "bg-slate-100 font-medium" : ""
+                        }`}
+                        onClick={() => {
+                          updateConfig({ emailCredentialId: cred.id });
+                          setEmailInboxOpen(false);
+                        }}
+                      >
+                        {cred.name} ({cred.email_address}) - {cred.provider.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
             <p className="mt-1 text-xs text-slate-500">
               Email credentials are pre-configured in Email Credentials Manager
@@ -2595,7 +2642,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
   }, [config.workflowId]);
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
       <div className="flex flex-col gap-4">
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
@@ -2939,7 +2986,7 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
 
       </div>
 
-      <div className="flex flex-col gap-4 md:pt-6">
+      <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm md:pt-6">
       {/* Output Mapping Section */}
       <details className="group order-4 border-t pt-4">
         <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold text-slate-700 hover:text-slate-900">
@@ -3202,7 +3249,7 @@ function DataCaptureConfig({ config, updateConfig }: any) {
   }, []);
 
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
       <div className="flex flex-col gap-4">
       <div>
         <label className="block text-sm font-semibold text-slate-700 mb-1">
@@ -3223,48 +3270,9 @@ function DataCaptureConfig({ config, updateConfig }: any) {
         </p>
       </div>
 
-      <div className="border-t border-slate-200 pt-4">
-        <button
-          type="button"
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900"
-        >
-          <span>{showAdvanced ? "▼" : "▶"}</span>
-          Advanced Settings
-        </button>
-        
-        {showAdvanced && (
-          <div className="mt-4 space-y-4 pl-6">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1">
-                Output Variable Name
-              </label>
-              <input
-                type="text"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
-                value={config.outputVariable || "capturedData"}
-                onChange={(e) => updateConfig({ outputVariable: e.target.value })}
-                placeholder="capturedData"
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                Variable name to store captured data. Useful when you have multiple data capture nodes and need to keep their data separate (e.g., userInfo, orderDetails).
-              </p>
-              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
-                <p className="font-semibold text-blue-900 mb-1">💡 How to use in Condition/Variable nodes:</p>
-                <code className="text-blue-800">
-                  {`{{${config.outputVariable || "capturedData"}.fieldName.value}}`}
-                </code>
-                <p className="mt-1 text-blue-700">
-                  Example: <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.email.value}}`}</code> or <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.customerName.value}}`}</code>
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
       </div>
 
-      <div className="flex flex-col gap-4 md:pt-6">
+      <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm md:pt-6">
         <div className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -3310,6 +3318,46 @@ function DataCaptureConfig({ config, updateConfig }: any) {
             </div>
           </>
         )}
+
+        <div className="border-t border-blue-200 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900"
+          >
+            <span>{showAdvanced ? "▼" : "▶"}</span>
+            Advanced Settings
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-4 space-y-4 pl-6">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  Output Variable Name
+                </label>
+                <input
+                  type="text"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-mono"
+                  value={config.outputVariable || "capturedData"}
+                  onChange={(e) => updateConfig({ outputVariable: e.target.value })}
+                  placeholder="capturedData"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Variable name to store captured data. Useful when you have multiple data capture nodes and need to keep their data separate (e.g., userInfo, orderDetails).
+                </p>
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                  <p className="font-semibold text-blue-900 mb-1">💡 How to use in Condition/Variable nodes:</p>
+                  <code className="text-blue-800">
+                    {`{{${config.outputVariable || "capturedData"}.fieldName.value}}`}
+                  </code>
+                  <p className="mt-1 text-blue-700">
+                    Example: <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.email.value}}`}</code> or <code className="bg-blue-100 px-1 rounded">{`{{${config.outputVariable || "capturedData"}.customerName.value}}`}</code>
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -3374,9 +3422,10 @@ function AIExtractionConfig({ config, updateConfig }: any) {
   }, [schemaFields]);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex flex-col gap-4">
       {/* Active provider */}
-      <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
+      <div className="order-2 rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
         <div>
           Active AI provider:{" "}
           {activeProvider ? (
@@ -3394,18 +3443,20 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
 
       {/* How to use */}
-      <CollapsibleHelp title="How to use this node">
-        <p>
-          AI Extraction reads some input text, uses the active AI provider to pull
-          out the fields you describe, and stores the result in an output variable
-          you can reference in later nodes.
-        </p>
-        <ol className="list-decimal pl-4 space-y-1 mt-2">
-          <li>Provide the source value in <strong>Input Data</strong> using variables from the trigger or earlier nodes.</li>
-          <li>Choose predefined fields, a runtime instruction, or both.</li>
-          <li>Reference results downstream as <code className="bg-slate-100 px-1 rounded">{`{{output.field}}`}</code>.</li>
-        </ol>
-      </CollapsibleHelp>
+      <div className="order-3">
+        <CollapsibleHelp title="How to use this node">
+          <p>
+            AI Extraction reads some input text, uses the active AI provider to pull
+            out the fields you describe, and stores the result in an output variable
+            you can reference in later nodes.
+          </p>
+          <ol className="list-decimal pl-4 space-y-1 mt-2">
+            <li>Provide the source value in <strong>Input Data</strong> using variables from the trigger or earlier nodes.</li>
+            <li>Choose predefined fields, a runtime instruction, or both.</li>
+            <li>Reference results downstream as <code className="bg-slate-100 px-1 rounded">{`{{output.field}}`}</code>.</li>
+          </ol>
+        </CollapsibleHelp>
+      </div>
 
       <div className="order-1">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
@@ -3424,8 +3475,10 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           Runtime mode lets the chatbot user decide which fields to extract for each uploaded file.
         </p>
       </div>
+      </div>
 
-      <div className="order-3">
+      <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
+      <div className="order-1">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Input Data <span className="text-red-500">*</span>
         </label>
@@ -3475,7 +3528,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
 
       {config.extractionMode !== "instruction" && (
-      <div className="order-2">
+      <div className="order-4">
         <label className="block text-sm font-semibold text-slate-700 mb-2">
           Fields to Extract <span className="text-red-500">*</span>
         </label>
@@ -3565,7 +3618,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
       )}
 
-      <div className="order-4">
+      <div className="order-2">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Additional Instructions (optional)
         </label>
@@ -3579,7 +3632,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
 
       {config.extractionMode !== "instruction" && (
-      <div className="order-5">
+      <div className="order-3">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Clarification Expiry Timeout (minutes)
         </label>
@@ -3597,7 +3650,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
       </div>
       )}
 
-      <div className="order-6">
+      <div className="order-5">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Output Variable <span className="text-red-500">*</span>
         </label>
@@ -3612,6 +3665,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
           Reference extracted fields downstream as{" "}
           <code className="bg-slate-100 px-1 rounded">{`{{${config.outputVariable || "extracted"}.invoiceNumber}}`}</code>.
         </p>
+      </div>
       </div>
     </div>
   );
@@ -3690,9 +3744,10 @@ function AITaskConfig({ config, updateConfig }: any) {
   const instructionMode = config.instructionMode || "static";
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex flex-col gap-4">
       {/* Active provider */}
-      <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
+      <div className="order-2 rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
         <div>
           Active AI provider:{" "}
           {activeProvider ? (
@@ -3710,20 +3765,22 @@ function AITaskConfig({ config, updateConfig }: any) {
       </div>
 
       {/* How to use */}
-      <CollapsibleHelp title="How to use this node">
-        <p>
-          AI Task performs an open-ended task — summarize a file, draft a reply,
-          rewrite some text — using an instruction and optional context, and
-          stores the result in an output variable you can reference downstream.
-        </p>
-        <ol className="list-decimal pl-4 space-y-1 mt-2">
-          <li>Choose where the instruction comes from (fixed, chat, or both).</li>
-          <li>Point Context Content at earlier output, e.g. <code className="bg-slate-100 px-1 rounded">{`{{parsedFile}}`}</code>.</li>
-          <li>Reference the result downstream as <code className="bg-slate-100 px-1 rounded">{`{{output}}`}</code> or <code className="bg-slate-100 px-1 rounded">{`{{output.field}}`}</code>.</li>
-        </ol>
-      </CollapsibleHelp>
+      <div className="order-3">
+        <CollapsibleHelp title="How to use this node">
+          <p>
+            AI Task performs an open-ended task — summarize a file, draft a reply,
+            rewrite some text — using an instruction and optional context, and
+            stores the result in an output variable you can reference downstream.
+          </p>
+          <ol className="list-decimal pl-4 space-y-1 mt-2">
+            <li>Choose where the instruction comes from (fixed, chat, or both).</li>
+            <li>Point Context Content at earlier output, e.g. <code className="bg-slate-100 px-1 rounded">{`{{parsedFile}}`}</code>.</li>
+            <li>Reference the result downstream as <code className="bg-slate-100 px-1 rounded">{`{{output}}`}</code> or <code className="bg-slate-100 px-1 rounded">{`{{output.field}}`}</code>.</li>
+          </ol>
+        </CollapsibleHelp>
+      </div>
 
-      <div>
+      <div className="order-1">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Instruction Source
         </label>
@@ -3740,8 +3797,10 @@ function AITaskConfig({ config, updateConfig }: any) {
           Chat mode asks the user what to do if no chatbot message is available yet.
         </p>
       </div>
+      </div>
 
-      <div>
+      <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
+      <div className="order-1">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Instruction {instructionMode !== "chat" && <span className="text-red-500">*</span>}
         </label>
@@ -3763,7 +3822,7 @@ function AITaskConfig({ config, updateConfig }: any) {
         )}
       </div>
 
-      <div>
+      <div className="order-2">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Context Content (optional)
         </label>
@@ -3779,7 +3838,7 @@ function AITaskConfig({ config, updateConfig }: any) {
         </p>
       </div>
 
-      <div>
+      <div className="order-4">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Output Format
         </label>
@@ -3794,7 +3853,7 @@ function AITaskConfig({ config, updateConfig }: any) {
       </div>
 
       {config.outputFormat === "json" && (
-        <div>
+        <div className="order-5">
           <label className="block text-sm font-semibold text-slate-700 mb-2">
             Output Fields <span className="text-red-500">*</span>
           </label>
@@ -3868,7 +3927,7 @@ function AITaskConfig({ config, updateConfig }: any) {
       )}
 
       {instructionMode === "chat" && (
-        <div>
+        <div className="order-3">
           <label className="block text-sm font-semibold text-slate-700 mb-1">
             Clarification Expiry Timeout (minutes)
           </label>
@@ -3886,7 +3945,7 @@ function AITaskConfig({ config, updateConfig }: any) {
         </div>
       )}
 
-      <div>
+      <div className="order-6">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Output Variable <span className="text-red-500">*</span>
         </label>
@@ -3907,6 +3966,7 @@ function AITaskConfig({ config, updateConfig }: any) {
           .
         </p>
       </div>
+      </div>
     </div>
   );
 }
@@ -3924,18 +3984,21 @@ function KnowledgeSearchConfig({ config, updateConfig }: any) {
   }, []);
 
   return (
-    <div className="space-y-4">
-      <CollapsibleHelp title="How to use this node">
-        <p>
-          Knowledge Search runs a real search against the company&rsquo;s indexed
-          documents and returns the most relevant passages and citations. It
-          does not summarize or answer — feed its output into an{" "}
-          <strong>AI Task</strong> node&rsquo;s &ldquo;Context Content&rdquo; field to
-          have that node reason over the retrieved passages.
-        </p>
-      </CollapsibleHelp>
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex flex-col gap-4">
+        <CollapsibleHelp title="How to use this node">
+          <p>
+            Knowledge Search runs a real search against the company&rsquo;s indexed
+            documents and returns the most relevant passages and citations. It
+            does not summarize or answer — feed its output into an{" "}
+            <strong>AI Task</strong> node&rsquo;s &ldquo;Context Content&rdquo; field to
+            have that node reason over the retrieved passages.
+          </p>
+        </CollapsibleHelp>
+      </div>
 
-      <div>
+      <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
+      <div className="order-1">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Search Query <span className="text-red-500">*</span>
         </label>
@@ -3951,7 +4014,7 @@ function KnowledgeSearchConfig({ config, updateConfig }: any) {
         </p>
       </div>
 
-      <div>
+      <div className="order-3">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Max Results
         </label>
@@ -3966,7 +4029,7 @@ function KnowledgeSearchConfig({ config, updateConfig }: any) {
         />
       </div>
 
-      <div>
+      <div className="order-2">
         <label className="block text-sm font-semibold text-slate-700 mb-1">
           Output Variable <span className="text-red-500">*</span>
         </label>
@@ -3992,6 +4055,7 @@ function KnowledgeSearchConfig({ config, updateConfig }: any) {
           </code>
           .
         </p>
+      </div>
       </div>
     </div>
   );
@@ -4023,9 +4087,13 @@ function ConditionConfig({ config, updateConfig }: any) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex flex-col gap-4">
       {/* Variable Usage Help */}
-      <details className="border border-slate-300 rounded-lg bg-white">
+      <details className="min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white [overflow-wrap:anywhere]
+        [&_*]:min-w-0 [&_code]:whitespace-pre-wrap [&_code]:break-all
+        [&_.font-mono]:whitespace-pre-wrap [&_.font-mono]:break-words
+        [&_.flex]:flex-wrap">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
           📘 How to Use Variables in Conditions
         </summary>
@@ -4210,7 +4278,9 @@ function ConditionConfig({ config, updateConfig }: any) {
 
         </div>
       </details>
+      </div>
 
+      <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
       {/* Conditions List */}
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -4371,6 +4441,7 @@ function ConditionConfig({ config, updateConfig }: any) {
           </p>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -4920,7 +4991,8 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
   };
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
         <p className="text-sm font-semibold text-slate-800">Enabled channels summary</p>
         {enabledChannels.length === 0 ? (
@@ -4943,7 +5015,9 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
           </div>
         )}
       </div>
+      </div>
 
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
       {channelMeta.map((entry) => {
         const channel = channels[entry.key] || {};
         const isOpen = !!expanded[entry.key];
@@ -4968,7 +5042,10 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
             </button>
 
             {isOpen && (
-              <div className="border-t border-slate-200 px-3 py-3 space-y-3">
+              <div className="min-w-0 overflow-hidden border-t border-slate-200 px-3 py-3 space-y-3
+                [&_*]:min-w-0 [&_.grid]:grid-cols-1 [&_.flex]:flex-wrap
+                [&_input:not([type=checkbox])]:w-full [&_select]:w-full [&_textarea]:w-full
+                [&_input]:max-w-full [&_select]:max-w-full [&_textarea]:max-w-full">
                 <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm text-slate-700">
                     <input
@@ -5791,6 +5868,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -5816,46 +5894,71 @@ function DataFormatterConfig({ config, updateConfig }: any) {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
       <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-950">
         Convert structured data into reusable text, email-safe HTML, CSV, or JSON. Use the output variable in Notification, API Call, Variable, or End nodes.
       </div>
 
-      <div>
-        <label className="mb-1 block text-sm font-semibold text-slate-700">Input Variable Path <span className="text-red-500">*</span></label>
-        <input
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          value={String(config.inputVariablePath || "")}
-          onChange={(event) => updateConfig({ inputVariablePath: event.target.value })}
-          placeholder="e.g., apiResult.parsedJson.rows"
-        />
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        For a rich-text email, select <strong>HTML Table</strong> and use {"{{formattedData}}"} in the Notification body. Cell values are HTML-escaped automatically.
+      </div>
       </div>
 
-      <div className="grid gap-3">
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
         <div>
-          <label className="mb-1 block text-sm font-semibold text-slate-700">Format <span className="text-red-500">*</span></label>
-          <select
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={format}
-            onChange={(event) => updateConfig({ format: event.target.value })}
-          >
-            <option value="pretty_json">Pretty JSON</option>
-            <option value="html_table">HTML Table</option>
-            <option value="plain_text_table">Plain-text Table</option>
-            <option value="csv">CSV</option>
-            <option value="key_value">Key/value List</option>
-            <option value="custom_template">Custom Template</option>
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-slate-700">Output Variable <span className="text-red-500">*</span></label>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Input Variable Path <span className="text-red-500">*</span></label>
           <input
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={String(config.outputVariable || "formattedData")}
-            onChange={(event) => updateConfig({ outputVariable: event.target.value })}
-            placeholder="formattedData"
+            value={String(config.inputVariablePath || "")}
+            onChange={(event) => updateConfig({ inputVariablePath: event.target.value })}
+            placeholder="e.g., apiResult.parsedJson.rows"
           />
         </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Maximum Rows</label>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={Number(config.maxRows || 100)}
+            onChange={(event) => updateConfig({ maxRows: Number(event.target.value) || 100 })}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Empty Result Text</label>
+          <input
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={String(config.emptyText ?? "No data available.")}
+            onChange={(event) => updateConfig({ emptyText: event.target.value })}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">Null Value Text</label>
+          <input
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            value={String(config.nullText ?? "")}
+            onChange={(event) => updateConfig({ nullText: event.target.value })}
+            placeholder="Blank"
+          />
+        </div>
+
+      <div>
+        <label className="mb-1 block text-sm font-semibold text-slate-700">Format <span className="text-red-500">*</span></label>
+        <select
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={format}
+          onChange={(event) => updateConfig({ format: event.target.value })}
+        >
+          <option value="pretty_json">Pretty JSON</option>
+          <option value="html_table">HTML Table</option>
+          <option value="plain_text_table">Plain-text Table</option>
+          <option value="csv">CSV</option>
+          <option value="key_value">Key/value List</option>
+          <option value="custom_template">Custom Template</option>
+        </select>
       </div>
 
       {["html_table", "plain_text_table", "csv"].includes(format) && (
@@ -5887,39 +5990,15 @@ function DataFormatterConfig({ config, updateConfig }: any) {
         </div>
       )}
 
-      <div className="grid gap-3">
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-slate-700">Maximum Rows</label>
-          <input
-            type="number"
-            min={1}
-            max={1000}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={Number(config.maxRows || 100)}
-            onChange={(event) => updateConfig({ maxRows: Number(event.target.value) || 100 })}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-slate-700">Empty Result Text</label>
-          <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={String(config.emptyText ?? "No data available.")}
-            onChange={(event) => updateConfig({ emptyText: event.target.value })}
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-sm font-semibold text-slate-700">Null Value Text</label>
-          <input
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            value={String(config.nullText ?? "")}
-            onChange={(event) => updateConfig({ nullText: event.target.value })}
-            placeholder="Blank"
-          />
-        </div>
+      <div>
+        <label className="mb-1 block text-sm font-semibold text-slate-700">Output Variable <span className="text-red-500">*</span></label>
+        <input
+          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          value={String(config.outputVariable || "formattedData")}
+          onChange={(event) => updateConfig({ outputVariable: event.target.value })}
+          placeholder="formattedData"
+        />
       </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-        For a rich-text email, select <strong>HTML Table</strong> and use {"{{formattedData}}"} in the Notification body. Cell values are HTML-escaped automatically.
       </div>
     </div>
   );
@@ -5940,11 +6019,18 @@ function FileParserConfig({ config, updateConfig }: any) {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
       <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs text-violet-950">
         Reads a file attached to the triggering chat message and extracts its content. Only available on Manual and Chatbot triggers, since only those can carry a file attachment.
       </div>
 
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+        In structured mode, the output is an array of row objects, usable with Data Formatter (e.g. as a CSV/HTML table) or AI Extraction. In text mode, the output is the file's full extracted text.
+      </div>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
       <div>
         <label className="mb-1 block text-sm font-semibold text-slate-700">Source Variable Path <span className="text-red-500">*</span></label>
         <input
@@ -5981,9 +6067,6 @@ function FileParserConfig({ config, updateConfig }: any) {
           />
         </div>
       </div>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-        In structured mode, the output is an array of row objects, usable with Data Formatter (e.g. as a CSV/HTML table) or AI Extraction. In text mode, the output is the file's full extracted text.
       </div>
     </div>
   );
@@ -6129,9 +6212,10 @@ function VariableConfig({ config, updateConfig }: any) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
       {/* Help Section */}
-      <details className="border border-slate-300 rounded-lg bg-white">
+      <details className="min-w-0 overflow-hidden border border-slate-300 rounded-lg bg-white [overflow-wrap:anywhere] [&_code]:whitespace-pre-wrap [&_code]:break-all">
         <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
           💡 What are Variables?
         </summary>
@@ -6148,8 +6232,22 @@ function VariableConfig({ config, updateConfig }: any) {
         </div>
       </details>
 
+      {/* Usage Example */}
+      <details className="min-w-0 overflow-hidden border border-slate-300 rounded-lg bg-white [overflow-wrap:anywhere] [&_code]:whitespace-pre-wrap [&_code]:break-all">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
+          📋 Example Usage
+        </summary>
+        <div className="px-4 py-3 text-xs border-t border-slate-200 bg-slate-50">
+          <div className="space-y-1 font-mono text-slate-700">
+            <p><strong>Set:</strong> Name: <code className="bg-white px-1 rounded">total</code>, Value: <code className="bg-white px-1 rounded">{'{{capturedData.price.value}} * {{capturedData.qty.value}}'}</code></p>
+            <p><strong>Use:</strong> In Condition or Notification: <code className="bg-white px-1 rounded">{'{{variables.total}}'}</code></p>
+          </div>
+        </div>
+      </details>
+      </div>
+
       {/* Variables List */}
-      <div>
+      <div className="min-w-0 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
         <div className="flex items-center justify-between mb-2">
           <label className="block text-sm font-semibold text-slate-700">
             Variables <span className="text-red-500">*</span>
@@ -6216,19 +6314,6 @@ function VariableConfig({ config, updateConfig }: any) {
           ))}
         </div>
       </div>
-
-      {/* Usage Example */}
-      <details className="border border-slate-300 rounded-lg bg-white">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
-          📋 Example Usage
-        </summary>
-        <div className="px-4 py-3 text-xs border-t border-slate-200 bg-slate-50">
-          <div className="space-y-1 font-mono text-slate-700">
-            <p><strong>Set:</strong> Name: <code className="bg-white px-1 rounded">total</code>, Value: <code className="bg-white px-1 rounded">{'{{capturedData.price.value}} * {{capturedData.qty.value}}'}</code></p>
-            <p><strong>Use:</strong> In Condition or Notification: <code className="bg-white px-1 rounded">{'{{variables.total}}'}</code></p>
-          </div>
-        </div>
-      </details>
     </div>
   );
 }
