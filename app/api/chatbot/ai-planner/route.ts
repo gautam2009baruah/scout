@@ -120,7 +120,6 @@ export async function POST(request: NextRequest) {
 
     await setPlannerSessionState({
       conversationId: persistedConversationId,
-      companyId,
       targetAppId,
       externalUserId,
       state: result.state,
@@ -131,7 +130,6 @@ export async function POST(request: NextRequest) {
     if (result.kind === "draft_complete") {
       try {
         await createPendingPlanRequest({
-          companyId,
           targetAppId,
           externalUserId,
           conversationId: persistedConversationId,

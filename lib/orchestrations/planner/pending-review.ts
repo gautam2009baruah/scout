@@ -3,6 +3,7 @@
 // a real orchestration, created at most once per pending request.
 
 import { getOrchestrationById } from "../db";
+import { resolveCompanyIdForTargetApp } from "../target-app-scope";
 import { persistDraftPlanAsOrchestration } from "./graph-convert";
 import {
   setPendingPlanRequestDraftOrchestrationId,
@@ -26,9 +27,11 @@ export async function ensureDraftOrchestrationForPendingRequest(input: {
     if (existing) return existing.id;
   }
 
+  const companyId = await resolveCompanyIdForTargetApp(pendingRequest.targetAppId);
+
   const persisted = await persistDraftPlanAsOrchestration({
     draftPlan: pendingRequest.draftPlan,
-    companyId: pendingRequest.companyId,
+    companyId,
     targetAppId: pendingRequest.targetAppId,
     name: deriveOrchestrationName(pendingRequest.requestText),
     description: pendingRequest.requestText,

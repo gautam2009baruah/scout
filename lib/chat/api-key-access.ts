@@ -8,9 +8,11 @@ export class ChatbotApiKeyAccessError extends Error {
   }
 }
 
-type CachedKeyRecord = {
+export type CachedKeyRecord = {
   companyId: string;
-  targetAppId: string | null;
+  // chatbot_api_keys.target_app_id is NOT NULL — every valid key is always
+  // bound to exactly one target app.
+  targetAppId: string;
   allowedOrigins: string[];
   requiresGuid: boolean;
 };
@@ -116,7 +118,7 @@ async function loadKeyRecord(apiKey: string, hashedKey: string): Promise<CachedK
 
   const result = await getPool().query<{
     company_id: string;
-    target_app_id: string | null;
+    target_app_id: string;
     allowed_origins_json: string[] | null;
   }>(
     `
@@ -165,7 +167,7 @@ async function loadKeyRecord(apiKey: string, hashedKey: string): Promise<CachedK
   return record;
 }
 
-export async function assertChatbotApiKeyAccess(request: Request, input: { companyId?: string; targetAppId?: string; userId?: string }) {
+export async function assertChatbotApiKeyAccess(request: Request, input: { companyId?: string; targetAppId?: string; userId?: string }): Promise<CachedKeyRecord> {
   const apiKey = extractApiKey(request);
   if (!apiKey) {
     throw new ChatbotApiKeyAccessError("An API key is required.", 401);
@@ -202,4 +204,6 @@ export async function assertChatbotApiKeyAccess(request: Request, input: { compa
   if (record.requiresGuid && !isGuid(String(input.userId || ""))) {
     throw new ChatbotApiKeyAccessError("A valid GUID userId is required for this API key.", 400);
   }
+
+  return record;
 }

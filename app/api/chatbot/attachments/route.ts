@@ -50,13 +50,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
-    await enforceChatAttachmentRateLimit(companyId, userId || "anonymous");
+    // The API key is always bound to exactly one target app (and therefore
+    // one company) — use that authoritative scope for the write, not the
+    // client-supplied companyId/targetAppId, which can be omitted.
+    const keyRecord = await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
+    await enforceChatAttachmentRateLimit(keyRecord.targetAppId, userId || "anonymous");
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const attachment = await createChatAttachment({
-      companyId,
-      targetAppId: targetAppId || null,
+      companyId: keyRecord.companyId,
+      targetAppId: keyRecord.targetAppId,
       conversationId,
       uploadedByUserId: userId || null,
       originalFilename: file.name,

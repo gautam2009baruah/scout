@@ -49,7 +49,7 @@ export async function POST(
       ].filter(Boolean).join("\n");
 
       await appendConversationExchange({
-        companyId: pendingRequest.companyId,
+        companyId: session.user.tenantId,
         userId: pendingRequest.externalUserId,
         conversationId: pendingRequest.conversationId,
         question: "(AI Planner rejection notification)",

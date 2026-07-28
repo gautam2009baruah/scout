@@ -23,22 +23,20 @@ export async function getPlannerSessionState(conversationId: string): Promise<Pl
  */
 export async function setPlannerSessionState(input: {
   conversationId: string;
-  companyId: string;
-  targetAppId?: string | null;
+  targetAppId: string;
   externalUserId: string;
   state: PlannerState | null;
 }): Promise<void> {
   await getPool().query(
     `
-      INSERT INTO ai_planner_sessions (conversation_id, company_id, target_app_id, external_user_id, state, updated_at)
-      VALUES ($1, $2, $3, $4, $5::jsonb, now())
+      INSERT INTO ai_planner_sessions (conversation_id, target_app_id, external_user_id, state, updated_at)
+      VALUES ($1, $2, $3, $4::jsonb, now())
       ON CONFLICT (conversation_id)
       DO UPDATE SET state = EXCLUDED.state, updated_at = now()
     `,
     [
       input.conversationId,
-      input.companyId,
-      input.targetAppId || null,
+      input.targetAppId,
       input.externalUserId,
       input.state === null ? null : JSON.stringify(input.state),
     ]

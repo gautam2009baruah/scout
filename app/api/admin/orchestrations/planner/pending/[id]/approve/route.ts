@@ -76,7 +76,7 @@ export async function POST(
       context: {},
       triggerData: {
         triggerType: "chatbot",
-        companyId: pendingRequest.companyId,
+        companyId: session.user.tenantId,
         targetAppId: pendingRequest.targetAppId,
         userMessage: pendingRequest.requestText,
         source: "ai_planner_approval",
@@ -115,7 +115,7 @@ export async function POST(
       ].join("\n");
 
       await appendConversationExchange({
-        companyId: pendingRequest.companyId,
+        companyId: session.user.tenantId,
         userId: pendingRequest.externalUserId,
         conversationId: pendingRequest.conversationId,
         question: "(AI Planner approval notification)",

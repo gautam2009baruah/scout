@@ -1120,7 +1120,6 @@ export type OrchestrationClarificationRequest = {
   nodeExecutionId: string;
   nodeId: string;
   conversationId: string | null;
-  companyId: string;
   targetAppId: string | null;
   outputVariable: string;
   partialOutput: Record<string, unknown>;
@@ -1145,7 +1144,6 @@ type ClarificationRow = {
   node_execution_id: string;
   node_id: string;
   conversation_id: string | null;
-  company_id: string;
   target_app_id: string | null;
   output_variable: string;
   partial_output_json: Record<string, unknown>;
@@ -1167,7 +1165,6 @@ function mapClarificationRow(row: ClarificationRow): OrchestrationClarificationR
     nodeExecutionId: row.node_execution_id,
     nodeId: row.node_id,
     conversationId: row.conversation_id,
-    companyId: row.company_id,
     targetAppId: row.target_app_id,
     outputVariable: row.output_variable,
     partialOutput: row.partial_output_json ?? {},
@@ -1229,18 +1226,20 @@ export async function createClarificationRequest(data: {
   expiresAt: string;
 }): Promise<OrchestrationClarificationRequest> {
   const pool = getPool();
+  // companyId isn't stored on this table (derivable via execution →
+  // orchestration) — it's only needed here to validate the conversation
+  // belongs to this company before persisting conversation_id.
   const persistedConversationId = await resolvePersistedConversationId(pool, data.companyId, data.conversationId);
   const result = await pool.query<ClarificationRow>(
     `INSERT INTO orchestration_clarifications
-     (execution_id, node_execution_id, node_id, conversation_id, company_id, target_app_id, output_variable, partial_output_json, missing_fields_json, prompt, expires_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     (execution_id, node_execution_id, node_id, conversation_id, target_app_id, output_variable, partial_output_json, missing_fields_json, prompt, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       data.executionId,
       data.nodeExecutionId,
       data.nodeId,
       persistedConversationId,
-      data.companyId,
       data.targetAppId || null,
       data.outputVariable,
       JSON.stringify(data.partialOutput || {}),
@@ -1259,13 +1258,15 @@ export async function getActiveClarificationRequestForConversation(input: {
 }): Promise<OrchestrationClarificationRequest | null> {
   const pool = getPool();
   const result = await pool.query<ClarificationRow>(
-    `SELECT *
-     FROM orchestration_clarifications
-     WHERE company_id = $1
-       AND conversation_id = $2
-       AND status = 'active'
-       AND expires_at > now()
-     ORDER BY created_at DESC
+    `SELECT c.*
+     FROM orchestration_clarifications c
+     INNER JOIN orchestration_executions oe ON oe.id = c.execution_id
+     INNER JOIN orchestrations o ON o.id = oe.orchestration_id
+     WHERE o.company_id = $1
+       AND c.conversation_id = $2
+       AND c.status = 'active'
+       AND c.expires_at > now()
+     ORDER BY c.created_at DESC
      LIMIT 1`,
     [input.companyId, input.conversationId]
   );

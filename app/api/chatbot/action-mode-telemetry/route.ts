@@ -31,23 +31,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
+    // The API key is always bound to exactly one target app — use that
+    // authoritative scope for the write, not the client-supplied
+    // targetAppId, which can be omitted.
+    const keyRecord = await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
 
     await getPool().query(
       `
         INSERT INTO chatbot_action_mode_events (
-          company_id,
           target_app_id,
           external_user_id,
           conversation_id,
           event_type,
           metadata_json
         )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        VALUES ($1, $2, $3, $4, $5::jsonb)
       `,
       [
-        companyId,
-        targetAppId || null,
+        keyRecord.targetAppId,
         userId,
         conversationId || null,
         body.eventType,

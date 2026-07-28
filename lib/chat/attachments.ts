@@ -27,8 +27,7 @@ export class ChatAttachmentError extends Error {
 
 export type ChatAttachmentRow = {
   id: string;
-  companyId: string;
-  targetAppId: string | null;
+  targetAppId: string;
   conversationId: string | null;
   uploadedByUserId: string | null;
   originalFilename: string;
@@ -48,8 +47,7 @@ function isAllowedFileType(value: string): value is ChatAttachmentFileType {
 
 function mapRow(row: {
   id: string;
-  company_id: string;
-  target_app_id: string | null;
+  target_app_id: string;
   conversation_id: string | null;
   uploaded_by_user_id: string | null;
   original_filename: string;
@@ -64,7 +62,6 @@ function mapRow(row: {
 }): ChatAttachmentRow {
   return {
     id: row.id,
-    companyId: row.company_id,
     targetAppId: row.target_app_id,
     conversationId: row.conversation_id,
     uploadedByUserId: row.uploaded_by_user_id,
@@ -85,14 +82,14 @@ function buildChatAttachmentStoragePath(companyId: string, conversationId: strin
   return `/companies/${companyId}/chat-attachments/${conversationSegment}/${attachmentId}/${sanitizeFilename(filename)}`;
 }
 
-export async function enforceChatAttachmentRateLimit(companyId: string, clientKey: string): Promise<void> {
+export async function enforceChatAttachmentRateLimit(targetAppId: string, clientKey: string): Promise<void> {
   const pool = getPool();
 
   await pool.query(`DELETE FROM chat_attachment_rate_limit_windows WHERE updated_at < now() - interval '1 day'`);
 
   const result = await pool.query<{ upload_count: number }>(
     `
-      INSERT INTO chat_attachment_rate_limit_windows (company_id, client_key, window_start, upload_count, updated_at)
+      INSERT INTO chat_attachment_rate_limit_windows (target_app_id, client_key, window_start, upload_count, updated_at)
       VALUES (
         $1,
         $2,
@@ -100,11 +97,11 @@ export async function enforceChatAttachmentRateLimit(companyId: string, clientKe
         1,
         now()
       )
-      ON CONFLICT (company_id, client_key, window_start)
+      ON CONFLICT (target_app_id, client_key, window_start)
       DO UPDATE SET upload_count = chat_attachment_rate_limit_windows.upload_count + 1, updated_at = now()
       RETURNING upload_count
     `,
-    [companyId, clientKey, RATE_LIMIT_WINDOW_SECONDS]
+    [targetAppId, clientKey, RATE_LIMIT_WINDOW_SECONDS]
   );
 
   const count = result.rows[0]?.upload_count ?? 0;
@@ -116,7 +113,7 @@ export async function enforceChatAttachmentRateLimit(companyId: string, clientKe
 
 export async function createChatAttachment(input: {
   companyId: string;
-  targetAppId?: string | null;
+  targetAppId: string;
   conversationId?: string | null;
   uploadedByUserId?: string | null;
   originalFilename: string;
@@ -157,16 +154,15 @@ export async function createChatAttachment(input: {
   const result = await getPool().query(
     `
       INSERT INTO chat_attachments (
-        id, company_id, target_app_id, conversation_id, uploaded_by_user_id,
+        id, target_app_id, conversation_id, uploaded_by_user_id,
         original_filename, file_type, mime_type, file_size, checksum, storage_path, status
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'uploaded')
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'uploaded')
       RETURNING *
     `,
     [
       attachmentId,
-      input.companyId,
-      input.targetAppId || null,
+      input.targetAppId,
       input.conversationId || null,
       input.uploadedByUserId || null,
       originalFilename,
@@ -186,7 +182,12 @@ export async function createChatAttachment(input: {
 // orchestration is allowed to read the file.
 export async function getChatAttachmentById(id: string, companyId: string): Promise<ChatAttachmentRow | null> {
   const result = await getPool().query(
-    `SELECT * FROM chat_attachments WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL`,
+    `
+      SELECT ca.*
+      FROM chat_attachments ca
+      INNER JOIN company_target_applications cta ON cta.id = ca.target_app_id
+      WHERE ca.id = $1 AND cta.company_id = $2 AND ca.deleted_at IS NULL
+    `,
     [id, companyId]
   );
 

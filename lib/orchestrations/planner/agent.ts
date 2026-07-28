@@ -74,7 +74,7 @@ export type PlannerAgentDeps = {
   // (rather than a direct import call inside handleTurn) so it can be
   // stubbed in tests without a real database — see getActivePendingPlanRequest
   // in ./pending-requests.ts for the real implementation.
-  getActivePendingPlanRequest: (input: { companyId: string; externalUserId: string }) => Promise<{ id: string } | null>;
+  getActivePendingPlanRequest: (input: { targetAppId: string; externalUserId: string }) => Promise<{ id: string } | null>;
 };
 
 async function defaultDraftWithLLM(input: { companyId: string; systemPrompt: string; userPrompt: string; contextText: string }) {
@@ -329,7 +329,7 @@ export async function handleTurn(input: PlannerTurnInput, deps: PlannerAgentDeps
     // already-approved orchestration is a different, safe action.
     await checkExternalUserAccess(input.externalUserId, "ai_planner_draft");
     const pendingLock = await deps.getActivePendingPlanRequest({
-      companyId: input.companyId,
+      targetAppId: input.targetAppId,
       externalUserId: input.externalUserId,
     });
     if (pendingLock) {

@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     // conversation. Re-enables automatically once Step 7b resolves it,
     // since this is just a live query, not a cached flag.
     const pendingRequest = userId
-      ? await getActivePendingPlanRequest({ companyId, externalUserId: userId })
+      ? await getActivePendingPlanRequest({ targetAppId, externalUserId: userId })
       : null;
 
     const orchestrations = (await Promise.all(page.orchestrations.map(async (orchestration) => {

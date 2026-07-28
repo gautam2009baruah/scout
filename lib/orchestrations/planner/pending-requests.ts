@@ -8,8 +8,7 @@ export type PendingPlanRequestStatus = "pending" | "approved" | "rejected";
 
 export type PendingPlanRequest = {
   id: string;
-  companyId: string;
-  targetAppId: string | null;
+  targetAppId: string;
   targetAppName: string | null;
   externalUserId: string;
   conversationId: string | null;
@@ -36,8 +35,7 @@ export type PendingPlanRequestPage = {
 
 type PendingPlanRequestRow = {
   id: string;
-  company_id: string;
-  target_app_id: string | null;
+  target_app_id: string;
   target_app_name: string | null;
   external_user_id: string;
   conversation_id: string | null;
@@ -57,7 +55,6 @@ type PendingPlanRequestRow = {
 function mapRow(row: PendingPlanRequestRow): PendingPlanRequest {
   return {
     id: row.id,
-    companyId: row.company_id,
     targetAppId: row.target_app_id,
     targetAppName: row.target_app_name ?? null,
     externalUserId: row.external_user_id,
@@ -95,24 +92,27 @@ export class PendingPlanRequestConflictError extends Error {
 
 /**
  * Looks up whether externalUserId already has a request awaiting admin
- * review for this company — the pending-request lock's read side. Used by
- * the chatbot orchestrations list (Step 7, to disable the AI Planner entry)
- * and will be used again by Step 8's service-layer guard.
+ * review for this target app — the pending-request lock's read side. Used
+ * by the chatbot orchestrations list (Step 7, to disable the AI Planner
+ * entry) and will be used again by Step 8's service-layer guard. Scoped to
+ * target_app_id to match the DB's own partial-unique-index granularity (see
+ * createPendingPlanRequest's doc comment) — a user can have at most one
+ * pending request per target app, not per company.
  */
 export async function getActivePendingPlanRequest(input: {
-  companyId: string;
+  targetAppId: string;
   externalUserId: string;
 }): Promise<PendingPlanRequest | null> {
   const result = await getPool().query<PendingPlanRequestRow>(
     `
       SELECT *
       FROM ai_planner_pending_requests
-      WHERE company_id = $1
+      WHERE target_app_id = $1
         AND external_user_id = $2
         AND status = 'pending'
       LIMIT 1
     `,
-    [input.companyId, input.externalUserId]
+    [input.targetAppId, input.externalUserId]
   );
 
   return result.rows[0] ? mapRow(result.rows[0]) : null;
@@ -120,14 +120,13 @@ export async function getActivePendingPlanRequest(input: {
 
 /**
  * Creates the pending-approval record for a completed draft plan. Relies on
- * the DB's partial unique index (one pending row per company+external_user_id)
+ * the DB's partial unique index (one pending row per target_app_id+external_user_id)
  * as the ultimate guarantee against a race between the lock check and this
  * insert — thrown as PendingPlanRequestConflictError rather than a raw
  * Postgres error so callers can show a friendly message.
  */
 export async function createPendingPlanRequest(input: {
-  companyId: string;
-  targetAppId?: string | null;
+  targetAppId: string;
   externalUserId: string;
   conversationId?: string | null;
   requestText: string;
@@ -138,14 +137,13 @@ export async function createPendingPlanRequest(input: {
     const result = await getPool().query<PendingPlanRequestRow>(
       `
         INSERT INTO ai_planner_pending_requests (
-          company_id, target_app_id, external_user_id, conversation_id, request_text, draft_plan, plan_summary
+          target_app_id, external_user_id, conversation_id, request_text, draft_plan, plan_summary
         )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6)
         RETURNING *
       `,
       [
-        input.companyId,
-        input.targetAppId || null,
+        input.targetAppId,
         input.externalUserId,
         input.conversationId || null,
         input.requestText,
@@ -184,7 +182,7 @@ export async function listPendingPlanRequests(input: {
   ];
 
   const whereClause = `
-    WHERE r.company_id = $1
+    WHERE cta.company_id = $1
       AND r.status = 'pending'
       AND ($2::uuid IS NULL OR r.target_app_id = $2)
       AND ($3::timestamptz IS NULL OR r.created_at >= $3)
@@ -196,7 +194,7 @@ export async function listPendingPlanRequests(input: {
       `
         SELECT r.*, cta.name AS target_app_name
         FROM ai_planner_pending_requests r
-        LEFT JOIN company_target_applications cta ON cta.id = r.target_app_id
+        INNER JOIN company_target_applications cta ON cta.id = r.target_app_id
         ${whereClause}
         ORDER BY r.created_at ASC
         LIMIT $5 OFFSET $6
@@ -204,7 +202,12 @@ export async function listPendingPlanRequests(input: {
       [...params, pageSize, offset]
     ),
     getPool().query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM ai_planner_pending_requests r ${whereClause}`,
+      `
+        SELECT COUNT(*)::text AS count
+        FROM ai_planner_pending_requests r
+        INNER JOIN company_target_applications cta ON cta.id = r.target_app_id
+        ${whereClause}
+      `,
       params
     ),
   ]);
@@ -244,7 +247,7 @@ export async function listResolvedPlanRequests(input: {
   ];
 
   const whereClause = `
-    WHERE r.company_id = $1
+    WHERE cta.company_id = $1
       AND r.status IN ('approved', 'rejected')
       AND ($2::uuid IS NULL OR r.target_app_id = $2)
       AND ($3::timestamptz IS NULL OR r.resolved_at >= $3)
@@ -257,7 +260,7 @@ export async function listResolvedPlanRequests(input: {
       `
         SELECT r.*, cta.name AS target_app_name, u.name AS resolved_by_name
         FROM ai_planner_pending_requests r
-        LEFT JOIN company_target_applications cta ON cta.id = r.target_app_id
+        INNER JOIN company_target_applications cta ON cta.id = r.target_app_id
         LEFT JOIN users u ON u.id = r.resolved_by
         ${whereClause}
         ORDER BY r.resolved_at DESC
@@ -266,7 +269,12 @@ export async function listResolvedPlanRequests(input: {
       [...params, pageSize, offset]
     ),
     getPool().query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM ai_planner_pending_requests r ${whereClause}`,
+      `
+        SELECT COUNT(*)::text AS count
+        FROM ai_planner_pending_requests r
+        INNER JOIN company_target_applications cta ON cta.id = r.target_app_id
+        ${whereClause}
+      `,
       params
     ),
   ]);
@@ -284,7 +292,15 @@ export async function listResolvedPlanRequests(input: {
 
 export async function getPendingPlanRequestById(input: { id: string; companyId: string }): Promise<PendingPlanRequest | null> {
   const result = await getPool().query<PendingPlanRequestRow>(
-    `SELECT * FROM ai_planner_pending_requests WHERE id = $1 AND company_id = $2`,
+    `
+      SELECT *
+      FROM ai_planner_pending_requests
+      WHERE id = $1
+        AND EXISTS (
+          SELECT 1 FROM company_target_applications cta
+          WHERE cta.id = ai_planner_pending_requests.target_app_id AND cta.company_id = $2
+        )
+    `,
     [input.id, input.companyId]
   );
 
@@ -319,8 +335,11 @@ export async function resolvePendingPlanRequest(input: {
       UPDATE ai_planner_pending_requests
       SET status = $3, resolved_at = now(), resolved_by = $4, rejection_reason = $5, updated_at = now()
       WHERE id = $1
-        AND company_id = $2
         AND status = 'pending'
+        AND EXISTS (
+          SELECT 1 FROM company_target_applications cta
+          WHERE cta.id = ai_planner_pending_requests.target_app_id AND cta.company_id = $2
+        )
       RETURNING *
     `,
     [input.id, input.companyId, input.status, input.resolvedById, input.rejectionReason || null]
