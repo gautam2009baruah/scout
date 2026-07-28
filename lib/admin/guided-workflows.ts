@@ -153,7 +153,12 @@ function normalizeGuideSteps(steps: GuideStep[]) {
       type: step.type ?? (stepPurpose === "navigation" || step.trigger === "click" ? "click" : step.trigger === "manualNext" ? "manualInstruction" : step.trigger === "input" || step.trigger === "change" || step.trigger === "blur" || step.trigger === "focus" ? "input" : "highlight"),
       stepPurpose,
       navigationMode,
-      autoClick: step.autoClick ?? navigationMode === "autoClick",
+      // navigationMode is the single source of truth for whether a step
+      // auto-clicks — never trust a persisted step.autoClick, which can go
+      // stale (e.g. a step once set to "autoClick" then switched back to
+      // "waitForUser" without navigationMode changing again) and silently
+      // override the admin's current choice.
+      autoClick: navigationMode === "autoClick",
       trigger: stepPurpose === "navigation" ? "click" : normalizeGuideStepTrigger(step.trigger)
     };
   });

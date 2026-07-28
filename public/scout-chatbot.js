@@ -1,7 +1,12 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "1.1.2";
+  var VERSION = "1.1.3";
+  // Must match PLAYER_VERSION in scout-smart-adoption-player.js — appended as a
+  // cache-buster below so a browser that already cached an older copy of that
+  // file (e.g. from earlier in the same session, before a fix landed) doesn't
+  // silently keep reusing it on every page's fresh load.
+  var PLAYER_VERSION = "20260728-guide-resume-race-fix";
   var instances = [];
   var playerPromise = null;
   var orchestrationPlayerLoaded = false;
@@ -27,6 +32,7 @@
 
     var scoutOrigin = new URL(config.scoutUrl, global.location.href).origin;
     ensureOrchestrationPlayer(config, scoutOrigin);
+    resumeGuideIfPending(config);
     var configuredPosition = config.theme && (config.theme.position === "bottom-left" || config.theme.position === "bottom-right")
       ? config.theme.position
       : config.position;
@@ -163,6 +169,39 @@
     });
   }
 
+  // Guide navigation steps can trigger a REAL page load, which destroys this
+  // whole script (and any in-progress wait for the next page) before the guide's
+  // main steps ever run. scout-smart-adoption-player.js saves a small marker to
+  // sessionStorage right before such a click; on every fresh page load we check
+  // for it here and, if found, resume the guide instead of leaving it stranded.
+  // Key name and staleness window must stay in sync with that file's copy.
+  var GUIDE_RESUME_STORAGE_KEY = "scout_guide_resume_state";
+  var GUIDE_RESUME_MAX_AGE_MS = 5 * 60 * 1000;
+
+  function consumePendingGuideResumeId() {
+    try {
+      var raw = sessionStorage.getItem(GUIDE_RESUME_STORAGE_KEY);
+      if (!raw) return null;
+      sessionStorage.removeItem(GUIDE_RESUME_STORAGE_KEY);
+      var state = JSON.parse(raw);
+      if (!state || !state.guideId) return null;
+      if (Date.now() - (state._savedAt || 0) > GUIDE_RESUME_MAX_AGE_MS) return null;
+      return state.guideId;
+    } catch {
+      return null;
+    }
+  }
+
+  function resumeGuideIfPending(config) {
+    var guideId = consumePendingGuideResumeId();
+    if (!guideId || !config.targetAppId) return;
+    getPlayer(config).then(function (player) {
+      if (player.resume) player.resume(guideId);
+    }).catch(function (error) {
+      console.error("Scout guided workflow could not resume after navigation.", error);
+    });
+  }
+
   function getPlayer(config) {
     if (playerPromise) return playerPromise;
     playerPromise = new Promise(function (resolve, reject) {
@@ -176,7 +215,7 @@
       }
       if (global.ScoutAdoptionPlayer) return initialize();
       var script = document.createElement("script");
-      script.src = config.scoutUrl.replace(/\/$/, "") + "/scout-smart-adoption-player.js";
+      script.src = config.scoutUrl.replace(/\/$/, "") + "/scout-smart-adoption-player.js?v=" + PLAYER_VERSION;
       script.async = true;
       script.onload = initialize;
       script.onerror = function () { reject(new Error("Scout guided workflow player failed to load.")); };
@@ -195,7 +234,7 @@
     orchestrationPlayerLoaded = true;
     global.ScoutOrchestrationConfig = {
       apiBaseUrl: scoutOrigin,
-      scoutPlayerUrl: scoutOrigin + "/scout-smart-adoption-player.js",
+      scoutPlayerUrl: scoutOrigin + "/scout-smart-adoption-player.js?v=" + PLAYER_VERSION,
       targetAppId: config.targetAppId || null
     };
     var script = document.createElement("script");

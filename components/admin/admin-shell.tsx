@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, ListChecks, LoaderCircle, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, ListChecks, LoaderCircle, Mail, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -48,7 +48,7 @@ const moduleIcons = {
   [MODULE_KEYS.workflowSelfHealingReview]: Sparkles,
   [MODULE_KEYS.workflowAnalytics]: BarChart3,
   [MODULE_KEYS.orchestrationDesigner]: GitBranch,
-  [MODULE_KEYS.emailCredentials]: Bot,
+  [MODULE_KEYS.emailCredentials]: Mail,
   [MODULE_KEYS.companyRoleSetup]: TableProperties,
   [MODULE_KEYS.triggersMonitoring]: Activity,
   [MODULE_KEYS.searchAnalytics]: BarChart3,

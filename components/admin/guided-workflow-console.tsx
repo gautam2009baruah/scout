@@ -1126,6 +1126,11 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
                             onChange={(event) => updateStep(index, {
                               stepPurpose: event.target.value === "navigation" ? "navigation" : "main",
                               navigationMode: event.target.value === "navigation" ? step.navigationMode ?? "waitForUser" : undefined,
+                              // Cleared here rather than left stale — navigationMode is what
+                              // actually drives auto-click behavior (see stepsForGuide/
+                              // normalizeGuideSteps), but an old persisted autoClick: true
+                              // from a prior "navigation"+"autoClick" state shouldn't linger.
+                              autoClick: undefined,
                               trigger: event.target.value === "navigation" ? "click" : step.trigger
                             })}
                             value={purpose}
@@ -1141,7 +1146,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
                         {purpose === "navigation" ? (
                           <label className="grid gap-1 text-xs font-medium text-slate-600">
                             Navigation behavior
-                            <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900" onChange={(event) => updateStep(index, { navigationMode: event.target.value === "autoClick" ? "autoClick" : "waitForUser" })} value={step.navigationMode ?? "waitForUser"}>
+                            <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900" onChange={(event) => updateStep(index, { navigationMode: event.target.value === "autoClick" ? "autoClick" : "waitForUser", autoClick: undefined })} value={step.navigationMode ?? "waitForUser"}>
                               <option value="waitForUser">Wait for user click</option>
                               <option value="autoClick">Auto-click this control</option>
                             </select>
@@ -1376,7 +1381,7 @@ function downloadJson(filename: string, value: unknown) {
 
 function installSnippet(targetAppId: string, appBaseUrl: string) {
   const baseUrl = appBaseUrl;
-  const playerVersion = "20260701-tooltip-rect-guard";
+  const playerVersion = "20260728-guide-resume-race-fix";
 
   return `<script src="${baseUrl}/scout-smart-adoption-player.js?v=${playerVersion}"></script>
 <script>

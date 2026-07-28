@@ -267,7 +267,7 @@ type ScoutAdoptionPlayerHandle = {
   play(guideId?: string): void;
 };
 
-const SCOUT_PLAYER_VERSION = "20260701-tooltip-rect-guard";
+const SCOUT_PLAYER_VERSION = "20260728-guide-resume-race-fix";
 
 declare global {
   interface Window {

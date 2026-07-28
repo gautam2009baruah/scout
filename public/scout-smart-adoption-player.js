@@ -1,9 +1,68 @@
 (function () {
   const DEFAULTS = { scoutBaseUrl: "", targetAppId: "", autoShowLauncher: true, userId: "", apiKey: "" };
-  const PLAYER_VERSION = "20260701-tooltip-rect-guard";
+  const PLAYER_VERSION = "20260728-guide-resume-race-fix";
   const GOAL_TIMEOUT_MS = 45000;
   const AUTO_CLICK_PREVIEW_MS = 350;
   const LOCATION_EVENT = "scout:locationchange";
+  // A navigation step's click can cause a REAL page unload, which destroys this
+  // whole script (including whatever is polling for the next page to be ready)
+  // before it ever gets a chance to run the main steps. sessionStorage survives
+  // that unload, so we save "guide X is waiting to resume" right before the
+  // click, and scout-chatbot.js checks for it on every fresh page load, calling
+  // back into resume() below — mirrors the same pattern scout-orchestration-player.js
+  // already uses (scout_orchestration_state) for the same class of problem. The
+  // key name and max-age here must stay in sync with scout-chatbot.js's own copy.
+  const GUIDE_RESUME_STORAGE_KEY = "scout_guide_resume_state";
+  const GUIDE_RESUME_MAX_AGE_MS = 5 * 60 * 1000;
+
+  function isSessionStorageAvailable() {
+    try {
+      const test = "__scout_storage_test__";
+      sessionStorage.setItem(test, test);
+      sessionStorage.removeItem(test);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Shown at most once per page load — this is a soft-degradation warning
+  // (the walkthrough just won't auto-continue after this navigation), not a
+  // page-breaking error, so it shouldn't repeat for every navigation step.
+  let guideStorageWarningShown = false;
+
+  function warnGuideStorageUnavailable() {
+    if (guideStorageWarningShown) return;
+    guideStorageWarningShown = true;
+    const message = "Browser Storage Required\n\nThis step takes you to a new page, but your browser is blocking the storage (sessionStorage) this walkthrough needs to continue automatically there.\n\nTo fix this:\n• Enable cookies/storage in your browser settings\n• Use regular browsing mode (not private/incognito)\n• Disable privacy extensions that block storage\n\nWithout it, you may need to restart the walkthrough manually after the new page loads.";
+    if (typeof showScoutNotification === "function") {
+      showScoutNotification({ message, type: "warning", duration: 0 });
+    } else {
+      alert(message);
+    }
+  }
+
+  function saveGuideResumeState(guideId) {
+    if (!isSessionStorageAvailable()) {
+      warnGuideStorageUnavailable();
+      return;
+    }
+    try {
+      sessionStorage.setItem(GUIDE_RESUME_STORAGE_KEY, JSON.stringify({ guideId, _savedAt: Date.now() }));
+    } catch (error) {
+      console.error("[Scout Adoption Player] Failed to save guide resume state:", error);
+      warnGuideStorageUnavailable();
+    }
+  }
+
+  function clearGuideResumeState() {
+    if (!isSessionStorageAvailable()) return;
+    try {
+      sessionStorage.removeItem(GUIDE_RESUME_STORAGE_KEY);
+    } catch {
+      // Non-fatal — worst case a stale entry lingers until it ages out.
+    }
+  }
   const MIN_MATCH_SCORE = 55;
   const AMBIGUOUS_SCORE_DELTA = 8;
   const POSITION_RESOLVE_MIN_SCORE = 0.72;
@@ -967,7 +1026,11 @@
           ? "highlight"
           : step.type || (stepPurpose === "navigation" || step.trigger === "click" ? "click" : ["input", "change", "blur", "focus"].includes(step.trigger) ? "input" : "highlight"),
         navigationMode,
-        autoClick: step.autoClick === true || navigationMode === "autoClick",
+        // navigationMode is the single source of truth for whether a step auto-clicks —
+        // never trust a persisted step.autoClick, which can go stale (e.g. a step once set
+        // to "autoClick" then switched back to "waitForUser" without navigationMode changing
+        // again) and silently override the admin's current choice.
+        autoClick: navigationMode === "autoClick",
         trigger: stepPurpose === "navigation" ? "click" : step.trigger
       });
     };
@@ -1213,6 +1276,10 @@
       this.stopped = false;
       if (!options || options.resetProgress !== false) {
         this.resetProgress();
+        // A cold (re)start means any resume marker from a previous, unrelated
+        // run of this guide is stale — clear it here, never from
+        // waitForGoalThenMain (see the note there for why that's unsafe).
+        clearGuideResumeState();
         this.preWorkflowConfirmationShown = false;
         this.executionId = randomId();
         this.executionStartedAt = performance.now();
@@ -1220,6 +1287,14 @@
         this.stepExecutionIds = {};
         this.stepStartedAt = {};
         this.emitAnalytics({ eventType: "workflow_start", status: "started" });
+      }
+      // skipEntry: resuming after a real page navigation destroyed the previous
+      // page's Player instance mid-wait (see saveGuideResumeState/resume() below).
+      // The entry/navigation step already ran on the old page — don't show the
+      // pre-workflow confirmation or re-run entry steps again here, just pick up
+      // waiting for the goal page on this fresh load.
+      if (options && options.skipEntry) {
+        this.preWorkflowConfirmationShown = true;
       }
       if (!this.preWorkflowConfirmationShown && this.guide.preWorkflowConfirmationEnabled && String(this.guide.preWorkflowConfirmationHtml || "").trim()) {
         this.preWorkflowConfirmationShown = true;
@@ -1233,7 +1308,7 @@
         this.runSteps(mainSteps, "main");
         return;
       }
-      if (entrySteps.length === 0) {
+      if ((options && options.skipEntry) || entrySteps.length === 0) {
         this.waitForGoalThenMain(goalContext);
         return;
       }
@@ -1376,6 +1451,7 @@
         if (step.autoClick === true && isSafeAutoClickTarget(target)) {
           await delay(AUTO_CLICK_PREVIEW_MS);
           if (this.stopped) return;
+          if (step.stepPurpose === "navigation") saveGuideResumeState(this.guide.id);
           target.click();
           if (!this.stopped) this.next(onComplete);
           return;
@@ -1383,6 +1459,7 @@
         const advanceOnClick = (event) => {
           if (isScoutPlayerEvent(event)) return;
           target.removeEventListener("click", advanceOnClick);
+          if (step.stepPurpose === "navigation") saveGuideResumeState(this.guide.id);
           this.next(onComplete);
         };
         target.addEventListener("click", advanceOnClick);
@@ -1791,6 +1868,7 @@
         const advanceOnClick = (event) => {
           if (isScoutPlayerEvent(event)) return;
           control.removeEventListener("click", advanceOnClick);
+          if (step.stepPurpose === "navigation") saveGuideResumeState(this.guide.id);
           this.next(onComplete);
         };
         control.addEventListener("click", advanceOnClick);
@@ -1868,6 +1946,14 @@
     }
 
     async waitForGoalThenMain(goalContext) {
+      // NOTE: do not clear the guide-resume marker here. This runs synchronously
+      // in the SAME tick as the navigation-step click that may have just called
+      // saveGuideResumeState() (click -> next() -> render() -> onComplete() ->
+      // here) — a real link's actual navigation only happens *after* this whole
+      // chain returns, so clearing here would wipe the save before the browser
+      // ever gets to use it. Stale markers are cleaned up at the next cold
+      // start() instead (see resetProgress branch below) or simply expire via
+      // GUIDE_RESUME_MAX_AGE_MS.
       if (!goalContext) {
         this.runSteps(guideSteps(this.guide, true), "main");
         return;
@@ -2043,6 +2129,15 @@
         play(guideId) {
           const guide = guides.find((item) => item.id === guideId) || guides[0];
           if (guide) new Player(guide, guideResolver, analytics).start();
+        },
+        // Continues a guide on a fresh page load after saveGuideResumeState() was
+        // set on the previous page — skips entry steps and any pre-workflow
+        // confirmation, going straight to waiting for the goal page. See
+        // scout-chatbot.js, which checks for a pending resume on every load and
+        // calls this instead of play().
+        resume(guideId) {
+          const guide = guides.find((item) => item.id === guideId);
+          if (guide) new Player(guide, guideResolver, analytics).start({ resetProgress: false, skipEntry: true });
         }
       };
     }
