@@ -581,8 +581,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {/* Node-specific configuration */}
         <section className={`node-properties-form rounded-lg border border-slate-200 p-4
           [&>div]:grid [&>div]:grid-cols-1 [&>div]:gap-3 [&>div]:space-y-0
-          ${nodeType === "trigger" || nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" ? "lg:[&>div]:grid-cols-[2fr_3fr]" : "lg:[&>div]:grid-cols-2"}
-          ${nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" ? "lg:[&>div>div:nth-child(2)]:border-l lg:[&>div>div:nth-child(2)]:border-slate-200 lg:[&>div>div:nth-child(2)]:pl-4" : ""}
+          ${nodeType === "trigger" || nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" || nodeType === "for_each" || nodeType === "ai_planner" || nodeType === "end" ? "lg:[&>div]:grid-cols-[2fr_3fr]" : "lg:[&>div]:grid-cols-2"}
+          ${nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" || nodeType === "for_each" || nodeType === "ai_planner" || nodeType === "end" ? "lg:[&>div>div:nth-child(2)]:border-l lg:[&>div>div:nth-child(2)]:border-slate-200 lg:[&>div>div:nth-child(2)]:pl-4" : ""}
           [&>div>div]:min-w-0
           [&_input]:max-w-sm [&_select]:max-w-xs [&_textarea]:max-w-lg`}>
         {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} orchestrationId={orchestrationId} />}
@@ -6102,11 +6102,14 @@ function ForEachConfig({ config, updateConfig, companyId, targetAppId }: any) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
       <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-xs text-teal-950">
         Runs one action once per item in a list — e.g. call an API for every row from a File Parser node. Each iteration sees the current item at the variable name below.
       </div>
+      </div>
 
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
       <div>
         <label className="mb-1 block text-sm font-semibold text-slate-700">Source Variable Path (array) <span className="text-red-500">*</span></label>
         <input
@@ -6117,7 +6120,7 @@ function ForEachConfig({ config, updateConfig, companyId, targetAppId }: any) {
         />
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3">
         <div>
           <label className="mb-1 block text-sm font-semibold text-slate-700">Item Variable Name</label>
           <input
@@ -6174,14 +6177,19 @@ function ForEachConfig({ config, updateConfig, companyId, targetAppId }: any) {
           ))}
         </select>
       </div>
+      </div>
 
-      {bodyNodeType === "api_call" && <ApiCallConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
-      {bodyNodeType === "notification" && (
-        <NotificationConfig config={bodyConfig} updateConfig={updateBodyConfig} companyId={companyId} targetAppId={targetAppId} />
+      {bodyNodeType && (
+        <div className="min-w-0 md:col-span-2">
+          {bodyNodeType === "api_call" && <ApiCallConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
+          {bodyNodeType === "notification" && (
+            <NotificationConfig config={bodyConfig} updateConfig={updateBodyConfig} companyId={companyId} targetAppId={targetAppId} />
+          )}
+          {bodyNodeType === "ai_extraction" && <AIExtractionConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
+          {bodyNodeType === "variable" && <VariableConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
+          {bodyNodeType === "data_formatter" && <DataFormatterConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
+        </div>
       )}
-      {bodyNodeType === "ai_extraction" && <AIExtractionConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
-      {bodyNodeType === "variable" && <VariableConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
-      {bodyNodeType === "data_formatter" && <DataFormatterConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
     </div>
   );
 }
@@ -6575,14 +6583,17 @@ function AiPlannerConfig({ config, updateConfig }: any) {
   const isDraftingEntryPoint = config.isDraftingEntryPoint === true;
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
         This node marks where chat users land when they ask for something new —
         matching against existing orchestrations first, then drafting a new one
         for admin approval. The actual conversation runs outside this graph;
         this node never executes any logic of its own.
       </div>
+      </div>
 
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
       <div className="flex items-center gap-2">
         <input
           checked={isDraftingEntryPoint}
@@ -6618,6 +6629,7 @@ function AiPlannerConfig({ config, updateConfig }: any) {
           entry point.
         </p>
       </div>
+      </div>
     </div>
   );
 }
@@ -6641,12 +6653,27 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
   }, []);
 
   return (
-    <div className="space-y-4">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
         End node now aggregates previous node outputs into one final workflow response.
         Keep orchestration flow one-way. Use status updates for progress and this section for final response shaping.
       </div>
 
+      <details className="rounded-lg border border-slate-300 bg-white">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
+          Final response examples
+        </summary>
+        <div className="px-4 py-3 space-y-2 text-xs border-t border-slate-200 bg-slate-50 text-slate-700">
+          <p><strong>Path:</strong> finalResponse</p>
+          <p><strong>Contains:</strong> execution id, selected output variables, and optional per-node responses.</p>
+          <p><strong>Table example:</strong> set Display Data Variable Path to <span className="font-mono">apiResult.parsedJson.rows</span>.</p>
+          <p><strong>Chatbot flow:</strong> Workflow router can read this final response and send a clean answer to the user.</p>
+        </div>
+      </details>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
       <div className="grid gap-3">
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-1">Display Mode</label>
@@ -6738,18 +6765,6 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
         </div>
       </div>
 
-      <details className="rounded-lg border border-slate-300 bg-white">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 select-none">
-          Final response examples
-        </summary>
-        <div className="px-4 py-3 space-y-2 text-xs border-t border-slate-200 bg-slate-50 text-slate-700">
-          <p><strong>Path:</strong> finalResponse</p>
-          <p><strong>Contains:</strong> execution id, selected output variables, and optional per-node responses.</p>
-          <p><strong>Table example:</strong> set Display Data Variable Path to <span className="font-mono">apiResult.parsedJson.rows</span>.</p>
-          <p><strong>Chatbot flow:</strong> Workflow router can read this final response and send a clean answer to the user.</p>
-        </div>
-      </details>
-
       {!supportsMessage ? (
         <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600">
           A completion message is only shown to users for <span className="font-semibold">Manual</span> and <span className="font-semibold">Chatbot</span> triggers.
@@ -6823,6 +6838,7 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
       )}
         </>
       ) : null}
+      </div>
     </div>
   );
 }
