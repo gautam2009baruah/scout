@@ -47,6 +47,7 @@ import {
   Database,
   Check,
   Ban,
+  Info,
 } from "lucide-react";
 import type { NodeType, Orchestration, ManualTriggerConfig, OrchestrationTriggerType } from "@/shared/orchestrationTypes";
 import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
@@ -78,6 +79,45 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string | Compon
   { type: "end", label: "End", icon: "🏁", color: "#ef4444" },
 ];
 
+// Capability-focused descriptions for the "Node guide" popup — enough for an
+// admin to know which node to reach for, without listing every setting.
+const NODE_DESCRIPTIONS: Record<NodeType, string> = {
+  trigger:
+    "Starts the orchestration and defines how it's launched — on a schedule, an incoming webhook, an email arriving, or a chat message from AI Planner. Every orchestration needs exactly one, as its first node.",
+  workflow:
+    "Runs another already-published orchestration as a reusable sub-step, passing data into it and picking up its result. Use this to avoid rebuilding the same sequence of steps in multiple orchestrations.",
+  data_capture:
+    "This node runs silently alongside a workflow and captures data from every field the workflow interacts with. The captured data can then be used to automatically populate fields in subsequent screens.",
+  ai_extraction:
+    "Uses AI to read unstructured text and pull out specific structured fields you define, e.g. turning a free-form message into name/date/amount values. Use this when the incoming data isn't already field-by-field.",
+  ai_task:
+    "Uses AI to generate, transform, or reason over text based on an instruction you write — summarizing a document, drafting a reply, deciding a category. Use this for open-ended language tasks that don't fit a fixed rule.",
+  knowledge_search:
+    "Searches the company's uploaded knowledge base (documents, FAQs, etc.) for passages relevant to a query. Use this before an AI Task when the answer should be grounded in your own content, not general knowledge.",
+  condition:
+    "Evaluates a rule against the data collected so far and sends the flow down one of two paths — TRUE or FALSE. Use this whenever the next step should differ depending on a value, e.g. \"if amount > 1000\".",
+  human_approval:
+    "Pauses the flow and waits for a person to explicitly approve or reject it, branching down an APPROVED or REJECTED path. Use this for any step that needs a human sign-off, e.g. before a payment or a publish.",
+  notification:
+    "Sends an email (or other configured channel) to a recipient with a subject and body you define, optionally including data collected earlier. Use this whenever the orchestration needs to notify or deliver something.",
+  api_call:
+    "Calls an external API or webhook, sends the data you configure, and captures the response for later steps. Use this to integrate with a system outside Scout, e.g. a CRM, payment gateway, or other service.",
+  database:
+    "Formats a SELECT query based on the configured database schema. The generated query can then be passed to another client API for execution. This node only generates SELECT queries and never creates INSERT, UPDATE, or DELETE statements.",
+  variable:
+    "Sets, updates, or transforms a named variable's value that later steps can reference. Use this to carry a value forward, do a simple calculation, or rename data for clarity.",
+  data_formatter:
+    "Reshapes data from one structure or format into another, e.g. turning a JSON object into a plain-text summary or reformatting a date. Use this between two steps whose input/output shapes don't already match.",
+  file_parser:
+    "Extracts the text or structured content from an uploaded file — PDF, Word document, spreadsheet — so later steps can work with it. Use this whenever the trigger includes a file attachment you need to read.",
+  for_each:
+    "Repeats a group of steps once for every item in a list, e.g. sending a notification for each row in a dataset. Use this whenever the same action needs to run across multiple items instead of once.",
+  ai_planner:
+    "Lets end users describe a new automation in plain language from the chatbot; the request becomes a draft plan sent to Pending AI Plans for admin review. Use this only in orchestrations meant to power that entry point.",
+  end:
+    "Marks that a path through the flow is complete and optionally shows a final message to the user. Every branch of the orchestration should end with one of these.",
+};
+
 // Node types whose executor branches on a named output handle (see
 // condition-node.ts's outputHandle and human-approval-node.ts's
 // resumeAfterApproval outputHandle) get two labeled source handles instead
@@ -108,7 +148,7 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
   return (
     <div
       className="relative rounded-lg border-2 bg-white px-4 py-3 shadow-md"
-      style={{ borderColor: config?.color || "#64748b", minWidth: 150 }}
+      style={{ borderColor: config?.color || "#64748b", width: 190 }}
       title={data.displayDescription || undefined}
     >
       <Handle
@@ -152,10 +192,10 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
         <Trash2 className="h-2.5 w-2.5" />
       </button>
       <div className="flex items-center gap-2">
-        <span className="text-xl">{typeof IconComponent === "string" ? IconComponent : IconComponent ? <IconComponent className="h-5 w-5" /> : null}</span>
-        <div className="flex-1">
-          <div className="text-xs font-semibold text-slate-500">{config?.label}</div>
-          <div className="text-sm font-semibold text-slate-900">{data.label}</div>
+        <span className="shrink-0 text-xl">{typeof IconComponent === "string" ? IconComponent : IconComponent ? <IconComponent className="h-5 w-5" /> : null}</span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-xs font-semibold text-slate-500">{config?.label}</div>
+          <div className="truncate text-sm font-semibold text-slate-900">{data.label}</div>
         </div>
       </div>
       
@@ -205,6 +245,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   const [isPublishing, setIsPublishing] = useState(false);
   const [isNodePaletteCollapsed, setIsNodePaletteCollapsed] = useState(false);
   const [isTipsOpen, setIsTipsOpen] = useState(false);
+  const [isNodeGuideOpen, setIsNodeGuideOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -1129,7 +1170,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
           isNodePaletteCollapsed ? "px-3 py-1" : "p-3"
         }`}>
           {!isNodePaletteCollapsed && (
-          <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2 lg:grid-cols-8">
+          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 sm:gap-2.5 lg:grid-cols-7 lg:gap-3">
             {NODE_CONFIGS.map((nodeConfig) => {
               const isCompatible = isNodeCompatibleWithTrigger(nodeConfig.type, currentTriggerType);
               const reason = !isCompatible && currentTriggerType
@@ -1140,7 +1181,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
               return (
                 <button
                   key={nodeConfig.type}
-                  className={`flex min-w-0 items-center justify-center gap-2 rounded-lg border px-2 py-2 text-xs font-semibold transition-colors ${
+                  className={`flex min-w-0 items-center justify-center gap-2 rounded-lg border px-3 py-3 text-sm font-semibold transition-colors ${
                     isCompatible
                       ? "cursor-pointer border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                       : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400 opacity-60"
@@ -1150,8 +1191,8 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                   title={reason || `Add ${nodeConfig.label} node`}
                   type="button"
                 >
-                  <span className="shrink-0 text-base">
-                    {typeof NodeIcon === "string" ? NodeIcon : <NodeIcon className="h-4 w-4" />}
+                  <span className="shrink-0 text-lg">
+                    {typeof NodeIcon === "string" ? NodeIcon : <NodeIcon className="h-5 w-5" />}
                   </span>
                   <span className="truncate">{nodeConfig.label}</span>
                 </button>
@@ -1161,40 +1202,51 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
           )}
 
           <div className={`flex items-center justify-between ${isNodePaletteCollapsed ? "" : "mt-1 border-t border-slate-100 pt-1"}`}>
-            <div className="relative">
+            <div className="flex items-center gap-1">
+              <div className="relative">
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                  onClick={() => setIsTipsOpen((open) => !open)}
+                  aria-expanded={isTipsOpen}
+                >
+                  <Lightbulb className="h-4 w-4" />
+                  Tips
+                </button>
+
+                {isTipsOpen && (
+                  <div className="absolute left-0 top-full z-40 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="font-semibold text-slate-900">Designer tips</span>
+                      <button
+                        type="button"
+                        className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        onClick={() => setIsTipsOpen(false)}
+                        aria-label="Close tips"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <ul className="list-inside list-disc space-y-1">
+                      <li>Click a node type to add it</li>
+                      <li>Drag nodes to reposition them</li>
+                      <li>Drag from a node edge to connect nodes</li>
+                      <li>Click an edge and press Delete or Backspace to remove it</li>
+                      <li>Drag an edge handle to reconnect it</li>
+                      <li>Click a node to edit its properties</li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold text-amber-700 hover:bg-amber-50"
-                onClick={() => setIsTipsOpen((open) => !open)}
-                aria-expanded={isTipsOpen}
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-semibold text-sky-700 hover:bg-sky-50"
+                onClick={() => setIsNodeGuideOpen(true)}
               >
-                <Lightbulb className="h-4 w-4" />
-                Tips
+                <Info className="h-4 w-4" />
+                Node guide
               </button>
-
-              {isTipsOpen && (
-                <div className="absolute left-0 top-full z-40 mt-2 w-72 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="font-semibold text-slate-900">Designer tips</span>
-                    <button
-                      type="button"
-                      className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                      onClick={() => setIsTipsOpen(false)}
-                      aria-label="Close tips"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <ul className="list-inside list-disc space-y-1">
-                    <li>Click a node type to add it</li>
-                    <li>Drag nodes to reposition them</li>
-                    <li>Drag from a node edge to connect nodes</li>
-                    <li>Click an edge and press Delete or Backspace to remove it</li>
-                    <li>Drag an edge handle to reconnect it</li>
-                    <li>Click a node to edit its properties</li>
-                  </ul>
-                </div>
-              )}
             </div>
 
             <button
@@ -1429,6 +1481,47 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
           selectedCompanyId={selectedCompanyId}
           targetApps={targetApps}
         />
+      )}
+
+      {/* Node Guide */}
+      {isNodeGuideOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 p-4" onClick={() => setIsNodeGuideOpen(false)}>
+          <div
+            className="flex max-h-[80vh] w-full max-w-xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <h3 className="text-sm font-semibold text-slate-900">Node guide</h3>
+              <button
+                type="button"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                onClick={() => setIsNodeGuideOpen(false)}
+                aria-label="Close node guide"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="scrollbar-hairline space-y-1 overflow-y-auto p-2">
+              {NODE_CONFIGS.map((nodeConfig) => {
+                const NodeIcon = nodeConfig.icon;
+                return (
+                  <div key={nodeConfig.type} className="flex items-start gap-3 rounded-lg px-2 py-2">
+                    <span
+                      className="flex h-6 w-6 shrink-0 items-center justify-center text-base"
+                      style={{ color: nodeConfig.color }}
+                    >
+                      {typeof NodeIcon === "string" ? NodeIcon : <NodeIcon className="h-5 w-5" />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{nodeConfig.label}</p>
+                      <p className="text-xs leading-relaxed text-slate-600">{NODE_DESCRIPTIONS[nodeConfig.type]}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Toast Notification */}

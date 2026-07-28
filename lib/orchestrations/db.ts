@@ -173,7 +173,16 @@ export async function getOrchestrationPage(filters: {
   const pool = getPool();
   const page = Math.max(1, Number(filters.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 25));
-  const conditions = ["1=1"];
+  // A draft orchestration is created the moment an admin opens a Pending AI
+  // Plan request in the builder (see ensureDraftOrchestrationForPendingRequest);
+  // if that request later gets rejected the orchestration must stay hidden from
+  // this list rather than lingering as if it were a normal draft.
+  const conditions = [
+    `NOT EXISTS (
+      SELECT 1 FROM ai_planner_pending_requests r
+      WHERE r.draft_orchestration_id = o.id AND r.status = 'rejected'
+    )`,
+  ];
   const params: any[] = [];
 
   if (filters.companyId) {

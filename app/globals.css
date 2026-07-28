@@ -322,6 +322,26 @@ textarea {
   border-radius: 999px;
 }
 
+/* A hairline scrollbar for compact popovers/modals where .scrollbar-soft's
+   8px bar reads as too heavy. */
+.scrollbar-hairline {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.scrollbar-hairline::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-hairline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-hairline::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
 /* Control Panel navigation: quiet at rest, discoverable on interaction. */
 .admin-sidebar-scroll {
   overscroll-behavior: contain;

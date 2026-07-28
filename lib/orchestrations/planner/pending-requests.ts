@@ -10,6 +10,7 @@ export type PendingPlanRequest = {
   id: string;
   companyId: string;
   targetAppId: string | null;
+  targetAppName: string | null;
   externalUserId: string;
   conversationId: string | null;
   draftOrchestrationId: string | null;
@@ -21,13 +22,23 @@ export type PendingPlanRequest = {
   updatedAt: string;
   resolvedAt: string | null;
   resolvedBy: string | null;
+  resolvedByName: string | null;
   rejectionReason: string | null;
+};
+
+export type PendingPlanRequestPage = {
+  requests: PendingPlanRequest[];
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
 };
 
 type PendingPlanRequestRow = {
   id: string;
   company_id: string;
   target_app_id: string | null;
+  target_app_name: string | null;
   external_user_id: string;
   conversation_id: string | null;
   draft_orchestration_id: string | null;
@@ -39,6 +50,7 @@ type PendingPlanRequestRow = {
   updated_at: Date;
   resolved_at: Date | null;
   resolved_by: string | null;
+  resolved_by_name: string | null;
   rejection_reason: string | null;
 };
 
@@ -47,6 +59,7 @@ function mapRow(row: PendingPlanRequestRow): PendingPlanRequest {
     id: row.id,
     companyId: row.company_id,
     targetAppId: row.target_app_id,
+    targetAppName: row.target_app_name ?? null,
     externalUserId: row.external_user_id,
     conversationId: row.conversation_id,
     draftOrchestrationId: row.draft_orchestration_id,
@@ -58,8 +71,19 @@ function mapRow(row: PendingPlanRequestRow): PendingPlanRequest {
     updatedAt: row.updated_at.toISOString(),
     resolvedAt: row.resolved_at?.toISOString() || null,
     resolvedBy: row.resolved_by,
+    resolvedByName: row.resolved_by_name ?? null,
     rejectionReason: row.rejection_reason,
   };
+}
+
+function clampPageSize(pageSize: number | undefined): number {
+  if (!pageSize || Number.isNaN(pageSize)) return 10;
+  return Math.min(Math.max(Math.trunc(pageSize), 5), 100);
+}
+
+function clampPage(page: number | undefined): number {
+  if (!page || Number.isNaN(page) || page < 1) return 1;
+  return Math.trunc(page);
 }
 
 export class PendingPlanRequestConflictError extends Error {
@@ -139,20 +163,123 @@ export async function createPendingPlanRequest(input: {
   }
 }
 
-/** Step 7b's queue listing — every pending request for a company, newest first. */
-export async function listPendingPlanRequests(companyId: string): Promise<PendingPlanRequest[]> {
-  const result = await getPool().query<PendingPlanRequestRow>(
-    `
-      SELECT *
-      FROM ai_planner_pending_requests
-      WHERE company_id = $1
-        AND status = 'pending'
-      ORDER BY created_at ASC
-    `,
-    [companyId]
-  );
+/** Step 7b's queue listing — pending requests for a company, oldest first (FIFO), filterable and paginated. */
+export async function listPendingPlanRequests(input: {
+  companyId: string;
+  targetAppId?: string | null;
+  requestedFrom?: string | null;
+  requestedTo?: string | null;
+  page?: number;
+  pageSize?: number;
+}): Promise<PendingPlanRequestPage> {
+  const page = clampPage(input.page);
+  const pageSize = clampPageSize(input.pageSize);
+  const offset = (page - 1) * pageSize;
 
-  return result.rows.map(mapRow);
+  const params = [
+    input.companyId,
+    input.targetAppId || null,
+    input.requestedFrom || null,
+    input.requestedTo || null,
+  ];
+
+  const whereClause = `
+    WHERE r.company_id = $1
+      AND r.status = 'pending'
+      AND ($2::uuid IS NULL OR r.target_app_id = $2)
+      AND ($3::timestamptz IS NULL OR r.created_at >= $3)
+      AND ($4::timestamptz IS NULL OR r.created_at <= $4)
+  `;
+
+  const [rowsResult, countResult] = await Promise.all([
+    getPool().query<PendingPlanRequestRow>(
+      `
+        SELECT r.*, cta.name AS target_app_name
+        FROM ai_planner_pending_requests r
+        LEFT JOIN company_target_applications cta ON cta.id = r.target_app_id
+        ${whereClause}
+        ORDER BY r.created_at ASC
+        LIMIT $5 OFFSET $6
+      `,
+      [...params, pageSize, offset]
+    ),
+    getPool().query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM ai_planner_pending_requests r ${whereClause}`,
+      params
+    ),
+  ]);
+
+  const total = parseInt(countResult.rows[0]?.count || "0", 10);
+
+  return {
+    requests: rowsResult.rows.map(mapRow),
+    page,
+    pageSize,
+    total,
+    pageCount: Math.max(Math.ceil(total / pageSize), 1),
+  };
+}
+
+/** Archived-tab listing — resolved (approved/rejected) requests for a company, most recently resolved first. */
+export async function listResolvedPlanRequests(input: {
+  companyId: string;
+  targetAppId?: string | null;
+  status?: "approved" | "rejected" | "all";
+  resolvedFrom?: string | null;
+  resolvedTo?: string | null;
+  page?: number;
+  pageSize?: number;
+}): Promise<PendingPlanRequestPage> {
+  const page = clampPage(input.page);
+  const pageSize = clampPageSize(input.pageSize);
+  const offset = (page - 1) * pageSize;
+  const status = input.status && input.status !== "all" ? input.status : null;
+
+  const params = [
+    input.companyId,
+    input.targetAppId || null,
+    input.resolvedFrom || null,
+    input.resolvedTo || null,
+    status,
+  ];
+
+  const whereClause = `
+    WHERE r.company_id = $1
+      AND r.status IN ('approved', 'rejected')
+      AND ($2::uuid IS NULL OR r.target_app_id = $2)
+      AND ($3::timestamptz IS NULL OR r.resolved_at >= $3)
+      AND ($4::timestamptz IS NULL OR r.resolved_at <= $4)
+      AND ($5::text IS NULL OR r.status = $5)
+  `;
+
+  const [rowsResult, countResult] = await Promise.all([
+    getPool().query<PendingPlanRequestRow>(
+      `
+        SELECT r.*, cta.name AS target_app_name, u.name AS resolved_by_name
+        FROM ai_planner_pending_requests r
+        LEFT JOIN company_target_applications cta ON cta.id = r.target_app_id
+        LEFT JOIN users u ON u.id = r.resolved_by
+        ${whereClause}
+        ORDER BY r.resolved_at DESC
+        LIMIT $6 OFFSET $7
+      `,
+      [...params, pageSize, offset]
+    ),
+    getPool().query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM ai_planner_pending_requests r ${whereClause}`,
+      params
+    ),
+  ]);
+
+  const total = parseInt(countResult.rows[0]?.count || "0", 10);
+
+  return {
+    requests: rowsResult.rows.map(mapRow),
+    page,
+    pageSize,
+    total,
+    pageCount: Math.max(Math.ceil(total / pageSize), 1),
+  };
 }
 
 export async function getPendingPlanRequestById(input: { id: string; companyId: string }): Promise<PendingPlanRequest | null> {
