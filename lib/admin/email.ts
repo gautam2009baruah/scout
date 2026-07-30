@@ -88,6 +88,20 @@ async function resolveSenderCredential(message: EmailMessage) {
   return credential;
 }
 
+/** Returns the company's preferred active outbound sender credential (its "Email Credential" page setup), or null if none is configured. */
+export async function getPrimarySenderCredentialId(companyId: string): Promise<string | null> {
+  const result = await getPool().query<{ id: string }>(
+    `SELECT id
+     FROM email_sender_credentials
+     WHERE company_id = $1 AND is_active = true
+     ORDER BY is_primary DESC, created_at DESC
+     LIMIT 1`,
+    [companyId]
+  );
+
+  return result.rows[0]?.id ?? null;
+}
+
 export async function sendEmail(message: EmailMessage) {
   const outboxResult = await getPool().query<{ id: string }>(
     `

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { activateEmployeeAccount, EmployeeError } from "@/lib/admin/user-management";
+import { ADMIN_SESSION_COOKIE, revokeCurrentAdminSession } from "@/lib/admin/session";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,24 @@ export async function POST(request: Request) {
   try {
     await activateEmployeeAccount(body.token, body.password);
 
-    return NextResponse.json({ ok: true });
+    // Clear any pre-existing session cookie in this browser (it may belong to a
+    // different, already-logged-in user) so "Go to login" reaches the login
+    // form instead of silently continuing that other session.
+    await revokeCurrentAdminSession();
+
+    const response = NextResponse.json({ ok: true });
+
+    response.cookies.set({
+      name: ADMIN_SESSION_COOKIE,
+      value: "",
+      httpOnly: true,
+      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 0
+    });
+
+    return response;
   } catch (error) {
     if (error instanceof EmployeeError) {
       return NextResponse.json({ message: error.message }, { status: 400 });

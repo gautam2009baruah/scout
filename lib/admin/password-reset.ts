@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "crypto";
 import { getPool } from "@/lib/db/pool";
-import { sendEmail } from "./email";
+import { getPrimarySenderCredentialId, sendEmail } from "./email";
 import { hashPassword, isPasswordComplexityValid, PASSWORD_REQUIREMENT_MESSAGE } from "./password";
 
 const RESET_TOKEN_MINUTES = 60;
@@ -16,36 +16,9 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-/**
- * Start a password reset for the given email. If an active user exists, a
- * single-use reset token is created and emailed. Never reveals whether the
- * email is registered, to avoid account enumeration.
- */
-export async function requestPasswordReset(email: string) {
-  const normalizedEmail = email.trim().toLowerCase();
+type ResetRecipient = { id: string; name: string; email: string };
 
-  if (!normalizedEmail) {
-    return;
-  }
-
-  const userResult = await getPool().query<{ id: string; name: string; email: string }>(
-    `
-      SELECT id, name, email
-      FROM users
-      WHERE email = $1
-        AND status = 'active'
-        AND deleted_at IS NULL
-      LIMIT 1
-    `,
-    [normalizedEmail]
-  );
-
-  const user = userResult.rows[0];
-
-  if (!user) {
-    return;
-  }
-
+async function issuePasswordResetEmail(user: ResetRecipient) {
   const token = randomBytes(32).toString("base64url");
   const tokenHash = hashToken(token);
   const expiresAt = new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000);
@@ -66,11 +39,86 @@ export async function requestPasswordReset(email: string) {
 
   const resetUrl = `${process.env.APP_BASE_URL || "http://localhost:3000"}/control-panel/reset-password?token=${token}`;
 
+  const companyResult = await getPool().query<{ company_id: string }>(
+    `
+      SELECT company_id
+      FROM user_company_roles
+      WHERE user_id = $1 AND deleted_at IS NULL
+      ORDER BY is_primary DESC NULLS LAST, created_at ASC
+      LIMIT 1
+    `,
+    [user.id]
+  );
+  const companyId = companyResult.rows[0]?.company_id;
+  const senderCredentialId = companyId ? await getPrimarySenderCredentialId(companyId) : null;
+
   await sendEmail({
     to: user.email,
     subject: "Reset your Scout Control Panel password",
-    body: `Hello ${user.name},\n\nWe received a request to reset your Scout Control Panel password.\n\nReset link: ${resetUrl}\n\nThis link expires in ${RESET_TOKEN_MINUTES} minutes and can be used once. If you did not request a password reset, you can safely ignore this email.`
+    body: `Hello ${user.name},\n\nWe received a request to reset your Scout Control Panel password.\n\nReset link: ${resetUrl}\n\nThis link expires in ${RESET_TOKEN_MINUTES} minutes and can be used once. If you did not request a password reset, you can safely ignore this email.`,
+    senderCredentialId: senderCredentialId ?? undefined,
+    companyId
   });
+}
+
+/**
+ * Start a password reset for the given email. The email must belong to an
+ * active, non-deleted user; otherwise a PasswordResetError is thrown so the
+ * caller can tell the requester no such account exists.
+ */
+export async function requestPasswordReset(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    throw new PasswordResetError("No account found with this email address.");
+  }
+
+  const userResult = await getPool().query<ResetRecipient>(
+    `
+      SELECT id, name, email
+      FROM users
+      WHERE email = $1
+        AND status = 'active'
+        AND deleted_at IS NULL
+      LIMIT 1
+    `,
+    [normalizedEmail]
+  );
+
+  const user = userResult.rows[0];
+
+  if (!user) {
+    throw new PasswordResetError("No account found with this email address.");
+  }
+
+  await issuePasswordResetEmail(user);
+}
+
+/**
+ * Admin-triggered password reset for a specific user id. Same email flow as
+ * requestPasswordReset, but looked up by id since the caller (User Management)
+ * already knows which account it means to reset.
+ */
+export async function adminRequestPasswordReset(userId: string) {
+  const userResult = await getPool().query<ResetRecipient>(
+    `
+      SELECT id, name, email
+      FROM users
+      WHERE id = $1
+        AND status = 'active'
+        AND deleted_at IS NULL
+      LIMIT 1
+    `,
+    [userId]
+  );
+
+  const user = userResult.rows[0];
+
+  if (!user) {
+    throw new PasswordResetError("User was not found.");
+  }
+
+  await issuePasswordResetEmail(user);
 }
 
 /**

@@ -80,7 +80,11 @@ export function ResetPasswordModal({ open, onClose }: ResetPasswordModalProps) {
     }
 
     setStatus("success");
-    setMessage("Your password has been reset.");
+    setMessage("Your password has been reset. You'll need to log in again with your new password.");
+
+    // Force a fresh login with the new password rather than continuing the old session.
+    await fetch("/api/admin/auth/logout", { method: "POST" });
+    window.location.replace("/control-panel/login");
   }
 
   return (

@@ -19,6 +19,36 @@ export function isPasswordComplexityValid(password: string) {
   );
 }
 
+const TEMP_PASSWORD_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz";
+const TEMP_PASSWORD_DIGITS = "23456789";
+const TEMP_PASSWORD_SPECIALS = "!@#$%^&*";
+const TEMP_PASSWORD_ALL = TEMP_PASSWORD_LETTERS + TEMP_PASSWORD_DIGITS + TEMP_PASSWORD_SPECIALS;
+
+function randomChar(charset: string) {
+  return charset[randomBytes(1)[0] % charset.length];
+}
+
+/** Generates a random password guaranteed to satisfy isPasswordComplexityValid. */
+export function generateTemporaryPassword(length = 12) {
+  const chars = [
+    randomChar(TEMP_PASSWORD_LETTERS),
+    randomChar(TEMP_PASSWORD_DIGITS),
+    randomChar(TEMP_PASSWORD_SPECIALS)
+  ];
+
+  for (let i = chars.length; i < length; i += 1) {
+    chars.push(randomChar(TEMP_PASSWORD_ALL));
+  }
+
+  // Fisher-Yates shuffle so the guaranteed characters aren't always in the same positions.
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomBytes(1)[0] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+
+  return chars.join("");
+}
+
 export function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const key = scryptSync(password, salt, 64, {

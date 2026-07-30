@@ -147,12 +147,27 @@ export async function getEffectiveUserModules(
         SELECT DISTINCT ON (module_key) module_key, effect
         FROM merged_permissions
         ORDER BY module_key, CASE WHEN effect = 'deny' THEN 2 ELSE 1 END DESC
+      ),
+      allowed_modules AS (
+        SELECT modules.key, modules.name, modules.href, modules.sort_order, modules.parent_key
+        FROM effective_permissions
+        INNER JOIN modules ON modules.key = effective_permissions.module_key
+        WHERE effective_permissions.effect = 'allow'
       )
-      SELECT modules.key, modules.name, modules.href, modules.sort_order, modules.parent_key
-      FROM effective_permissions
-      INNER JOIN modules ON modules.key = effective_permissions.module_key
-      WHERE effective_permissions.effect = 'allow'
-      ORDER BY modules.sort_order ASC, modules.name ASC
+      -- A child module's parent group (e.g. "Administration") is a non-selectable
+      -- href='#' container that can never be granted directly via role/user overrides,
+      -- so it's implied here whenever any of its children are allowed. Otherwise the
+      -- sidebar nav, which only shows top-level (parentKey === null) groups and their
+      -- children, would hide an allowed child because its parent never showed up.
+      SELECT DISTINCT key, name, href, sort_order, parent_key
+      FROM (
+        SELECT * FROM allowed_modules
+        UNION ALL
+        SELECT parent.key, parent.name, parent.href, parent.sort_order, parent.parent_key
+        FROM allowed_modules
+        INNER JOIN modules parent ON parent.key = allowed_modules.parent_key
+      ) combined
+      ORDER BY sort_order ASC, name ASC
     `,
     [userId, roleId, companyId]
   );

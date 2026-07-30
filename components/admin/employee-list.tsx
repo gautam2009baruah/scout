@@ -3,7 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Pencil, Search, Trash2, X } from "lucide-react";
+import { KeyRound, Pencil, Search, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import type { EmployeeMembership, EmployeeRow, EmployeeStatus } from "@/lib/admin/user-management";
@@ -29,6 +29,8 @@ type ConfirmDialog = {
   reason: string;
 } | null;
 
+type ResetPasswordDialog = EmployeeRow | null;
+
 type EditDialog = {
   employee: EmployeeRow;
   companyId: string;
@@ -53,6 +55,7 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [editDialog, setEditDialog] = useState<EditDialog>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
+  const [resetPasswordDialog, setResetPasswordDialog] = useState<ResetPasswordDialog>(null);
   const sortedRoles = useMemo(() => [...roles].sort((a, b) => a.name.localeCompare(b.name)), [roles]);
   const companyOptions = useMemo(() => [...companies].sort((a, b) => a.name.localeCompare(b.name)), [companies]);
 
@@ -169,6 +172,25 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
     });
   }
 
+  async function resetPassword() {
+    if (!resetPasswordDialog) return;
+
+    const employee = resetPasswordDialog;
+    setResetPasswordDialog(null);
+    setToast(null);
+
+    const response = await fetch(`/api/admin/user-management/${employee.id}/reset-password`, {
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      showToast(await readMessage(response, "Unable to reset password."), "error");
+      return;
+    }
+
+    showToast(`Password reset email sent to ${employee.email}.`);
+  }
+
   async function deleteUser() {
     if (!confirmDialog) return;
 
@@ -256,6 +278,19 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
         </div>
       ) : null}
 
+      {resetPasswordDialog ? (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4">
+            <h3 className="text-base font-semibold text-slate-950">Reset password</h3>
+            <p className="mt-2 text-sm text-slate-600">Send a password reset email to <strong>{resetPasswordDialog.email}</strong>? They'll receive a link to set a new password.</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button onClick={() => setResetPasswordDialog(null)} className="px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors" type="button">Cancel</button>
+              <button onClick={resetPassword} className="px-4 py-2 text-sm font-semibold text-white bg-slate-950 hover:bg-slate-800 rounded-lg transition-colors" type="button">Send reset email</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full min-w-[860px] border-collapse text-left text-sm">
           <thead className="bg-slate-950 text-white">
@@ -283,6 +318,11 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
                     {!employee.hasSystemRole && employee.id !== currentUserId ? (
                       <button aria-label="Edit user" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100" onClick={() => startEdit(employee)} type="button">
                         <Pencil className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                    {!employee.hasSystemRole && employee.id !== currentUserId ? (
+                      <button aria-label="Reset password" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-100" onClick={() => setResetPasswordDialog(employee)} title="Reset password" type="button">
+                        <KeyRound className="h-4 w-4" />
                       </button>
                     ) : null}
                     {!employee.hasSystemRole && employee.id !== currentUserId ? (

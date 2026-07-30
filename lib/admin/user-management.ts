@@ -1,9 +1,10 @@
 import { createHash } from "crypto";
 import { getPool } from "@/lib/db/pool";
 import type { AdminSession } from "./auth";
-import { sendEmail } from "./email";
-import { hashPassword } from "./password";
+import { getPrimarySenderCredentialId, sendEmail } from "./email";
+import { generateTemporaryPassword, hashPassword } from "./password";
 import { MODULE_KEYS, getEffectiveUserModules, hasModuleAccess, replaceUserModuleOverrides } from "./permissions";
+import { adminRequestPasswordReset, PasswordResetError } from "./password-reset";
 
 export type EmployeeStatus = "active" | "invited" | "inactive" | "disabled" | "deleted";
 
@@ -435,7 +436,7 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
   const employeeCode = input.employeeCode?.trim() || null;
-  const temporaryPassword = "test123";
+  const temporaryPassword = generateTemporaryPassword();
   const companyIds = input.companyIds?.length ? input.companyIds : input.companyId ? [input.companyId] : [];
 
   if (companyIds.length === 0 || !input.roleId || !name || !email) {
@@ -553,18 +554,30 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
       );
     }
 
-    if (hasControlPanelAccess) {
-      await sendEmail({
-        to: email,
-        subject: "Your Scout Control Panel access",
-        body: `Hello ${name},\n\nYou can now access the Scout chatbot and Control Panel.\n\nLogin URL: ${process.env.APP_BASE_URL || "http://localhost:3000"}/control-panel/login\nLogin ID: ${email}\nTemporary password: ${temporaryPassword}\n\nYou will be asked to change this password after your first login.`
-      });
-    } else {
-      await sendEmail({
-        to: email,
-        subject: "Your Scout chatbot access is ready",
-        body: `Hello ${name},\n\nYou can now access the Scout chatbot.`
-      });
+    const senderCredentialId = await getPrimarySenderCredentialId(primaryCompanyId);
+
+    try {
+      if (hasControlPanelAccess) {
+        await sendEmail({
+          to: email,
+          subject: "Your Scout Control Panel access",
+          body: `Hello ${name},\n\nYou can now access the Scout Control Panel.\n\nLogin URL: ${process.env.APP_BASE_URL || "http://localhost:3000"}/control-panel/login\nLogin ID: ${email}\nTemporary password: ${temporaryPassword}\n\nYou will be asked to change this password after your first login.`,
+          senderCredentialId: senderCredentialId ?? undefined,
+          companyId: primaryCompanyId
+        });
+      } else {
+        await sendEmail({
+          to: email,
+          subject: "Your Scout chatbot access is ready",
+          body: `Hello ${name},\n\nYou can now access the Scout chatbot.`,
+          senderCredentialId: senderCredentialId ?? undefined,
+          companyId: primaryCompanyId
+        });
+      }
+    } catch (error) {
+      // The user and their access are already created at this point; a delivery failure
+      // (e.g. no outbound sender credential configured yet) shouldn't fail the whole request.
+      console.error("Error sending registration email:", error);
     }
 
     return userResult.rows[0].id;
@@ -583,7 +596,7 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
 
   const name = input.name.trim();
   const employeeCode = input.employeeCode?.trim() || null;
-  const temporaryPassword = "test123";
+  const temporaryPassword = generateTemporaryPassword();
   const companyId = input.companyId || input.companyIds?.[0] || "";
   const nextStatus = normalizeEmployeeStatus(input.status);
 
@@ -743,11 +756,19 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
     await client.query("COMMIT");
 
     if (shouldSendPanelPassword) {
-      await sendEmail({
-        to: existing.email,
-        subject: "Your Scout Control Panel access",
-        body: `Hello ${name},\n\nYou can now access the Scout chatbot and Control Panel.\n\nLogin URL: ${process.env.APP_BASE_URL || "http://localhost:3000"}/control-panel/login\nLogin ID: ${existing.email}\nTemporary password: ${temporaryPassword}\n\nYou will be asked to change this password after your first login.`
-      });
+      try {
+        const senderCredentialId = await getPrimarySenderCredentialId(primaryCompanyId);
+        await sendEmail({
+          to: existing.email,
+          subject: "Your Scout Control Panel access",
+          body: `Hello ${name},\n\nYou can now access the Scout Control Panel.\n\nLogin URL: ${process.env.APP_BASE_URL || "http://localhost:3000"}/control-panel/login\nLogin ID: ${existing.email}\nTemporary password: ${temporaryPassword}\n\nYou will be asked to change this password after your first login.`,
+          senderCredentialId: senderCredentialId ?? undefined,
+          companyId: primaryCompanyId
+        });
+      } catch (error) {
+        // The update already committed; a delivery failure shouldn't fail the whole request.
+        console.error("Error sending panel access email:", error);
+      }
     }
   } catch (error) {
     await client.query("ROLLBACK");
@@ -759,6 +780,29 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
     throw error;
   } finally {
     client.release();
+  }
+}
+
+export async function resetEmployeePassword(employeeId: string, session: AdminSession) {
+  assertCanManageUsers(session);
+  await assertUserIsEditable(employeeId);
+
+  if (!employeeId) {
+    throw new EmployeeError("User is required.");
+  }
+
+  if (employeeId === session.user.id) {
+    throw new EmployeeError("You cannot reset your own password from here. Use the forgot password page instead.");
+  }
+
+  try {
+    await adminRequestPasswordReset(employeeId);
+  } catch (error) {
+    if (error instanceof PasswordResetError) {
+      throw new EmployeeError(error.message);
+    }
+
+    throw error;
   }
 }
 

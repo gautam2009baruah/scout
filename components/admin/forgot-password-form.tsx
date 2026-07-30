@@ -30,13 +30,14 @@ export function ForgotPasswordForm() {
       });
 
       if (!response.ok) {
+        const body = await response.json().catch(() => null);
         setStatus("error");
-        setMessage("Unable to process your request. Please try again.");
+        setMessage(typeof body?.message === "string" ? body.message : "Unable to process your request. Please try again.");
         return;
       }
 
       setStatus("success");
-      setMessage("If an account exists for that email, we've sent a link to reset your password.");
+      setMessage("We've sent a link to reset your password to that email address.");
     } catch {
       setStatus("error");
       setMessage("Unable to process your request. Please try again.");
