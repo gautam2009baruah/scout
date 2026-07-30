@@ -20,6 +20,7 @@ import {
   X
 } from "lucide-react";
 import type { ChatbotLifecycleSettings, ChatbotLifecycleSettingsRecord } from "@/lib/chat/lifecycle-settings";
+import { useToast } from "./toast";
 
 type TargetAppOption = {
   id: string;
@@ -97,11 +98,6 @@ type Draft = {
   resetOnLogoutEvent: boolean;
   resetOnUserChange: boolean;
   resetOnTargetAppChange: boolean;
-};
-
-type Toast = {
-  message: string;
-  type: "success" | "error";
 };
 
 type ConfirmDialog = {
@@ -220,7 +216,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
   const [editingEnvironmentName, setEditingEnvironmentName] = useState("");
 
-  const [toast, setToast] = useState<Toast | null>(null);
+  const { showToast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
 
   const [embedStatus, setEmbedStatus] = useState<{ type: "idle" | "saving" | "success" | "error"; message: string }>({ type: "idle", message: "" });
@@ -310,11 +306,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   const [draft, setDraft] = useState<Draft>(toDraft(scope, activeSettings));
   const expiryMin = useMemo(() => minExpiryInputValue(), []);
 
-  function showToast(message: string, type: "success" | "error" = "success") {
-    setToast({ message, type });
-    window.setTimeout(() => setToast(null), 3000);
-  }
-
   function parseAllowedOrigins(input: string) {
     return Array.from(new Set(input.split(",").map((value) => value.trim()).filter(Boolean)));
   }
@@ -386,7 +377,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
   async function saveConversationSettings(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus({ type: "saving", message: "Saving settings..." });
+    //setStatus({ type: "saving", message: "Saving settings..." });
 
     const response = await fetch("/api/admin/chatbot-settings", {
       method: "PUT",
@@ -411,7 +402,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
     }
 
     setSettings(Array.isArray(body?.settings) ? body.settings : []);
-    setStatus({ type: "success", message: "Chatbot settings saved." });
+    //setStatus({ type: "success", message: "Chatbot settings saved." });
     showToast("Chatbot settings saved.", "success");
   }
 
@@ -1518,16 +1509,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
               </button>
               <button className="inline-flex h-10 items-center rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white" onClick={() => { setRotatedApiKey(null); setRotatedApiKeyCopied(false); }} type="button">Close</button>
             </div>
-          </div>
-        </div>
-      ) : null}
-
-      {toast ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center pointer-events-none">
-          <div className={`pointer-events-auto flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"}`}>
-            <span className="text-sm font-semibold">{toast.type === "success" ? "Success" : "Error"}</span>
-            <span className="text-sm">{toast.message}</span>
-            <button onClick={() => setToast(null)} className="rounded p-0.5 hover:bg-black/5" type="button"><X className="h-4 w-4" /></button>
           </div>
         </div>
       ) : null}

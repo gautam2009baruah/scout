@@ -1,7 +1,8 @@
 "use client";
 
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { FlaskConical, Inbox, Mail, Pencil, Power, Send, ShieldCheck, Star, Trash2, X } from "lucide-react";
+import { FlaskConical, Inbox, Mail, Pencil, Power, Send, ShieldCheck, Star, Trash2 } from "lucide-react";
+import { useToast } from "./toast";
 
 type TargetApp = {
   id: string;
@@ -158,7 +159,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
   const [senderPrimaryId, setSenderPrimaryId] = useState<string | null>(null);
   const [senderTestingId, setSenderTestingId] = useState<string | null>(null);
 
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const { showToast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const targetAppOptions = useMemo(
@@ -169,11 +170,6 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     () => [{ id: "", name: "Select target application" }, ...targetAppOptions],
     [targetAppOptions]
   );
-
-  const showToast = useCallback((message: string, type: "success" | "error" = "success") => {
-    setToast({ message, type });
-    window.setTimeout(() => setToast(null), 3000);
-  }, []);
 
   const loadTargetApps = useCallback(async (companyId: string) => {
     try {
@@ -1124,16 +1120,6 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
           </div>
         </div>
       </section>
-
-      {toast ? (
-        <div className="fixed top-4 left-1/2 z-[9999] -translate-x-1/2">
-          <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${toast.type === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"}`}>
-            <span className="text-sm font-semibold">{toast.type === "success" ? "Success" : "Error"}</span>
-            <span className="text-sm">{toast.message}</span>
-            <button onClick={() => setToast(null)} className="rounded p-0.5 hover:bg-black/5" type="button"><X className="h-4 w-4" /></button>
-          </div>
-        </div>
-      ) : null}
 
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">

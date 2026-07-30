@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { formatDateTimeForDisplay } from "@/lib/datetime";
 import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
+import { useToast } from "./toast";
 
 type TargetAppOption = { id: string; name: string; companyId: string };
 
@@ -181,7 +182,8 @@ export function TriggersMonitoringDashboard({
   const [triggers, setTriggers] = useState<TriggerStatus[]>([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasLoadError, setHasLoadError] = useState(false);
+  const { showToast } = useToast();
   const [filter, setFilter] = useState(() => {
     const { from, to } = defaultDateRange();
     return {
@@ -218,7 +220,7 @@ export function TriggersMonitoringDashboard({
 
   const loadTriggers = async () => {
     setLoading(true);
-    setLoadError(null);
+    setHasLoadError(false);
     setHasSearched(true);
     // Collapse and reset any previously expanded executions
     setExpanded({});
@@ -245,7 +247,8 @@ export function TriggersMonitoringDashboard({
     } catch (error) {
       console.error("Failed to load triggers:", error);
       setTriggers([]);
-      setLoadError(error instanceof Error ? error.message : "Unable to load triggers");
+      setHasLoadError(true);
+      showToast(error instanceof Error ? error.message : "Unable to load triggers", "error");
     } finally {
       setLoading(false);
     }
@@ -514,10 +517,10 @@ export function TriggersMonitoringDashboard({
               Choose filters and click <span className="font-semibold">Filter</span> to load triggers.
             </p>
           </div>
-        ) : loadError ? (
+        ) : hasLoadError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
             <p className="font-semibold text-red-800">Unable to load triggers</p>
-            <p className="mt-1 text-sm text-red-700">{loadError}</p>
+            <p className="mt-1 text-sm text-red-700">Adjust the filters and try again.</p>
           </div>
         ) : triggers.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-lg p-8 text-center">

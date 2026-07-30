@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronRight, ListFilter, Pencil, Trash2, X } from "lucide-react";
 import type { SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
+import { useToast } from "./toast";
 
 type ElementIdentity = {
   tagName?: string;
@@ -88,6 +89,7 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
   const [editModal, setEditModal] = useState<EditModalData | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected">("pending");
+  const { showToast } = useToast();
   const [filters, setFilters] = useState({
     companyId: selectedCompanyId,
     targetAppId: "",
@@ -187,7 +189,7 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
       setEditModal(null);
       await loadSuggestions();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to approve suggestion");
+      showToast(err instanceof Error ? err.message : "Failed to approve suggestion", "error");
     } finally {
       setProcessingId(null);
     }
@@ -206,7 +208,7 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
       if (!response.ok) throw new Error(body?.message || body?.error || "Failed to reject suggestion");
       await loadSuggestions();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to reject suggestion");
+      showToast(err instanceof Error ? err.message : "Failed to reject suggestion", "error");
     } finally {
       setProcessingId(null);
     }
@@ -225,7 +227,7 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
       if (!response.ok) throw new Error(body?.message || body?.error || "Failed to delete suggestion");
       await loadSuggestions();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete suggestion");
+      showToast(err instanceof Error ? err.message : "Failed to delete suggestion", "error");
     } finally {
       setProcessingId(null);
     }

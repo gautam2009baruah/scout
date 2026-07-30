@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Clipboard, Download, Edit3, Globe2, Info, Plus, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 import type { CompanyTargetApplication } from "@/lib/admin/administration";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
+import { useToast } from "./toast";
 
 type CompanyOption = { id: string; name: string };
 const initialState = { status: "idle", message: "" } as const;
@@ -33,8 +34,7 @@ export function GuidedWorkflowTrainingSetup({ appBaseUrl, companies, recordingSe
   const [copiedKey, setCopiedKey] = useState("");
   const pluginHelpRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>(initialState);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
-  const [toastTimeout, setToastTimeout] = useState<NodeJS.Timeout | null>(null);
+  const { showToast } = useToast();
   const [setupForm, setSetupForm] = useState({
     targetAppId: "",
     sessionTitle: ""
@@ -95,14 +95,6 @@ export function GuidedWorkflowTrainingSetup({ appBaseUrl, companies, recordingSe
     }
   }, [sessions, appliedSessionFilter]);
 
-  function showToast(message: string, type: "success" | "error" = "success") {
-    setToast({ message, type });
-    if (toastTimeout) {
-      clearTimeout(toastTimeout);
-    }
-    const timeout = setTimeout(() => setToast(null), 3000);
-    setToastTimeout(timeout);
-  }
 
   function applyFilters() {
     setAppliedTargetAppFilter(pendingTargetAppFilter);
@@ -695,26 +687,6 @@ export function GuidedWorkflowTrainingSetup({ appBaseUrl, companies, recordingSe
         </div>
       ) : null}
 
-      {toast ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 pointer-events-none">
-          <div
-            className={`pointer-events-auto flex items-center gap-2 rounded-lg border px-3 py-2 shadow-lg ${
-              toast.type === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-red-200 bg-red-50 text-red-700"
-            }`}
-          >
-            <span className="text-sm font-medium">{toast.message}</span>
-            <button
-              className="rounded p-0.5 transition-colors hover:bg-black/5"
-              onClick={() => setToast(null)}
-              type="button"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      ) : null}
 
     </div>
   );

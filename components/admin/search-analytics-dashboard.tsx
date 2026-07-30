@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BarChart3, CalendarRange, CircleHelp, Clock3, Download, ExternalLink, Filter, MessageSquareText, ThumbsUp, Timer } from "lucide-react";
 import { formatDateTimeForDisplay } from "@/lib/datetime";
+import { useToast } from "./toast";
 
 type TargetAppOption = {
   id: string;
@@ -296,7 +297,7 @@ export function SearchAnalyticsDashboard({
   const [queryDetailError, setQueryDetailError] = useState<string | null>(null);
   const [selectedQuery, setSelectedQuery] = useState<RawRow | null>(null);
   const [queryDetail, setQueryDetail] = useState<QueryExplainabilityDetail | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { showToast } = useToast();
   const [expandedDateKeys, setExpandedDateKeys] = useState<Set<string>>(new Set());
   const [expandedAppKeys, setExpandedAppKeys] = useState<Set<string>>(new Set());
   const [expandedUserKeys, setExpandedUserKeys] = useState<Set<string>>(new Set());
@@ -333,7 +334,6 @@ export function SearchAnalyticsDashboard({
         setLoading(true);
         setRawLoading(true);
         setExplainabilityLoading(true);
-        setError(null);
 
         const summaryParams = new URLSearchParams();
         summaryParams.set("fromUtc", appliedFromUtc);
@@ -376,7 +376,7 @@ export function SearchAnalyticsDashboard({
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Unable to load chatbot analytics.");
+          showToast(err instanceof Error ? err.message : "Unable to load chatbot analytics.", "error");
           setSummaryData(emptySummary);
           setRawData(emptyRaw);
           setExplainability(emptyExplainability);
@@ -401,15 +401,14 @@ export function SearchAnalyticsDashboard({
     const nextFromUtc = toUtcIso(fromInput);
     const nextToUtc = toUtcIso(toInput);
     if (!nextFromUtc || !nextToUtc) {
-      setError("From and To datetime values are required.");
+      showToast("From and To datetime values are required.", "error");
       return;
     }
     if (new Date(nextFromUtc).getTime() > new Date(nextToUtc).getTime()) {
-      setError("From datetime must be earlier than To datetime.");
+      showToast("From datetime must be earlier than To datetime.", "error");
       return;
     }
 
-    setError(null);
     setAppliedFromUtc(nextFromUtc);
     setAppliedToUtc(nextToUtc);
     setAppliedTargetAppId(targetAppId);
@@ -569,8 +568,6 @@ export function SearchAnalyticsDashboard({
           </div>
         </div>
       </section>
-
-      {error ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
 
       <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
         <Metric label="Total queries" value={summary.totalQueries.toLocaleString()} loading={loading} icon={<MessageSquareText className="h-4 w-4" />} />

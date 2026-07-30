@@ -6,6 +6,7 @@ import type { Jodit as JoditInstance } from "jodit";
 import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
 import HealingSuggestionReviewer from "./healing-suggestion-reviewer-panel";
+import { useToast } from "./toast";
 
 type GuidedWorkflowManagerProps = {
   appBaseUrl: string;
@@ -73,7 +74,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(() => new Set(recordingSessions.map((session) => session.id)));
   const [sessionDetails, setSessionDetails] = useState<SessionDetailsState>({ session: null, actions: [] });
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
-  const [state, setState] = useState<{ status: "idle" | "submitting" | "error" | "success"; message: string }>({ status: "idle", message: "" });
+  const { showToast } = useToast();
   const firstTargetAppId = apps.find((app) => app.companyId === selectedCompanyId)?.id ?? "";
   const [draftFilters, setDraftFilters] = useState({ targetAppId: firstTargetAppId, title: "" });
   const [filters, setFilters] = useState({ targetAppId: firstTargetAppId, title: "" });
@@ -198,7 +199,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   function selectGuide(guide: GuidedWorkflowRow) {
     setSelectedId(guide.id);
     setEditor(editorFromGuide(guide));
-    setState({ status: "idle", message: "" });
   }
 
   function updateSetup(next: Partial<typeof setupForm>) {
@@ -217,7 +217,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   }
 
   async function createTargetAppFromSetup() {
-    setState({ status: "submitting", message: "" });
     const response = await fetch("/api/admin/guided-workflow-target-apps", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -230,7 +229,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to create target app." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to create target app.", "error");
       return;
     }
 
@@ -247,7 +246,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   }
 
   async function createRecordingSession() {
-    setState({ status: "submitting", message: "" });
     let targetAppId: string | undefined = setupForm.targetAppMode === "existing" ? setupForm.targetAppId : "";
 
     if (setupForm.targetAppMode === "new") {
@@ -255,7 +253,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     }
 
     if (!targetAppId) {
-      setState({ status: "error", message: "Select or create a target app before creating a training session." });
+      showToast("Select or create a target app before creating a training session.", "error");
       return;
     }
 
@@ -271,12 +269,12 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to create recording session." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to create recording session.", "error");
       return;
     }
 
     setSessions((current) => [body.session, ...current]);
-    setState({ status: "success", message: "Recording session created. Copy the recorder config into the trainer extension." });
+    showToast("Recording session created. Copy the recorder config into the trainer extension.");
   }
 
   function updateSessionTitleLocally(sessionId: string, title: string) {
@@ -290,7 +288,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   async function saveSessionTitle(sessionId: string, title: string) {
     const trimmedTitle = title.trim();
     if (!trimmedTitle) {
-      setState({ status: "error", message: "Session title cannot be empty." });
+      showToast("Session title cannot be empty.", "error");
       return;
     }
 
@@ -302,23 +300,21 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to update session title." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to update session title.", "error");
       return;
     }
 
     setSessions((current) => current.map((session) => session.id === body.session.id ? body.session : session));
     setSessionDetails((current) => current.session && current.session.id === sessionId ? { ...current, session: body.session } : current);
-    setState({ status: "success", message: "Session title updated." });
+    showToast("Session title updated.");
   }
 
-  async function deleteTopic(topicId: string) {
-    if (!window.confirm("Delete this training topic and its guide?")) return;
-
+  async function performDeleteTopic(topicId: string) {
     const response = await fetch(`/api/admin/guided-workflow-topics/${topicId}`, { method: "DELETE" });
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to delete topic." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to delete topic.", "error");
       return;
     }
 
@@ -329,11 +325,22 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     if (selectedTopicId === topicId) {
       setSelectedTopicId(null);
     }
-    setState({ status: "success", message: "Training topic deleted." });
+    showToast("Training topic deleted.");
+  }
+
+  function deleteTopic(topicId: string) {
+    setConfirmDialog({
+      message: "Delete this training topic and its guide?",
+      confirmLabel: "Delete topic",
+      confirmClassName: "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700",
+      onConfirm: () => {
+        setConfirmDialog(null);
+        void performDeleteTopic(topicId);
+      }
+    });
   }
 
   async function applyTopicRecording(topic: GuidedWorkflowTopicRow, action: "halt" | "restart") {
-    setState({ status: "submitting", message: "" });
     const response = await fetch(`/api/admin/guided-workflow-topics/${topic.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -341,14 +348,14 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     });
     const body = await response.json().catch(() => null);
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to change the training recording state." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to change the training recording state.", "error");
       return;
     }
 
     setSessions((current) => current.map((session) => session.id === body.topic.recordingSessionId
       ? { ...session, topics: session.topics.map((item) => item.id === body.topic.id ? body.topic : item) }
       : session));
-    setState({ status: "success", message: action === "halt" ? "Training halted. The previous recorder config is now invalid." : "Training restarted with a new recorder token." });
+    showToast(action === "halt" ? "Training halted. The previous recorder config is now invalid." : "Training restarted with a new recorder token.");
   }
 
   function setTopicRecording(topic: GuidedWorkflowTopicRow, action: "halt" | "restart") {
@@ -385,7 +392,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
       }
     }
 
-    setState({ status: "submitting", message: "" });
     const response = await fetch(`/api/admin/guided-workflow-recording-sessions/${topic?.recordingSessionId ?? selectedSessionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -394,7 +400,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to generate guide from session." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to generate guide from session.", "error");
       return;
     }
 
@@ -402,12 +408,12 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     setSelectedId(body.guide.id);
     setEditor(editorFromGuide(body.guide));
     setSessions((current) => current.map((session) => session.id === topic?.recordingSessionId ? { ...session, topics: session.topics.map((item) => item.id === topicId ? { ...item, guideId: body.guide.id, status: body.guide.status } : item) } : session));
-    setState({ status: "success", message: topic?.guideId ? "Topic draft updated." : "Topic draft generated from the synced actions." });
+    showToast(topic?.guideId ? "Topic draft updated." : "Topic draft generated from the synced actions.");
   }
 
   async function publishTopicGuide(topic: GuidedWorkflowTopicRow) {
     if (!topic.guideId) {
-      setState({ status: "error", message: "Create a topic draft before publishing." });
+      showToast("Create a topic draft before publishing.", "error");
       return;
     }
 
@@ -416,7 +422,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
       return;
     }
 
-    setState({ status: "submitting", message: "" });
     const response = await fetch(`/api/admin/guided-workflows/${topic.guideId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -425,7 +430,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to publish guide." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to publish guide.", "error");
       return;
     }
 
@@ -436,14 +441,11 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     setSessions((current) => current.map((session) => session.id === topic.recordingSessionId ? { ...session, topics: session.topics.map((item) => item.id === topic.id ? { ...item, status: body.guide.status } : item) } : session));
     setSelectedId(body.guide.id);
     setEditor(editorFromGuide(body.guide));
-    setState({ status: "success", message: "Guide published. Refresh the target app to see it." });
+    showToast("Guide published. Refresh the target app to see it.");
   }
 
   async function saveGuide(nextStatus?: GuideStatus, options?: { silent?: boolean }) {
     if (!selected) return;
-    if (!options?.silent) {
-      setState({ status: "submitting", message: "" });
-    }
     const response = await fetch(`/api/admin/guided-workflows/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -460,7 +462,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
 
     if (!response.ok) {
       if (!options?.silent) {
-        setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to save guide." });
+        showToast(typeof body?.message === "string" ? body.message : "Unable to save guide.", "error");
       }
       return;
     }
@@ -469,13 +471,12 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     setSelectedId(body.guide.id);
     setEditor(editorFromGuide(body.guide));
     if (!options?.silent) {
-      setState({ status: "success", message: nextStatus === "published" ? "Guide saved and published. Refresh the target app to see it." : "Guide saved." });
+      showToast(nextStatus === "published" ? "Guide saved and published. Refresh the target app to see it." : "Guide saved.");
     }
   }
 
   async function regenerateGuide() {
     if (!selected) return;
-    setState({ status: "submitting", message: "" });
     const response = await fetch(`/api/admin/guided-workflows/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -484,13 +485,13 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to regenerate guide." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to regenerate guide.", "error");
       return;
     }
 
     setItems((current) => current.map((guide) => guide.id === body.guide.id ? body.guide : guide));
     setEditor(editorFromGuide(body.guide));
-    setState({ status: "success", message: "Guide draft regenerated from recorded actions." });
+    showToast("Guide draft regenerated from recorded actions.");
   }
 
   function updateStep(index: number, patch: Partial<GuideStep>) {
@@ -521,7 +522,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const step = editor.steps[index];
     if (!step) return;
 
-    setState({ status: "submitting", message: "" });
     const response = await fetch(`/api/admin/guided-workflows/${selected.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -530,7 +530,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      setState({ status: "error", message: typeof body?.message === "string" ? body.message : "Unable to delete step." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to delete step.", "error");
       return;
     }
 
@@ -555,7 +555,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
         }
         : session));
     }
-    setState({ status: "success", message: "Step deleted." });
+    showToast("Step deleted.");
   }
 
   function confirmStepDeletion(index: number) {
@@ -579,10 +579,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
 
   return (
     <div className="grid gap-6">
-      {state.message ? (
-        <p className={`rounded-lg px-3 py-2 text-sm ${state.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{state.message}</p>
-      ) : null}
-
       <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr_auto]">
           <Field label="Company">
@@ -742,7 +738,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   const refreshResetTimer = useRef<number | null>(null);
   const [generatedDocument, setGeneratedDocument] = useState<{ id: string; status: string; isStale?: boolean } | null | undefined>(undefined);
   const [documentActionPending, setDocumentActionPending] = useState(false);
-  const [documentMessage, setDocumentMessage] = useState<{ status: "error" | "success"; text: string } | null>(null);
+  const { showToast } = useToast();
 
   useEffect(() => () => {
     if (refreshResetTimer.current !== null) {
@@ -802,7 +798,6 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
 
     let cancelled = false;
     setGeneratedDocument(undefined);
-    setDocumentMessage(null);
 
     fetch(`/api/admin/guided-workflows/${selectedTopic.guideId}/document`)
       .then((response) => (response.ok ? response.json() : null))
@@ -852,19 +847,18 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   async function generateDocumentation() {
     if (!sessionGuide) return;
     setDocumentActionPending(true);
-    setDocumentMessage(null);
 
     const response = await fetch(`/api/admin/guided-workflows/${sessionGuide.id}/document`, { method: "POST" });
     const body = await response.json().catch(() => null);
     setDocumentActionPending(false);
 
     if (!response.ok) {
-      setDocumentMessage({ status: "error", text: typeof body?.message === "string" ? body.message : "Unable to generate documentation." });
+      showToast(typeof body?.message === "string" ? body.message : "Unable to generate documentation.", "error");
       return;
     }
 
     setGeneratedDocument(body.document);
-    setDocumentMessage({ status: "success", text: "Documentation generated and queued for indexing." });
+    showToast("Documentation generated and queued for indexing.");
   }
 
   return (
@@ -931,23 +925,18 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
           </div>
         </div>
 
-        {generatedDocument || documentMessage ? (
+        {generatedDocument ? (
           <div className="grid gap-1">
-            {generatedDocument ? (
-              <p className="text-xs text-slate-500">
-                Documentation generated (<span className="font-medium text-slate-700">{generatedDocument.status}</span>) ·{" "}
-                <a className="underline hover:text-slate-700" href="/control-panel/content-structure">
-                  View in Generated Workflow Guides
-                </a>
-              </p>
-            ) : null}
-            {generatedDocument?.isStale ? (
+            <p className="text-xs text-slate-500">
+              Documentation generated (<span className="font-medium text-slate-700">{generatedDocument.status}</span>) ·{" "}
+              <a className="underline hover:text-slate-700" href="/control-panel/content-structure">
+                View in Generated Workflow Guides
+              </a>
+            </p>
+            {generatedDocument.isStale ? (
               <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                 Documentation may be out of date — the app UI has changed since this was generated. Regenerate to refresh it.
               </p>
-            ) : null}
-            {documentMessage ? (
-              <p className={`rounded-lg px-3 py-2 text-sm ${documentMessage.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{documentMessage.text}</p>
             ) : null}
           </div>
         ) : null}

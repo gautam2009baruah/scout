@@ -56,6 +56,7 @@ import { ManualTriggerDialog } from "./manual-trigger-dialog";
 import { ExecutionMonitor } from "./execution-monitor";
 import { OrchestrationList } from "./orchestration-list";
 import { isNodeCompatibleWithTrigger, getIncompatibilityReason } from "@/lib/orchestrations/node-compatibility";
+import { useToast } from "./toast";
 
 type TargetAppOption = { id: string; name: string; companyId: string };
 
@@ -246,19 +247,12 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   const [isNodePaletteCollapsed, setIsNodePaletteCollapsed] = useState(false);
   const [isTipsOpen, setIsTipsOpen] = useState(false);
   const [isNodeGuideOpen, setIsNodeGuideOpen] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const { showToast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [savedSincePublish, setSavedSincePublish] = useState(false);
   const savedStateRef = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const previousTriggerTypeRef = useRef<OrchestrationTriggerType | undefined>(undefined);
-
-
-  // Show toast notification
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
 
   // Step 7b: auto-load a specific orchestration when opened via
   // ?orchestrationId=... (e.g. from the Pending AI Plans queue). Runs once
@@ -1520,27 +1514,6 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                 );
               })}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className={`flex items-center gap-3 rounded-lg px-4 py-3 shadow-lg border ${
-            toast.type === 'success' 
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
-              : 'bg-red-50 border-red-200 text-red-900'
-          }`}>
-            <span className="text-lg">{toast.type === 'success' ? '✓' : '✕'}</span>
-            <span className="text-sm font-medium">{toast.message}</span>
-            <button
-              onClick={() => setToast(null)}
-              className="ml-2 rounded p-0.5 hover:bg-black/5 transition-colors"
-              type="button"
-            >
-              <X className="h-4 w-4" />
-            </button>
           </div>
         </div>
       )}

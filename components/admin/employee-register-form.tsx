@@ -4,6 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Send, UserPlus } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
+import { useToast } from "./toast";
 import type { AdminModule } from "@/lib/admin/permissions";
 import type { RoleSummary } from "@/lib/admin/administration";
 
@@ -12,11 +13,6 @@ type UserRegisterFormProps = {
   currentCompanyName: string;
   modules: AdminModule[];
   roles: RoleSummary[];
-};
-
-type FormState = {
-  message: string;
-  status: "idle" | "submitting" | "success" | "error";
 };
 
 type FormErrors = {
@@ -36,9 +32,9 @@ export function UserRegisterForm({
   roles
 }: UserRegisterFormProps) {
   const router = useRouter();
-  const [state, setState] = useState<FormState>({ message: "", status: "idle" });
+  const { showToast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedModuleKeys, setSelectedModuleKeys] = useState<string[]>([]);
-  const [formTimeout, setFormTimeout] = useState<NodeJS.Timeout | null>(null);
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const allModuleKeys = modules.map((module) => String(module.key));
   const sortedRoles = useMemo(() => [...roles].sort((a, b) => a.name.localeCompare(b.name)), [roles]);
@@ -52,7 +48,6 @@ export function UserRegisterForm({
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    setState({ message: "", status: "submitting" });
     setFormErrors({});
 
     const employeeCode = String(form.get("employeeCode") ?? "").trim();
@@ -68,9 +63,10 @@ export function UserRegisterForm({
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
-      setState({ message: "", status: "idle" });
       return;
     }
+
+    setIsSubmitting(true);
 
     const response = await fetch("/api/admin/user-management", {
       method: "POST",
@@ -86,24 +82,17 @@ export function UserRegisterForm({
     });
 
     if (!response.ok) {
-      setState({ message: await readMessage(response, "Unable to register user."), status: "error" });
-      if (formTimeout) clearTimeout(formTimeout);
-      const timeout = setTimeout(() => setState({ message: "", status: "idle" }), 4000);
-      setFormTimeout(timeout);
+      setIsSubmitting(false);
+      showToast(await readMessage(response, "Unable to register user."), "error");
       return;
     }
 
     formElement.reset();
     setSelectedModuleKeys([]);
     setFormErrors({});
-    setState({ message: "User registered and notification email created.", status: "success" });
-    if (formTimeout) clearTimeout(formTimeout);
-    const timeout = setTimeout(() => setState({ message: "", status: "idle" }), 4000);
-    setFormTimeout(timeout);
-    
-    // Refresh immediately to show the new user in the grid
-    // Don't wait for the success message timeout
-    setTimeout(() => router.refresh(), 100);
+    setIsSubmitting(false);
+    showToast("User registered and notification email created.");
+    router.refresh();
   }
 
   return (
@@ -197,29 +186,14 @@ export function UserRegisterForm({
         <div className="flex items-end">
           <button
             className="h-11 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-            disabled={state.status === "submitting"}
+            disabled={isSubmitting}
             type="submit"
           >
-            {state.status === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             Register user and send email
           </button>
         </div>
       </div>
-
-      {state.message ? (
-        <div className={`mt-4 rounded-lg px-3 py-2 text-sm flex items-center justify-between ${
-          state.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
-        }`}>
-          <span>{state.message}</span>
-          <button
-            onClick={() => setState({ message: "", status: "idle" })}
-            className="ml-2 text-xs font-semibold opacity-70 hover:opacity-100"
-            type="button"
-          >
-            ✕
-          </button>
-        </div>
-      ) : null}
     </form>
   );
 }

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { KeyRound, Pencil, Search, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
+import { useToast } from "./toast";
 import type { EmployeeMembership, EmployeeRow, EmployeeStatus } from "@/lib/admin/user-management";
 import type { AdminModule } from "@/lib/admin/permissions";
 import type { CompanySummary, RoleSummary } from "@/lib/admin/administration";
@@ -52,7 +53,7 @@ async function readMessage(response: Response, fallback: string) {
 export function UserList({ companies, currentCompanyId, currentUserId, employees, modules, page, pageCount, pageSize, roles, total, targetApps }: UserListProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const { showToast } = useToast();
   const [editDialog, setEditDialog] = useState<EditDialog>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
   const [resetPasswordDialog, setResetPasswordDialog] = useState<ResetPasswordDialog>(null);
@@ -62,11 +63,6 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
   const currentRole = searchParams.get("roleId") || "";
   const currentStatus = searchParams.get("status") || "";
   const currentSearch = searchParams.get("search") || "";
-
-  function showToast(message: string, type: "success" | "error" = "success") {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }
 
   function filter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -100,7 +96,6 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
     if (!editDialog) return;
 
     const form = new FormData(event.currentTarget);
-    setToast(null);
 
     const currentMembership = membershipFor(editDialog.employee, editDialog.companyId);
     if (editDialog.status === "inactive" && currentMembership?.status !== "inactive" && !editDialog.statusReason.trim()) {
@@ -177,7 +172,6 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
 
     const employee = resetPasswordDialog;
     setResetPasswordDialog(null);
-    setToast(null);
 
     const response = await fetch(`/api/admin/user-management/${employee.id}/reset-password`, {
       method: "POST"
@@ -201,7 +195,6 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
 
     const employee = confirmDialog.employee;
     setConfirmDialog(null);
-    setToast(null);
     const response = await fetch(`/api/admin/user-management/${employee.id}`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -244,22 +237,6 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
           </button>
         </form>
       </div>
-
-      {toast ? (
-        <div className="fixed top-4 left-1/2 z-[9999] -translate-x-1/2 animate-in fade-in slide-in-from-top-2 duration-300">
-          <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${
-            toast.type === "success"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-              : "border-red-200 bg-red-50 text-red-900"
-          }`}>
-            <span className="text-lg">{toast.type === "success" ? "OK" : "!"}</span>
-            <span className="text-sm font-medium">{toast.message}</span>
-            <button onClick={() => setToast(null)} className="ml-2 rounded p-0.5 transition-colors hover:bg-black/5" type="button">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">

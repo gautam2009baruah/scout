@@ -6881,9 +6881,6 @@ function EndConfig({ config, updateConfig, supportsMessage }: any) {
               placeholder="e.g., Order {{variables.orderId}} completed with total ${{variables.total}}"
               rows={3}
             />
-            <p className="mt-1 text-xs text-slate-500">
-              You can use variables like {'{{variables.total}}'}, {'{{capturedData.name.value}}'}, or {'{{workflow.Result.status}}'}
-            </p>
           </div>
 
           {/* Help Section */}

@@ -4,6 +4,7 @@
 
 import React, { useEffect, useState } from "react";
 import type { SelectorCandidate } from "@/shared/guideTypes";
+import { useToast } from "./toast";
 
 type HealingSuggestion = {
   id: string;
@@ -39,6 +40,7 @@ export default function HealingSuggestionReviewer() {
   const [editModal, setEditModal] = useState<EditModalData | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected">("pending");
+  const { showToast } = useToast();
 
   useEffect(() => {
     loadSuggestions();
@@ -81,11 +83,11 @@ export default function HealingSuggestionReviewer() {
       }
 
       const result = await response.json();
-      alert(`Success! Created new workflow version ${result.newVersion}`);
+      showToast(`Success! Created new workflow version ${result.newVersion}`);
       setEditModal(null);
       loadSuggestions();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to approve suggestion");
+      showToast(err instanceof Error ? err.message : "Failed to approve suggestion", "error");
     } finally {
       setProcessingId(null);
     }
@@ -113,10 +115,10 @@ export default function HealingSuggestionReviewer() {
         throw new Error(error.message || "Failed to reject suggestion");
       }
 
-      alert("Suggestion rejected");
+      showToast("Suggestion rejected");
       loadSuggestions();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to reject suggestion");
+      showToast(err instanceof Error ? err.message : "Failed to reject suggestion", "error");
     } finally {
       setProcessingId(null);
     }

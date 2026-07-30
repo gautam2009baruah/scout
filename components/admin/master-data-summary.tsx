@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Save, ShieldCheck, Trash2, UserCog, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
+import { useToast } from "./toast";
 import type { RoleSummary } from "@/lib/admin/administration";
 import type { AdminModule } from "@/lib/admin/permissions";
 
@@ -12,20 +13,10 @@ type MasterDataSummaryProps = {
   modules: AdminModule[];
 };
 
-type Feedback = {
-  message: string;
-  status: "idle" | "error" | "success";
-};
-
 type ConfirmDialog = {
   message: string;
   onConfirm: () => void;
 } | null;
-
-const emptyFeedback: Feedback = {
-  message: "",
-  status: "idle"
-};
 
 async function readMessage(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);
@@ -37,20 +28,18 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
   const [editingRoleId, setEditingRoleId] = useState("");
   const [editingRoleModules, setEditingRoleModules] = useState<string[]>([]);
   const [editingRoleIsAdmin, setEditingRoleIsAdmin] = useState(false);
-  const [feedback, setFeedback] = useState<Feedback>(emptyFeedback);
+  const { showToast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
-  const [feedbackTimeout, setFeedbackTimeout] = useState<NodeJS.Timeout | null>(null);
   const allModuleKeys = modules.map((module) => String(module.key));
 
   async function updateRole(event: FormEvent<HTMLFormElement>, roleId: string) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    setFeedback(emptyFeedback);
 
     const moduleKeys = editingRoleIsAdmin ? allModuleKeys : editingRoleModules;
 
     if (moduleKeys.length === 0 && !editingRoleIsAdmin) {
-      setFeedback({ message: "At least one module must be selected.", status: "error" });
+      showToast("At least one module must be selected.", "error");
       return;
     }
 
@@ -66,17 +55,14 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
     });
 
     if (!response.ok) {
-      setFeedback({ message: await readMessage(response, "Unable to update role."), status: "error" });
+      showToast(await readMessage(response, "Unable to update role."), "error");
       return;
     }
 
     setEditingRoleId("");
     setEditingRoleModules([]);
     setEditingRoleIsAdmin(false);
-    setFeedback({ message: "Role updated.", status: "success" });
-    if (feedbackTimeout) clearTimeout(feedbackTimeout);
-    const timeout = setTimeout(() => setFeedback(emptyFeedback), 4000);
-    setFeedbackTimeout(timeout);
+    showToast("Role updated.");
     router.refresh();
   }
 
@@ -85,24 +71,17 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
       message: `Are you sure you want to delete "${role.name}"? This cannot be undone.`,
       onConfirm: async () => {
         setConfirmDialog(null);
-        setFeedback(emptyFeedback);
 
         const response = await fetch(`/api/admin/administration/roles/${role.id}`, {
           method: "DELETE"
         });
 
         if (!response.ok) {
-          setFeedback({ message: await readMessage(response, "Unable to delete role."), status: "error" });
-          if (feedbackTimeout) clearTimeout(feedbackTimeout);
-          const timeout = setTimeout(() => setFeedback(emptyFeedback), 4000);
-          setFeedbackTimeout(timeout);
+          showToast(await readMessage(response, "Unable to delete role."), "error");
           return;
         }
 
-        setFeedback({ message: "Role deleted.", status: "success" });
-        if (feedbackTimeout) clearTimeout(feedbackTimeout);
-        const timeout = setTimeout(() => setFeedback(emptyFeedback), 4000);
-        setFeedbackTimeout(timeout);
+        showToast("Role deleted.");
         router.refresh();
       }
     });
@@ -121,21 +100,6 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
           </div>
         </div>
       </div>
-
-      {feedback.message ? (
-        <div className={`mt-4 rounded-lg px-3 py-2 text-sm flex items-center justify-between ${
-          feedback.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
-        }`}>
-          <span>{feedback.message}</span>
-          <button
-            onClick={() => setFeedback(emptyFeedback)}
-            className="ml-2 text-xs font-semibold opacity-70 hover:opacity-100"
-            type="button"
-          >
-            ✕
-          </button>
-        </div>
-      ) : null}
 
       {confirmDialog && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
@@ -220,13 +184,6 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
                             />
                             Admin role
                           </label>
-                          {feedback.message && editingRoleId === role.id ? (
-                            <p className={`rounded-lg px-3 py-2 text-sm flex-1 ${
-                              feedback.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
-                            }`}>
-                              {feedback.message}
-                            </p>
-                          ) : null}
                           <div className="flex items-center justify-end gap-2 ml-auto">
                             <button aria-label="Save role" className="inline-flex h-10 px-4 items-center justify-center rounded-lg bg-slate-950 text-white transition hover:bg-slate-800" type="submit">
                               <Save className="h-4 w-4 mr-2" />

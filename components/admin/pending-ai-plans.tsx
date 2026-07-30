@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bot, ChevronDown, ChevronRight, Clock, ExternalLink, Filter, CheckCircle2, XCircle } from "lucide-react";
+import { useToast } from "./toast";
 
 type PendingPlanRequestStatus = "pending" | "approved" | "rejected";
 
@@ -168,7 +169,7 @@ export function PendingAiPlans() {
   const [activePageSize, setActivePageSize] = useState(10);
   const [activeData, setActiveData] = useState<RequestsPage>({ requests: [], page: 1, pageSize: 10, total: 0, pageCount: 1 });
   const [activeLoading, setActiveLoading] = useState(true);
-  const [activeError, setActiveError] = useState("");
+  const { showToast } = useToast();
   const [activeExpanded, setActiveExpanded] = useState<Record<string, boolean>>({});
 
   // Archived Requests tab
@@ -178,7 +179,6 @@ export function PendingAiPlans() {
   const [archivedPageSize, setArchivedPageSize] = useState(10);
   const [archivedData, setArchivedData] = useState<RequestsPage>({ requests: [], page: 1, pageSize: 10, total: 0, pageCount: 1 });
   const [archivedLoading, setArchivedLoading] = useState(true);
-  const [archivedError, setArchivedError] = useState("");
   const [archivedExpanded, setArchivedExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -201,7 +201,6 @@ export function PendingAiPlans() {
 
   const loadActive = useCallback(async () => {
     setActiveLoading(true);
-    setActiveError("");
     try {
       const params = new URLSearchParams();
       if (activeFilter.targetAppId) params.set("targetAppId", activeFilter.targetAppId);
@@ -226,15 +225,14 @@ export function PendingAiPlans() {
         pageCount: data.pageCount || 1,
       });
     } catch (err) {
-      setActiveError(err instanceof Error ? err.message : "Failed to load pending requests.");
+      showToast(err instanceof Error ? err.message : "Failed to load pending requests.", "error");
     } finally {
       setActiveLoading(false);
     }
-  }, [activeFilter, activePage, activePageSize]);
+  }, [activeFilter, activePage, activePageSize, showToast]);
 
   const loadArchived = useCallback(async () => {
     setArchivedLoading(true);
-    setArchivedError("");
     try {
       const params = new URLSearchParams();
       if (archivedFilter.targetAppId) params.set("targetAppId", archivedFilter.targetAppId);
@@ -260,11 +258,11 @@ export function PendingAiPlans() {
         pageCount: data.pageCount || 1,
       });
     } catch (err) {
-      setArchivedError(err instanceof Error ? err.message : "Failed to load archived requests.");
+      showToast(err instanceof Error ? err.message : "Failed to load archived requests.", "error");
     } finally {
       setArchivedLoading(false);
     }
-  }, [archivedFilter, archivedPage, archivedPageSize]);
+  }, [archivedFilter, archivedPage, archivedPageSize, showToast]);
 
   useEffect(() => {
     loadActive();
@@ -301,7 +299,7 @@ export function PendingAiPlans() {
       }
       router.push(`/control-panel/orchestration-designer?orchestrationId=${orchestrationId}&pendingRequestId=${request.id}`);
     } catch (err) {
-      setActiveError(err instanceof Error ? err.message : "Failed to open this request.");
+      showToast(err instanceof Error ? err.message : "Failed to open this request.", "error");
       setOpeningId(null);
     }
   }
@@ -396,9 +394,6 @@ export function PendingAiPlans() {
             </div>
           </form>
 
-          {activeError && (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{activeError}</div>
-          )}
 
           {activeLoading ? (
             <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">Loading pending requests...</p>
@@ -533,9 +528,6 @@ export function PendingAiPlans() {
             </div>
           </form>
 
-          {archivedError && (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{archivedError}</div>
-          )}
 
           {archivedLoading ? (
             <p className="rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">Loading archived requests...</p>

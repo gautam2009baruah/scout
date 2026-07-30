@@ -4,13 +4,9 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
+import { useToast } from "./toast";
 import type { AdminModule } from "@/lib/admin/permissions";
 import type { CompanySummary } from "@/lib/admin/administration";
-
-type FormState = {
-  message: string;
-  status: "idle" | "submitting" | "success" | "error";
-};
 
 type MasterDataFormsProps = {
   companies: CompanySummary[];
@@ -31,11 +27,6 @@ type ConfirmDialog = {
   onConfirm: () => void;
 } | null;
 
-const initialState: FormState = {
-  message: "",
-  status: "idle"
-};
-
 async function readMessage(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);
   return typeof body?.message === "string" ? body.message : fallback;
@@ -43,15 +34,13 @@ async function readMessage(response: Response, fallback: string) {
 
 export function MasterDataForms({ companies, modules, currentCompanyId }: MasterDataFormsProps) {
   const router = useRouter();
-  const [companyState, setCompanyState] = useState<FormState>(initialState);
-  const [roleState, setRoleState] = useState<FormState>(initialState);
+  const { showToast } = useToast();
+  const [isCreatingCompany, setIsCreatingCompany] = useState(false);
+  const [isCreatingRole, setIsCreatingRole] = useState(false);
   const [selectedRoleModuleKeys, setSelectedRoleModuleKeys] = useState<string[]>([]);
   const [isAdminRole, setIsAdminRole] = useState(false);
-  const [companyTimeout, setCompanyTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [roleTimeout, setRoleTimeout] = useState<NodeJS.Timeout | null>(null);
   const [showTargetAppModal, setShowTargetAppModal] = useState(false);
-  const [targetAppState, setTargetAppState] = useState<FormState>(initialState);
-  const [targetAppTimeout, setTargetAppTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [isSavingTargetApp, setIsSavingTargetApp] = useState(false);
   const [targetApps, setTargetApps] = useState<CompanyTargetApplication[]>([]);
   const [loadingTargetApps, setLoadingTargetApps] = useState(false);
   const [targetAppName, setTargetAppName] = useState("");
@@ -68,15 +57,6 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
     }
   }
 
-  function setTargetAppFeedback(message: string, status: FormState["status"]) {
-    setTargetAppState({ message, status });
-    if (targetAppTimeout) {
-      clearTimeout(targetAppTimeout);
-    }
-    const timeout = setTimeout(() => setTargetAppState(initialState), 4000);
-    setTargetAppTimeout(timeout);
-  }
-
   async function loadTargetApps() {
     setLoadingTargetApps(true);
     const response = await fetch("/api/admin/administration/company-target-applications", {
@@ -85,7 +65,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
 
     if (!response.ok) {
       setLoadingTargetApps(false);
-      setTargetAppFeedback(await readMessage(response, "Unable to load target applications."), "error");
+      showToast(await readMessage(response, "Unable to load target applications."), "error");
       return;
     }
 
@@ -120,11 +100,11 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
     event.preventDefault();
 
     if (!targetAppName.trim()) {
-      setTargetAppFeedback("Target application name is required.", "error");
+      showToast("Target application name is required.", "error");
       return;
     }
 
-    setTargetAppState({ message: "", status: "submitting" });
+    setIsSavingTargetApp(true);
 
     const isEditing = Boolean(editingTargetAppId);
     const response = await fetch(
@@ -143,7 +123,8 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
     );
 
     if (!response.ok) {
-      setTargetAppFeedback(
+      setIsSavingTargetApp(false);
+      showToast(
         await readMessage(response, isEditing ? "Unable to update target application." : "Unable to create target application."),
         "error"
       );
@@ -154,7 +135,8 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
     setTargetAppBaseUrl("");
     setEditingTargetAppId(null);
     await loadTargetApps();
-    setTargetAppFeedback(isEditing ? "Target application updated." : "Target application created.", "success");
+    setIsSavingTargetApp(false);
+    showToast(isEditing ? "Target application updated." : "Target application created.");
   }
 
   async function removeTargetApp(id: string) {
@@ -163,14 +145,15 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
       message: `Are you sure you want to delete "${app?.name ?? "this target app"}"? This cannot be undone.`,
       onConfirm: async () => {
         setConfirmDialog(null);
-        setTargetAppState({ message: "", status: "submitting" });
+        setIsSavingTargetApp(true);
 
         const response = await fetch(`/api/admin/administration/company-target-applications/${id}`, {
           method: "DELETE"
         });
 
         if (!response.ok) {
-          setTargetAppFeedback(await readMessage(response, "Unable to delete target application."), "error");
+          setIsSavingTargetApp(false);
+          showToast(await readMessage(response, "Unable to delete target application."), "error");
           return;
         }
 
@@ -181,7 +164,8 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
         }
 
         await loadTargetApps();
-        setTargetAppFeedback("Target application deleted.", "success");
+        setIsSavingTargetApp(false);
+        showToast("Target application deleted.");
       }
     });
   }
@@ -189,7 +173,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
   async function createCompany(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
-    setCompanyState({ message: "", status: "submitting" });
+    setIsCreatingCompany(true);
 
     const form = new FormData(formElement);
 
@@ -203,25 +187,20 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
     });
 
     if (!response.ok) {
-      setCompanyState({ message: await readMessage(response, "Unable to create company."), status: "error" });
-      if (companyTimeout) clearTimeout(companyTimeout);
-      const timeout = setTimeout(() => setCompanyState(initialState), 4000);
-      setCompanyTimeout(timeout);
+      setIsCreatingCompany(false);
+      showToast(await readMessage(response, "Unable to create company."), "error");
       return;
     }
 
     formElement.reset();
-    setCompanyState({ message: "Company created.", status: "success" });
-    if (companyTimeout) clearTimeout(companyTimeout);
-    const timeout = setTimeout(() => setCompanyState(initialState), 4000);
-    setCompanyTimeout(timeout);
+    setIsCreatingCompany(false);
+    showToast("Company created.");
     router.refresh();
   }
 
   async function createRole(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
-    setRoleState({ message: "", status: "submitting" });
 
     const form = new FormData(formElement);
     const name = String(form.get("name") ?? "");
@@ -229,14 +208,16 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
     const moduleKeys = isAdminRole ? allModuleKeys : selectedRoleModuleKeys;
 
     if (!name.trim()) {
-      setRoleState({ message: "Role name is required.", status: "error" });
+      showToast("Role name is required.", "error");
       return;
     }
 
     if (!isAdminRole && moduleKeys.length === 0) {
-      setRoleState({ message: "At least one module must be selected.", status: "error" });
+      showToast("At least one module must be selected.", "error");
       return;
     }
+
+    setIsCreatingRole(true);
 
     const response = await fetch("/api/admin/administration/roles", {
       method: "POST",
@@ -251,20 +232,16 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
     });
 
     if (!response.ok) {
-      setRoleState({ message: await readMessage(response, "Unable to create role."), status: "error" });
-      if (roleTimeout) clearTimeout(roleTimeout);
-      const timeout = setTimeout(() => setRoleState(initialState), 4000);
-      setRoleTimeout(timeout);
+      setIsCreatingRole(false);
+      showToast(await readMessage(response, "Unable to create role."), "error");
       return;
     }
 
     formElement.reset();
     setSelectedRoleModuleKeys([]);
     setIsAdminRole(false);
-    setRoleState({ message: "Role created.", status: "success" });
-    if (roleTimeout) clearTimeout(roleTimeout);
-    const timeout = setTimeout(() => setRoleState(initialState), 4000);
-    setRoleTimeout(timeout);
+    setIsCreatingRole(false);
+    showToast("Role created.");
     router.refresh();
   }
 
@@ -304,27 +281,12 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
           </label>
         </div>
 
-        {companyState.message ? (
-          <div className={`mt-4 rounded-lg px-3 py-2 text-sm flex items-center justify-between ${
-            companyState.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
-          }`}>
-            <span>{companyState.message}</span>
-            <button
-              onClick={() => setCompanyState(initialState)}
-              className="ml-2 text-xs font-semibold opacity-70 hover:opacity-100"
-              type="button"
-            >
-              ✕
-            </button>
-          </div>
-        ) : null}
-
         <button
           className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-          disabled={companyState.status === "submitting"}
+          disabled={isCreatingCompany}
           type="submit"
         >
-          {companyState.status === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          {isCreatingCompany ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           Create company
         </button>
 
@@ -395,27 +357,12 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
           />
         </div>
 
-        {roleState.message ? (
-          <div className={`mt-4 rounded-lg px-3 py-2 text-sm flex items-center justify-between ${
-            roleState.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
-          }`}>
-            <span>{roleState.message}</span>
-            <button
-              onClick={() => setRoleState(initialState)}
-              className="ml-2 text-xs font-semibold opacity-70 hover:opacity-100"
-              type="button"
-            >
-              ✕
-            </button>
-          </div>
-        ) : null}
-
         <button
           className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-          disabled={roleState.status === "submitting"}
+          disabled={isCreatingRole}
           type="submit"
         >
-          {roleState.status === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          {isCreatingRole ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           Create role
         </button>
       </form>
@@ -454,10 +401,10 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
                   />
                   <button
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                    disabled={targetAppState.status === "submitting"}
+                    disabled={isSavingTargetApp}
                     type="submit"
                   >
-                    {targetAppState.status === "submitting" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    {isSavingTargetApp ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                     {editingTargetAppId ? "Update target app" : "Create target app"}
                   </button>
                   {editingTargetAppId ? (
@@ -475,12 +422,6 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
                   ) : <span />}
                 </div>
               </form>
-
-              {targetAppState.message ? (
-                <div className={`rounded-lg px-3 py-2 text-sm ${targetAppState.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
-                  {targetAppState.message}
-                </div>
-              ) : null}
 
               <div className="max-h-80 overflow-auto rounded-lg border border-slate-200">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">

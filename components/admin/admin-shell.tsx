@@ -6,6 +6,7 @@ import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleH
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
+import { ToastProvider } from "./toast";
 
 type AdminModuleKey = number;
 
@@ -619,6 +620,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   );
 
   return (
+    <ToastProvider>
     <main className="min-h-screen bg-[#f7f9fb] text-slate-950">
       <div className="flex min-h-screen">
         <aside
@@ -732,6 +734,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       ) : null}
 
     </main>
+    </ToastProvider>
   );
 }
 

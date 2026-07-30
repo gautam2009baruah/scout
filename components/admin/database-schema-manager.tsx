@@ -8,6 +8,7 @@ import type {
   TargetAppDatabaseSchemaRecord,
 } from "@/lib/admin/database-schemas";
 import { DatabaseSchemaSyncDialog } from "./database-schema-sync-dialog";
+import { useToast } from "./toast";
 
 type TargetAppOption = {
   id: string;
@@ -22,7 +23,6 @@ type Props = {
 };
 
 type Status = { type: "idle" | "loading"; message: string };
-type Toast = { message: string; type: "success" | "error" };
 type ConfirmDialog = { message: string; onConfirm: () => void } | null;
 type JsonPathSegment = string | number;
 type JsonObject = Record<string, unknown>;
@@ -211,13 +211,8 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
   const [syncSchemaRow, setSyncSchemaRow] = useState<TargetAppDatabaseSchemaRecord | null>(null);
   const [downloadHelpOpen, setDownloadHelpOpen] = useState(false);
   const [status, setStatus] = useState<Status>({ type: "idle", message: "" });
-  const [toast, setToast] = useState<Toast | null>(null);
+  const { showToast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
-
-  function showToast(message: string, type: "success" | "error" = "success") {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  }
 
   const displayRows = useMemo(
     () =>
@@ -435,27 +430,6 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
 
   return (
     <div className="space-y-6">
-      {toast ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 pointer-events-none">
-          <div
-            className={`pointer-events-auto flex items-center gap-3 rounded-lg border px-4 py-3 shadow-lg ${
-              toast.type === "success"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                : "border-red-200 bg-red-50 text-red-900"
-            }`}
-          >
-            <span className="text-sm font-medium">{toast.message}</span>
-            <button
-              className="ml-2 rounded p-0.5 transition-colors hover:bg-black/5"
-              type="button"
-              onClick={() => setToast(null)}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
           <div className="mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl">

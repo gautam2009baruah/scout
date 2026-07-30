@@ -8,6 +8,7 @@ import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./top
 import { TopicTreeList } from "./topic-tree-list";
 import type { RoleSummary } from "@/lib/admin/administration";
 import type { TopicAccessGrant, TopicRow, TopicTreeNode, TopicUserOption } from "@/lib/admin/content-structure";
+import { useToast } from "./toast";
 
 type TopicManagerProps = {
   canManageAccess: boolean;
@@ -254,7 +255,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmation>(null);
   const [deletingFolderIds, setDeletingFolderIds] = useState<Set<string>>(new Set());
   const [deletingDocumentIds, setDeletingDocumentIds] = useState<Set<string>>(new Set());
-  const [toast, setToast] = useState<{ message: string; type: "info" | "success" | "error" } | null>(null);
+  const { showToast } = useToast();
   const createCompanyId = selectedCompanyId;
   const [createTarget, setCreateTarget] = useState<TopicCreateTarget | null>(null);
   const [editTarget, setEditTarget] = useState<TopicActionTarget | null>(null);
@@ -340,11 +341,6 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       .map((node) => ({ ...node, children: removeDeletingBranches(node.children) }));
     return selectedCompanyId ? removeDeletingBranches(filterTreeByCompany(tree, selectedCompanyId)) : [];
   }, [deletingFolderIds, selectedCompanyId, tree]);
-
-  function showToast(message: string, type: "info" | "success" | "error" = "success", duration = 4000) {
-    setToast({ message, type });
-    globalThis.setTimeout(() => setToast((current) => current?.message === message ? null : current), duration);
-  }
 
   function formatTimestamp(value: string) {
     const date = new Date(value);
@@ -641,7 +637,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setDeleteConfirmation(null);
     setDeletingDocumentIds((current) => new Set(current).add(row.id));
     setDocumentGrid((current) => ({ ...current, documents: current.documents.filter((document) => document.id !== row.id), total: Math.max(0, current.total - 1) }));
-    showToast(`Deleting “${row.name}” in the background…`, "info", 6000);
+    showToast(`Deleting “${row.name}” in the background…`, "notification");
 
     const response = await fetch(`/api/admin/documents/${row.id}`, { method: "DELETE" });
     const body = await response.json().catch(() => null);
@@ -949,7 +945,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setDeleteConfirmation(null);
     setActionTarget(null);
     setDeletingFolderIds((current) => new Set(current).add(target.topicId!));
-    showToast(`Deleting “${target.topicName}” and its contents in the background… This may take a while.`, "info", 8000);
+    showToast(`Deleting “${target.topicName}” and its contents in the background… This may take a while.`, "notification");
 
     const response = await fetch(`/api/admin/content-structure/${target.topicId}`, { method: "DELETE" });
 
@@ -1272,14 +1268,6 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         )}
       </section>
 
-      {toast ? (
-        <div className={`fixed left-1/2 top-1/2 z-[10000] flex w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 items-start gap-3 rounded-xl border px-4 py-3 shadow-2xl ${toast.type === "error" ? "border-red-200 bg-red-50 text-red-800" : toast.type === "info" ? "border-violet-200 bg-violet-50 text-violet-900" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role="status">
-          {toast.type === "info" ? <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" /> : <span className="font-bold">{toast.type === "success" ? "✓" : "!"}</span>}
-          <span className="text-sm font-medium leading-5">{toast.message}</span>
-          <button aria-label="Dismiss notification" className="ml-1 rounded p-0.5 opacity-60 hover:bg-black/5 hover:opacity-100" onClick={() => setToast(null)} type="button"><X className="h-4 w-4" /></button>
-        </div>
-      ) : null}
-
       {deleteConfirmation ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm" onClick={() => setDeleteConfirmation(null)}>
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true">
@@ -1439,7 +1427,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                             <button
                               aria-label="Original file is not stored"
                               className="inline-flex h-6 w-6 shrink-0 cursor-help items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-300"
-                              onClick={() => showToast("This content was imported from an external source. Scout stores its processed text for search, but not a downloadable copy of the original file.", "info", 6000)}
+                              onClick={() => showToast("This content was imported from an external source. Scout stores its processed text for search, but not a downloadable copy of the original file.", "notification")}
                               title="Original file not stored — click for details"
                               type="button"
                             >
