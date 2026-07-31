@@ -504,10 +504,10 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         </div>
         {!collapsed && !closeMobileMenu ? (
           <button
-            aria-label="Collapse sidebar"
+            aria-label="Collapse menu"
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
             onClick={toggleDesktopSidebar}
-            title="Collapse sidebar"
+            title="Collapse menu"
             type="button"
           >
             <PanelLeftClose className="h-4 w-4" />
@@ -515,9 +515,10 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         ) : null}
         {closeMobileMenu ? (
           <button
-            aria-label="Close navigation"
+            aria-label="Close menu"
             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
             onClick={closeMobileMenu}
+            title="Close menu"
             type="button"
           >
             <X className="h-4 w-4" />
@@ -527,10 +528,10 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
       {collapsed ? (
         <button
-          aria-label="Expand sidebar"
+          aria-label="Expand menu"
           className="mt-4 inline-flex h-10 w-10 self-center items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
           onClick={toggleDesktopSidebar}
-          title="Expand sidebar"
+          title="Expand menu"
           type="button"
         >
           <PanelLeftOpen className="h-4 w-4" />
