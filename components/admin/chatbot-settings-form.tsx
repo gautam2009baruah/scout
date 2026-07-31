@@ -67,7 +67,6 @@ type EmbedPackageResponse = {
   installSnippet: string;
   htmlSample: string;
   reactSample: string;
-  obfuscatedCompanyId: string;
   obfuscatedTargetAppId: string;
   record?: EmbedPackageRecord;
 };
@@ -78,7 +77,6 @@ type EmbedPackageRecord = {
   targetAppName: string;
   environment: string;
   userId: string;
-  requireUserGuid: boolean;
   scoutUrl: string;
   apiUrl: string;
   assistantName: string;
@@ -225,7 +223,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
     targetAppId: sortedTargetApps[0]?.id ?? "",
     environment: "",
     userId: "",
-    requireUserGuid: true,
     apiKey: "",
     scoutUrl: typeof window === "undefined" ? "http://localhost:3000" : window.location.origin,
     apiUrl: "http://localhost:4200",
@@ -376,8 +373,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   }
 
   async function saveConversationSettings(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    //setStatus({ type: "saving", message: "Saving settings..." });
+    event.preventDefault();    
 
     const response = await fetch("/api/admin/chatbot-settings", {
       method: "PUT",
@@ -401,8 +397,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
       return;
     }
 
-    setSettings(Array.isArray(body?.settings) ? body.settings : []);
-    //setStatus({ type: "success", message: "Chatbot settings saved." });
+    setSettings(Array.isArray(body?.settings) ? body.settings : []);    
     showToast("Chatbot settings saved.", "success");
   }
 
@@ -696,7 +691,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
       targetAppId: record.targetAppId,
       environment: record.environment,
       userId: record.userId,
-      requireUserGuid: record.requireUserGuid === true,
       apiKey: typeof body?.apiKey === "string" ? body.apiKey : "",
       scoutUrl: record.scoutUrl,
       apiUrl: record.apiUrl,
@@ -726,7 +720,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
           id: matchingRecord.id,
           apiKey: body.apiKey,
           userId: matchingRecord.userId,
-          requireUserGuid: matchingRecord.requireUserGuid === true,
           scoutUrl: matchingRecord.scoutUrl,
           apiUrl: matchingRecord.apiUrl,
           assistantName: matchingRecord.assistantName,
@@ -781,9 +774,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
       return;
     }
 
-    const userIdPlaceholder = embedForm.requireUserGuid
-      ? "passing proper logged in user's guid is mandatory"
-      : "passing proper logged in user's guid is not mandatory";
+    const userIdPlaceholder = "passing a non-empty user id is mandatory";
 
     setEmbedStatus({ type: "saving", message: "Generating package snippets..." });
     setEmbedResult(null);
@@ -1248,16 +1239,9 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                     </select>
                   </label>
 
-                  <label className="flex items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700">
-                    <input
-                      checked={embedForm.requireUserGuid}
-                      onChange={(event) => setEmbedForm((current) => ({ ...current, requireUserGuid: event.target.checked }))}
-                      type="checkbox"
-                    />
-                    <span className="inline-flex items-center gap-1.5">
-                      Don&apos;t allow anonymous access
-                      <HelpHint text="When enabled, anonymous access is blocked and the client app must pass a logged-in user's GUID at runtime. When disabled, GUID passing is optional." />
-                    </span>
+                  <label className="grid gap-2 text-sm font-medium text-slate-700">
+                    <span className="inline-flex items-center gap-1.5">Assistant name <HelpHint text="Display name shown in chatbot header and welcome context." /></span>
+                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, assistantName: event.target.value }))} value={embedForm.assistantName} />
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
@@ -1279,11 +1263,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span className="inline-flex items-center gap-1.5">API URL <HelpHint text="Base URL for the standalone chatbot API endpoint." /></span>
                     <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, apiUrl: event.target.value }))} value={embedForm.apiUrl} />
-                  </label>
-
-                  <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    <span className="inline-flex items-center gap-1.5">Assistant name <HelpHint text="Display name shown in chatbot header and welcome context." /></span>
-                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, assistantName: event.target.value }))} value={embedForm.assistantName} />
                   </label>
 
                 </div>
@@ -1368,8 +1347,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                     </div>
 
                     <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600">
-                      <p>Obfuscated company ID: <span className="font-mono text-slate-800">{embedResult.obfuscatedCompanyId}</span></p>
-                      <p className="mt-1">Obfuscated target app ID: <span className="font-mono text-slate-800">{embedResult.obfuscatedTargetAppId}</span></p>
+                      <p>Obfuscated target app ID: <span className="font-mono text-slate-800">{embedResult.obfuscatedTargetAppId}</span></p>
                     </div>
                   </div>
                 ) : null}

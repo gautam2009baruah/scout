@@ -21,14 +21,7 @@
     requireValue(config.scoutUrl, "scoutUrl");
     requireValue(config.apiUrl, "apiUrl");
     requireValue(config.apiKey, "apiKey");
-    requireValue(config.companyId, "companyId");
-    requireValue(config.companyName, "companyName");
-    if (config.requireUserGuid === true) {
-      requireValue(config.userId, "userId");
-      if (!isGuid(config.userId)) {
-        throw new Error("ScoutChatbot.install requires userId to be a GUID when requireUserGuid is enabled.");
-      }
-    }
+    requireValue(config.userId, "userId");
 
     var scoutOrigin = new URL(config.scoutUrl, global.location.href).origin;
     ensureOrchestrationPlayer(config, scoutOrigin);
@@ -156,10 +149,6 @@
 
   function requireValue(value, name) {
     if (!String(value || "").trim()) throw new Error("ScoutChatbot.install requires " + name + ".");
-  }
-
-  function isGuid(value) {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
   }
 
   function startWorkflow(config, guideId) {

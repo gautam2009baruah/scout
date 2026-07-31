@@ -14,7 +14,6 @@ export type CachedKeyRecord = {
   // bound to exactly one target app.
   targetAppId: string;
   allowedOrigins: string[];
-  requiresGuid: boolean;
 };
 
 type CacheEntry = {
@@ -32,10 +31,6 @@ const keyCache = new Map<string, CacheEntry>();
 function getCacheTtlMs() {
   const parsed = Number(process.env.CHATBOT_EMBED_API_KEY_CACHE_TTL_MS);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 5 * 60_000;
-}
-
-function isGuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
 }
 
 function extractApiKey(request: Request) {
@@ -110,7 +105,7 @@ function parseOriginHost(request: Request) {
   }
 }
 
-async function loadKeyRecord(apiKey: string, hashedKey: string): Promise<CachedKeyRecord | null> {
+async function loadKeyRecord(hashedKey: string): Promise<CachedKeyRecord | null> {
   const cached = keyCache.get(hashedKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.record;
@@ -143,24 +138,10 @@ async function loadKeyRecord(apiKey: string, hashedKey: string): Promise<CachedK
     return null;
   }
 
-  const requireGuidPolicy = await getPool().query<{ require_user_guid: boolean }>(
-    `
-      SELECT COALESCE(bool_or(p.require_user_guid), false) AS require_user_guid
-      FROM chatbot_embed_packages p
-      INNER JOIN company_target_applications cta ON cta.id = p.target_app_id
-      WHERE cta.company_id = $1
-        AND p.deleted_at IS NULL
-        AND p.api_key_plaintext = $2
-        AND ($3::uuid IS NULL OR p.target_app_id = $3)
-    `,
-    [row.company_id, apiKey, row.target_app_id]
-  );
-
   const record: CachedKeyRecord = {
     companyId: row.company_id,
     targetAppId: row.target_app_id,
     allowedOrigins: Array.isArray(row.allowed_origins_json) ? row.allowed_origins_json : [],
-    requiresGuid: requireGuidPolicy.rows[0]?.require_user_guid === true,
   };
 
   keyCache.set(hashedKey, { record, expiresAt: Date.now() + getCacheTtlMs() });
@@ -179,7 +160,7 @@ export async function assertChatbotApiKeyAccess(request: Request, input: { compa
     throw new ChatbotApiKeyAccessError("A target app or company is required for API key validation.", 400);
   }
 
-  const record = await loadKeyRecord(apiKey, hashToken(apiKey));
+  const record = await loadKeyRecord(hashToken(apiKey));
   if (!record) {
     throw new ChatbotApiKeyAccessError("Invalid API key.", 401);
   }
@@ -199,10 +180,6 @@ export async function assertChatbotApiKeyAccess(request: Request, input: { compa
   const requestHost = parseOriginHost(request);
   if (!isOriginAllowed(requestHost, record.allowedOrigins)) {
     throw new ChatbotApiKeyAccessError("API key is not allowed for this origin.", 403);
-  }
-
-  if (record.requiresGuid && !isGuid(String(input.userId || ""))) {
-    throw new ChatbotApiKeyAccessError("A valid GUID userId is required for this API key.", 400);
   }
 
   return record;

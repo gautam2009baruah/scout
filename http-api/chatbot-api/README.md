@@ -8,13 +8,13 @@ This service is intentionally separated from the Control Panel UI runtime and ca
 
 - `GET /health` - liveness
 - `GET /ready` - readiness (DB check)
-- `POST /v1/context/resolve` - resolve `companyName` and optional `targetAppName`
-- `POST /v1/chat/settings` - resolve effective chatbot lifecycle settings for company/target app
+- `POST /v1/context/resolve` - resolve `targetAppId` to its target app and company
+- `POST /v1/chat/settings` - resolve effective chatbot lifecycle settings for the target app
 - `POST /v1/chat/query` - run full chatbot query flow
 
 ## Authentication
 
-Primary mode is company-scoped API keys stored in database table `chatbot_api_keys`.
+Primary mode is target-app-scoped API keys stored in database table `chatbot_api_keys`.
 The service hashes incoming keys and validates them against that table.
 
 Optional fallback mode uses `CHATBOT_API_KEY` as a legacy global key.
@@ -99,9 +99,8 @@ All customer technologies use the same hosted React `ScoutChatbot` through the u
 
 ```json
 {
-  "companyName": "Acme Corp",
-  "targetAppName": "Customer Portal",
-  "userId": "2f0e8ed6-0e8b-4975-aafd-a053f47f8f57",
+  "targetAppId": "<target-app-uuid>",
+  "userId": "<customer-owned-external-user-id>",
   "question": "What is the policy number for customer John Doe?",
   "conversationId": "",
   "topK": 8

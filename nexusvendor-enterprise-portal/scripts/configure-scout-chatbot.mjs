@@ -87,8 +87,6 @@ const config = {
   scoutUrl: "http://localhost:3000",
   apiUrl: "http://localhost:4200",
   apiKey: secret,
-  companyId,
-  companyName,
   userId,
   targetAppId,
   targetAppName,

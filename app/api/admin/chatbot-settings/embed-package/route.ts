@@ -30,7 +30,6 @@ export async function POST(request: Request) {
       environment: String(body.environment || "").trim(),
       apiKey: String(body.apiKey || "").trim(),
       userId: String(body.userId || "").trim(),
-      requireUserGuid: body.requireUserGuid === true,
       scoutUrl: String(body.scoutUrl || "http://localhost:3000").trim(),
       apiUrl: String(body.apiUrl || "http://localhost:4200").trim(),
       assistantName: typeof body.assistantName === "string" ? body.assistantName : undefined,

@@ -83,9 +83,12 @@ export async function GET(request: Request) {
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
 
+    // userId is an opaque, client-supplied identifier — it must never be matched
+    // against internal user-scoping tables (see getOrchestrationPage's own
+    // userId filter, which is for the admin control panel's RBAC only; same
+    // rule loadChatbotWorkflowCandidates in workflow-router/route.ts follows).
     const page = await getOrchestrationPage({
       companyId,
-      userId,
       targetAppId,
       status: "published",
       page: 1,

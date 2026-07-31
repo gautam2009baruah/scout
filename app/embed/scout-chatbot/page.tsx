@@ -12,11 +12,8 @@ type EmbedConfig = {
   scoutUrl: string;
   apiUrl: string;
   apiKey: string;
-  companyId: string;
-  companyName: string;
   userId?: string;
-  requireUserGuid?: boolean;
-  targetAppId?: string;
+  targetAppId: string;
   targetAppName?: string;
   assistantName?: string;
   autoLoadLifecycleSettings?: boolean;
@@ -72,6 +69,7 @@ function normalizeTheme(value: unknown, legacy: Pick<EmbedConfig, "brandColor" |
 
 export default function EmbeddedScoutChatbotPage() {
   const [config, setConfig] = useState<EmbedConfig | null>(null);
+  const [resolvedCompany, setResolvedCompany] = useState<{ id: string; name: string } | null>(null);
   const [conversationId, setConversationId] = useState("");
   const [lifecycleConfig, setLifecycleConfig] = useState<ScoutChatLifecycleConfig | undefined>(undefined);
   const parentOriginRef = useRef("*");
@@ -115,7 +113,7 @@ export default function EmbeddedScoutChatbotPage() {
     function receiveConfig(event: MessageEvent) {
       if (event.source !== window.parent || event.data?.type !== "scout-chatbot:configure") return;
       const next = event.data.config as EmbedConfig;
-      if (!next?.apiUrl || !next.apiKey || !next.companyId || !next.companyName) return;
+      if (!next?.apiUrl || !next.apiKey || !next.targetAppId) return;
       parentOriginRef.current = event.origin || "*";
       setConfig(next);
     }
@@ -124,6 +122,40 @@ export default function EmbeddedScoutChatbotPage() {
     window.parent.postMessage({ type: "scout-chatbot:ready" }, "*");
     return () => window.removeEventListener("message", receiveConfig);
   }, []);
+
+  useEffect(() => {
+    if (!config) {
+      setResolvedCompany(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const safeConfig = config;
+
+    async function resolveCompanyContext() {
+      try {
+        const response = await fetch(`${safeConfig.apiUrl.replace(/\/$/, "")}/v1/context/resolve`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-API-Key": safeConfig.apiKey },
+          body: JSON.stringify({ targetAppId: safeConfig.targetAppId }),
+          signal: controller.signal
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok || typeof body?.company?.id !== "string") {
+          throw new Error(typeof body?.message === "string" ? body.message : "Unable to resolve chatbot context.");
+        }
+
+        setResolvedCompany({ id: body.company.id, name: body.company.name });
+      } catch {
+        if (!controller.signal.aborted) {
+          setResolvedCompany(null);
+        }
+      }
+    }
+
+    void resolveCompanyContext();
+    return () => controller.abort();
+  }, [config]);
 
   useEffect(() => {
     if (!config) {
@@ -145,9 +177,7 @@ export default function EmbeddedScoutChatbotPage() {
           method: "POST",
           headers: { "Content-Type": "application/json", "X-API-Key": safeConfig.apiKey },
           body: JSON.stringify({
-            companyId: safeConfig.companyId,
-            companyName: safeConfig.companyName,
-            targetAppId: safeConfig.targetAppId || undefined,
+            targetAppId: safeConfig.targetAppId,
             targetAppName: safeConfig.targetAppName || undefined
           }),
           signal: controller.signal
@@ -212,9 +242,7 @@ export default function EmbeddedScoutChatbotPage() {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-API-Key": config.apiKey },
       body: JSON.stringify({
-        companyId: config.companyId,
-        companyName: config.companyName,
-        targetAppId: config.targetAppId || undefined,
+        targetAppId: config.targetAppId,
         targetAppName: config.targetAppName || undefined,
         userId: effectiveUserId,
         clientTraceId,
@@ -241,11 +269,11 @@ export default function EmbeddedScoutChatbotPage() {
     <>
       <style>{`html,body{margin:0!important;background:transparent!important;overflow:hidden!important}`}</style>
       <div className="flex h-screen w-screen items-end justify-end bg-transparent p-3">
-        {config ? (
+        {config && resolvedCompany ? (
           <ScoutChatbot
             assistantName={config.assistantName || "Scout Assistant"}
             apiKey={config.apiKey}
-            companyId={config.companyId}
+            companyId={resolvedCompany.id}
             conversationId={conversationId || undefined}
             defaultOpen={false}
             lifecycleConfig={lifecycleConfig}

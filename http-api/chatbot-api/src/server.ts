@@ -5,14 +5,12 @@ import { getEffectiveChatbotLifecycleSettings } from "@/lib/chat/lifecycle-setti
 import { answerChatQuery, ChatQueryError } from "@/lib/chat/query";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { getPool } from "@/lib/db/pool";
-import { CompanyApiKeyAuthorizer, extractToken } from "./auth";
+import { CompanyApiKeyAuthorizer } from "./auth";
 import { getApiConfig } from "./config";
 import { InMemoryRateLimiter } from "./rate-limit";
 import { TenantResolver } from "./tenant-resolution";
 
 type ChatQueryBody = {
-  companyId?: string;
-  companyName?: string;
   targetAppId?: string;
   targetAppName?: string;
   environment?: string;
@@ -108,35 +106,6 @@ function parseBody(request: IncomingMessage): Promise<ChatQueryBody> {
 
     request.on("error", reject);
   });
-}
-
-function isGuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || "").trim());
-}
-
-async function requiresGuidUserIdForApiKey(
-  token: string,
-  companyId: string,
-  targetAppId?: string | null
-) {
-  if (!token) {
-    return false;
-  }
-
-  const result = await getPool().query<{ require_user_guid: boolean }>(
-    `
-      SELECT COALESCE(bool_or(p.require_user_guid), false) AS require_user_guid
-      FROM chatbot_embed_packages p
-      INNER JOIN company_target_applications cta ON cta.id = p.target_app_id
-      WHERE cta.company_id = $1
-        AND p.deleted_at IS NULL
-        AND p.api_key_plaintext = $2
-        AND ($3::uuid IS NULL OR p.target_app_id = $3)
-    `,
-    [companyId, token, targetAppId || null]
-  );
-
-  return result.rows[0]?.require_user_guid === true;
 }
 
 async function handleChatQuery(
@@ -302,65 +271,27 @@ const server = createServer(async (request, response) => {
     if (isProtectedRoute) {
       parsedBody = await parseBody(request);
 
-      const companyName = String(parsedBody.companyName || "").trim();
-      const targetAppName = String(parsedBody.targetAppName || "").trim();
-      const companyToken = String(parsedBody.companyId || "").trim();
       const targetAppToken = String(parsedBody.targetAppId || "").trim();
-      const requiresScopedTargetApp = url.pathname === "/v1/chat/query" || url.pathname === "/v1/chat/settings";
 
-      if (!companyName) {
-        sendJson(response, 400, { message: "companyName is required." }, requestId, origin);
-        return;
-      }
-
-      if (!companyToken) {
-        sendJson(response, 400, { message: "companyId is required." }, requestId, origin);
-        return;
-      }
-
-      if (requiresScopedTargetApp) {
-        if (!targetAppName) {
-          sendJson(response, 400, { message: "targetAppName is required." }, requestId, origin);
-          return;
-        }
-
-        if (!targetAppToken) {
-          sendJson(response, 400, { message: "targetAppId is required." }, requestId, origin);
-          return;
-        }
-      }
-
-      companyContext = await tenantResolver.resolveCompanyByName(companyName);
-      targetAppContext = await tenantResolver.resolveTargetAppByName(companyContext.id, targetAppName);
-
-      let resolvedCompanyId = "";
-      try {
-        resolvedCompanyId = resolveGuidIdentifier(companyToken, "company");
-      } catch {
-        sendJson(response, 400, { message: "Invalid companyId token." }, requestId, origin);
-        return;
-      }
-
-      if (resolvedCompanyId !== companyContext.id) {
-        sendJson(response, 401, { message: "companyId token does not match companyName." }, requestId, origin);
-        return;
-      }
-
-      if (targetAppToken) {
-        let resolvedTargetAppId = "";
-        try {
-          resolvedTargetAppId = resolveGuidIdentifier(targetAppToken, "target_app");
-        } catch {
-          sendJson(response, 400, { message: "Invalid targetAppId token." }, requestId, origin);
-          return;
-        }
-
-        if (!targetAppContext || resolvedTargetAppId !== targetAppContext.id) {
-          sendJson(response, 401, { message: "targetAppId token does not match targetAppName." }, requestId, origin);
-          return;
-        }
-      } else if (requiresScopedTargetApp) {
+      if (!targetAppToken) {
         sendJson(response, 400, { message: "targetAppId is required." }, requestId, origin);
+        return;
+      }
+
+      let resolvedTargetAppId = "";
+      try {
+        resolvedTargetAppId = resolveGuidIdentifier(targetAppToken, "target_app");
+      } catch {
+        sendJson(response, 400, { message: "Invalid targetAppId token." }, requestId, origin);
+        return;
+      }
+
+      try {
+        const targetAppRecord = await tenantResolver.resolveTargetAppById(resolvedTargetAppId);
+        companyContext = { id: targetAppRecord.companyId, name: targetAppRecord.companyName };
+        targetAppContext = { id: targetAppRecord.id, name: targetAppRecord.name };
+      } catch {
+        sendJson(response, 404, { message: "Target app was not found." }, requestId, origin);
         return;
       }
 
@@ -372,31 +303,11 @@ const server = createServer(async (request, response) => {
         request,
         companyContext.id,
         requestedEnvironment,
-        targetAppContext?.id ?? null
+        targetAppContext.id
       );
       if (!auth.ok) {
         sendJson(response, 401, { message: auth.error || "Unauthorized." }, requestId, origin);
         return;
-      }
-
-      if (url.pathname === "/v1/chat/query") {
-        const token = extractToken(request.headers);
-        const requireGuidUserId = await requiresGuidUserIdForApiKey(
-          token,
-          companyContext.id,
-          targetAppContext?.id ?? null
-        );
-
-        if (requireGuidUserId && !isGuid(String(parsedBody.userId || ""))) {
-          sendJson(
-            response,
-            400,
-            { message: "A valid GUID userId is required for this API key." },
-            requestId,
-            origin
-          );
-          return;
-        }
       }
 
       const rateKey = `${auth.apiKeyId || auth.source || "unknown"}:${getClientIp(request)}:${url.pathname}`;

@@ -5,13 +5,8 @@ type CacheValue<T> = {
   expiresAt: number;
 };
 
-function normalizeName(value: string) {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
-}
-
 export class TenantResolver {
-  private readonly companyCache = new Map<string, CacheValue<{ id: string; name: string }>>();
-  private readonly targetAppCache = new Map<string, CacheValue<{ id: string; name: string }>>();
+  private readonly targetAppCache = new Map<string, CacheValue<{ id: string; name: string; companyId: string; companyName: string }>>();
 
   constructor(
     private readonly companyTtlMs: number,
@@ -35,64 +30,35 @@ export class TenantResolver {
     });
   }
 
-  async resolveCompanyByName(companyName: string) {
-    const normalized = normalizeName(companyName);
-    if (!normalized) {
-      throw new Error("companyName is required.");
-    }
-
-    const cached = this.getFromCache(this.companyCache, normalized);
+  async resolveTargetAppById(targetAppId: string) {
+    const cached = this.getFromCache(this.targetAppCache, targetAppId);
     if (cached) return cached;
 
-    const result = await getPool().query<{ id: string; name: string }>(
+    const result = await getPool().query<{ id: string; name: string; company_id: string; company_name: string }>(
       `
-        SELECT id, name
-        FROM companies
-        WHERE deleted_at IS NULL
-          AND status = 'active'
-          AND lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) = $1
+        SELECT
+          cta.id,
+          cta.name,
+          c.id AS company_id,
+          c.name AS company_name
+        FROM company_target_applications cta
+        INNER JOIN companies c ON c.id = cta.company_id
+        WHERE cta.id = $1
+          AND cta.deleted_at IS NULL
+          AND c.deleted_at IS NULL
+          AND c.status = 'active'
         LIMIT 1
       `,
-      [normalized]
+      [targetAppId]
     );
 
     const row = result.rows[0];
     if (!row) {
-      throw new Error(`Company not found for name: ${companyName}`);
+      throw new Error(`Target app not found for id: ${targetAppId}`);
     }
 
-    this.setCache(this.companyCache, normalized, row, this.companyTtlMs);
-    return row;
-  }
-
-  async resolveTargetAppByName(companyId: string, targetAppName?: string) {
-    const normalized = normalizeName(targetAppName || "");
-    if (!normalized) {
-      return null;
-    }
-
-    const cacheKey = `${companyId}:${normalized}`;
-    const cached = this.getFromCache(this.targetAppCache, cacheKey);
-    if (cached) return cached;
-
-    const result = await getPool().query<{ id: string; name: string }>(
-      `
-        SELECT id, name
-        FROM company_target_applications
-        WHERE company_id = $1
-          AND deleted_at IS NULL
-          AND lower(regexp_replace(trim(name), '\\s+', ' ', 'g')) = $2
-        LIMIT 1
-      `,
-      [companyId, normalized]
-    );
-
-    const row = result.rows[0] || null;
-    if (!row) {
-      throw new Error(`Target app not found for name: ${targetAppName}`);
-    }
-
-    this.setCache(this.targetAppCache, cacheKey, row, this.targetAppTtlMs);
-    return row;
+    const value = { id: row.id, name: row.name, companyId: row.company_id, companyName: row.company_name };
+    this.setCache(this.targetAppCache, targetAppId, value, Math.min(this.companyTtlMs, this.targetAppTtlMs));
+    return value;
   }
 }

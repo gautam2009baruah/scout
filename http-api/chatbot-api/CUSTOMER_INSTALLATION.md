@@ -67,7 +67,7 @@ Before installation, confirm that:
 5. The user has access to that target application.
 6. The Scout web application and Chatbot API are reachable over HTTPS in production.
 7. The company's RAG documents have been ingested, processed, and made available to the relevant company or target application.
-8. A company-scoped browser API key has been issued.
+8. A target-app-scoped browser API key has been issued.
 
 Run database migrations from the Scout repository root:
 
@@ -85,19 +85,17 @@ npm run db:migrate
 |---|---|---|---|
 | `scoutUrl` | Public base URL of the Scout web application that hosts the widget | Scout deployment configuration | `https://scout.example.com` |
 | `apiUrl` | Public base URL of the standalone Chatbot API | Chatbot API deployment | `https://chat-api.scout.example.com` |
-| `apiKey` | Revocable company-scoped browser key | `chatbot_api_keys`; plaintext is shown only when issued | `sk_browser_acme_...` |
-| `companyId` | Stable UUID of the Scout company | `companies.id` | `f90d8652-d7ac-4cee-93e5-2d6ced72c6e7` |
-| `companyName` | Exact active company name used for tenant resolution | `companies.name` | `Acme Corporation` |
-| `userId` | Stable UUID of an active Scout user in that company | `users.id` | `2f0e8ed6-0e8b-4975-aafd-a053f47f8f57` |
+| `apiKey` | Revocable, target-app-scoped browser key | `chatbot_api_keys`; plaintext is shown only when issued | `sk_browser_acme_...` |
+| `userId` | Opaque external identifier for the person or service identity on whose behalf the chat runs | The customer's own system; any non-empty, non-whitespace value | `emp-40231` |
 
 ### 4.2 Target-application settings
 
 | Setting | Required? | Meaning |
 |---|---|---|
-| `targetAppId` | Required for guided workflows; recommended otherwise | UUID from `company_target_applications.id` |
-| `targetAppName` | Required when target-app-scoped retrieval or workflows are used | Exact `company_target_applications.name` |
+| `targetAppId` | Always required | UUID (or obfuscated token) from `company_target_applications.id` |
+| `targetAppName` | Optional; used for display/logging only | `company_target_applications.name` |
 
-If both values are omitted, the chatbot operates at the company-global level. Content assigned only to a target application may not be available globally.
+A chatbot instance is always scoped to exactly one target application. The company is resolved server-side from `targetAppId` — it is never supplied by the client.
 
 ### 4.3 Optional presentation settings
 
@@ -117,62 +115,20 @@ Do not include trailing slashes in `scoutUrl` or `apiUrl`. The loader tolerates 
 
 ## 5. Understanding and obtaining identifiers
 
-### 5.1 Company ID and company name
+### 5.1 User ID
 
-The company ID is the primary key of an existing Scout tenant. Do not invent a new UUID in the customer application. A company must be created through the normal Scout company-onboarding process so all required company records and permissions exist.
+`userId` is an opaque external identifier for the person or service identity on whose behalf the chat request runs. It is owned entirely by the customer's own system — Scout does not look it up, validate it against any Scout user record, or require it to be a GUID. It is used only for conversation attribution and telemetry; authorization against the customer's own user store, if any, is the customer's responsibility, not Scout's.
 
-An administrator may look up the company as follows:
+The only requirement is that it is non-empty and not just whitespace. It may be a database ID, an employee number, a GUID, or any other stable string the customer's application already uses to identify the current user.
 
-```sql
-SELECT id, name, status, created_at
-FROM companies
-WHERE lower(name) = lower('Acme Corporation');
-```
+It should not be:
 
-Use the returned `id` as `companyId` and the exact returned `name` as `companyName`.
+- left blank or generated fresh on every page load (this breaks conversation continuity for that user);
+- shared across unrelated users of the customer application.
 
-The API resolves the company name and then verifies that the API key belongs to the resolved company. A key issued for one company cannot be used with another company.
+Recommended flow: map each signed-in customer user to a stable identifier from the customer's own system and pass it as `userId`. On logout or account switching, call `destroy()` and install a new instance with the next user's ID.
 
-### 5.2 User ID
-
-`userId` identifies the person or service identity on whose behalf the chat request runs. It is used for authorization, conversations, workflow access, and telemetry.
-
-It is not:
-
-- the person's email address;
-- a display name;
-- a newly generated browser UUID;
-- a random anonymous visitor ID;
-- the customer application's unrelated internal user ID unless that ID is also the Scout `users.id`.
-
-Find eligible users with:
-
-```sql
-SELECT
-  u.id,
-  u.email,
-  u.status,
-  u.can_view_chatbot,
-  ucr.company_id,
-  ucr.status AS company_role_status
-FROM users u
-JOIN user_company_roles ucr ON ucr.user_id = u.id
-WHERE ucr.company_id = '<company_uuid>'
-  AND u.deleted_at IS NULL
-  AND u.status = 'active'
-  AND u.can_view_chatbot = true
-  AND ucr.deleted_at IS NULL
-  AND ucr.status = 'active';
-```
-
-Recommended identity models:
-
-1. **Named-user model:** Map each signed-in customer user to a corresponding Scout user UUID. This provides the best audit trail and per-user access control.
-2. **Service-user model:** Use one dedicated, least-privileged Scout user for a controlled public or shared portal. Conversations and telemetry will be attributed to that service user, so assess this choice with security and compliance teams.
-
-Never use an administrator's user ID as a generic public website identity.
-
-### 5.3 Target application ID and name
+### 5.2 Target application ID and name
 
 A target application represents the customer site in Scout. It connects workflows and target-app-scoped content to the correct application.
 
@@ -205,30 +161,6 @@ VALUES (
 RETURNING id;
 ```
 
-### 5.4 User access to the target application
-
-Target-app restrictions are stored in `user_target_app_access`. In this schema, no target-app access rows for a user within the company means the user is unrestricted. Once scoped rows are present, ensure the required target application has an active row.
-
-```sql
-INSERT INTO user_target_app_access (
-  user_id,
-  target_app_id,
-  created_by,
-  updated_by
-)
-VALUES (
-  '<user_uuid>',
-  '<target_app_uuid>',
-  '<admin_user_uuid>',
-  '<admin_user_uuid>'
-)
-ON CONFLICT (user_id, target_app_id) DO UPDATE
-SET deleted_at = NULL,
-    deleted_by = NULL,
-    updated_by = EXCLUDED.updated_by,
-    updated_at = now();
-```
-
 ---
 
 ## 6. API keys
@@ -237,7 +169,7 @@ SET deleted_at = NULL,
 
 The key authenticates the hosted widget to the Chatbot API. Database-managed keys are:
 
-- scoped to one company;
+- scoped to one target application (and therefore to that application's company);
 - stored as SHA-256 hashes, not plaintext;
 - individually named, expirable, revocable, and auditable;
 - accepted in `X-API-Key` or `Authorization: Bearer` headers.
@@ -492,10 +424,9 @@ Expected:
 ```bash
 curl -X POST https://chat-api.scout.example.com/v1/context/resolve \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: <plaintext_company_browser_key>" \
+  -H "X-API-Key: <plaintext_target_app_browser_key>" \
   -d '{
-    "companyName": "Acme Corporation",
-    "targetAppName": "Customer Portal"
+    "targetAppId": "<target-app-uuid>"
   }'
 ```
 
@@ -513,12 +444,11 @@ Expected:
 ```bash
 curl -X POST https://chat-api.scout.example.com/v1/chat/query \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: <plaintext_company_browser_key>" \
+  -H "X-API-Key: <plaintext_target_app_browser_key>" \
   -H "X-Request-Id: implementation-test-001" \
   -d '{
-    "companyName": "Acme Corporation",
-    "targetAppName": "Customer Portal",
-    "userId": "<active_scout_user_uuid>",
+    "targetAppId": "<target-app-uuid>",
+    "userId": "<customer-owned-external-user-id>",
     "question": "What is our vendor onboarding policy?",
     "topK": 8
   }'
@@ -562,10 +492,8 @@ Create this file inside the customer's publicly served static-assets directory:
 window.CustomerScoutChatbotConfig = {
   scoutUrl: "https://scout.example.com",
   apiUrl: "https://chat-api.scout.example.com",
-  apiKey: "<company-scoped-browser-key>",
-  companyId: "<company-uuid>",
-  companyName: "Acme Corporation",
-  userId: "<active-scout-user-uuid>",
+  apiKey: "<target-app-scoped-browser-key>",
+  userId: "<customer-owned-external-user-id>",
   targetAppId: "<target-app-uuid>",
   targetAppName: "Customer Portal",
   assistantName: "Acme Assistant",
@@ -687,10 +615,8 @@ Add the loader after the customer's primary application markup, immediately befo
   window.ScoutChatbot.install({
     scoutUrl: "https://scout.example.com",
     apiUrl: "https://chat-api.scout.example.com",
-    apiKey: "<company-scoped-browser-key>",
-    companyId: "<company-uuid>",
-    companyName: "Acme Corporation",
-    userId: "<active-scout-user-uuid>",
+    apiKey: "<target-app-scoped-browser-key>",
+    userId: "<customer-owned-external-user-id>",
     targetAppId: "<target-app-uuid>",
     targetAppName: "Customer Portal",
     assistantName: "Acme Assistant",
@@ -721,10 +647,8 @@ Example `scout-chatbot-config.js`:
 window.CustomerScoutChatbotConfig = {
   scoutUrl: "https://scout.example.com",
   apiUrl: "https://chat-api.scout.example.com",
-  apiKey: "<company-scoped-browser-key>",
-  companyId: "<company-uuid>",
-  companyName: "Acme Corporation",
-  userId: "<active-scout-user-uuid>",
+  apiKey: "<target-app-scoped-browser-key>",
+  userId: "<customer-owned-external-user-id>",
   targetAppId: "<target-app-uuid>",
   targetAppName: "Customer Portal",
   assistantName: "Acme Assistant"
@@ -779,10 +703,8 @@ export function ScoutChatbotInstall() {
       widget = window.ScoutChatbot.install({
         scoutUrl: 'https://scout.example.com',
         apiUrl: 'https://chat-api.scout.example.com',
-        apiKey: '<company-scoped-browser-key>',
-        companyId: '<company-uuid>',
-        companyName: 'Acme Corporation',
-        userId: '<active-scout-user-uuid>',
+        apiKey: '<target-app-scoped-browser-key>',
+        userId: '<customer-owned-external-user-id>',
         targetAppId: '<target-app-uuid>',
         targetAppName: 'Customer Portal',
         assistantName: 'Acme Assistant'
@@ -844,17 +766,17 @@ The backend technology does not affect the browser widget.
 
 ## 11. Dynamic signed-in users
 
-When each customer user has a corresponding Scout identity, set `userId` from trusted, server-rendered session context rather than user-editable query parameters or local storage.
+Set `userId` from trusted, server-rendered session context rather than user-editable query parameters or local storage.
 
 Recommended flow:
 
 1. Customer authenticates the user.
-2. The customer backend maps that identity to the correct Scout user UUID.
-3. The page receives only the mapped UUID required by the widget.
+2. The customer backend resolves that identity to whatever stable identifier the customer's own system uses.
+3. The page receives only that identifier, required by the widget.
 4. The widget installs after the authenticated user context is available.
 5. On logout or account switching, call `destroy()` and install a new instance with the next user ID.
 
-Never allow a browser user to choose an arbitrary `companyId`, `targetAppId`, or `userId`.
+Never allow a browser user to choose an arbitrary `targetAppId` or `userId`.
 
 ---
 
@@ -970,37 +892,21 @@ Possible causes:
 
 Generate the SHA-256 hash of the exact plaintext and compare it securely with `chatbot_api_keys.key_hash`.
 
-### 14.9 `401 API key is not allowed for this company`
+### 14.9 `401 API key is not allowed for this target app`
 
-The key belongs to a different `company_id` than the company resolved from `companyName`. Correct the configuration or issue a key for the intended company. Never bypass this check.
+The key is bound to a different `target_app_id` than the `targetAppId` sent in the request. Correct the configuration or issue a key for the intended target application. Never bypass this check.
 
-### 14.10 `400 companyName is required` or company not found
+### 14.10 `400 targetAppId is required` or target app not found
 
-Provide the exact active company name. Confirm it with the `companies` lookup query. Do not place the company UUID in `companyName`.
-
-### 14.11 Target application is not resolved
-
-Confirm:
-
-- `targetAppName` exactly matches `company_target_applications.name` for that company;
-- it was not created under another company;
-- the API cache has refreshed;
-- `targetAppId` and `targetAppName` describe the same record.
+`targetAppId` is always required — a chatbot instance is always scoped to exactly one target application, and the company is resolved from it server-side. Confirm the UUID (or obfuscated token from the generated config) with the `company_target_applications` lookup query, and that it was not created under another company.
 
 Use `/v1/context/resolve` before testing chat.
 
-### 14.12 User is unauthorized or workflows are missing
+### 14.11 Workflow access is missing
 
-Confirm that the user:
+Confirm the customer-supplied `userId` is stable (not regenerated per page load) and that the target application's `base_url` / `allowed_origins_json` match the customer site.
 
-- exists in `users`;
-- is active and not soft-deleted;
-- has `can_view_chatbot = true`;
-- has an active `user_company_roles` row for the company;
-- has the required `user_target_app_access` row when access is scoped;
-- is allowed to use the relevant workflow and content.
-
-### 14.13 Chat answers but provides no relevant content
+### 14.12 Chat answers but provides no relevant content
 
 Check the ingestion and retrieval pipeline:
 
@@ -1012,26 +918,25 @@ Check the ingestion and retrieval pipeline:
 6. Citations and `no_answer_reason` in the API response are reviewed.
 7. Required AI-provider and embedding configuration is available to the API runtime.
 
-### 14.14 Guided workflow does not start
+### 14.13 Guided workflow does not start
 
 Check:
 
-- both `targetAppId` and `targetAppName` are configured;
+- `targetAppId` is configured (and `targetAppName`, if present, matches the same record);
 - the target app's `base_url` and `allowed_origins_json` match the customer site;
-- the user has access;
 - `https://scout.example.com/scout-orchestration-player.js` loads successfully;
 - workflow selectors correspond to the deployed customer application;
 - CSP permits the Scout script and required connections.
 
-### 14.15 `429 Rate limit exceeded`
+### 14.14 `429 Rate limit exceeded`
 
 Wait until `X-RateLimit-Reset`, reduce request frequency, or review the configured limits. Do not automatically retry in a tight loop. Limits are calculated per API key, client IP, route, and window on each API instance.
 
-### 14.16 `/health` works but `/ready` fails
+### 14.15 `/health` works but `/ready` fails
 
 The process is alive but cannot query PostgreSQL. Validate `DATABASE_URL`, DNS, firewall rules, TLS requirements, credentials, database availability, and connection limits.
 
-### 14.17 API returns `500`
+### 14.16 API returns `500`
 
 Capture:
 
@@ -1044,11 +949,11 @@ Capture:
 
 Never include plaintext keys, authorization headers, database passwords, personal content, or AI-provider secrets in a support ticket.
 
-### 14.18 Port already in use (`EADDRINUSE`)
+### 14.17 Port already in use (`EADDRINUSE`)
 
 Another process is listening on the configured port. Either stop the duplicate process or assign a different port with `CHATBOT_API_PORT`. Update `apiUrl` and reverse-proxy configuration accordingly.
 
-### 14.19 Browser shows an old widget after deployment
+### 14.18 Browser shows an old widget after deployment
 
 Use a versioned loader URL, such as `scout-chatbot.js?v=1.1.2`, invalidate the CDN cache, and hard-refresh. Maintain controlled cache headers and increment the version query when publishing loader behavior changes.
 
@@ -1100,12 +1005,10 @@ Complete this section for each customer deployment. Deliver plaintext keys throu
 | Item | Value |
 |---|---|
 | Customer/company name | |
-| Company ID | |
 | Scout URL | |
 | Chatbot API URL | |
 | Customer application URL | |
-| User identity model | Named user / Service user |
-| Service user ID, if applicable | |
+| User identity source | |
 | Target application name | |
 | Target application ID | |
 | API key record ID | |

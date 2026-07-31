@@ -245,7 +245,6 @@ export type ChatbotEmbedPackageRecord = {
   targetAppName: string;
   environment: string;
   userId: string;
-  requireUserGuid: boolean;
   scoutUrl: string;
   apiUrl: string;
   assistantName: string;
@@ -260,7 +259,6 @@ export type UpsertChatbotEmbedPackageInput = {
   environment: string;
   apiKey: string;
   userId: string;
-  requireUserGuid?: boolean;
   scoutUrl: string;
   apiUrl: string;
   assistantName?: string;
@@ -1181,7 +1179,6 @@ function mapChatbotEmbedPackageRow(row: {
   environment_id?: string;
   environment: string;
   user_id_placeholder: string;
-  require_user_guid: boolean;
   scout_url: string;
   api_url: string;
   assistant_name: string;
@@ -1195,7 +1192,6 @@ function mapChatbotEmbedPackageRow(row: {
     targetAppName: row.target_app_name,
     environment: row.environment,
     userId: row.user_id_placeholder,
-    requireUserGuid: row.require_user_guid === true,
     scoutUrl: row.scout_url,
     apiUrl: row.api_url,
     assistantName: row.assistant_name,
@@ -1227,7 +1223,6 @@ export async function listChatbotEmbedPackages(
     environment_id: string;
     environment: string;
     user_id_placeholder: string;
-    require_user_guid: boolean;
     scout_url: string;
     api_url: string;
     assistant_name: string;
@@ -1243,7 +1238,6 @@ export async function listChatbotEmbedPackages(
         p.environment_id,
         env.name AS environment,
         p.user_id_placeholder,
-        p.require_user_guid,
         p.scout_url,
         p.api_url,
         p.assistant_name,
@@ -1378,7 +1372,6 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
   const environment = normalizeEnvironment(input.environment);
   const apiKey = String(input.apiKey || "").trim();
   const userId = String(input.userId || "").trim();
-  const requireUserGuid = input.requireUserGuid === true;
   const scoutUrl = normalizeUrl(input.scoutUrl, "http://localhost:3000");
   const apiUrl = normalizeUrl(input.apiUrl, "http://localhost:4200");
   const assistantName = String(input.assistantName || "Scout Assistant").trim() || "Scout Assistant";
@@ -1391,6 +1384,9 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
   }
   if (!apiKey) {
     throw new ChatbotSettingsError("A plaintext API key is required to generate package snippets.", 400);
+  }
+  if (!userId) {
+    throw new ChatbotSettingsError("A user id placeholder is required.", 400);
   }
 
   await assertTargetAppAccess(session, companyId, targetAppId);
@@ -1444,10 +1440,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
     scoutUrl,
     apiUrl,
     apiKey,
-    companyId: session.user.tenantId,
-    companyName: session.tenant.name,
     userId,
-    requireUserGuid,
     targetAppId: targetApp.id,
     targetAppName: targetApp.name,
     assistantName,
@@ -1461,7 +1454,6 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
     target_app_name: string;
     environment: string;
     user_id_placeholder: string;
-    require_user_guid: boolean;
     scout_url: string;
     api_url: string;
     assistant_name: string;
@@ -1477,7 +1469,6 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         api_key_plaintext,
         api_key_prefix,
         user_id_placeholder,
-        require_user_guid,
         scout_url,
         api_url,
         assistant_name,
@@ -1485,7 +1476,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         updated_by,
         deleted_at
       )
-      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, (SELECT id FROM chatbot_api_key_environments WHERE target_app_id = $2 AND normalized_name = $3 LIMIT 1), $4, $5, $6, $7, $8, $9, $10, $11, $11, NULL)
+      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, (SELECT id FROM chatbot_api_key_environments WHERE target_app_id = $2 AND normalized_name = $3 LIMIT 1), $4, $5, $6, $7, $8, $9, $10, $10, NULL)
       ON CONFLICT (id)
       DO UPDATE SET
         target_app_id = EXCLUDED.target_app_id,
@@ -1493,7 +1484,6 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         api_key_plaintext = EXCLUDED.api_key_plaintext,
         api_key_prefix = EXCLUDED.api_key_prefix,
         user_id_placeholder = EXCLUDED.user_id_placeholder,
-        require_user_guid = EXCLUDED.require_user_guid,
         scout_url = EXCLUDED.scout_url,
         api_url = EXCLUDED.api_url,
         assistant_name = EXCLUDED.assistant_name,
@@ -1508,7 +1498,6 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         chatbot_embed_packages.environment_id,
         (SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_embed_packages.environment_id) AS environment,
         chatbot_embed_packages.user_id_placeholder,
-        chatbot_embed_packages.require_user_guid,
         chatbot_embed_packages.scout_url,
         chatbot_embed_packages.api_url,
         chatbot_embed_packages.assistant_name,
@@ -1523,7 +1512,6 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
       apiKey,
       apiKeyPrefix,
       userId,
-      requireUserGuid,
       scoutUrl,
       apiUrl,
       assistantName,
@@ -1541,15 +1529,11 @@ export function buildChatbotEmbedPackage(input: {
   scoutUrl: string;
   apiUrl: string;
   apiKey: string;
-  companyId: string;
-  companyName: string;
   userId: string;
-  requireUserGuid?: boolean;
   targetAppId: string;
   targetAppName: string;
   assistantName?: string;
 }) {
-  const companyToken = obfuscateGuid({ id: input.companyId, type: "company" });
   const targetAppToken = obfuscateGuid({ id: input.targetAppId, type: "target_app" });
   const assistantName = input.assistantName || "Scout Assistant";
   const configVarName = `${sanitizeConfigVarBase(input.targetAppName)}ScoutChatbotConfig`;
@@ -1558,8 +1542,6 @@ export function buildChatbotEmbedPackage(input: {
     scoutUrl: input.scoutUrl,
     apiUrl: input.apiUrl,
     apiKey: input.apiKey,
-    companyId: companyToken,
-    companyName: input.companyName,
     userId: input.userId,
     targetAppId: targetAppToken,
     targetAppName: input.targetAppName,
@@ -1612,7 +1594,6 @@ if (config) {
     installSnippet,
     htmlSample,
     reactSample,
-    obfuscatedCompanyId: companyToken,
     obfuscatedTargetAppId: targetAppToken
   };
 }
