@@ -52,7 +52,7 @@ function buildGuardedSystemPrompt(systemPrompt: string) {
     "Never invent facts.",
     "Never fabricate citations.",
     "If a Context block (recent conversation) appears in the user message, use it only to resolve what the question is asking about, never as evidence for facts.",
-    `Only when the context does not contain enough information, say exactly: "${INSUFFICIENT_CONTEXT_MESSAGE}"`
+    `Say exactly "${INSUFFICIENT_CONTEXT_MESSAGE}" only when the context has nothing relevant to the question. If the context has some relevant information but less than a requested length or level of detail, answer with what is genuinely supported and briefly note that no further detail is available — never fabricate material just to reach a requested length.`
   ].filter(Boolean).join("\n");
 }
 

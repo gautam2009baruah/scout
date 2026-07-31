@@ -27,8 +27,19 @@ function lexicalOverlap(sentence: string, content: string) {
   return matched / sentenceTokens.size;
 }
 
+// The model echoes input labels like "[Context 1]" or "[Context 1, 2]" as inline
+// citations, but placement is inconsistent — sometimes inside the sentence's
+// closing punctuation, sometimes trailing after it with none of its own. When
+// trailing, a naive punctuation-based sentence split turns the marker into its
+// own fragment, which then gets misjudged as an ungroundable "factual sentence"
+// (it contains a digit) even though it isn't content that needs grounding at all.
+// Stripping markers before splitting avoids that false rejection either way.
+function stripCitationMarkers(answer: string) {
+  return answer.replace(/[[(]\s*Context\s+\d+(?:\s*,\s*\d+)*\s*[\])]/gi, "").trim();
+}
+
 function splitSentences(answer: string) {
-  return answer
+  return stripCitationMarkers(answer)
     .split(/(?<=[.!?])\s+/)
     .map((line) => line.trim())
     .filter(Boolean);
