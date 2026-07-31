@@ -528,7 +528,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       {collapsed ? (
         <button
           aria-label="Expand sidebar"
-          className="mt-4 inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+          className="mt-4 inline-flex h-10 w-10 self-center items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
           onClick={toggleDesktopSidebar}
           title="Expand sidebar"
           type="button"
@@ -538,8 +538,8 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       ) : null}
 
       <nav
-        className={`admin-sidebar-scroll min-h-0 flex-1 overflow-y-auto pb-4 pr-1 ${isSidebarScrolling ? "is-scrolling" : ""} ${
-          collapsed ? "mt-4 flex flex-col items-center gap-1" : "mt-10 space-y-1"
+        className={`admin-sidebar-scroll min-h-0 flex-1 overflow-y-auto pb-4 ${isSidebarScrolling ? "is-scrolling" : ""} ${
+          collapsed ? "mt-4 flex flex-col items-center gap-1 pr-0" : "mt-10 space-y-1 pr-1"
         }`}
         onScroll={revealSidebarScrollbar}
         ref={collapsed ? undefined : sidebarNavRef}
