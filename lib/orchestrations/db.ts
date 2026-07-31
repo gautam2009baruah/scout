@@ -24,6 +24,7 @@ import type { EmailTriggerConfig, ScheduleTriggerConfig } from "@/shared/orchest
 import { calculateNextRunTime } from "./scheduler/cron-utils";
 import { getSchedulerService } from "./scheduler-service";
 import { buildHttpApiTriggerConfig } from "./http-trigger/config";
+import { findUnreachableNodes } from "./graph-reachability";
 
 // ============================================================================
 // Orchestrations
@@ -345,6 +346,17 @@ export async function publishOrchestration(
     if (!hasDefaultConnection) {
       throw new Error(`Cannot publish: Switch / Router "${switchNode.label}" must have its Default output connected`);
     }
+  }
+
+  // Reject disconnected/orphan node groups: an orchestration must be a single
+  // flow reachable from its trigger(s) — branching via switch nodes is fine,
+  // but a second island of nodes with no path from the trigger is not.
+  const unreachableNodes = findUnreachableNodes(nodes, connections, triggerNodes.map(n => n.id));
+  if (unreachableNodes.length > 0) {
+    const labels = unreachableNodes.map(n => `"${n.label}"`).join(", ");
+    throw new Error(
+      `Cannot publish: ${unreachableNodes.length === 1 ? "node" : "nodes"} ${labels} ${unreachableNodes.length === 1 ? "is" : "are"} not connected to the trigger. Every node must be part of a single flow starting from the trigger.`
+    );
   }
 
   // Check if trigger is configured

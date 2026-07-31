@@ -57,6 +57,7 @@ import { ManualTriggerDialog } from "./manual-trigger-dialog";
 import { ExecutionMonitor } from "./execution-monitor";
 import { OrchestrationList } from "./orchestration-list";
 import { isNodeCompatibleWithTrigger, getIncompatibilityReason } from "@/lib/orchestrations/node-compatibility";
+import { findUnreachableNodes } from "@/lib/orchestrations/graph-reachability";
 import { useToast } from "./toast";
 
 type TargetAppOption = { id: string; name: string; companyId: string };
@@ -936,45 +937,33 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
       return;
     }
 
-    // Validate that all nodes are connected (no orphaned nodes)
-    const nodeIds = new Set(nodes.map(n => n.id));
-    const connectedNodeIds = new Set<string>();
-    
-    edges.forEach(edge => {
-      connectedNodeIds.add(edge.source);
-      connectedNodeIds.add(edge.target);
-    });
-
-    const orphanedNodes = nodes.filter(node => !connectedNodeIds.has(node.id));
-    
-    // Allow trigger node to be unconnected only if it's the only node
-    // Otherwise, all nodes must be connected
-    if (orphanedNodes.length > 0) {
-      const orphanedLabels = orphanedNodes.map(n => `"${n.data.label}"`).join(', ');
-      showToast(`Cannot publish: ${orphanedNodes.length === 1 ? 'Node' : 'Nodes'} ${orphanedLabels} ${orphanedNodes.length === 1 ? 'is' : 'are'} not connected to the workflow.`, 'error');
-      return;
-    }
-
-    // Validate that trigger node exists and is connected
+    // Validate that trigger node exists
     const triggerNode = nodes.find(n => (n.data as any).nodeType === 'trigger');
     if (!triggerNode) {
       showToast('Cannot publish: Orchestration must have a Trigger node.', 'error');
       return;
     }
 
-    // Validate that the terminal node (End or AI Planner) is reachable from
-    // trigger (basic connectivity check).
-    const terminalNode = nodes.find(n => (n.data as any).nodeType === 'end' || (n.data as any).nodeType === 'ai_planner');
-    if (nodes.length > 1) {
-      // Check if the terminal node has incoming connections
-      const terminalNodeHasIncoming = edges.some(edge => edge.target === terminalNode?.id);
-      if (!terminalNodeHasIncoming) {
-        const terminalLabel = (terminalNode?.data as any)?.nodeType === 'ai_planner' ? 'AI Planner node' : 'End node';
-        showToast(`Cannot publish: ${terminalLabel} must be connected to the workflow. It has no incoming connections.`, 'error');
-        return;
-      }
+    // Validate every node is reachable from the trigger — not just "touched
+    // by some edge" (a second island of nodes connected only to each other,
+    // like an orphaned Switch / Router → Notification pair, previously slipped
+    // through here and only got caught by the server's own check, surfacing as
+    // a raw console-logged error instead of a clean validation message).
+    // Mirrors publishOrchestration()'s server-side check in lib/orchestrations/db.ts.
+    const unreachableNodes = findUnreachableNodes(
+      nodes.map(n => ({ id: n.id, label: n.data.label })),
+      edges.map(e => ({ sourceNodeId: e.source, targetNodeId: e.target })),
+      [triggerNode.id]
+    );
+    if (unreachableNodes.length > 0) {
+      const unreachableLabels = unreachableNodes.map(n => `"${n.label}"`).join(', ');
+      showToast(`Cannot publish: ${unreachableNodes.length === 1 ? 'Node' : 'Nodes'} ${unreachableLabels} ${unreachableNodes.length === 1 ? 'is' : 'are'} not connected to the trigger. Every node must be part of a single flow starting from the trigger.`, 'error');
+      return;
+    }
 
-      // Check if trigger node has outgoing connections
+    // Validate that the trigger has at least one outgoing connection (covers
+    // the single-node-graph case the reachability check above trivially passes).
+    if (nodes.length > 1) {
       const triggerHasOutgoing = edges.some(edge => edge.source === triggerNode.id);
       if (!triggerHasOutgoing) {
         showToast('Cannot publish: Trigger node must be connected to the workflow. It has no outgoing connections.', 'error');
