@@ -270,13 +270,13 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full min-w-[860px] border-collapse text-left text-sm">
-          <thead className="bg-slate-950 text-white">
+          <thead className="border-b border-slate-200 bg-slate-50">
             <tr>
-              <th className="px-3 py-3 font-medium w-12">Sno</th>
-              <th className="px-3 py-3 font-medium">User</th>
-              <th className="px-3 py-3 font-medium">Role</th>
-              <th className="px-3 py-3 font-medium">Status</th>
-              <th className="px-3 py-3 text-right font-medium">Actions</th>
+              <th className="w-12 px-3 py-2 font-semibold text-slate-700">Sno</th>
+              <th className="px-3 py-2 font-semibold text-slate-700">User</th>
+              <th className="px-3 py-2 font-semibold text-slate-700">Role</th>
+              <th className="px-3 py-2 font-semibold text-slate-700">Status</th>
+              <th className="px-3 py-2 text-right font-semibold text-slate-700">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200 bg-white">

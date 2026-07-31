@@ -1,9 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Save, ShieldCheck, Trash2, UserCog, X } from "lucide-react";
-import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
+import { Pencil, Trash2, UserCog } from "lucide-react";
 import { useToast } from "./toast";
 import type { RoleSummary } from "@/lib/admin/administration";
 import type { AdminModule } from "@/lib/admin/permissions";
@@ -11,6 +10,7 @@ import type { AdminModule } from "@/lib/admin/permissions";
 type MasterDataSummaryProps = {
   roles: RoleSummary[];
   modules: AdminModule[];
+  onEditRole: (role: RoleSummary) => void;
 };
 
 type ConfirmDialog = {
@@ -23,49 +23,10 @@ async function readMessage(response: Response, fallback: string) {
   return typeof body?.message === "string" ? body.message : fallback;
 }
 
-export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
+export function MasterDataSummary({ roles, onEditRole }: MasterDataSummaryProps) {
   const router = useRouter();
-  const [editingRoleId, setEditingRoleId] = useState("");
-  const [editingRoleModules, setEditingRoleModules] = useState<string[]>([]);
-  const [editingRoleIsAdmin, setEditingRoleIsAdmin] = useState(false);
   const { showToast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
-  const allModuleKeys = modules.map((module) => String(module.key));
-
-  async function updateRole(event: FormEvent<HTMLFormElement>, roleId: string) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-
-    const moduleKeys = editingRoleIsAdmin ? allModuleKeys : editingRoleModules;
-
-    if (moduleKeys.length === 0 && !editingRoleIsAdmin) {
-      showToast("At least one module must be selected.", "error");
-      return;
-    }
-
-    const response = await fetch(`/api/admin/administration/roles/${roleId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: String(form.get("name") ?? ""),
-        isAdminRole: editingRoleIsAdmin,
-        description: String(form.get("description") ?? ""),
-        moduleKeys
-      })
-    });
-
-    if (!response.ok) {
-      showToast(await readMessage(response, "Unable to update role."), "error");
-      return;
-    }
-
-    setEditingRoleId("");
-    setEditingRoleModules([]);
-    setEditingRoleIsAdmin(false);
-    showToast("Role updated.");
-    router.refresh();
-  }
-
   async function deleteRole(role: RoleSummary) {
     setConfirmDialog({
       message: `Are you sure you want to delete "${role.name}"? This cannot be undone.`,
@@ -138,66 +99,7 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
             </thead>
             <tbody>
               {roles.map((role) => (
-                <tr key={role.id} className={editingRoleId === role.id ? "border-t border-slate-200" : ""}>
-                  {editingRoleId === role.id ? (
-                    <td className="px-3 py-3" colSpan={4}>
-                      <form className="grid gap-3" onSubmit={(event) => updateRole(event, role.id)}>
-                        {/* First Row: Name, Description, Modules */}
-                        <div className="grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr]">
-                          <input
-                            className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
-                            defaultValue={role.name}
-                            name="name"
-                            placeholder="Role name"
-                            required
-                            type="text"
-                          />
-                          <input
-                            className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
-                            defaultValue={role.description ?? ""}
-                            name="description"
-                            placeholder="Description"
-                            type="text"
-                          />
-                          <HierarchicalModuleSelector
-                            disabled={editingRoleIsAdmin}
-                            label=""
-                            modules={modules}
-                            onChange={setEditingRoleModules}
-                            selectedValues={editingRoleModules}
-                          />
-                        </div>
-                        {/* Second Row: Admin checkbox, Save, Cancel */}
-                        <div className="flex items-center gap-2">
-                          <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-sm text-slate-700">
-                            <input
-                              className="h-4 w-4 rounded border-slate-300 text-slate-950 focus:ring-slate-900"
-                              checked={editingRoleIsAdmin}
-                              onChange={(event) => {
-                                setEditingRoleIsAdmin(event.target.checked);
-                                if (event.target.checked) {
-                                  setEditingRoleModules(allModuleKeys);
-                                }
-                              }}
-                              name="isAdminRole"
-                              type="checkbox"
-                            />
-                            Admin role
-                          </label>
-                          <div className="flex items-center justify-end gap-2 ml-auto">
-                            <button aria-label="Save role" className="inline-flex h-10 px-4 items-center justify-center rounded-lg bg-slate-950 text-white transition hover:bg-slate-800" type="submit">
-                              <Save className="h-4 w-4 mr-2" />
-                              Save
-                            </button>
-                            <button aria-label="Cancel role edit" className="inline-flex h-10 px-4 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950" onClick={() => setEditingRoleId("")} type="button">
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </form>
-                    </td>
-                  ) : (
-                    <>
+                <tr key={role.id}>
                       <td className="px-3 py-3 font-medium text-slate-950 border-b border-slate-200">{role.name}</td>
                       <td className="px-3 py-3 text-slate-600 border-b border-slate-200">
                         {role.isAdminRole ? (
@@ -218,9 +120,7 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
                               aria-label="Edit role"
                               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
                               onClick={() => {
-                                setEditingRoleModules(role.moduleKeys?.map(String) || []);
-                                setEditingRoleIsAdmin(role.isAdminRole);
-                                setEditingRoleId(role.id);
+                                onEditRole(role);
                               }}
                               type="button"
                             >
@@ -232,8 +132,6 @@ export function MasterDataSummary({ roles, modules }: MasterDataSummaryProps) {
                           </div>
                         )}
                       </td>
-                    </>
-                  )}
                 </tr>
               ))}
             </tbody>

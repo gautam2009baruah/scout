@@ -1,17 +1,19 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import { useToast } from "./toast";
 import type { AdminModule } from "@/lib/admin/permissions";
-import type { CompanySummary } from "@/lib/admin/administration";
+import type { CompanySummary, RoleSummary } from "@/lib/admin/administration";
 
 type MasterDataFormsProps = {
   companies: CompanySummary[];
   modules: AdminModule[];
   currentCompanyId: string;
+  editingRole: RoleSummary | null;
+  onRoleEditComplete: () => void;
 };
 
 type CompanyTargetApplication = {
@@ -32,13 +34,15 @@ async function readMessage(response: Response, fallback: string) {
   return typeof body?.message === "string" ? body.message : fallback;
 }
 
-export function MasterDataForms({ companies, modules, currentCompanyId }: MasterDataFormsProps) {
+export function MasterDataForms({ companies, modules, currentCompanyId, editingRole, onRoleEditComplete }: MasterDataFormsProps) {
   const router = useRouter();
   const { showToast } = useToast();
   const [isCreatingCompany, setIsCreatingCompany] = useState(false);
   const [isCreatingRole, setIsCreatingRole] = useState(false);
   const [selectedRoleModuleKeys, setSelectedRoleModuleKeys] = useState<string[]>([]);
   const [isAdminRole, setIsAdminRole] = useState(false);
+  const [roleName, setRoleName] = useState("");
+  const [roleDescription, setRoleDescription] = useState("");
   const [showTargetAppModal, setShowTargetAppModal] = useState(false);
   const [isSavingTargetApp, setIsSavingTargetApp] = useState(false);
   const [targetApps, setTargetApps] = useState<CompanyTargetApplication[]>([]);
@@ -48,6 +52,13 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
   const [editingTargetAppId, setEditingTargetAppId] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
   const allModuleKeys = modules.map((module) => String(module.key));
+
+  useEffect(() => {
+    setRoleName(editingRole?.name ?? "");
+    setRoleDescription(editingRole?.description ?? "");
+    setIsAdminRole(editingRole?.isAdminRole ?? false);
+    setSelectedRoleModuleKeys(editingRole?.moduleKeys?.map(String) ?? []);
+  }, [editingRole]);
 
   function updateAdminRole(checked: boolean) {
     setIsAdminRole(checked);
@@ -198,7 +209,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
     router.refresh();
   }
 
-  async function createRole(event: FormEvent<HTMLFormElement>) {
+  async function saveRole(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
 
@@ -219,11 +230,12 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
 
     setIsCreatingRole(true);
 
-    const response = await fetch("/api/admin/administration/roles", {
-      method: "POST",
+    const isEditing = Boolean(editingRole);
+    const response = await fetch(isEditing ? `/api/admin/administration/roles/${editingRole?.id}` : "/api/admin/administration/roles", {
+      method: isEditing ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        companyIds,
+        ...(isEditing ? {} : { companyIds }),
         name,
         isAdminRole,
         description: String(form.get("description") ?? ""),
@@ -233,15 +245,20 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
 
     if (!response.ok) {
       setIsCreatingRole(false);
-      showToast(await readMessage(response, "Unable to create role."), "error");
+      showToast(await readMessage(response, isEditing ? "Unable to update role." : "Unable to create role."), "error");
       return;
     }
 
     formElement.reset();
     setSelectedRoleModuleKeys([]);
     setIsAdminRole(false);
+    setRoleName("");
+    setRoleDescription("");
     setIsCreatingRole(false);
-    showToast("Role created.");
+    if (isEditing) {
+      onRoleEditComplete();
+    }
+    showToast(isEditing ? "Role updated." : "Role created.");
     router.refresh();
   }
 
@@ -299,14 +316,14 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
         </button>
       </form>
 
-      <form className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={createRole}>
+      <form id="role-form" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={saveRole}>
         <div className="flex items-center gap-3">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
             <ShieldCheck className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="text-lg font-semibold tracking-normal text-slate-950">Create role</h2>
-            <p className="text-sm text-slate-500">Add company-specific roles for future user assignments.</p>
+            <h2 className="text-lg font-semibold tracking-normal text-slate-950">{editingRole ? "Update Role" : "Create Role"}</h2>
+            <p className="text-sm text-slate-500">{editingRole ? "Update this company role and its module access." : "Add company-specific roles for future user assignments."}</p>
           </div>
         </div>
 
@@ -317,9 +334,11 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
               <input
                 className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
                 name="name"
+                onChange={(event) => setRoleName(event.target.value)}
                 placeholder="Billing Manager"
                 required
                 type="text"
+                value={roleName}
               />
             </label>
 
@@ -343,7 +362,9 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
             <textarea
               className="mt-2 min-h-24 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
               name="description"
+              onChange={(event) => setRoleDescription(event.target.value)}
               placeholder="Can manage billing records and related uploads."
+              value={roleDescription}
             />
           </label>
 
@@ -357,14 +378,25 @@ export function MasterDataForms({ companies, modules, currentCompanyId }: Master
           />
         </div>
 
-        <button
-          className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-          disabled={isCreatingRole}
-          type="submit"
-        >
-          {isCreatingRole ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Create role
-        </button>
+        <div className="mt-5 flex gap-3">
+          <button
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+            disabled={isCreatingRole}
+            type="submit"
+          >
+            {isCreatingRole ? <Loader2 className="h-4 w-4 animate-spin" /> : editingRole ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {editingRole ? "Update Role" : "Create Role"}
+          </button>
+          {editingRole ? (
+            <button
+              className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+              onClick={onRoleEditComplete}
+              type="button"
+            >
+              Cancel
+            </button>
+          ) : null}
+        </div>
       </form>
 
       {showTargetAppModal ? (

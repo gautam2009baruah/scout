@@ -522,10 +522,10 @@ export function GuidedWorkflowTrainingSetup({ appBaseUrl, companies, recordingSe
         <table className="min-w-full border-separate border-spacing-0">
           <thead className="bg-slate-100 text-left text-xs uppercase tracking-wider text-slate-500">
             <tr>
-              <th className="px-4 py-3">Session</th>
-              <th className="px-4 py-3">Topics</th>
-              <th className="px-4 py-3">Count</th>
-              <th className="px-4 py-3 text-right">Actions</th>
+              <th className="border-b border-slate-200 px-4 py-3">Session</th>
+              <th className="border-b border-slate-200 px-4 py-3">Topics</th>
+              <th className="border-b border-slate-200 px-4 py-3">Count</th>
+              <th className="border-b border-slate-200 px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { AdminShell, MasterDataForms, MasterDataSummary } from "@/components/admin";
+import { AdminShell, MasterDataRoleManager } from "@/components/admin";
 import { getMasterData } from "@/lib/admin/administration";
 import { MODULE_KEYS, getAllAdminModules, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
@@ -27,8 +27,12 @@ export default async function MasterDataPage() {
 
   return (
     <AdminShell active={MODULE_KEYS.companyRoleSetup} session={session}>
-      <MasterDataForms companies={companies} modules={modules} currentCompanyId={session.user.tenantId} />
-      <MasterDataSummary modules={modules} roles={roles.filter(r => r.companyId === session.user.tenantId)} />
+      <MasterDataRoleManager
+        companies={companies}
+        currentCompanyId={session.user.tenantId}
+        modules={modules}
+        roles={roles.filter(r => r.companyId === session.user.tenantId)}
+      />
     </AdminShell>
   );
 }

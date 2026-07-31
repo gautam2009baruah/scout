@@ -19,6 +19,7 @@ export { UserList } from "./employee-list";
 export { UserRegisterForm } from "./employee-register-form";
 export { MasterDataForms } from "./master-data-forms";
 export { MasterDataSummary } from "./master-data-summary";
+export { MasterDataRoleManager } from "./master-data-role-manager";
 export { MultiSelectDropdown } from "./multi-select-dropdown";
 export { TopicManager } from "./topic-manager";
 export { TriggersMonitoringDashboard } from "./triggers-monitoring-dashboard";
