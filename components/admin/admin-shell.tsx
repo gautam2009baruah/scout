@@ -91,6 +91,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSidebarScrolling, setIsSidebarScrolling] = useState(false);
+  const sidebarNavRef = useRef<HTMLElement | null>(null);
   const [navigatingHref, setNavigatingHref] = useState<string | null>(null);
   const [showSessionWarning, setShowSessionWarning] = useState(false);
   const [warningCountdownSeconds, setWarningCountdownSeconds] = useState(30);
@@ -119,6 +120,16 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
       setIsSidebarCollapsed(true);
     }
   }, []);
+
+  // AdminShell has no shared layout.tsx across control-panel pages, so it
+  // fully remounts (fresh scrollTop) on every menu click even though
+  // navigation is client-side. Restore the sidebar's scroll position by
+  // bringing the just-navigated-to link back into view instead of leaving
+  // the panel reset to the top.
+  useEffect(() => {
+    const activeLink = sidebarNavRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+    activeLink?.scrollIntoView({ block: "nearest" });
+  }, [active, activeHref, isMobileMenuOpen]);
 
   useEffect(() => () => {
     if (sidebarScrollTimerRef.current !== null) {
@@ -531,6 +542,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
           collapsed ? "mt-4 flex flex-col items-center gap-1" : "mt-10 space-y-1"
         }`}
         onScroll={revealSidebarScrollbar}
+        ref={collapsed ? undefined : sidebarNavRef}
       >
         {topLevelModules.map((module) => {
           const children = modulesByParent.get(module.key) || [];
@@ -760,6 +772,7 @@ function NavLink({
 
   return (
     <Link
+      aria-current={isActive ? "page" : undefined}
       className={`flex items-center gap-3 rounded-md font-mono text-sm font-medium transition ${inset ? "min-h-10" : "min-h-11"} ${collapsed ? "w-10 justify-center px-0" : inset ? "px-3 py-2" : "px-3 py-2.5"} ${
         isActive
           ? "bg-blue-700 text-white"
