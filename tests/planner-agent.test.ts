@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { handleTurn, MAX_CLARIFICATION_ROUNDS, type PlannerAgentDeps, type PlannerState } from "@/lib/orchestrations/planner/agent";
-import { validateDraftPlan } from "@/lib/orchestrations/planner/draft-plan";
+import { buildDraftingSystemPrompt, validateDraftPlan } from "@/lib/orchestrations/planner/draft-plan";
 import type { PlannerContext } from "@/lib/orchestrations/planner/context";
 import type { OrchestrationMatch } from "@/lib/orchestrations/planner/matching";
 
@@ -272,6 +272,47 @@ test("a draft_plan step missing a justification fails validation", () => {
     { nodeType: "end", label: "Done", justification: "", params: {} },
   ]);
   assert.ok(errors.some((error) => error.includes("justification")));
+});
+
+test("planner catalog explains when and how to use switch routing", () => {
+  const prompt = buildDraftingSystemPrompt();
+  assert.match(prompt, /"name": "switch"/);
+  assert.match(prompt, /three or more outcomes/i);
+  assert.match(prompt, /route ids as branch keys/i);
+});
+
+test("switch draft validation requires matching route and default branches", () => {
+  const validStep = {
+    nodeType: "switch",
+    label: "Route invoice status",
+    justification: "The invoice status has four named outcomes requiring different actions.",
+    params: {
+      variable: "{{invoice.status}}",
+      routes: [
+        { id: "approved", name: "Approved", operator: "equals", value: "approved", valueType: "auto" },
+        { id: "rejected", name: "Rejected", operator: "equals", value: "rejected", valueType: "auto" },
+      ],
+    },
+    branches: {
+      approved: [{ nodeType: "end", label: "Approved", justification: "The approved path is complete.", params: {} }],
+      rejected: [{ nodeType: "end", label: "Rejected", justification: "The rejected path is complete.", params: {} }],
+      default: [{ nodeType: "end", label: "Review", justification: "Unexpected statuses need a safe fallback.", params: {} }],
+    },
+  };
+
+  assert.deepEqual(validateDraftPlan([validStep]), []);
+
+  const invalidStep = {
+    ...validStep,
+    branches: {
+      approved: validStep.branches.approved,
+      unknown: validStep.branches.rejected,
+    },
+  };
+  const errors = validateDraftPlan([invalidStep]);
+  assert.ok(errors.some((error) => error.includes("branches.default")));
+  assert.ok(errors.some((error) => error.includes("branches.unknown")));
+  assert.ok(errors.some((error) => error.includes("branches.rejected")));
 });
 
 // --- Drafting branch: 10 example requests of varying ambiguity -------------

@@ -38,6 +38,7 @@ const NODE_CONFIGS = [
   { type: "ai_task", label: "AI Task", icon: "🧠" },
   { type: "knowledge_search", label: "Knowledge Search", icon: "🔍" },
   { type: "condition", label: "Condition", icon: "❓" },
+  { type: "switch", label: "Switch / Router", icon: "🔀" },
   { type: "human_approval", label: "Human Approval", icon: "✋" },
   { type: "notification", label: "Notification", icon: "📧" },
   { type: "api_call", label: "API Call", icon: "🌐" },
@@ -150,6 +151,34 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
 
     if (nodeType === "data_capture" && !String(localConfig.outputVariable || "").trim()) {
       return { valid: false, error: "Data Capture output variable name is required" };
+    }
+
+    if (nodeType === "switch") {
+      const routes = Array.isArray(localConfig.routes) ? localConfig.routes : [];
+      if (!String(localConfig.variable || "").trim()) {
+        return { valid: false, error: "Switch variable is required" };
+      }
+      if (routes.length === 0) {
+        return { valid: false, error: "At least one switch route is required" };
+      }
+      const routeNames = new Set<string>();
+      for (let index = 0; index < routes.length; index += 1) {
+        const route = routes[index];
+        const name = String(route?.name || "").trim();
+        if (!name) {
+          return { valid: false, error: `Route ${index + 1}: Name is required` };
+        }
+        if (routeNames.has(name.toLowerCase())) {
+          return { valid: false, error: `Route names must be unique: "${name}"` };
+        }
+        routeNames.add(name.toLowerCase());
+        if (!String(route?.operator || "").trim()) {
+          return { valid: false, error: `Route ${index + 1}: Operator is required` };
+        }
+        if (!["exists", "not_exists", "empty", "not_empty"].includes(route.operator) && !String(route?.value ?? "").trim()) {
+          return { valid: false, error: `Route ${index + 1}: Comparison value is required` };
+        }
+      }
     }
 
     if (nodeType === "ai_extraction") {
@@ -655,8 +684,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {/* Node-specific configuration */}
         <section className={`node-properties-form rounded-lg border border-slate-200 p-4
           [&>div]:grid [&>div]:grid-cols-1 [&>div]:gap-3 [&>div]:space-y-0
-          ${nodeType === "trigger" || nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" || nodeType === "for_each" || nodeType === "ai_planner" || nodeType === "end" ? "lg:[&>div]:grid-cols-[2fr_3fr]" : "lg:[&>div]:grid-cols-2"}
-          ${nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" || nodeType === "for_each" || nodeType === "ai_planner" || nodeType === "end" ? "lg:[&>div>div:nth-child(2)]:border-l lg:[&>div>div:nth-child(2)]:border-slate-200 lg:[&>div>div:nth-child(2)]:pl-4" : ""}
+          ${nodeType === "trigger" || nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "switch" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" || nodeType === "for_each" || nodeType === "ai_planner" || nodeType === "end" ? "lg:[&>div]:grid-cols-[2fr_3fr]" : "lg:[&>div]:grid-cols-2"}
+          ${nodeType === "workflow" || nodeType === "data_capture" || nodeType === "ai_extraction" || nodeType === "ai_task" || nodeType === "knowledge_search" || nodeType === "condition" || nodeType === "switch" || nodeType === "notification" || nodeType === "api_call" || nodeType === "database" || nodeType === "variable" || nodeType === "data_formatter" || nodeType === "file_parser" || nodeType === "for_each" || nodeType === "ai_planner" || nodeType === "end" ? "lg:[&>div>div:nth-child(2)]:border-l lg:[&>div>div:nth-child(2)]:border-slate-200 lg:[&>div>div:nth-child(2)]:pl-4" : ""}
           [&>div>div]:min-w-0
           [&_input]:max-w-sm [&_select]:max-w-xs [&_textarea]:max-w-lg`}>
         {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} orchestrationId={orchestrationId} />}
@@ -666,6 +695,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "ai_task" && <AITaskConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "knowledge_search" && <KnowledgeSearchConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "condition" && <ConditionConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "switch" && <SwitchConfig config={localConfig} updateConfig={updateLocalConfig} edges={edges} currentNode={node} />}
         {nodeType === "human_approval" && <HumanApprovalConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "notification" && (
           <NotificationConfig
@@ -4516,6 +4546,272 @@ function ConditionConfig({ config, updateConfig }: any) {
           </p>
         </div>
       )}
+      </div>
+    </div>
+  );
+}
+
+function SwitchConfig({ config, updateConfig, edges, currentNode }: any) {
+  const routes = Array.isArray(config.routes) ? config.routes : [];
+  const defaultIsConnected = edges.some(
+    (edge: Edge) => edge.source === currentNode.id && edge.sourceHandle === "default"
+  );
+  const unaryOperators = ["exists", "not_exists", "empty", "not_empty"];
+  const stringOperators = ["equals", "not_equals", "contains", "not_contains", "contains_any", "contains_all", "not_contains_any"];
+
+  useEffect(() => {
+    if (!Array.isArray(config.routes) || config.routes.length === 0) {
+      updateConfig({
+        type: "switch",
+        variable: config.variable || "",
+        routes: [{
+          id: `route-${Date.now()}`,
+          name: "",
+          operator: "equals",
+          value: "",
+          valueType: "auto",
+          caseSensitive: false,
+        }],
+      });
+    }
+    // Seed defaults only once; subsequent edits are driven by the controls.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function updateRoute(index: number, patch: Record<string, unknown>) {
+    updateConfig({
+      routes: routes.map((route: Record<string, unknown>, routeIndex: number) =>
+        routeIndex === index ? { ...route, ...patch } : route
+      ),
+    });
+  }
+
+  function addRoute() {
+    updateConfig({
+      routes: [
+        ...routes,
+        {
+          id: `route-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          name: "",
+          operator: "equals",
+          value: "",
+          valueType: "auto",
+          caseSensitive: false,
+        },
+      ],
+    });
+  }
+
+  function moveRoute(index: number, direction: -1 | 1) {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= routes.length) return;
+    const next = [...routes];
+    [next[index], next[targetIndex]] = [next[targetIndex], next[index]];
+    updateConfig({ routes: next });
+  }
+
+  function routeIsConnected(routeId: string) {
+    return edges.some((edge: Edge) => edge.source === currentNode.id && edge.sourceHandle === routeId);
+  }
+
+  function removeRoute(index: number) {
+    const route = routes[index];
+    if (!route || routeIsConnected(String(route.id))) return;
+    updateConfig({ routes: routes.filter((_: unknown, routeIndex: number) => routeIndex !== index) });
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
+      <div className="flex min-w-0 flex-col gap-4">
+        <details className="rounded-lg border border-slate-300 bg-white">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            How to use Switch / Router
+          </summary>
+          <div className="space-y-4 border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+              <div className="rounded border border-amber-200 bg-amber-50 p-2.5 text-amber-900">
+                <p className="font-semibold">First-match routing</p>
+                <p className="mt-1 leading-5">
+                  Routes are evaluated from top to bottom. Only the first matching route runs. If none match, the workflow follows the Default output.
+                </p>
+              </div>
+
+              <div>
+                <p className="font-semibold text-slate-800">What this node does</p>
+                <p className="mt-1 leading-5">
+                  Switch / Router reads one value and sends the workflow through one named output. It is useful when a status, category, document type, response code, or number can lead to several different actions.
+                </p>
+              </div>
+
+              <div className="rounded border border-blue-200 bg-blue-50 p-2.5">
+                <p className="font-semibold text-blue-900">Condition or Switch?</p>
+                <ul className="mt-1 space-y-1 text-blue-800">
+                  <li><strong>Condition:</strong> a yes/no decision, such as “Amount greater than 1,000?”</li>
+                  <li><strong>Switch:</strong> three or more outcomes from one value, such as Draft, Submitted, Approved, or Rejected.</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="font-semibold text-slate-800">How to configure it</p>
+                <ol className="mt-1 list-decimal space-y-1 pl-4 leading-5">
+                  <li>Enter the value to inspect, for example <code className="rounded bg-slate-200 px-1">{"{{invoice.status}}"}</code>.</li>
+                  <li>Add one route for each expected outcome.</li>
+                  <li>Order specific routes before broader routes because the first match wins.</li>
+                  <li>Connect every named output and the Default output to the appropriate next node.</li>
+                </ol>
+              </div>
+
+              <div>
+                <p className="font-semibold text-slate-800">Example 1: Invoice status</p>
+                <div className="mt-1 rounded border border-slate-200 bg-white p-2 font-mono leading-5">
+                  <div>Value: {"{{invoice.status}}"}</div>
+                  <div>Draft → Request completion</div>
+                  <div>Submitted → Begin approval</div>
+                  <div>Approved → Schedule payment</div>
+                  <div>Rejected → Notify requester</div>
+                  <div>Default → Manual review</div>
+                </div>
+              </div>
+
+              <div>
+                <p className="font-semibold text-slate-800">Example 2: Risk score</p>
+                <div className="mt-1 rounded border border-slate-200 bg-white p-2 font-mono leading-5">
+                  <div>Value: {"{{assessment.riskScore}}"}</div>
+                  <div>High risk: greater than 70</div>
+                  <div>Medium risk: greater than 30</div>
+                  <div>Default: 0–30 / unexpected values</div>
+                </div>
+                <p className="mt-1 leading-5">
+                  The High-risk route must come first. If “greater than 30” came first, a score of 90 would take that broader route and evaluation would stop.
+                </p>
+              </div>
+
+              <div className="rounded border border-amber-200 bg-amber-50 p-2.5 text-amber-900">
+                <p className="font-semibold">Default is the safety net</p>
+                <p className="mt-1 leading-5">
+                  Default runs when no route matches, including unexpected new values. Connect it to manual review, a notification, or a safe ending so executions do not stop without an intended outcome.
+                </p>
+              </div>
+          </div>
+        </details>
+      </div>
+
+      <div className="flex min-w-0 flex-col gap-4 rounded-lg border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50 to-violet-50 p-4 shadow-sm">
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-slate-700">
+            Value or variable <span className="text-red-500">*</span>
+          </label>
+          <input
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+            onChange={(event) => updateConfig({ type: "switch", variable: event.target.value })}
+            placeholder="{{variables.status}}"
+            type="text"
+            value={config.variable || ""}
+          />
+          <p className="mt-1 text-xs text-slate-500">Use a context expression or a literal value.</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Always available</p>
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-sm font-semibold text-slate-800">Default</span>
+            <span className={`rounded-full px-2 py-1 text-xs font-semibold ${defaultIsConnected ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+              {defaultIsConnected ? "Connected" : "Not connected"}
+            </span>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Used when no named route matches.</p>
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold text-slate-900">Routes</h4>
+          <p className="text-xs text-slate-500">Drag connections from the matching named outputs on the node.</p>
+        </div>
+        <div>
+          <button className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700" onClick={addRoute} type="button">
+            <Plus className="h-3.5 w-3.5" />
+            Add Route
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {routes.map((route: any, index: number) => {
+            const connected = routeIsConnected(String(route.id));
+            return (
+              <details className="rounded-lg border border-slate-200 bg-slate-50" key={route.id}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-3 [&::-webkit-details-marker]:hidden">
+                  <span className="text-xs font-semibold text-slate-600">
+                    {String(route.name || "").trim() || `Route ${index + 1}`}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button aria-label="Move route up" className="h-7 w-7 rounded border border-slate-200 bg-white text-xs text-slate-600 disabled:opacity-30" disabled={index === 0} onClick={(event) => { event.preventDefault(); moveRoute(index, -1); }} type="button">↑</button>
+                    <button aria-label="Move route down" className="h-7 w-7 rounded border border-slate-200 bg-white text-xs text-slate-600 disabled:opacity-30" disabled={index === routes.length - 1} onClick={(event) => { event.preventDefault(); moveRoute(index, 1); }} type="button">↓</button>
+                    <button
+                      aria-label="Remove route"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded border border-red-200 bg-white text-red-600 disabled:cursor-not-allowed disabled:opacity-35"
+                      disabled={connected}
+                      onClick={(event) => { event.preventDefault(); removeRoute(index); }}
+                      title={connected ? "Disconnect this route before removing it." : "Remove route"}
+                      type="button"
+                    >
+                      <Minus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </summary>
+
+                <div className="grid gap-3 border-t border-slate-200 p-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Route name <span className="text-red-500">*</span></label>
+                    <input className="h-9 w-full rounded border border-slate-300 px-2 text-sm" onChange={(event) => updateRoute(index, { name: event.target.value })} placeholder={`Route ${index + 1}`} type="text" value={route.name || ""} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Operator <span className="text-red-500">*</span></label>
+                    <select className="h-9 w-full rounded border border-slate-300 px-2 text-sm" onChange={(event) => updateRoute(index, { operator: event.target.value })} value={route.operator || "equals"}>
+                      <option value="equals">Equals (=)</option>
+                      <option value="not_equals">Not Equals (≠)</option>
+                      <option value="greater_than">Greater Than (&gt;)</option>
+                      <option value="less_than">Less Than (&lt;)</option>
+                      <option value="contains">Contains</option>
+                      <option value="not_contains">Not Contains</option>
+                      <option value="contains_any">Contains Any</option>
+                      <option value="contains_all">Contains All</option>
+                      <option value="not_contains_any">Not Contains Any</option>
+                      <option value="exists">Exists</option>
+                      <option value="not_exists">Does Not Exist</option>
+                      <option value="empty">Is Empty</option>
+                      <option value="not_empty">Is Not Empty</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Value type</label>
+                    <select className="h-9 w-full rounded border border-slate-300 px-2 text-sm" onChange={(event) => updateRoute(index, { valueType: event.target.value })} value={route.valueType || "auto"}>
+                      <option value="auto">Automatic</option>
+                      <option value="text">Text</option>
+                      <option value="number">Number</option>
+                      <option value="boolean">Boolean</option>
+                    </select>
+                  </div>
+                {!unaryOperators.includes(route.operator) ? (
+                  <div className="mt-3">
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">Comparison value <span className="text-red-500">*</span></label>
+                    <input
+                      className="h-9 w-full rounded border border-slate-300 px-2 text-sm"
+                      onChange={(event) => updateRoute(index, { value: event.target.value })}
+                      placeholder={["contains_any", "contains_all", "not_contains_any"].includes(route.operator) ? "value one, value two" : "approved"}
+                      type="text"
+                      value={route.value ?? ""}
+                    />
+                  </div>
+                ) : null}
+
+                {stringOperators.includes(route.operator) ? (
+                  <label className="mt-3 inline-flex items-center gap-2 text-xs text-slate-600">
+                    <input checked={route.caseSensitive === true} className="h-3.5 w-3.5 rounded border-slate-300" onChange={(event) => updateRoute(index, { caseSensitive: event.target.checked })} type="checkbox" />
+                    Case sensitive
+                  </label>
+                ) : null}
+                {connected ? <p className="mt-2 text-xs text-slate-500">Connected route; disconnect it before removal.</p> : null}
+                </div>
+              </details>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

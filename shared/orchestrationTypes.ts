@@ -91,6 +91,7 @@ export type NodeType =
   | "ai_task"
   | "knowledge_search"
   | "condition"
+  | "switch"
   | "human_approval"
   | "notification"
   | "variable"
@@ -124,6 +125,7 @@ export type NodeConfig =
   | AITaskNodeConfig
   | KnowledgeSearchNodeConfig
   | ConditionNodeConfig
+  | SwitchNodeConfig
   | HumanApprovalNodeConfig
   | NotificationNodeConfig
   | VariableNodeConfig
@@ -245,6 +247,21 @@ export type ConditionNodeConfig = {
     logicAfter?: "and" | "or"; // Logic operator to apply AFTER this condition (not used for last condition)
     caseSensitive?: boolean; // Whether string comparison is case-sensitive (default: false - case-insensitive)
   }>;
+};
+
+export type SwitchRoute = {
+  id: string;
+  name: string;
+  operator: ConditionOperator;
+  value?: unknown;
+  valueType?: "auto" | "text" | "number" | "boolean";
+  caseSensitive?: boolean;
+};
+
+export type SwitchNodeConfig = {
+  type: "switch";
+  variable: string;
+  routes: SwitchRoute[];
 };
 
 export type HumanApprovalNodeConfig = {

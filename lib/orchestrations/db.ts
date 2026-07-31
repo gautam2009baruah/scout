@@ -338,6 +338,15 @@ export async function publishOrchestration(
     throw new Error("Cannot publish: Orchestration must have at least a trigger and an end node");
   }
 
+  for (const switchNode of nodes.filter(node => node.nodeType === "switch")) {
+    const hasDefaultConnection = connections.some(connection =>
+      connection.sourceNodeId === switchNode.id && connection.sourceHandle === "default"
+    );
+    if (!hasDefaultConnection) {
+      throw new Error(`Cannot publish: Switch / Router "${switchNode.label}" must have its Default output connected`);
+    }
+  }
+
   // Check if trigger is configured
   const triggerNode = triggerNodes[0];
   if (!triggerNode.config || Object.keys(triggerNode.config).length === 0) {

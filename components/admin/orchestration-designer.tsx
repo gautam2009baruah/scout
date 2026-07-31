@@ -24,6 +24,7 @@ import ReactFlow, {
   MiniMap,
   useNodesState,
   useEdgesState,
+  useUpdateNodeInternals,
   MarkerType,
   BackgroundVariant,
   Panel,
@@ -68,6 +69,7 @@ const NODE_CONFIGS: Array<{ type: NodeType; label: string; icon: string | Compon
   { type: "ai_task", label: "AI Task", icon: "🧠", color: "#a855f7" },
   { type: "knowledge_search", label: "Knowledge Search", icon: "🔍", color: "#0891b2" },
   { type: "condition", label: "Condition", icon: "❓", color: "#f59e0b" },
+  { type: "switch", label: "Switch / Router", icon: "🔀", color: "#d97706" },
   { type: "human_approval", label: "Human Approval", icon: "✋", color: "#ec4899" },
   { type: "notification", label: "Notification", icon: "📧", color: "#06b6d4" },
   { type: "api_call", label: "API Call", icon: "🌐", color: "#f97316" },
@@ -97,6 +99,8 @@ const NODE_DESCRIPTIONS: Record<NodeType, string> = {
     "Searches the company's uploaded knowledge base (documents, FAQs, etc.) for passages relevant to a query. Use this before an AI Task when the answer should be grounded in your own content, not general knowledge.",
   condition:
     "Evaluates a rule against the data collected so far and sends the flow down one of two paths — TRUE or FALSE. Use this whenever the next step should differ depending on a value, e.g. \"if amount > 1000\".",
+  switch:
+    "Evaluates ordered routes from top to bottom and follows the first matching output. If nothing matches, it follows Default. Use this when one value can lead to three or more outcomes.",
   human_approval:
     "Pauses the flow and waits for a person to explicitly approve or reject it, branching down an APPROVED or REJECTED path. Use this for any step that needs a human sign-off, e.g. before a payment or a publish.",
   notification:
@@ -134,9 +138,28 @@ const BRANCH_HANDLE_LABELS: Record<string, [string, string]> = {
 
 // Custom Node Component
 const CustomNode = ({ data, id }: { data: any; id: string }) => {
+  const updateNodeInternals = useUpdateNodeInternals();
   const config = NODE_CONFIGS.find((n) => n.type === data.nodeType);
   const branchHandles = BRANCH_HANDLES[data.nodeType as string];
   const branchLabels = BRANCH_HANDLE_LABELS[data.nodeType as string];
+  const switchRoutes = data.nodeType === "switch"
+    ? [
+        ...(Array.isArray(data.config?.routes) ? data.config.routes : []).map((route: any) => ({
+          id: String(route.id),
+          label: String(route.name || "Route"),
+          color: "#d97706",
+        })),
+        { id: "default", label: "DEFAULT", color: "#64748b" },
+      ]
+    : null;
+  const switchRouteIds = switchRoutes?.map((route) => route.id).join("|") || "";
+
+  useEffect(() => {
+    if (data.nodeType !== "switch") return;
+    const frame = window.requestAnimationFrame(() => updateNodeInternals(id));
+    return () => window.cancelAnimationFrame(frame);
+  }, [data.nodeType, id, switchRouteIds, updateNodeInternals]);
+
   const IconComponent = config?.icon;
   
   const handleDelete = (e: React.MouseEvent) => {
@@ -159,7 +182,23 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
       />
       
       {/* Branching node types (condition, human_approval) get two named output handles */}
-      {branchHandles ? (
+      {switchRoutes ? (
+        <>
+          {switchRoutes.map((route, index) => (
+            <Handle
+              key={route.id}
+              type="source"
+              position={Position.Right}
+              id={route.id}
+              style={{
+                top: `${((index + 1) / (switchRoutes.length + 1)) * 100}%`,
+                backgroundColor: route.color,
+              }}
+              className="!h-3 !w-3 !border-2 !border-white"
+            />
+          ))}
+        </>
+      ) : branchHandles ? (
         <>
           <Handle
             type="source"
@@ -207,6 +246,15 @@ const CustomNode = ({ data, id }: { data: any; id: string }) => {
           <span className="text-red-600">{branchLabels[1]}</span>
         </div>
       )}
+      {switchRoutes ? (
+        <div className="absolute -right-24 top-0 flex h-full w-20 flex-col justify-around text-[10px] font-semibold">
+          {switchRoutes.map((route) => (
+            <span className="truncate text-amber-700" key={route.id} title={route.label}>
+              {route.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -652,7 +700,22 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
         data: {
           label: config?.label || "Node",
           nodeType,
-          config: {},
+          config: nodeType === "switch"
+            ? {
+                type: "switch",
+                variable: "",
+                routes: [
+                  {
+                    id: `route-${Date.now()}`,
+                    name: "",
+                    operator: "equals",
+                    value: "",
+                    valueType: "auto",
+                    caseSensitive: false,
+                  },
+                ],
+              }
+            : {},
           onDelete: deleteNode,
         },
       };
@@ -673,6 +736,15 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   // Save orchestration
   const saveOrchestration = async (): Promise<boolean> => {
     if (!orchestration || isSaving) return false;
+
+    const switchWithoutDefault = nodes.find((node) =>
+      node.data.nodeType === "switch" &&
+      !edges.some((edge) => edge.source === node.id && edge.sourceHandle === "default")
+    );
+    if (switchWithoutDefault) {
+      showToast(`Cannot save: Switch / Router "${switchWithoutDefault.data.label}" must have its Default output connected.`, "error");
+      return false;
+    }
 
     // Validate nodes are compatible with current trigger type before saving
     const incompatibleNodes = nodes.filter(node => {

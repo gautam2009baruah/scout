@@ -79,6 +79,7 @@ export function getIncompatibilityReason(
     ai_task: "AI Task",
     knowledge_search: "Knowledge Search",
     condition: "Condition",
+    switch: "Switch / Router",
     human_approval: "Human Approval",
     notification: "Notification",
     variable: "Variable",

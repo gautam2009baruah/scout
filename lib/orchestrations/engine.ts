@@ -11,6 +11,7 @@ import type {
   DataCaptureNodeConfig,
   AIExtractionNodeConfig,
   ConditionNodeConfig,
+  SwitchNodeConfig,
   AITaskNodeConfig,
   KnowledgeSearchNodeConfig,
   HumanApprovalNodeConfig,
@@ -32,6 +33,7 @@ import { executeAIExtractionNode } from "./nodes/ai-extraction-node";
 import { executeAITaskNode } from "./nodes/ai-task-node";
 import { executeKnowledgeSearchNode } from "./nodes/knowledge-search-node";
 import { executeConditionNode } from "./nodes/condition-node";
+import { executeSwitchNode } from "./nodes/switch-node";
 import { executeHumanApprovalNode, resumeAfterApproval } from "./nodes/human-approval-node";
 import { executeNotificationNode } from "./nodes/notification-node";
 import { executeVariableNode } from "./nodes/variable-node";
@@ -437,6 +439,9 @@ export class OrchestrationEngine {
       case "condition":
         return await executeConditionNode(config as ConditionNodeConfig, this.context);
 
+      case "switch":
+        return await executeSwitchNode(config as SwitchNodeConfig, this.context);
+
       case "human_approval":
         return await executeHumanApprovalNode(
           config as HumanApprovalNodeConfig,
@@ -635,6 +640,7 @@ export class OrchestrationEngine {
       ai_task: "AI Task",
       knowledge_search: "Knowledge Search",
       condition: "Condition",
+      switch: "Switch / Router",
       human_approval: "Human Approval",
       notification: "Notification",
       variable: "Variable",

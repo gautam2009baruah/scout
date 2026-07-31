@@ -136,7 +136,7 @@ export function reshapeStepParamsToNodeConfig(nodeType: string, params: Record<s
 // alongside this step (components/admin/orchestration-designer.tsx) so a
 // converted draft with human_approval branches actually renders correctly,
 // per this step's own round-trip requirement.
-const BRANCHING_NODE_TYPES = new Set(["condition", "human_approval"]);
+const BRANCHING_NODE_TYPES = new Set(["condition", "switch", "human_approval"]);
 
 type Tail = { tempId: string; handle: string | null };
 

@@ -294,6 +294,58 @@
     }
   },
   {
+    "name": "switch",
+    "description": "Routes one value to one of three or more named outcomes. Routes are evaluated from top to bottom and only the first matching route runs; when none match, the required \"default\" output runs. Prefer this over nested condition nodes when the same status, category, type, code, or numeric value has several possible destinations. Use a condition node instead for a simple yes/no decision.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "variable": {
+          "type": "string",
+          "description": "One variable expression or literal value evaluated by every route, e.g. \"{{extracted.documentType}}\", \"{{ticket.priority}}\", or \"{{api.statusCode}}\"."
+        },
+        "routes": {
+          "type": "array",
+          "description": "Ordered first-match routes. Each id becomes the node's output handle and MUST be used as the matching key in the step's branches object. Put more specific rules before broader overlapping rules.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Stable unique lowercase output id, e.g. \"approved\", \"high_value\", or \"not_found\". Never use \"default\" because it is reserved for the fallback output."
+              },
+              "name": {
+                "type": "string",
+                "description": "Short human-readable output label displayed on the designer node, e.g. \"Approved\" or \"High value\"."
+              },
+              "operator": {
+                "type": "string",
+                "enum": [
+                  "equals", "not_equals", "contains", "not_contains", "contains_any", "contains_all",
+                  "not_contains_any", "greater_than", "less_than", "exists", "not_exists", "empty", "not_empty"
+                ],
+                "description": "Comparison operator. exists/not_exists/empty/not_empty ignore value."
+              },
+              "value": {
+                "description": "Comparison value. Omit only for exists/not_exists/empty/not_empty."
+              },
+              "valueType": {
+                "type": "string",
+                "enum": ["auto", "text", "number", "boolean"],
+                "description": "How to interpret value. Use auto unless an explicit type is required; use number for numeric range routes."
+              },
+              "caseSensitive": {
+                "type": "boolean",
+                "description": "Whether text comparison is case-sensitive. Default false."
+              }
+            },
+            "required": ["id", "name", "operator"]
+          }
+        }
+      },
+      "required": ["variable", "routes"]
+    }
+  },
+  {
     "name": "human_approval",
     "description": "Pauses the orchestration and asks a named human to approve or reject, creating an approval record and sending a real email to the approver with a review link. Blocks downstream execution until the human responds; routes to an \"approved\" or \"rejected\" output branch on resume.",
     "input_schema": {

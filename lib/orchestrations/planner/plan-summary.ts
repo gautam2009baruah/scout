@@ -16,6 +16,7 @@ const TYPE_DISPLAY_NAMES: Record<string, string> = {
   ai_task: "AI Task",
   knowledge_search: "Search",
   condition: "Condition",
+  switch: "Switch / Router",
   human_approval: "Approval",
   notification: "Notify",
   variable: "Set Variable",

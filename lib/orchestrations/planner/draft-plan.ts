@@ -28,8 +28,8 @@ export type DraftPlanStep = {
   justification: string;
   params: Record<string, unknown>;
   // Branches keyed by output handle (e.g. "true"/"false" for condition,
-  // "approved"/"rejected" for human_approval). Only meaningful for node
-  // types that actually produce named output handles.
+  // "approved"/"rejected" for human_approval, or route ids plus "default"
+  // for switch). Only meaningful for nodes with named output handles.
   branches?: Record<string, DraftPlanStep[]>;
 };
 
@@ -53,7 +53,7 @@ export function buildDraftingSystemPrompt(): string {
     "Rules:",
     "1) Only use nodeType values from the tool list below — never invent one.",
     "2) Populate params using exactly the field names in that tool's input_schema.",
-    "3) For branching logic, use a \"condition\" step and add a \"branches\" object on it keyed by output handle (\"true\"/\"false\"), each value an ordered array of steps for that branch. Use \"approved\"/\"rejected\" branch keys for a \"human_approval\" step.",
+    "3) For a yes/no decision, use a \"condition\" step with branches keyed \"true\" and \"false\". For three or more outcomes based on one value, use a \"switch\" step: give every route a stable lowercase id, use those exact route ids as branch keys, and include a \"default\" branch. Switch routes are evaluated top-to-bottom and only the first match runs. Use \"approved\"/\"rejected\" branch keys for a \"human_approval\" step.",
     "4) Every complete draft plan should end with an \"end\" step that sets a clear, user-facing message. The \"end\" step is always its own separate entry in the \"steps\" array (or in a \"branches\" array) — NEVER nest it, or any other step, as a property inside another step's object.",
     "5) Prefer the smallest correct sequence of steps. Do not add steps the request doesn't call for.",
     "6) Only ask a clarifying question when the plan genuinely cannot be drafted without it — prefer reasonable defaults over asking.",
@@ -190,6 +190,37 @@ export function validateDraftPlan(steps: DraftPlanStep[], path = "$"): string[] 
     }
 
     errors.push(...validateAgainstJsonSchema(step.params ?? {}, tool.input_schema, `${stepPath}.params`));
+
+    if (step.nodeType === "switch") {
+      const routes = Array.isArray(step.params?.routes) ? step.params.routes : [];
+      const routeIds = new Set<string>();
+      routes.forEach((route, routeIndex) => {
+        const id = route && typeof route === "object" ? String((route as Record<string, unknown>).id ?? "").trim() : "";
+        if (!id) return;
+        if (id === "default") {
+          errors.push(`${stepPath}.params.routes[${routeIndex}].id: "default" is reserved for the fallback output`);
+        }
+        if (routeIds.has(id)) {
+          errors.push(`${stepPath}.params.routes[${routeIndex}].id: duplicate route id "${id}"`);
+        }
+        routeIds.add(id);
+      });
+
+      const branchKeys = Object.keys(step.branches ?? {});
+      if (!branchKeys.includes("default")) {
+        errors.push(`${stepPath}.branches.default: switch steps require a default branch`);
+      }
+      for (const branchKey of branchKeys) {
+        if (branchKey !== "default" && !routeIds.has(branchKey)) {
+          errors.push(`${stepPath}.branches.${branchKey}: no switch route has this id`);
+        }
+      }
+      for (const routeId of routeIds) {
+        if (!branchKeys.includes(routeId)) {
+          errors.push(`${stepPath}.branches.${routeId}: switch route requires a matching branch`);
+        }
+      }
+    }
 
     if (step.branches) {
       for (const [handle, branchSteps] of Object.entries(step.branches)) {
