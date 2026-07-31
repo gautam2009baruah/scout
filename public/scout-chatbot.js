@@ -1,7 +1,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "1.1.3";
+  var VERSION = "1.1.4";
   // Must match PLAYER_VERSION in scout-smart-adoption-player.js — appended as a
   // cache-buster below so a browser that already cached an older copy of that
   // file (e.g. from earlier in the same session, before a fix landed) doesn't
@@ -42,10 +42,36 @@
     iframe.style.height = "80px";
     iframe.style.border = "0";
     iframe.style.background = "transparent";
+    // Keep the browser's native failed-frame page hidden. It can expose the
+    // configured host name (for example, "... refused to connect") when the
+    // Scout service is unavailable.
+    iframe.style.visibility = "hidden";
     iframe.style.colorScheme = config.theme && config.theme.darkMode === true ? "dark" : "light";
     iframe.style.transition = "width 180ms ease, height 180ms ease";
     iframe.style[configuredPosition === "bottom-left" ? "left" : "right"] = "12px";
     document.body.appendChild(iframe);
+
+    var unavailableNotice = null;
+    var readyTimer = global.setTimeout(function () {
+      unavailableNotice = document.createElement("div");
+      unavailableNotice.setAttribute("role", "status");
+      unavailableNotice.setAttribute("aria-live", "polite");
+      unavailableNotice.textContent = "Chat is temporarily unavailable. Please try again later.";
+      unavailableNotice.style.position = "fixed";
+      unavailableNotice.style.zIndex = String((config.zIndex || 2147482000) + 1);
+      unavailableNotice.style.bottom = "12px";
+      unavailableNotice.style.width = "280px";
+      unavailableNotice.style.boxSizing = "border-box";
+      unavailableNotice.style.padding = "14px 16px";
+      unavailableNotice.style.border = "1px solid #e2e8f0";
+      unavailableNotice.style.borderRadius = "12px";
+      unavailableNotice.style.background = "#ffffff";
+      unavailableNotice.style.boxShadow = "0 10px 30px rgba(15, 23, 42, 0.16)";
+      unavailableNotice.style.color = "#334155";
+      unavailableNotice.style.font = "500 14px/1.45 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      unavailableNotice.style[configuredPosition === "bottom-left" ? "left" : "right"] = "12px";
+      document.body.appendChild(unavailableNotice);
+    }, 10000);
 
     var isOpen = false;
     var openSize = { width: 480, height: 740 };
@@ -97,7 +123,13 @@
 
     function onMessage(event) {
       if (event.origin !== scoutOrigin || event.source !== iframe.contentWindow) return;
-      if (event.data?.type === "scout-chatbot:ready") sendConfig();
+      if (event.data?.type === "scout-chatbot:ready") {
+        global.clearTimeout(readyTimer);
+        if (unavailableNotice) unavailableNotice.remove();
+        unavailableNotice = null;
+        iframe.style.visibility = "visible";
+        sendConfig();
+      }
       if (event.data?.type === "scout-chatbot:open-change") {
         isOpen = event.data.isOpen === true;
         if (isOpen) applyOpenSize();
@@ -137,8 +169,10 @@
       id: instanceId,
       version: VERSION,
       destroy: function () {
+        global.clearTimeout(readyTimer);
         global.removeEventListener("message", onMessage);
         global.removeEventListener("resize", onViewportResize);
+        if (unavailableNotice) unavailableNotice.remove();
         iframe.remove();
         instances = instances.filter(function (item) { return item !== handle; });
       }
