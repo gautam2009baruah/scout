@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, FileText, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, FileText, MoreVertical, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
 import type { Jodit as JoditInstance } from "jodit";
 import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
@@ -738,6 +738,8 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   const refreshResetTimer = useRef<number | null>(null);
   const [generatedDocument, setGeneratedDocument] = useState<{ id: string; status: string; isStale?: boolean } | null | undefined>(undefined);
   const [documentActionPending, setDocumentActionPending] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
   const { showToast } = useToast();
 
   useEffect(() => () => {
@@ -750,7 +752,19 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
     if (!selectedTopic?.guideId) {
       setConfigTab("recorder");
     }
+    setActionMenuOpen(false);
   }, [selectedTopic?.guideId]);
+
+  useEffect(() => {
+    function closeActionMenu(event: MouseEvent) {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
+        setActionMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", closeActionMenu);
+    return () => document.removeEventListener("mousedown", closeActionMenu);
+  }, []);
 
   useEffect(() => {
     setOpenStepIds((current) => {
@@ -910,18 +924,47 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
             >
               <Play className="h-4 w-4" />Publish
             </button>
-            <button
-              className="button-secondary"
-              disabled={!sessionGuide || documentActionPending}
-              onClick={generateDocumentation}
-              type="button"
-            >
-              <FileText className="h-4 w-4" />
-              {generatedDocument ? "Regenerate Documentation" : "Generate Documentation"}
-            </button>
-            <button className="inline-flex h-10 items-center gap-2 rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-700" onClick={() => deleteTopic(selectedTopic.id)} type="button">
-              <Trash2 className="h-4 w-4" />Delete
-            </button>
+            <div className="relative" ref={actionMenuRef}>
+              <button
+                aria-expanded={actionMenuOpen}
+                aria-haspopup="menu"
+                aria-label="More workflow actions"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+                onClick={() => setActionMenuOpen((current) => !current)}
+                type="button"
+              >
+                <MoreVertical className="h-5 w-5" />
+              </button>
+              {actionMenuOpen ? (
+                <div className="absolute right-0 top-full z-20 mt-2 w-60 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg" role="menu">
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!sessionGuide || documentActionPending}
+                    onClick={() => {
+                      setActionMenuOpen(false);
+                      void generateDocumentation();
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <FileText className="h-4 w-4" />
+                    {generatedDocument ? "Regenerate Documentation" : "Generate Documentation"}
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"
+                    onClick={() => {
+                      setActionMenuOpen(false);
+                      deleteTopic(selectedTopic.id);
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
 
