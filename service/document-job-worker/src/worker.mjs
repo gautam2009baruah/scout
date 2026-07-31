@@ -4,6 +4,8 @@ import path from "node:path";
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
 import crypto from "node:crypto";
+import { availableParallelism } from "node:os";
+import { Worker, isMainThread, parentPort, threadId } from "node:worker_threads";
 import "../../../scripts/db/load-env.mjs";
 
 const { Client } = pg;
@@ -20,6 +22,8 @@ const defaultEmbeddingConfig = {
   apiKey: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || ""
 };
 const embeddingBatchSize = Number(process.env.EMBEDDING_BATCH_SIZE || 64);
+const configuredThreadCount = Number(process.env.DOCUMENT_JOB_WORKER_THREADS || Math.min(4, availableParallelism()));
+const threadCount = Number.isInteger(configuredThreadCount) && configuredThreadCount > 0 ? configuredThreadCount : 1;
 
 if (!databaseUrl) {
   throw new Error("DATABASE_URL is not configured.");
@@ -1117,22 +1121,82 @@ async function processOneJob() {
   return true;
 }
 
-await client.connect();
-await reconcileCompletedIndexJobs();
-console.log(`Processing worker started. Poll interval: ${pollMs}ms.`);
+async function runJobThread() {
+  let stopRequested = false;
+  parentPort?.on("message", (message) => {
+    if (message === "shutdown") {
+      stopRequested = true;
+    }
+  });
 
-try {
-  do {
-    const processed = await processOneJob();
+  await client.connect();
+  await reconcileCompletedIndexJobs();
+  console.log(`Processing worker thread ${threadId} started. Poll interval: ${pollMs}ms.`);
 
-    if (runOnce) {
-      break;
+  try {
+    while (!stopRequested) {
+      const processed = await processOneJob();
+
+      if (runOnce) {
+        break;
+      }
+
+      if (!processed) {
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
+      }
+    }
+  } finally {
+    await client.end();
+    parentPort?.close();
+  }
+}
+
+async function runThreadSupervisor() {
+  const workers = new Set();
+  let shuttingDown = false;
+
+  const startThread = () => {
+    const worker = new Worker(new URL(import.meta.url));
+    workers.add(worker);
+
+    worker.on("error", (error) => {
+      console.error(`Document worker thread failed:`, error);
+    });
+
+    worker.on("exit", (code) => {
+      workers.delete(worker);
+
+      if (!shuttingDown) {
+        console.error(`Document worker thread exited with code ${code}; restarting it.`);
+        startThread();
+      }
+    });
+  };
+
+  const shutdown = async (signal) => {
+    if (shuttingDown) {
+      return;
     }
 
-    if (!processed) {
-      await new Promise((resolve) => setTimeout(resolve, pollMs));
-    }
-  } while (true);
-} finally {
-  await client.end();
+    shuttingDown = true;
+    console.log(`Received ${signal}; stopping ${workers.size} document worker threads.`);
+    const activeWorkers = [...workers];
+    const exits = activeWorkers.map((worker) => new Promise((resolve) => worker.once("exit", resolve)));
+    activeWorkers.forEach((worker) => worker.postMessage("shutdown"));
+    await Promise.allSettled(exits);
+  };
+
+  process.once("SIGINT", () => void shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+
+  console.log(`Document job worker supervisor started with ${threadCount} threads.`);
+  for (let index = 0; index < threadCount; index += 1) {
+    startThread();
+  }
+}
+
+if (isMainThread && !runOnce) {
+  await runThreadSupervisor();
+} else {
+  await runJobThread();
 }
