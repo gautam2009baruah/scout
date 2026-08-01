@@ -49,7 +49,6 @@ SMTP_PORT=587
 SMTP_SECURE=false
 SMTP_USER=your-email@gmail.com
 SMTP_PASSWORD=your-app-password
-EMAIL_FROM="Scout <noreply@yourcompany.com>"
 
 # Storage
 STORAGE_PROVIDER=local
@@ -64,14 +63,9 @@ EMBEDDING_DIMENSIONS=768
 LLM_PROVIDER=ollama
 LLM_MODEL=qwen3:0.6b
 LLM_ENDPOINT=http://localhost:11434
-
-# First admin user
-SEED_COMPANY_NAME=YourCompany
-SEED_COMPANY_SLUG=yourcompany
-SEED_ADMIN_NAME=Admin User
-SEED_ADMIN_EMAIL=admin@yourcompany.com
-SEED_ADMIN_PASSWORD=ChangeThisSecurePassword123!
 ```
+
+AI provider settings above are only a fallback until you configure a provider through Admin → AI Configuration in the UI — see the earlier discussion in this deployment. The first admin user is created directly via SQL (Step 6 below), not from env vars.
 
 ### Step 5: Run Database Migrations
 
@@ -83,19 +77,15 @@ npm run db:migrate
 
 You should see:
 ```
-Applied 001_admin_auth.sql.
-Applied 002_master_data.sql.
-Applied 003_employees.sql.
-...
-Applied 036_guided_workflow_training_sessions.sql.
+Applied 001_baseline_schema.sql.
 Database migrations completed.
 ```
 
-### Step 6: Seed First Admin User
+`db/migrations/` is a single squashed baseline file (the full current schema) rather than an incremental history — future schema changes get added as new files after it (`002_...sql`, `003_...sql`, etc.).
 
-```bash
-npm run db:seed:first-admin
-```
+### Step 6: Create the First Admin User
+
+Insert the first company and owner admin directly via SQL (or your own tooling) — there is no seed script for this.
 
 ### Step 7: Build and Start
 
@@ -218,7 +208,7 @@ When you add new database changes on your local machine:
 1. **Create migration file:**
    ```bash
    # In db/migrations/
-   # Name format: 037_your_feature_name.sql
+   # Name format: 002_your_feature_name.sql
    ```
 
 2. **Write SQL:**
@@ -235,7 +225,7 @@ When you add new database changes on your local machine:
 
 3. **Commit to Git:**
    ```bash
-   git add db/migrations/037_your_feature_name.sql
+   git add db/migrations/002_your_feature_name.sql
    git commit -m "Add new feature migration"
    git push
    ```
@@ -277,7 +267,7 @@ psql $DATABASE_URL -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 
 # Re-run migrations
 npm run db:migrate
-npm run db:seed:first-admin
+# Then re-create the first admin user directly via SQL
 ```
 
 ---
@@ -288,4 +278,4 @@ npm run db:seed:first-admin
 - **Homepage:** `https://your-domain.com`
 - **Embed Demo:** `https://your-domain.com/embed-demo.html`
 
-Login with credentials from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
+Login with the admin credentials you created directly via SQL in Step 6.

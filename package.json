@@ -22,7 +22,6 @@
     "test:ai-planner-node": "node --import tsx --test tests/ai-planner-node.test.ts",
     "eval:ai-planner": "node --import ./scripts/db/load-env.mjs --import tsx scripts/eval-ai-planner.ts",
     "db:migrate": "node scripts/db/migrate.mjs",
-    "db:seed:first-admin": "node scripts/db/seed-first-admin.mjs",
     "jobs:documents": "node service/document-job-worker/src/worker.mjs",
     "jobs:worker": "npm run jobs:documents",
     "extension:build": "node scripts/build-extension.mjs",
@@ -46,7 +45,6 @@
     "puppeteer": "^24.43.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-draggable": "^4.7.0",
     "reactflow": "^11.11.4",
     "tailwind-merge": "^2.3.0"
   },
@@ -54,7 +52,6 @@
     "@types/imap": "^0.8.43",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^20.14.10",
-    "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.17",
