@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ADMIN_SESSION_COOKIE, revokeCurrentAdminSession } from "@/lib/admin/session";
+import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_COOKIE_SECURE, revokeCurrentAdminSession } from "@/lib/admin/session";
 
 export const runtime = "nodejs";
 
@@ -17,7 +17,7 @@ export async function POST() {
     value: "",
     httpOnly: true,
     sameSite: "strict",
-    secure: process.env.NODE_ENV === "production",
+    secure: ADMIN_SESSION_COOKIE_SECURE,
     path: "/",
     maxAge: 0
   });

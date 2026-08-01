@@ -7,7 +7,7 @@ import { ADMIN_SESSION_MINUTES } from "./session-config";
 import type { AdminLoginCredentials, AdminSession, UserCompanyAccess } from "./auth";
 
 export const ADMIN_SESSION_COOKIE = "scout_admin_session";
-export { ADMIN_SESSION_MINUTES } from "./session-config";
+export { ADMIN_SESSION_MINUTES, ADMIN_SESSION_COOKIE_SECURE } from "./session-config";
 
 type SessionRow = {
   session_id: string;
