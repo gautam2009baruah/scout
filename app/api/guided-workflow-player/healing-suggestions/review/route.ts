@@ -19,6 +19,14 @@ type DeleteRequest = {
   suggestionId: string;
 };
 
+function jsonbParameter(value: unknown, fallback: unknown = null): string {
+  if (typeof value === "string") {
+    return JSON.stringify(JSON.parse(value));
+  }
+
+  return JSON.stringify(value ?? fallback);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const url = new URL(request.url);
@@ -137,13 +145,13 @@ async function handleApprove(request: NextRequest) {
       `INSERT INTO guided_workflow_healing_audit
        (workflow_id, step_id, event_type, healing_source, confidence_score,
         attempted_selector_candidates, success, page_url, user_id)
-       VALUES ($1, $2, 'approved', $3, $4, $5, true, $6, $7)`,
+        VALUES ($1, $2, 'approved', $3, $4, $5::jsonb, true, $6, $7)`,
       [
         suggestion.workflow_id,
         suggestion.step_id,
         editedSelectorCandidates ? "manual" : suggestion.healing_source,
         suggestion.confidence_score,
-        JSON.stringify(selectorCandidates),
+        jsonbParameter(selectorCandidates, []),
         suggestion.page_url,
         userId,
       ]
@@ -252,13 +260,13 @@ async function handleReject(request: NextRequest) {
       `INSERT INTO guided_workflow_healing_audit
        (workflow_id, step_id, event_type, healing_source, confidence_score,
         attempted_selector_candidates, success, error_message, page_url, user_id)
-       VALUES ($1, $2, 'rejected', $3, $4, $5, false, $6, $7, $8)`,
+        VALUES ($1, $2, 'rejected', $3, $4, $5::jsonb, false, $6, $7, $8)`,
       [
         suggestion.workflow_id,
         suggestion.step_id,
         suggestion.healing_source,
         suggestion.confidence_score,
-        suggestion.proposed_selector_candidates,
+        jsonbParameter(suggestion.proposed_selector_candidates, []),
         reason || "Rejected by trainer",
         suggestion.page_url,
         userId,
@@ -316,13 +324,13 @@ async function handleDelete(request: NextRequest) {
       `INSERT INTO guided_workflow_healing_audit
        (workflow_id, step_id, event_type, healing_source, confidence_score,
         attempted_selector_candidates, success, error_message, page_url, user_id)
-       VALUES ($1, $2, 'deleted', $3, $4, $5, false, $6, $7, $8)`,
+        VALUES ($1, $2, 'deleted', $3, $4, $5::jsonb, false, $6, $7, $8)`,
       [
         suggestion.workflow_id,
         suggestion.step_id,
         suggestion.healing_source,
         suggestion.confidence_score,
-        suggestion.proposed_selector_candidates,
+        jsonbParameter(suggestion.proposed_selector_candidates, []),
         "Permanently deleted by trainer",
         suggestion.page_url,
         userId,

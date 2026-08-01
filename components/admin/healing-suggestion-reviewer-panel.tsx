@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronRight, ListFilter, Pencil, Trash2, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ListFilter, Pencil, Trash2, X } from "lucide-react";
 import type { SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
 import { useToast } from "./toast";
@@ -87,6 +87,8 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editModal, setEditModal] = useState<EditModalData | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState<HealingSuggestion | null>(null);
+  const [rejectConfirmation, setRejectConfirmation] = useState<HealingSuggestion | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"pending" | "approved" | "rejected">("pending");
   const { showToast } = useToast();
@@ -196,7 +198,6 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
   }
 
   async function handleReject(suggestionId: string) {
-    if (!confirm("Reject this trainer review item?")) return;
     try {
       setProcessingId(suggestionId);
       const response = await fetch("/api/guided-workflow-player/healing-suggestions/review?action=reject", {
@@ -206,6 +207,7 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.message || body?.error || "Failed to reject suggestion");
+      setRejectConfirmation(null);
       await loadSuggestions();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to reject suggestion", "error");
@@ -215,7 +217,6 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
   }
 
   async function handleDelete(suggestionId: string) {
-    if (!confirm("Permanently delete this review item? This cannot be undone.")) return;
     try {
       setProcessingId(suggestionId);
       const response = await fetch("/api/guided-workflow-player/healing-suggestions/review?action=delete", {
@@ -225,6 +226,7 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.message || body?.error || "Failed to delete suggestion");
+      setDeleteConfirmation(null);
       await loadSuggestions();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to delete suggestion", "error");
@@ -286,9 +288,9 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
         displayMode === "table" ? (
           <SuggestionTable
             onApprove={(suggestion) => void handleApprove(suggestion.id)}
-            onDelete={(suggestion) => void handleDelete(suggestion.id)}
+            onDelete={setDeleteConfirmation}
             onEdit={(suggestion) => setEditModal({ suggestion, editedTarget: targetFromSuggestion(suggestion) })}
-            onReject={(suggestion) => void handleReject(suggestion.id)}
+            onReject={setRejectConfirmation}
             page={page}
             pageSize={pageSize}
             processingId={processingId}
@@ -304,9 +306,9 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
                 key={suggestion.id}
                 index={index + 1}
                 onApprove={() => void handleApprove(suggestion.id)}
-                onDelete={() => void handleDelete(suggestion.id)}
+                onDelete={() => setDeleteConfirmation(suggestion)}
                 onEdit={() => setEditModal({ suggestion, editedTarget: targetFromSuggestion(suggestion) })}
-                onReject={() => void handleReject(suggestion.id)}
+                onReject={() => setRejectConfirmation(suggestion)}
                 processing={processingId === suggestion.id}
                 statusFilter={statusFilter}
                 suggestion={suggestion}
@@ -323,6 +325,92 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
           onSave={(edited) => void handleApprove(editModal.suggestion.id, edited)}
           processing={processingId === editModal.suggestion.id}
         />
+      ) : null}
+
+      {deleteConfirmation ? (
+        <div
+          aria-labelledby="delete-healing-suggestion-title"
+          aria-modal="true"
+          className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/40 p-4 backdrop-blur-sm"
+          onClick={() => processingId ? undefined : setDeleteConfirmation(null)}
+          role="dialog"
+        >
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start gap-3 p-5">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-slate-950" id="delete-healing-suggestion-title">Delete healing review item?</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  This will permanently remove the review item for <span className="font-semibold text-slate-800">{deleteConfirmation.workflow_title}</span>, step {deleteConfirmation.step_order}. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <button
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={processingId === deleteConfirmation.id}
+                onClick={() => setDeleteConfirmation(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={processingId === deleteConfirmation.id}
+                onClick={() => void handleDelete(deleteConfirmation.id)}
+                type="button"
+              >
+                <Trash2 className="h-4 w-4" />
+                {processingId === deleteConfirmation.id ? "Deleting..." : "Delete permanently"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {rejectConfirmation ? (
+        <div
+          aria-labelledby="reject-healing-suggestion-title"
+          aria-modal="true"
+          className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/40 p-4 backdrop-blur-sm"
+          onClick={() => processingId ? undefined : setRejectConfirmation(null)}
+          role="dialog"
+        >
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start gap-3 p-5">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+                <X className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-slate-950" id="reject-healing-suggestion-title">Reject healing suggestion?</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Reject the suggestion for <span className="font-semibold text-slate-800">{rejectConfirmation.workflow_title}</span>, step {rejectConfirmation.step_order}? It will move to the Rejected list without changing the workflow.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <button
+                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={processingId === rejectConfirmation.id}
+                onClick={() => setRejectConfirmation(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={processingId === rejectConfirmation.id}
+                onClick={() => void handleReject(rejectConfirmation.id)}
+                type="button"
+              >
+                <X className="h-4 w-4" />
+                {processingId === rejectConfirmation.id ? "Rejecting..." : "Reject suggestion"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );
