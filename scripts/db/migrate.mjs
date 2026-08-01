@@ -70,13 +70,13 @@ await client.connect();
 
 try {
   await client.query(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
+    CREATE TABLE IF NOT EXISTS public.schema_migrations (
       file_name text PRIMARY KEY,
       applied_at timestamptz NOT NULL DEFAULT now()
     )
   `);
 
-  const initialApplied = await client.query("SELECT file_name FROM schema_migrations");
+  const initialApplied = await client.query("SELECT file_name FROM public.schema_migrations");
   if (initialApplied.rowCount === 0 && await shouldBaselineLegacyDatabase()) {
     const baselineVersion = await detectBaselineVersion();
     if (baselineVersion > 0) {
@@ -86,7 +86,7 @@ try {
         await client.query("BEGIN");
         for (const fileName of baselineFiles) {
           await client.query(
-            "INSERT INTO schema_migrations (file_name) VALUES ($1) ON CONFLICT (file_name) DO NOTHING",
+            "INSERT INTO public.schema_migrations (file_name) VALUES ($1) ON CONFLICT (file_name) DO NOTHING",
             [fileName]
           );
         }
@@ -96,7 +96,7 @@ try {
     }
   }
 
-  const appliedResult = await client.query("SELECT file_name FROM schema_migrations");
+  const appliedResult = await client.query("SELECT file_name FROM public.schema_migrations");
   const applied = new Set(appliedResult.rows.map((row) => row.file_name));
 
   for (const migrationFile of migrationFiles) {
@@ -109,7 +109,7 @@ try {
     await client.query("BEGIN");
     await client.query(sql);
     await client.query(
-      "INSERT INTO schema_migrations (file_name) VALUES ($1)",
+      "INSERT INTO public.schema_migrations (file_name) VALUES ($1)",
       [migrationFile]
     );
     await client.query("COMMIT");

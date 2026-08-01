@@ -1,8 +1,6 @@
-﻿--
+--
 -- PostgreSQL database dump
 --
-
-\restrict Q5HvLejcaJHhMtgyiblmH65bWCt8UlHiYGfMkV11bePElvzAoJIpSJsLyoZfF7F
 
 -- Dumped from database version 16.14 (Debian 16.14-1.pgdg12+1)
 -- Dumped by pg_dump version 16.14 (Debian 16.14-1.pgdg12+1)
@@ -1604,16 +1602,6 @@ CREATE TABLE public.schedule_executions (
 
 
 --
--- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.schema_migrations (
-    file_name text NOT NULL,
-    applied_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
 -- Name: step_executions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2568,14 +2556,6 @@ ALTER TABLE ONLY public.schedule_executions
 
 ALTER TABLE ONLY public.schedule_executions
     ADD CONSTRAINT schedule_executions_unique UNIQUE (trigger_id, scheduled_at);
-
-
---
--- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.schema_migrations
-    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (file_name);
 
 
 --
@@ -6095,13 +6075,9 @@ ALTER TABLE ONLY public.users
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Q5HvLejcaJHhMtgyiblmH65bWCt8UlHiYGfMkV11bePElvzAoJIpSJsLyoZfF7F
-
 --
 -- PostgreSQL database dump
 --
-
-\restrict QtqRrV5zMHmqn8VHmeu4amj6RrEDn5iKLP0nhbJGAVUsV1BtVg2dolJXpl0eDFt
 
 -- Dumped from database version 16.14 (Debian 16.14-1.pgdg12+1)
 -- Dumped by pg_dump version 16.14 (Debian 16.14-1.pgdg12+1)
@@ -6142,6 +6118,4 @@ INSERT INTO public.modules (key, name, href, sort_order, created_at, parent_key)
 --
 -- PostgreSQL database dump complete
 --
-
-\unrestrict QtqRrV5zMHmqn8VHmeu4amj6RrEDn5iKLP0nhbJGAVUsV1BtVg2dolJXpl0eDFt
 
