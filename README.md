@@ -40,19 +40,7 @@ Run the admin auth schema migration:
 npm run db:migrate
 ```
 
-Seed the first company and first owner admin from environment variables:
-
-```bash
-npm run db:seed:first-admin
-```
-
-Required seed variables:
-
-- `SEED_COMPANY_NAME`
-- `SEED_COMPANY_SLUG`
-- `SEED_ADMIN_NAME`
-- `SEED_ADMIN_EMAIL`
-- `SEED_ADMIN_PASSWORD`
+Create the first company and first owner admin directly via SQL (or your own tooling) — there is no seed script for this.
 
 The migration creates:
 
