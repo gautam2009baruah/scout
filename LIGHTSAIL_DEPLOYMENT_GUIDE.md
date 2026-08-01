@@ -55,13 +55,6 @@ node -v
 ```
 This adds NodeSource's package repository (so `apt` knows where to find a current Node.js, since Ubuntu's own repos usually lag behind) and installs Node 20+, `git`, and `build-essential` (C/C++ compiler toolchain some npm packages need to compile native addons during `npm install`). `node -v` should print something like `v20.x.x` to confirm.
 
-One dependency in this project (`puppeteer`) needs some shared libraries Ubuntu doesn't ship by default:
-```bash
-sudo apt install -y libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-  libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 \
-  libpango-1.0-0 libasound2
-```
-
 ---
 
 ## Part 3: Install Docker (for Postgres)

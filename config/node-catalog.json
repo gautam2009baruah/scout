@@ -70,13 +70,13 @@
         "field": "targetUrl",
         "type": "string",
         "required": false,
-        "description": "Expression-evaluated. If present, switches execution into browser-automation mode against this URL."
+        "description": "Expression-evaluated. Passed through to executeGuidedWorkflow as informational context (falls back to the workflow's targetAppName if unset) — does not change execution mode."
       },
       {
         "field": "waitForCompletion",
         "type": "boolean",
         "required": false,
-        "description": "Only applies in standard (non-targetUrl) mode; polls until the workflow finishes."
+        "description": "Polls until the workflow finishes."
       },
       {
         "field": "inputMapping",
@@ -100,7 +100,7 @@
         "field": "timeout",
         "type": "number",
         "required": false,
-        "description": "Milliseconds; default 300000 (5 min) when waiting for completion or in browser mode."
+        "description": "Milliseconds; default 300000 (5 min) when waiting for completion."
       },
       {
         "field": "triggerPhrases",
@@ -124,23 +124,20 @@
     "validationRules": [
       "If triggerPhrases configured and context.matchedPhrase/matchedIntent don't match, returns { success:true, skipped:true } (soft skip, not an error).",
       "workflowId required — throws \"Workflow ID is required\" if blank.",
-      "workflowId must match UUID regex /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, else throws with a diagnostic dump of available context keys.",
-      "In targetUrl (browser) mode: looked-up workflow must exist and have status === \"published\", else throws."
+      "workflowId must match UUID regex /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, else throws with a diagnostic dump of available context keys."
     ],
     "outputShape": {
-      "success": "mapWorkflowOutput(...) => { executionId, workflowId, workflowTitle, status, steps, duration, ...executionResult.output }; browser mode additionally sets output._browserPage (live Puppeteer Page handle passed to downstream nodes, e.g. data_capture).",
-      "failure": "If continueOnFailure: { error, status?, failed:true } (browser mode) or { ...output, error/timeout:true, failed:true } (standard mode with wait). Otherwise { success:false, error }."
+      "success": "mapWorkflowOutput(...) => { executionId, workflowId, workflowTitle, status, steps, duration, ...executionResult.output }.",
+      "failure": "If continueOnFailure and waiting for completion: { ...output, error/timeout:true, failed:true }. Otherwise { success:false, error }."
     },
     "preconditionsAndSideEffects": [
-      "Browser-automation mode: runs a real Puppeteer browser (headless:false) via executeBrowserWorkflow — visible browser automation with real side effects on whatever site it drives.",
-      "Queries the `users` table (joined to `roles`) to resolve an active user to run the workflow as, in browser mode.",
-      "Reads guided workflow definition via getGuidedWorkflowById.",
-      "Standard mode calls executeGuidedWorkflow / waitForWorkflowCompletion (lib/guided-workflows/executor) which itself drives workflow execution and polling.",
-      "No LLM calls in this handler."
+      "Calls executeGuidedWorkflow / waitForWorkflowCompletion (lib/guided-workflows/executor), which records server-side execution state — the actual step-by-step run happens client-side via the interactive Scout Player (public/scout-orchestration-player.js), which reports back through the /continue API route.",
+      "No LLM calls in this handler.",
+      "A previous \"browser-automation mode\" (targetUrl launching a real Puppeteer browser server-side) existed early on but was never used in practice and has been removed; targetUrl is now purely informational."
     ],
-    "permissionGating": "No role/permission check gates whether this node is allowed to run. However, in browser-automation mode the handler resolves a user from the `users`/`roles` tables and hard-codes `isAdminRole: true` on the session object it builds for guided-workflow lookup, with an explicit comment that this is a trusted server-side execution context electing to treat the resolved service user as administrative for that lookup — this is a privilege-elevation implementation detail, not an execution permission gate on the node.",
-    "riskTier": "high",
-    "riskTierRationale": "Drives a real, visible browser against external sites in automation mode; resolves a privileged (isAdminRole:true) session internally."
+    "permissionGating": "No role/permission check gates whether this node is allowed to run.",
+    "riskTier": "medium",
+    "riskTierRationale": "Triggers execution of a guided workflow (which can perform real actions via the client player), but no longer drives a privileged, unattended server-side browser session."
   },
   {
     "name": "Data Capture",

@@ -7,9 +7,6 @@ import {
   executeGuidedWorkflow,
   waitForWorkflowCompletion,
 } from "@/lib/guided-workflows/executor";
-import { executeBrowserWorkflow } from "../browser-executor";
-import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
-import { getPool } from "@/lib/db/pool";
 
 export async function executeWorkflowNode(
   config: WorkflowNodeConfig,
@@ -127,103 +124,11 @@ export async function executeWorkflowNode(
     // Determine user ID from context if available
     const userId = context.userId ? String(context.userId) : undefined;
 
-    // **BROWSER AUTOMATION MODE** - If target URL is provided, use automated browser execution
-    if (targetUrl) {
-      // Get session for workflow access - query user from database
-      const systemContext = context._system as { triggeredBy?: string } | undefined;
-      const triggeredBy = systemContext?.triggeredBy;
-      const triggeredByEmail = triggeredBy && triggeredBy.includes("@")
-        ? triggeredBy
-        : null;
-      
-      const pool = getPool();
-      const userResult = await pool.query(
-        `SELECT u.id, u.email, u.company_id, r.is_admin_role
-         FROM users u
-         JOIN roles r ON u.role_id = r.id
-         WHERE u.status = 'active'
-           AND ($1::text IS NULL OR u.email = $1::text)
-         ORDER BY
-           CASE WHEN $1::text IS NOT NULL AND u.email = $1::text THEN 0 ELSE 1 END,
-           r.is_admin_role DESC,
-           u.created_at ASC
-         LIMIT 1`,
-        [triggeredByEmail]
-      );
-      
-      if (userResult.rows.length === 0) {
-        throw new Error(triggeredByEmail
-          ? `User not found or inactive: ${triggeredByEmail}`
-          : "No active user is available for scheduled workflow execution");
-      }
-
-      const user = userResult.rows[0];
-      const session = {
-        user: {
-          id: user.id,
-          email: user.email,
-          // This is a trusted server-side orchestration execution. Treat its
-          // resolved service user as administrative for workflow lookup so a
-          // legacy email-based user id is never bound to a UUID access check.
-          isAdminRole: true,
-          tenantId: user.company_id,
-        },
-      } as any;
-
-      // Get workflow details to access recorded steps
-      const workflow = await getGuidedWorkflowById(workflowId, session);
-      
-      if (!workflow) {
-        throw new Error(`Workflow not found: ${workflowId}`);
-      }
-
-      if (workflow.status !== "published") {
-        throw new Error(`Workflow is not published: ${workflow.status}`);
-      }
-
-      // Execute workflow in automated browser
-      const browserResult = await executeBrowserWorkflow({
-        workflowId,
-        targetUrl,
-        steps: workflow.recordedActions || [],
-        parameters: workflowInputs,
-        timeout: config.timeout || 300000,
-        headless: false, // Always visible so user can login if needed
-      });
-
-      if (!browserResult.success) {
-        if (config.continueOnFailure) {
-          return {
-            success: true,
-            output: {
-              error: browserResult.error,
-              status: browserResult.status,
-              failed: true,
-            },
-          };
-        }
-        return { success: false, error: browserResult.error };
-      }
-
-      // Map browser execution output
-      const output = mapWorkflowOutput({
-        executionId: browserResult.executionId,
-        workflowId,
-        workflowTitle: workflow.title,
-        status: browserResult.status,
-        output: browserResult.output,
-      });
-
-      // Include browser page reference if kept open
-      if (browserResult.page) {
-        output._browserPage = browserResult.page;
-      }
-
-      return { success: true, output };
-    }
-
-    // **STANDARD MODE** - No target URL, use existing execution method
-    // Execute the guided workflow (always auto mode)
+    // Execute the guided workflow (always auto mode). targetUrl is passed
+    // through to executeGuidedWorkflow below — the interactive client player
+    // (public/scout-orchestration-player.js) is what actually runs "workflow"
+    // and "data_capture" steps in the browser; this call just kicks off /
+    // records the server-side execution state.
     const executionResult = await executeGuidedWorkflow({
       workflowId,
       userId,

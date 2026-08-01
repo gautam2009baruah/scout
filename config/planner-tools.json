@@ -24,7 +24,7 @@
   },
   {
     "name": "workflow",
-    "description": "Executes an existing Scout guided (browser-recorded) workflow, either by replaying it in a real, visible browser against a target URL (with real side effects on whatever site it drives) or via the standard guided-workflow executor. Use when the task should drive an existing recorded workflow rather than call an API directly.",
+    "description": "Executes an existing Scout guided (browser-recorded) workflow via the standard guided-workflow executor. The step-by-step run happens client-side in the end user's own browser via the interactive Scout Player. Use when the task should drive an existing recorded workflow rather than call an API directly.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -39,11 +39,11 @@
         },
         "targetUrl": {
           "type": "string",
-          "description": "If present, switches execution into browser-automation mode: launches a real (visible, non-headless) Puppeteer browser and replays the workflow against this URL. The looked-up workflow must have status \"published\"."
+          "description": "Informational only; passed through to the execution context (falls back to the workflow's target app name if unset). Does not change execution mode."
         },
         "waitForCompletion": {
           "type": "boolean",
-          "description": "Standard (non-targetUrl) mode only: poll until the workflow finishes before continuing to the next node."
+          "description": "Poll until the workflow finishes before continuing to the next node."
         },
         "inputMapping": {
           "type": "object",
@@ -70,7 +70,7 @@
         },
         "timeout": {
           "type": "number",
-          "description": "Milliseconds to wait for completion in browser or wait-for-completion mode. Defaults to 300000 (5 minutes)."
+          "description": "Milliseconds to wait for completion when waitForCompletion is set. Defaults to 300000 (5 minutes)."
         },
         "triggerPhrases": {
           "type": "array",
@@ -91,7 +91,7 @@
   },
   {
     "name": "data_capture",
-    "description": "Injects a visual review/capture overlay into a live browser page carried over from a preceding Workflow node, so the chat UI can show and let the user confirm data captured from that page. Requires an active browser page from an earlier workflow node — placing this node without one causes it to fail.",
+    "description": "Client-run node: shows a visual review/capture overlay in the end user's browser (via the interactive Scout Player) so they can confirm data captured from a preceding Workflow node's page. Only works within an interactive, client-driven orchestration run — placing this in a scheduled/automated-only flow with no client player causes it to fail.",
     "input_schema": {
       "type": "object",
       "properties": {

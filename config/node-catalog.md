@@ -53,9 +53,17 @@ execution context.
 
 ## Workflow (`workflow`)
 
-Executes an existing Scout guided (browser-recorded) workflow, either via
-automated Puppeteer browser replay against a target URL, or via the standard
-guided-workflow executor with optional wait-for-completion.
+Executes an existing Scout guided (browser-recorded) workflow via the
+standard guided-workflow executor, with optional wait-for-completion. The
+actual step-by-step run happens client-side, driven by the interactive Scout
+Player (`public/scout-orchestration-player.js`) in the end user's own
+browser, which reports back through the `/continue` API route — this handler
+just kicks off / tracks the server-side execution record.
+
+A previous "browser-automation mode" (Puppeteer launching a real, visible
+browser server-side when `targetUrl` was set) existed early on but was never
+used in practice and has been removed. `targetUrl` is now purely
+informational, passed through to the execution context.
 
 - **Handler**: `lib/orchestrations/nodes/workflow-node.ts`
 - **Config** (`WorkflowNodeConfig`):
@@ -64,8 +72,8 @@ guided-workflow executor with optional wait-for-completion.
   | `type` | `"workflow"` | yes | |
   | `workflowId` | `string` | TS-optional, runtime-required | must be a UUID; handler throws if blank/malformed |
   | `workflowVersion` | `number` | no | unused by this handler |
-  | `targetUrl` | `string` | no | if present, switches to browser-automation mode |
-  | `waitForCompletion` | `boolean` | no | standard-mode only |
+  | `targetUrl` | `string` | no | informational only; falls back to the workflow's `targetAppName` if unset |
+  | `waitForCompletion` | `boolean` | no | polls until the workflow finishes |
   | `inputMapping` | `Record<string,string>` | yes | maps workflow inputs to context expressions |
   | `outputMapping` | `OutputMappingField[]` | no | **declared but never wired up — see Surprising Findings** |
   | `continueOnFailure` | `boolean` | yes | swallow failures into `{error, failed:true}` output |
@@ -74,54 +82,36 @@ guided-workflow executor with optional wait-for-completion.
   | `autoFillFromDataCapture` | `boolean` | no | not read by this handler |
   | `autoAdvancement` | `boolean` | no | not read by this handler |
 - **Validation**: trigger-phrase mismatch → soft skip; missing `workflowId` →
-  throw; non-UUID `workflowId` → throw; in browser mode, target workflow must
-  be `status === "published"`.
+  throw; non-UUID `workflowId` → throw.
 - **Output (success)**: `{ executionId, workflowId, workflowTitle, status,
-  steps, duration, ...output }`; browser mode also sets `_browserPage` (live
-  Puppeteer page handle for a following Data Capture node).
+  steps, duration, ...output }`.
 - **Output (failure, continueOnFailure=true)**: `{ error, failed:true, ... }`.
-- **Side effects**: drives a real, visible Puppeteer browser
-  (`executeBrowserWorkflow`, `headless:false`) in target-URL mode; queries
-  `users`/`roles` tables to resolve an execution user; reads the guided
-  workflow definition; standard mode delegates to
-  `lib/guided-workflows/executor`. No LLM calls.
-- **Permission gating**: no execution-level check. In browser mode the
-  handler resolves a user from `users`/`roles` and hard-codes
-  `isAdminRole: true` on the session object used for the guided-workflow
-  lookup, with a comment noting this is a trusted server-side execution
-  context electing to treat the resolved service user as administrative for
-  that lookup — a privilege-elevation implementation detail, not a
-  permission gate on who may run the node.
-- **Risk tier**: high — Drives a real, visible browser against external sites in automation mode; resolves a privileged (isAdminRole:true) session internally.
+- **Side effects**: delegates to `lib/guided-workflows/executor`
+  (`executeGuidedWorkflow` / `waitForWorkflowCompletion`), which records
+  server-side execution state. No LLM calls.
+- **Permission gating**: no execution-level check.
+- **Risk tier**: medium — triggers execution of a guided workflow (which can perform real actions via the client player), but no longer drives a privileged, unattended server-side browser session.
 
 ---
 
 ## Data Capture (`data_capture`)
 
-Injects a visual review/capture overlay into a live Puppeteer page (carried
-over from a prior Workflow node) so the frontend player can capture and let
-the user confirm page data.
+Client-run node type: the interactive Scout Player
+(`public/scout-orchestration-player.js`) executes this step directly in the
+end user's browser (showing a capture/review overlay and confirming page
+data), then reports completion back through the `/continue` API route.
 
-- **Handler**: `lib/orchestrations/nodes/data-capture-node.ts`
-- **Config** (`DataCaptureNodeConfig`):
-  | Field | Type | Required | Notes |
-  |---|---|---|---|
-  | `type` | `"data_capture"` | yes | |
-  | `mode` | `dom\|ai\|hybrid\|comprehensive` | yes | **declared but not branched on in this handler** |
-  | `showReviewScreen` | `boolean` | no | default true |
-  | `allowEdit` | `boolean` | no | default true; consumed only by an unused helper function |
-  | `autoReviewTimeout` | `number` | no | seconds; consumed only by an unused helper function |
-  | `pageWaitMs` | `number` | no | wait before injecting overlay |
-  | `outputVariable` | `string` | no | default `"capturedData"` |
-  | `continueOnFailure` | `boolean` | no | declared but not read anywhere in this handler |
-- **Validation**: requires `context._browserPage` (a Puppeteer `Page`) from a
-  prior node, else throws.
-- **Output**: `{ [outputVariable]: {} (always empty — real capture happens
-  client-side in the frontend player), _browserPage: page }`.
-- **Side effects**: injects DOM overlay HTML/CSS/JS into a live browser page
-  via `page.evaluate()`. No DB/HTTP/LLM calls.
-- **Permission gating**: none.
-- **Risk tier**: medium — Manipulates a live browser page and can surface captured page data, but has no external network/DB writes of its own.
+- **Handler**: none server-side. `lib/orchestrations/nodes/data-capture-node.ts`
+  used to implement this via a Puppeteer-carried browser page, but that relied
+  entirely on the removed "browser-automation mode" of the Workflow node
+  (see above) and was never used in practice, so it was deleted along with
+  Puppeteer as a dependency. `lib/orchestrations/engine.ts`'s `"data_capture"`
+  case now returns a clear failure if this node type is ever reached outside
+  an interactive, client-driven execution (e.g. from a scheduled trigger),
+  since there is no server-side executor for it.
+- **Config** (`DataCaptureNodeConfig`): unchanged — still a valid node type
+  for interactive/client-driven orchestrations; see `shared/orchestrationTypes.ts`.
+- **Risk tier**: n/a server-side (no server handler); the client-side capture/review UI runs in the end user's own browser.
 
 ---
 

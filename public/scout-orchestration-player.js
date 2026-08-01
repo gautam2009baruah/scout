@@ -118,6 +118,36 @@
     }
   }
 
+  // Key name and staleness window must stay in sync with
+  // scout-smart-adoption-player.js's copy (saveGuideResumeState) and
+  // scout-chatbot.js's copy (consumePendingGuideResumeId).
+  const GUIDE_RESUME_STORAGE_KEY = 'scout_guide_resume_state';
+  const GUIDE_RESUME_MAX_AGE_MS = 5 * 60 * 1000;
+
+  /**
+   * Consume (read + clear) a pending guide-level resume marker for this
+   * workflow, if one is present. scout-smart-adoption-player.js sets this
+   * right before a guide's own navigation/entry step causes a real page
+   * load — on the fresh load, calling handle.play() again (as opposed to
+   * handle.resume()) ignores that marker entirely and restarts the guide
+   * from scratch, re-showing the pre-workflow confirmation a second time.
+   */
+  function consumePendingGuideResumeId(expectedWorkflowId) {
+    if (!isSessionStorageAvailable()) return false;
+    try {
+      const raw = sessionStorage.getItem(GUIDE_RESUME_STORAGE_KEY);
+      if (!raw) return false;
+      sessionStorage.removeItem(GUIDE_RESUME_STORAGE_KEY);
+      const state = JSON.parse(raw);
+      if (!state || !state.guideId) return false;
+      if (Date.now() - (state._savedAt || 0) > GUIDE_RESUME_MAX_AGE_MS) return false;
+      return state.guideId === expectedWorkflowId;
+    } catch (e) {
+      console.error('❌ Failed to read guide resume state:', e);
+      return false;
+    }
+  }
+
   /**
    * Initialize orchestration player
    */
@@ -266,11 +296,20 @@
    */
   async function resumeOrchestration(savedState) {
     console.log('🔄 Resuming orchestration from saved state...');
-    
+
     // Log restored context for debugging
     const contextKeys = Object.keys(savedState.context || {});
     console.log(`   Restored context with ${contextKeys.length} fields:`, contextKeys);
-    
+
+    // Restore the API key used to authenticate the original execution, in case
+    // this freshly-loaded page's own config doesn't already have one (e.g. the
+    // widget install on this specific page hasn't set it for some reason).
+    // Prefer this page's own config if it already has a key.
+    if (!config.apiKey && savedState.apiKey) {
+      console.log('🔑 Restoring API key from saved orchestration state');
+      config.apiKey = savedState.apiKey;
+    }
+
     // Reconstruct payload from saved state
     const payload = {
       executionId: savedState.executionId,
@@ -541,6 +580,7 @@
               triggerData,
               targetAppId,
               scoutBaseUrl,
+              apiKey: config.apiKey,
               context,
               currentStep: i,
               totalSteps: executionPlan.length,
@@ -911,9 +951,14 @@
               }
               const pastGracePeriod = tooltipRemovedAt !== null && (Date.now() - tooltipRemovedAt) >= tooltipCloseGraceMs;
 
-              // Check if Scout has focused an input element
+              // Check if Scout has focused an input element. Must also be the element
+              // the current tooltip step is actually pointing at (marked with
+              // scout-adoption-highlight by scout-smart-adoption-player.js) — otherwise
+              // tabbing past the highlighted control to the next field on the page gets
+              // tracked as if it were this step's field, capturing an extra empty entry.
               if (document.activeElement &&
-                  ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+                  ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName) &&
+                  document.activeElement.classList.contains('scout-adoption-highlight')) {
 
                 const element = document.activeElement;
                 const elementKey = element.id || element.name || `${element.tagName}_${element.type}_${attempts}`;
@@ -1683,16 +1728,11 @@
     
     console.log('✅ Scout Player handle initialized');
 
-    // Navigate to target URL if needed
-    if (step.targetUrl && !window.location.href.includes(step.targetUrl)) {
-      console.log(`🧭 Navigating to: ${step.targetUrl}`);
-      window.location.href = step.targetUrl;
-
-      // Wait for navigation
-      await new Promise(resolve => {
-        window.addEventListener('load', resolve, { once: true });
-      });
-    }
+    // No separate navigation shortcut here — an orchestration's workflow step
+    // runs the exact same guide as running it standalone would, so navigation
+    // (including any "before workflow" confirmation and wait-for-click
+    // behavior) is entirely handled by the guide's own entry steps via
+    // handle.play() below, same as it always would be outside an orchestration.
 
     // Initialize element tracking list for data capture
     console.log('📋 Initializing unified Scout tooltip monitor...');
@@ -1733,9 +1773,18 @@
     // Set up unified monitor (tracks elements + auto-fills if data exists)
     setupUnifiedScoutMonitor(capturedData, step.workflowId, workflowConfig);
 
-    // Start the workflow using the handle (same as chatbot)
-    console.log(`▶️ Starting workflow: ${step.workflowId}`);
-    handle.play(step.workflowId);
+    // Start the workflow using the handle (same as chatbot). If this guide's
+    // own entry/navigation step already ran and caused a real page load
+    // (marker left by scout-smart-adoption-player.js), resume it instead of
+    // calling play() — play() always starts fresh and would re-show the
+    // pre-workflow confirmation and re-run entry steps a second time.
+    const isResumingGuide = consumePendingGuideResumeId(step.workflowId);
+    console.log(`▶️ ${isResumingGuide ? 'Resuming' : 'Starting'} workflow: ${step.workflowId}`);
+    if (isResumingGuide && handle.resume) {
+      handle.resume(step.workflowId);
+    } else {
+      handle.play(step.workflowId);
+    }
 
     return new Promise((resolve, reject) => {
       console.log(`⏳ Waiting for workflow completion via event...`);
@@ -1874,8 +1923,14 @@
   function isCapturableWorkflowStep(step) {
     const stepIdentity = step.elementIdentity || {};
     const isInputElement = stepIdentity.tagName && ['input', 'select', 'textarea'].includes(stepIdentity.tagName.toLowerCase());
-    const isInputStep = ['input', 'change', 'select', 'click', 'manual-select'].includes(step.type);
-    if (!isInputStep && !isInputElement) return false;
+    // 'click' is deliberately excluded here — it only used to count as a
+    // data-entry step unconditionally, which meant a click on a button, link,
+    // or other non-input element inflated the expected-field count and let
+    // stray tracked elements slip past the truncation safety-net below. A
+    // click on an actual input/select/textarea (e.g. a checkbox/radio) is
+    // still covered by the isInputElement fallback.
+    const isDataEntryStep = ['input', 'change', 'select', 'manual-select'].includes(step.type);
+    if (!isDataEntryStep && !isInputElement) return false;
     if (!step.selectorCandidates?.length && !stepIdentity.selectorCandidates?.length) return false;
     return true;
   }

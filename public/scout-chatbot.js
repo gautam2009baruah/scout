@@ -216,6 +216,22 @@
   }
 
   function resumeGuideIfPending(config) {
+    // An in-progress orchestration (scout-orchestration-player.js) owns guide
+    // resumption when one is pending — it needs to be the one calling
+    // handle.resume() so its own completion listener gets attached before the
+    // guide proceeds, keeping the resumed run wired into the orchestration's
+    // step tracking. If this function consumed the marker first (it runs
+    // synchronously, before the async-loaded orchestration player has even
+    // finished loading), the orchestration player would find nothing left to
+    // resume and fall back to play(), restarting the guide and re-showing its
+    // pre-workflow confirmation a second time. Leave the marker alone here
+    // whenever an orchestration is mid-flight; let it consume the marker itself.
+    try {
+      if (sessionStorage.getItem('scout_orchestration_state')) return;
+    } catch {
+      // Storage blocked/unavailable — fall through to the normal (storage-
+      // guarded) consumePendingGuideResumeId() path below, same as before.
+    }
     var guideId = consumePendingGuideResumeId();
     if (!guideId || !config.targetAppId) return;
     getPlayer(config).then(function (player) {
@@ -258,7 +274,8 @@
     global.ScoutOrchestrationConfig = {
       apiBaseUrl: scoutOrigin,
       scoutPlayerUrl: scoutOrigin + "/scout-smart-adoption-player.js?v=" + PLAYER_VERSION,
-      targetAppId: config.targetAppId || null
+      targetAppId: config.targetAppId || null,
+      apiKey: config.apiKey
     };
     var script = document.createElement("script");
     script.src = scoutOrigin + "/scout-orchestration-player.js";

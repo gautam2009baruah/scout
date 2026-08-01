@@ -93,7 +93,6 @@ export interface ExecutionStep {
   // Workflow-specific
   workflowId?: string;
   guideData?: unknown[];
-  targetUrl?: string;
   triggerPhrases?: string[];
   matchRequired?: boolean;
   inputMapping?: Record<string, string>;

@@ -210,7 +210,6 @@ async function buildExecutionPlan(
           if (guide?.recordedActions) {
             (step as any).workflowId = workflowConfig.workflowId;
             (step as any).guideData = guide.recordedActions;
-            (step as any).targetUrl = extractTargetUrl(guide.recordedActions);
             (step as any).triggerPhrases = workflowConfig.triggerPhrases;
             (step as any).matchRequired = workflowConfig.triggerPhrases && workflowConfig.triggerPhrases.length > 0;
             (step as any).inputMapping = workflowConfig.inputMapping; // For auto-fill
@@ -243,31 +242,4 @@ async function buildExecutionPlan(
   }
 
   return steps;
-}
-
-/**
- * Extract target URL from recorded actions
- */
-function extractTargetUrl(recordedActions: any[]): string | undefined {
-  if (!recordedActions || recordedActions.length === 0) {
-    return undefined;
-  }
-
-  // Find navigate action
-  const navigateAction = recordedActions.find((action: any) => action.type === 'navigate');
-  if (navigateAction?.url) {
-    return navigateAction.url;
-  }
-
-  // Extract from first action's URL
-  if (recordedActions[0]?.url) {
-    try {
-      const url = new URL(recordedActions[0].url);
-      return url.origin + url.pathname;
-    } catch {
-      return recordedActions[0].url;
-    }
-  }
-
-  return undefined;
 }

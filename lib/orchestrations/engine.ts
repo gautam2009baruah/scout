@@ -28,7 +28,6 @@ import type {
 } from "@/shared/orchestrationTypes";
 
 import { executeWorkflowNode } from "./nodes/workflow-node";
-import { executeDataCaptureNode } from "./nodes/data-capture-node";
 import { executeAIExtractionNode } from "./nodes/ai-extraction-node";
 import { executeAITaskNode } from "./nodes/ai-task-node";
 import { executeKnowledgeSearchNode } from "./nodes/knowledge-search-node";
@@ -425,7 +424,17 @@ export class OrchestrationEngine {
         return await executeWorkflowNode(config as WorkflowNodeConfig, this.context);
 
       case "data_capture":
-        return await executeDataCaptureNode(config as DataCaptureNodeConfig, this.context);
+        // "data_capture" is a client-run node type: the interactive Scout
+        // Player (public/scout-orchestration-player.js) executes it directly
+        // in the browser and reports back via /continue. There is no
+        // server-side executor — this engine only runs server-run node
+        // types, so reaching this case means a data_capture node was hit
+        // outside an interactive, client-driven execution (e.g. a scheduled
+        // trigger), which isn't supported.
+        return {
+          success: false,
+          error: "Data Capture nodes only run via the interactive Scout Player and cannot execute in a non-interactive context.",
+        };
 
       case "ai_extraction":
         return await executeAIExtractionNode(config as AIExtractionNodeConfig, this.context);
