@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
-import { createExecution, getConnections, getExecutionById, getActiveClarificationRequestForConversation, getNodes, getOrchestrationPage, getOrchestrationById, resolveClarificationRequest, updateExecution } from "@/lib/orchestrations/db";
+import { createExecution, getExecutionById, getActiveClarificationRequestForConversation, getOrchestrationPage, getOrchestrationById, getOrchestrationVersionSnapshot, resolveClarificationRequest, updateExecution } from "@/lib/orchestrations/db";
 import { createTriggerLog, getTriggers, updateTriggerLastTriggered } from "@/lib/orchestrations/triggers";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
@@ -39,7 +39,8 @@ type WorkflowRouterRequest = {
 type ChatbotWorkflowCandidate = {
   id: string;
   triggerId: string;
-  version: number;
+  versionMajor: number;
+  versionBuild: number;
   name: string;
   description: string;
   nodeSummary: string[];
@@ -208,7 +209,8 @@ function topologicalSort(
 
 async function loadChatbotWorkflowCandidates(
   companyId: string,
-  targetAppId: string
+  targetAppId: string,
+  environmentId: string
 ): Promise<ChatbotWorkflowCandidate[]> {
   // Chatbot callers are always scoped to a specific target app — never fall
   // back to every orchestration in the company. userId is an opaque,
@@ -231,17 +233,26 @@ async function loadChatbotWorkflowCandidates(
     status: "published",
     page: 1,
     pageSize: 100,
+    environmentId,
   });
 
   const candidates = await Promise.all(
     page.orchestrations.map(async (orchestration) => {
       const persistedTrigger = triggerByOrchestrationId.get(orchestration.id);
-      if (!persistedTrigger) {
+      if (!persistedTrigger || orchestration.releasedVersionMajor === undefined || orchestration.releasedVersionBuild === undefined) {
         return null;
       }
 
-      const nodes = await getNodes(orchestration.id);
-      const connections = await getConnections(orchestration.id);
+      // Version-pinned: describe the graph as it was at the environment's
+      // promoted version, not whatever's currently live — otherwise the
+      // matcher could describe a newer, unpromoted graph while execution
+      // later runs the old pinned one.
+      const snapshot = await getOrchestrationVersionSnapshot(orchestration.id, orchestration.releasedVersionMajor, orchestration.releasedVersionBuild);
+      if (!snapshot) {
+        return null;
+      }
+      const nodes = snapshot.nodes;
+      const connections = snapshot.connections;
       const triggerNode = nodes.find((node) => node.nodeType === "trigger");
 
       if (!triggerNode) {
@@ -263,7 +274,8 @@ async function loadChatbotWorkflowCandidates(
       return {
         id: orchestration.id,
         triggerId: persistedTrigger.id,
-        version: orchestration.version,
+        versionMajor: orchestration.releasedVersionMajor,
+        versionBuild: orchestration.releasedVersionBuild,
         name: orchestration.name,
         description: orchestration.description || "",
         nodeSummary: sortedNodes.map((node) => `${node!.label} (${node!.nodeType})`),
@@ -1092,7 +1104,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
+    const apiKeyRecord = await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
 
@@ -1114,7 +1126,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ suggestion: null });
       }
 
-      const candidates = await loadChatbotWorkflowCandidates(companyId, targetAppId);
+      const candidates = await loadChatbotWorkflowCandidates(companyId, targetAppId, apiKeyRecord.environmentId);
       const match = await findEligibleOrchestration(rawMessage, candidates, { forceActionMode: false });
       // Suggestions are review-only and cannot execute, so favor recall while
       // still requiring a meaningful orchestration match. A trigger configured
@@ -1212,9 +1224,11 @@ export async function POST(request: NextRequest) {
               });
             }
 
-            const nodes = await getNodes(orchestration.id);
-            const connections = await getConnections(orchestration.id);
-            const engine = new OrchestrationEngine(execution, nodes, connections);
+            const resumeSnapshot = await getOrchestrationVersionSnapshot(orchestration.id, execution.orchestrationVersionMajor, execution.orchestrationVersionBuild);
+            if (!resumeSnapshot) {
+              return NextResponse.json({ message: "This workflow's promoted version is no longer available." }, { status: 409 });
+            }
+            const engine = new OrchestrationEngine(execution, resumeSnapshot.nodes, resumeSnapshot.connections);
             const resumeResult = await engine.resumeAfterClarification({
               clarificationId: clarification.id,
               responseText: message,
@@ -1305,7 +1319,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const candidates = await loadChatbotWorkflowCandidates(companyId, targetAppId);
+    const candidates = await loadChatbotWorkflowCandidates(companyId, targetAppId, apiKeyRecord.environmentId);
 
     if (candidates.length === 0) {
       return NextResponse.json({
@@ -1470,7 +1484,8 @@ export async function POST(request: NextRequest) {
 
     const execution = await createExecution({
       orchestrationId: selected.id,
-      orchestrationVersion: selected.version,
+      orchestrationVersionMajor: selected.versionMajor,
+      orchestrationVersionBuild: selected.versionBuild,
       context: variableExtraction.values,
       triggerData: {
         triggerType: "chatbot",
@@ -1514,8 +1529,8 @@ export async function POST(request: NextRequest) {
     // can only run client-side, via the orchestration player script. Everything
     // else (pure API/DB/notification automations) keeps running server-side as
     // before — no behavior change for that class of orchestration.
-    const orchestrationNodes = await getNodes(selected.id);
-    const requiresClientExecution = orchestrationNodes.some(
+    const selectedSnapshot = await getOrchestrationVersionSnapshot(selected.id, selected.versionMajor, selected.versionBuild);
+    const requiresClientExecution = (selectedSnapshot?.nodes ?? []).some(
       (node) => node.nodeType === "workflow" || node.nodeType === "data_capture"
     );
 
@@ -1778,9 +1793,11 @@ async function executeChatbotExecution(input: {
   auditPayload: Record<string, unknown>;
 }) {
   try {
-    const nodes = await getNodes(input.orchestrationId);
-    const connections = await getConnections(input.orchestrationId);
-    const engine = new OrchestrationEngine(input.execution, nodes, connections);
+    const snapshot = await getOrchestrationVersionSnapshot(input.orchestrationId, input.execution.orchestrationVersionMajor, input.execution.orchestrationVersionBuild);
+    if (!snapshot) {
+      throw new Error("This workflow's promoted version is no longer available.");
+    }
+    const engine = new OrchestrationEngine(input.execution, snapshot.nodes, snapshot.connections);
     const result = await engine.execute();
 
     if (!result.success && input.triggerId) {

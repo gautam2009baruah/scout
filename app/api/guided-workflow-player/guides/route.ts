@@ -30,14 +30,15 @@ export async function GET(request: Request) {
     const companyId = companyIdentifier ? resolveGuidIdentifier(companyIdentifier, "company") : "";
     const targetAppId = targetAppIdentifier ? resolveGuidIdentifier(targetAppIdentifier, "target_app") : "";
 
-    const input = { targetAppId };
     const userId = searchParams.get("userId") || searchParams.get("user_id") || "";
 
-    await assertChatbotApiKeyAccess(request, {
+    const apiKeyRecord = await assertChatbotApiKeyAccess(request, {
       companyId,
-      targetAppId: input.targetAppId,
+      targetAppId,
       userId,
     });
+
+    const input = { targetAppId, environmentId: apiKeyRecord.environmentId };
 
     if (companyId || userId) {
       await assertScopedTargetAppAccess({

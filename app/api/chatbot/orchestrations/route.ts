@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { assertScopedTargetAppAccess, ScopedTargetAppAccessError } from "@/lib/chat/scoped-target-app-access";
-import { getNodes, getOrchestrationPage, getConnections } from "@/lib/orchestrations/db";
+import { getOrchestrationPage, getOrchestrationVersionSnapshot } from "@/lib/orchestrations/db";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 import { getActivePendingPlanRequest } from "@/lib/orchestrations/planner/pending-requests";
@@ -79,7 +79,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
+    const apiKeyRecord = await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId });
 
     await assertScopedTargetAppAccess({ companyId, userId, targetAppId });
 
@@ -92,7 +92,8 @@ export async function GET(request: Request) {
       targetAppId,
       status: "published",
       page: 1,
-      pageSize: 100
+      pageSize: 100,
+      environmentId: apiKeyRecord.environmentId
     });
 
     // The pending-request lock (Step 7): while this requester has a draft
@@ -105,8 +106,15 @@ export async function GET(request: Request) {
       : null;
 
     const orchestrations = (await Promise.all(page.orchestrations.map(async (orchestration) => {
-      const nodes = await getNodes(orchestration.id);
-      const connections = await getConnections(orchestration.id);
+      // Version-pinned: describe the graph as it was at the environment's
+      // promoted version, not whatever's currently live (see
+      // app/api/chatbot/workflow-router/route.ts's loadChatbotWorkflowCandidates
+      // for the same treatment on the matching/execution path).
+      if (orchestration.releasedVersionMajor === undefined || orchestration.releasedVersionBuild === undefined) return null;
+      const snapshot = await getOrchestrationVersionSnapshot(orchestration.id, orchestration.releasedVersionMajor, orchestration.releasedVersionBuild);
+      if (!snapshot) return null;
+      const nodes = snapshot.nodes;
+      const connections = snapshot.connections;
 
       // Filter to only include orchestrations with chatbot trigger
       const triggerNode = nodes.find(n => n.nodeType === "trigger");

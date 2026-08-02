@@ -38,8 +38,7 @@ export async function POST(request: Request) {
     const app = await createGuidedWorkflowTargetApp(
       {
         companyId: String(body.companyId ?? ""),
-        name: String(body.name ?? ""),
-        baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : ""
+        name: String(body.name ?? "")
       },
       auth.session
     );

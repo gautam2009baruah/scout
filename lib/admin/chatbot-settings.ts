@@ -235,6 +235,8 @@ export type ChatbotKeyEnvironmentRecord = {
   id: string;
   targetAppId: string;
   name: string;
+  url: string;
+  isProduction: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -282,6 +284,26 @@ function normalizeEnvironment(value: string) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "";
   return normalized.slice(0, 32);
+}
+
+function normalizeAndValidateUrl(value: string) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) {
+    throw new ChatbotSettingsError("A valid environment URL is required.", 400);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new ChatbotSettingsError("A valid environment URL is required.", 400);
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ChatbotSettingsError("A valid environment URL is required.", 400);
+  }
+
+  return trimmed;
 }
 
 function sanitizeConfigVarBase(value: string) {
@@ -1010,11 +1032,13 @@ export async function listChatbotKeyEnvironments(session: AdminSession, targetAp
     id: string;
     target_app_id: string;
     name: string;
+    url: string;
+    is_production: boolean;
     created_at: Date;
     updated_at: Date;
   }>(
     `
-      SELECT id, target_app_id, name, created_at, updated_at
+      SELECT id, target_app_id, name, url, is_production, created_at, updated_at
       FROM chatbot_api_key_environments
       WHERE target_app_id = $1
       ORDER BY name ASC
@@ -1026,12 +1050,14 @@ export async function listChatbotKeyEnvironments(session: AdminSession, targetAp
     id: row.id,
     targetAppId: row.target_app_id,
     name: row.name,
+    url: row.url,
+    isProduction: row.is_production,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   }));
 }
 
-export async function createChatbotKeyEnvironment(session: AdminSession, targetAppId: string, nameInput: string) {
+export async function createChatbotKeyEnvironment(session: AdminSession, targetAppId: string, nameInput: string, urlInput: string, isProduction: boolean) {
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
   await assertTargetAppAccess(session, companyId, targetAppId);
@@ -1041,6 +1067,7 @@ export async function createChatbotKeyEnvironment(session: AdminSession, targetA
   if (!normalized) {
     throw new ChatbotSettingsError("Environment name is required.", 400);
   }
+  const url = normalizeAndValidateUrl(urlInput);
 
   await getPool().query(
     `
@@ -1048,12 +1075,14 @@ export async function createChatbotKeyEnvironment(session: AdminSession, targetA
         target_app_id,
         name,
         normalized_name,
+        url,
+        is_production,
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $4)
+      VALUES ($1, $2, $3, $4, $5, $6, $6)
     `,
-    [targetAppId, normalized, normalized, session.user.id]
+    [targetAppId, normalized, normalized, url, isProduction === true, session.user.id]
   ).catch((error: unknown) => {
     if (error instanceof Error && /unique/i.test(error.message)) {
       throw new ChatbotSettingsError("Environment already exists.", 409);
@@ -1064,7 +1093,7 @@ export async function createChatbotKeyEnvironment(session: AdminSession, targetA
   return listChatbotKeyEnvironments(session, targetAppId);
 }
 
-export async function updateChatbotKeyEnvironment(session: AdminSession, id: string, nameInput: string) {
+export async function updateChatbotKeyEnvironment(session: AdminSession, id: string, nameInput: string, urlInput: string, isProduction: boolean) {
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
 
@@ -1072,6 +1101,7 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
   if (!normalized) {
     throw new ChatbotSettingsError("Environment name is required.", 400);
   }
+  const url = normalizeAndValidateUrl(urlInput);
 
   const existing = await getPool().query<{ normalized_name: string; target_app_id: string }>(
     `
@@ -1101,12 +1131,14 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
       UPDATE chatbot_api_key_environments
       SET name = $1,
           normalized_name = $2,
-          updated_by = $3,
+          url = $3,
+          is_production = $4,
+          updated_by = $5,
           updated_at = now()
-      WHERE id = $4
-        AND target_app_id = $5
+      WHERE id = $6
+        AND target_app_id = $7
     `,
-    [normalized, normalized, session.user.id, id, existing.rows[0].target_app_id]
+    [normalized, normalized, url, isProduction === true, session.user.id, id, existing.rows[0].target_app_id]
   ).catch((error: unknown) => {
     if (error instanceof Error && /unique/i.test(error.message)) {
       throw new ChatbotSettingsError("Environment already exists.", 409);

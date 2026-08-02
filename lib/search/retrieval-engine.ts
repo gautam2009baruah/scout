@@ -107,9 +107,27 @@ function metadataMatches(result: VectorSearchResult, hints: SearchMetadataHints)
   });
 }
 
-async function getAllowedFolderIds(companyId: string, targetAppId?: string) {
+async function getAllowedFolderIds(companyId: string, targetAppId?: string, environmentId?: string) {
   if (!targetAppId) {
     return null;
+  }
+
+  // The environment check only applies when the caller supplies one (the
+  // live, API-key-authenticated chat path always does — see
+  // app/chat/query/route.ts). Admin-facing test/search routes call retrieval
+  // without an environment and intentionally see all folders regardless of
+  // release state, same as they already bypass target-app scoping when
+  // targetAppId itself is omitted.
+  const params: unknown[] = [companyId, targetAppId];
+  let environmentClause = "";
+  if (environmentId) {
+    params.push(environmentId);
+    environmentClause = `
+          AND EXISTS (
+            SELECT 1 FROM folder_environment_releases fer
+            WHERE fer.folder_id = folders.id AND fer.environment_id = $${params.length}
+              AND fer.deleted_at IS NULL
+          )`;
   }
 
   const allowed = await getPool().query<{ id: string }>(
@@ -129,9 +147,9 @@ async function getAllowedFolderIds(companyId: string, targetAppId?: string) {
               AND app_scope.target_app_id = $2
               AND app_scope.deleted_at IS NULL
           )
-        )
+        )${environmentClause}
     `,
-    [companyId, targetAppId]
+    params
   );
 
   return new Set(allowed.rows.map((row) => row.id));
@@ -224,7 +242,7 @@ function scopedByMetadata(results: VectorSearchResult[], hints: SearchMetadataHi
 }
 
 export class RetrievalEngine {
-  static async retrieve(company_id: string, user_id: string, query: string, top_k = 10, target_app_id?: string): Promise<RetrievalResponse> {
+  static async retrieve(company_id: string, user_id: string, query: string, top_k = 10, target_app_id?: string, environment_id?: string): Promise<RetrievalResponse> {
     const normalizedQuery = query.trim();
     const requestedTopK = Math.min(8, Math.max(5, Number(top_k) || 8));
 
@@ -245,7 +263,7 @@ export class RetrievalEngine {
     const config = getRetrievalConfig();
     const normalized = normalizeAndExpandProcurementQuery(normalizedQuery);
     const metadataHints = parseMetadataHints(normalizedQuery);
-    const allowedFolderIds = await getAllowedFolderIds(company_id, target_app_id?.trim() || undefined);
+    const allowedFolderIds = await getAllowedFolderIds(company_id, target_app_id?.trim() || undefined, environment_id?.trim() || undefined);
 
     const attempts: RetrievalAttempt[] = [];
 

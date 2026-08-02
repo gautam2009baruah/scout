@@ -49,10 +49,14 @@ import {
   Check,
   Ban,
   Info,
+  Globe2,
+  History,
 } from "lucide-react";
 import type { NodeType, Orchestration, ManualTriggerConfig, OrchestrationTriggerType } from "@/shared/orchestrationTypes";
 import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 import { NodePropertiesPanel } from "./node-properties-panel";
+import { VersionedEnvironmentReleaseModal } from "./versioned-environment-release-modal";
+import { VersionHistoryModal, formatVersion } from "./version-history-modal";
 import { ManualTriggerDialog } from "./manual-trigger-dialog";
 import { ExecutionMonitor } from "./execution-monitor";
 import { OrchestrationList } from "./orchestration-list";
@@ -293,6 +297,14 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
   const [isListOpen, setIsListOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [showEnvironmentModal, setShowEnvironmentModal] = useState(false);
+  const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false);
+  // Set when a past published version is pulled into the canvas via Version
+  // history — distinct from orchestration.versionMajor/versionBuild (the
+  // last published version) so the designer can show both at once. Cleared
+  // on save (the canvas becomes the current draft again) or when switching
+  // orchestrations.
+  const [loadedVersion, setLoadedVersion] = useState<{ major: number; build: number } | null>(null);
   const [isNodePaletteCollapsed, setIsNodePaletteCollapsed] = useState(false);
   const [isTipsOpen, setIsTipsOpen] = useState(false);
   const [isNodeGuideOpen, setIsNodeGuideOpen] = useState(false);
@@ -471,6 +483,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
       savedStateRef.current = null;
       setHasUnsavedChanges(false);
       setSavedSincePublish(false);
+      setLoadedVersion(null);
       return;
     }
 
@@ -479,6 +492,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
     setHasUnsavedChanges(false);
     setNodes([]);
     setEdges([]);
+    setLoadedVersion(null);
     
     // Check if orchestration has saved changes since last publish
     const hasSavedChangesSincePublish = Boolean(
@@ -629,6 +643,66 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
         setConfirmDialog(null);
       },
     });
+  }
+
+  // Pulls a past published version's graph into the canvas — nothing is
+  // persisted here, the admin still has to Save/Publish, which is what
+  // creates a new latest version from it (see version-history-modal.tsx).
+  // Node/connection ids from the snapshot are only used as local React Flow
+  // keys during this editing session; Save always assigns fresh database
+  // ids for every node/connection regardless of what id it's given here
+  // (see the reload-from-database step inside saveOrchestration), so reusing
+  // old ids here is safe.
+  async function loadOrchestrationVersion(versionMajor: number, versionBuild: number) {
+    if (!orchestration) return;
+
+    const response = await fetch(`/api/admin/orchestrations/${orchestration.id}/versions/${versionMajor}/${versionBuild}`);
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      showToast(typeof body?.message === "string" ? body.message : "Unable to load version.", "error");
+      return;
+    }
+
+    const flowNodes: Node[] = (body.nodes || []).map((node: any) => ({
+      id: node.id,
+      type: "custom",
+      position: { x: node.positionX, y: node.positionY },
+      data: {
+        label: node.label,
+        nodeType: node.nodeType,
+        config: node.config,
+        displayDescription: node.displayDescription,
+        onDelete: deleteNode,
+      },
+    }));
+    setNodes(flowNodes);
+
+    const flowEdges: Edge[] = (body.connections || []).map((conn: any) => ({
+      id: conn.id,
+      source: conn.sourceNodeId,
+      target: conn.targetNodeId,
+      sourceHandle: conn.sourceHandle,
+      targetHandle: conn.targetHandle,
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: '#334155'
+      },
+      style: {
+        stroke: '#334155',
+        strokeWidth: 2
+      },
+      type: "smoothstep",
+      deletable: true,
+      focusable: true,
+      updatable: true,
+    }));
+    setEdges(flowEdges);
+
+    setHasUnsavedChanges(true);
+    setLoadedVersion({ major: versionMajor, build: versionBuild });
+    setShowVersionHistoryModal(false);
+    showToast(`Version v${versionMajor}.${String(versionBuild).padStart(3, "0")} loaded into the canvas — save or publish to make it current.`);
   }
 
   // Handle connection creation
@@ -863,7 +937,8 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
         edges: JSON.parse(JSON.stringify(edges)),
       };
       setHasUnsavedChanges(false);
-      
+      setLoadedVersion(null);
+
       // Track that we saved but haven't published yet
       if (orchestration.status === "published") {
         setSavedSincePublish(true);
@@ -1176,6 +1251,34 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                     <Upload className="h-4 w-4" />
                     {isPublishing ? "Publishing..." : "Publish"}
                   </button>
+                  {orchestration ? (
+                    <button
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => {
+                        if (!orchestration.targetAppId) {
+                          showToast("Assign a target app to this orchestration before releasing it to an environment.", "error");
+                          return;
+                        }
+                        setShowEnvironmentModal(true);
+                      }}
+                      title="Publishing alone does not make this available to chat users — release it to an environment too"
+                      type="button"
+                    >
+                      <Globe2 className="h-4 w-4" />
+                      Environments
+                    </button>
+                  ) : null}
+                  {orchestration ? (
+                    <button
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={() => setShowVersionHistoryModal(true)}
+                      title="Load an earlier published version's graph back into the canvas"
+                      type="button"
+                    >
+                      <History className="h-4 w-4" />
+                      Version history
+                    </button>
+                  ) : null}
                   {shouldShowRunButton && (
                     <button
                       className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
@@ -1195,8 +1298,13 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
         {orchestration && (
           <div className="flex w-full min-w-0 items-center justify-between gap-2 sm:w-auto sm:justify-end">
             <span className="truncate text-sm font-semibold text-slate-700">
-              {orchestration.name} <span className="text-xs text-slate-500">v{orchestration.version}</span>
+              {orchestration.name} <span className="text-xs text-slate-500">Published: v{formatVersion(orchestration.versionMajor, orchestration.versionBuild)}</span>
             </span>
+            {loadedVersion !== null ? (
+              <span className="ml-2 rounded-full border border-indigo-200 bg-indigo-100 px-2 py-1 text-xs font-semibold text-indigo-700">
+                Loaded: v{formatVersion(loadedVersion.major, loadedVersion.build)}
+              </span>
+            ) : null}
             {hasUnsavedChanges || savedSincePublish ? (
               <span className="ml-2 rounded-full px-2 py-1 text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-200">
                 Unpublished changes
@@ -1615,6 +1723,24 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
           </div>
         </div>
       )}
+      {showEnvironmentModal && orchestration && orchestration.targetAppId ? (
+        <VersionedEnvironmentReleaseModal
+          apiUrl={`/api/admin/orchestrations/${orchestration.id}/environments`}
+          onClose={() => setShowEnvironmentModal(false)}
+          onError={(message) => showToast(message, "error")}
+          onSaved={() => showToast("Environment releases updated.", "success")}
+          title={orchestration.name}
+        />
+      ) : null}
+      {showVersionHistoryModal && orchestration ? (
+        <VersionHistoryModal
+          listApiUrl={`/api/admin/orchestrations/${orchestration.id}/versions`}
+          onClose={() => setShowVersionHistoryModal(false)}
+          onError={(message) => showToast(message, "error")}
+          onLoad={loadOrchestrationVersion}
+          title={orchestration.name}
+        />
+      ) : null}
     </div>
   );
 }

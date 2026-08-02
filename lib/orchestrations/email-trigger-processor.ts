@@ -127,7 +127,7 @@ export async function processEmailTrigger(
     
     // Get orchestration details
     const orchResult = await pool.query(
-      `SELECT id, version, company_id, name FROM orchestrations
+      `SELECT id, published_version_major, published_version_build, company_id, name FROM orchestrations
        WHERE id = $1 AND status = 'published'`,
       [orchestrationId]
     );
@@ -141,7 +141,8 @@ export async function processEmailTrigger(
     // Create orchestration execution
     const execution = await createExecution({
       orchestrationId: orchestration.id,
-      orchestrationVersion: orchestration.version,
+      orchestrationVersionMajor: orchestration.published_version_major,
+      orchestrationVersionBuild: orchestration.published_version_build,
       context: {},
       triggerData: {
         type: "email",

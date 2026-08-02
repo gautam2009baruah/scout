@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, FileText, MoreVertical, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, FileText, Globe2, History, MoreVertical, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
 import type { Jodit as JoditInstance } from "jodit";
 import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
 import HealingSuggestionReviewer from "./healing-suggestion-reviewer-panel";
 import { useToast } from "./toast";
+import { VersionedEnvironmentReleaseModal } from "./versioned-environment-release-modal";
+import { VersionHistoryModal, formatVersion } from "./version-history-modal";
 
 type GuidedWorkflowManagerProps = {
   appBaseUrl: string;
@@ -61,12 +63,22 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   const [selectedId, setSelectedId] = useState(companyGuides[0]?.id ?? "");
   const selected = useMemo(() => companyGuides.find((guide) => guide.id === selectedId) ?? companyGuides[0] ?? null, [companyGuides, selectedId]);
   const [editor, setEditor] = useState<EditorState>(() => editorFromGuide(selected));
+  // Set when a past published version is pulled into the editor via Version
+  // history — distinct from the guide's own versionMajor/versionBuild (last
+  // published) so the console can show both at once. Cleared whenever the
+  // editor is reset from a guide's live state (switching guides, saving,
+  // refreshing).
+  const [loadedVersion, setLoadedVersion] = useState<{ major: number; build: number } | null>(null);
+
+  function applyGuideToEditor(guide: GuidedWorkflowRow | null) {
+    setEditor(editorFromGuide(guide));
+    setLoadedVersion(null);
+  }
   const [setupForm, setSetupForm] = useState({
     companyId: selectedCompanyId,
     targetAppMode: "new",
     targetAppId: "",
     appName: "",
-    baseUrl: "",
     sessionTitle: "New training session"
   });
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(recordingSessions[0]?.id ?? null);
@@ -121,7 +133,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     const guide = items.find((item) => item.id === selectedTopic.guideId);
     if (!guide || selectedId === guide.id) return;
     setSelectedId(guide.id);
-    setEditor(editorFromGuide(guide));
+    applyGuideToEditor(guide);
   }, [items, selectedId, selectedTopic?.guideId]);
 
   const [sessionDetailsRefreshToken, setSessionDetailsRefreshToken] = useState(0);
@@ -198,7 +210,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
 
   function selectGuide(guide: GuidedWorkflowRow) {
     setSelectedId(guide.id);
-    setEditor(editorFromGuide(guide));
+    applyGuideToEditor(guide);
   }
 
   function updateSetup(next: Partial<typeof setupForm>) {
@@ -212,7 +224,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
       ...current,
       targetAppId,
       appName: app?.name ?? "",
-      baseUrl: app?.baseUrl ?? "",
     }));
   }
 
@@ -223,7 +234,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
       body: JSON.stringify({
         companyId: selectedCompanyId,
         name: setupForm.appName,
-        baseUrl: setupForm.baseUrl,
       })
     });
     const body = await response.json().catch(() => null);
@@ -240,7 +250,6 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
       companyId: body.targetApp.companyId,
       targetAppId: body.targetApp.id,
       appName: body.targetApp.name,
-      baseUrl: body.targetApp.baseUrl,
     }));
     return body.targetApp.id as string;
   }
@@ -406,7 +415,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
 
     setItems((current) => [body.guide, ...current]);
     setSelectedId(body.guide.id);
-    setEditor(editorFromGuide(body.guide));
+    applyGuideToEditor(body.guide);
     setSessions((current) => current.map((session) => session.id === topic?.recordingSessionId ? { ...session, topics: session.topics.map((item) => item.id === topicId ? { ...item, guideId: body.guide.id, status: body.guide.status } : item) } : session));
     showToast(topic?.guideId ? "Topic draft updated." : "Topic draft generated from the synced actions.");
   }
@@ -440,7 +449,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     }
     setSessions((current) => current.map((session) => session.id === topic.recordingSessionId ? { ...session, topics: session.topics.map((item) => item.id === topic.id ? { ...item, status: body.guide.status } : item) } : session));
     setSelectedId(body.guide.id);
-    setEditor(editorFromGuide(body.guide));
+    applyGuideToEditor(body.guide);
     showToast("Guide published. Refresh the target app to see it.");
   }
 
@@ -469,7 +478,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
 
     setItems((current) => current.map((guide) => guide.id === body.guide.id ? body.guide : guide));
     setSelectedId(body.guide.id);
-    setEditor(editorFromGuide(body.guide));
+    applyGuideToEditor(body.guide);
     if (!options?.silent) {
       showToast(nextStatus === "published" ? "Guide saved and published. Refresh the target app to see it." : "Guide saved.");
     }
@@ -490,7 +499,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     }
 
     setItems((current) => current.map((guide) => guide.id === body.guide.id ? body.guide : guide));
-    setEditor(editorFromGuide(body.guide));
+    applyGuideToEditor(body.guide);
     showToast("Guide draft regenerated from recorded actions.");
   }
 
@@ -517,6 +526,33 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
     });
   }
 
+  // Pulls a past published version's content into the editor — nothing is
+  // persisted here, the admin still has to save/republish, which is what
+  // creates a new latest version from it (see version-history-modal.tsx).
+  async function loadGuideVersion(guideId: string, versionMajor: number, versionBuild: number) {
+    const response = await fetch(`/api/admin/guided-workflows/${guideId}/versions/${versionMajor}/${versionBuild}`);
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      showToast(typeof body?.message === "string" ? body.message : "Unable to load version.", "error");
+      return;
+    }
+
+    const content = body?.content;
+    if (!content) return;
+
+    setEditor((current) => ({
+      ...current,
+      title: content.title,
+      description: content.description,
+      preWorkflowConfirmationHtml: content.preWorkflowConfirmationHtml,
+      preWorkflowConfirmationEnabled: content.preWorkflowConfirmationEnabled,
+      steps: (content.steps as GuideStep[]).map((step) => ({ ...step, enabled: step.enabled !== false }))
+    }));
+    setLoadedVersion({ major: versionMajor, build: versionBuild });
+    showToast(`Version v${versionMajor}.${String(versionBuild).padStart(3, "0")} loaded into the editor — save or publish to make it current.`);
+  }
+
   async function applyStepDeletion(index: number) {
     if (!selected) return;
     const step = editor.steps[index];
@@ -536,7 +572,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
 
     setItems((current) => current.map((guide) => guide.id === body.guide.id ? body.guide : guide));
     setSelectedId(body.guide.id);
-    setEditor(editorFromGuide(body.guide));
+    applyGuideToEditor(body.guide);
     setSessionDetails((current) => ({
       ...current,
       actions: step.actionSourceId ? current.actions.filter((action) => action.id !== step.actionSourceId) : current.actions
@@ -665,7 +701,9 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
           deleteTopic={deleteTopic}
           deleteStep={confirmStepDeletion}
           editor={editor}
+          loadedVersion={loadedVersion}
           guides={items}
+          loadGuideVersion={loadGuideVersion}
           moveStep={moveStep}
           onRefresh={() => setSessionDetailsRefreshToken((current) => current + 1)}
           publishTopicGuide={publishTopicGuide}
@@ -707,13 +745,15 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   );
 }
 
-function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep, editor, guides, moveStep, onRefresh, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
+function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep, editor, guides, loadedVersion, loadGuideVersion, moveStep, onRefresh, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
   appBaseUrl: string;
   convertTopic(topicId: string): void;
   deleteTopic(topicId: string): void;
   deleteStep(index: number): void;
   editor: EditorState;
   guides: GuidedWorkflowRow[];
+  loadedVersion: { major: number; build: number } | null;
+  loadGuideVersion(guideId: string, versionMajor: number, versionBuild: number): Promise<void>;
   moveStep(index: number, direction: -1 | 1): void;
   onRefresh(): void;
   publishTopicGuide(topic: GuidedWorkflowTopicRow): void;
@@ -740,6 +780,8 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   const [documentActionPending, setDocumentActionPending] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionMenuRef = useRef<HTMLDivElement | null>(null);
+  const [showEnvironmentModal, setShowEnvironmentModal] = useState(false);
+  const [showVersionHistoryModal, setShowVersionHistoryModal] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => () => {
@@ -881,9 +923,17 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
             <p className="text-lg font-semibold text-slate-950">{selectedSession.title}</p>
-            <p className="mt-1 text-sm font-semibold text-slate-700">{selectedTopic.title}</p>
+            <p className="mt-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-700">
+              {selectedTopic.title}
+              {sessionGuide ? <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-600">Published: v{formatVersion(sessionGuide.versionMajor, sessionGuide.versionBuild)}</span> : null}
+              {loadedVersion !== null ? (
+                <span className="rounded-full border border-indigo-200 bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                  Loaded: v{formatVersion(loadedVersion.major, loadedVersion.build)}
+                </span>
+              ) : null}
+            </p>
             <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-              <span><span className="font-medium text-slate-700">Synced actions:</span> {syncedActionCount} • <span className="font-medium text-slate-700">Created:</span> {formatDate(selectedSession.createdAt)}</span>
+              <span><span className="font-medium text-slate-700">Synced actions:</span> {syncedActionCount} </span>
               <button
                 className="inline-flex h-6 items-center gap-1 rounded-full border border-slate-200 px-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:cursor-wait disabled:opacity-70"
                 disabled={isRefreshing}
@@ -949,6 +999,38 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
                   >
                     <FileText className="h-4 w-4" />
                     {generatedDocument ? "Regenerate Documentation" : "Generate Documentation"}
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!sessionGuide}
+                    onClick={() => {
+                      setActionMenuOpen(false);
+                      if (!sessionGuide?.targetAppId) {
+                        showToast("Assign a target app to this guide before releasing it to an environment.", "error");
+                        return;
+                      }
+                      setShowEnvironmentModal(true);
+                    }}
+                    role="menuitem"
+                    title="Publishing alone does not make this available to the live player — release it to an environment too"
+                    type="button"
+                  >
+                    <Globe2 className="h-4 w-4" />
+                    Environments
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={!sessionGuide}
+                    onClick={() => {
+                      setActionMenuOpen(false);
+                      setShowVersionHistoryModal(true);
+                    }}
+                    role="menuitem"
+                    title="Load an earlier published version's steps back into the editor"
+                    type="button"
+                  >
+                    <History className="h-4 w-4" />
+                    Version history
                   </button>
                   <button
                     className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50"
@@ -1293,6 +1375,27 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
             <HealingSuggestionReviewer embedded onClose={() => setHealingReviewStepId(null)} stepId={healingReviewStepId} workflowId={sessionGuide.id} />
           </div>
         </div>
+      ) : null}
+      {showEnvironmentModal && sessionGuide && sessionGuide.targetAppId ? (
+        <VersionedEnvironmentReleaseModal
+          apiUrl={`/api/admin/guided-workflows/${sessionGuide.id}/environments`}
+          onClose={() => setShowEnvironmentModal(false)}
+          onError={(message) => showToast(message, "error")}
+          onSaved={() => showToast("Environment releases updated.", "success")}
+          title={sessionGuide.title}
+        />
+      ) : null}
+      {showVersionHistoryModal && sessionGuide ? (
+        <VersionHistoryModal
+          listApiUrl={`/api/admin/guided-workflows/${sessionGuide.id}/versions`}
+          onClose={() => setShowVersionHistoryModal(false)}
+          onError={(message) => showToast(message, "error")}
+          onLoad={async (versionMajor, versionBuild) => {
+            await loadGuideVersion(sessionGuide.id, versionMajor, versionBuild);
+            setShowVersionHistoryModal(false);
+          }}
+          title={sessionGuide.title}
+        />
       ) : null}
     </section>
   );

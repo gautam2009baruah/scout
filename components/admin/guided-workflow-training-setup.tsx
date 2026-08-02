@@ -488,7 +488,6 @@ export function GuidedWorkflowTrainingSetup({ appBaseUrl, companies, recordingSe
               </button>
             </div>
           </div>
-          {selectedApp?.baseUrl ? <p className="text-xs text-slate-500">Target app URL: {selectedApp.baseUrl}</p> : null}
         </div>
       </section>
 

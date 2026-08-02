@@ -26,7 +26,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   try {
-    const environments = await updateChatbotKeyEnvironment(session, id, String(body.name || ""));
+    const environments = await updateChatbotKeyEnvironment(session, id, String(body.name || ""), String(body.url || ""), body.isProduction === true);
     return NextResponse.json({ environments });
   } catch (error) {
     if (error instanceof ChatbotSettingsError) {

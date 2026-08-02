@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
     // Create execution record
     const execution = await createExecution({
       orchestrationId,
-      orchestrationVersion: orchestration.version,
+      orchestrationVersionMajor: orchestration.versionMajor,
+      orchestrationVersionBuild: orchestration.versionBuild,
       context: {},
       triggerData,
       triggeredBy: session.user.email,

@@ -18,6 +18,10 @@ export type ChatQueryInput = {
   user_id: string;
   question: string;
   target_app_id?: string;
+  // Resolved server-side from the caller's embed API key
+  // (assertChatbotApiKeyAccess), never taken from client input — gates which
+  // environment-released RAG folders are searchable.
+  environment_id?: string;
   conversation_id?: string;
   top_k?: number;
   external_user_trace_id?: string;
@@ -337,7 +341,8 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
           // Create execution for matched orchestration
           const execution = await createExecution({
             orchestrationId: triggerMatch.orchestrationId,
-            orchestrationVersion: 1,
+            orchestrationVersionMajor: 1,
+            orchestrationVersionBuild: 0,
             context: triggerMatch.extractedVariables,
             triggerData: {
               triggerType: 'chatbot',
@@ -533,7 +538,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     conversationMessages: conversationWindow.messages
   });
 
-  const retrieval = await RetrievalEngine.retrieve(companyId, userId, retrievalQuery, topK, input.target_app_id?.trim() || undefined);
+  const retrieval = await RetrievalEngine.retrieve(companyId, userId, retrievalQuery, topK, input.target_app_id?.trim() || undefined, input.environment_id?.trim() || undefined);
 
   if (retrieval.chunks.length === 0) {
     const latencyMs = Date.now() - startedAt;

@@ -29,7 +29,6 @@ export type CompanyTargetApplication = {
   companyId: string;
   companyName: string;
   name: string;
-  baseUrl: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -500,7 +499,6 @@ export async function listCompanyTargetApplications(session: AdminSession): Prom
     company_id: string;
     company_name: string;
     name: string;
-    base_url: string;
     created_at: Date;
     updated_at: Date;
   }>(
@@ -510,7 +508,6 @@ export async function listCompanyTargetApplications(session: AdminSession): Prom
         company_target_applications.company_id,
         companies.name AS company_name,
         company_target_applications.name,
-        company_target_applications.base_url,
         company_target_applications.created_at,
         company_target_applications.updated_at
       FROM company_target_applications
@@ -542,14 +539,13 @@ export async function listCompanyTargetApplications(session: AdminSession): Prom
     companyId: row.company_id,
     companyName: row.company_name,
     name: row.name,
-    baseUrl: row.base_url,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }));
 }
 
 export async function createCompanyTargetApplication(
-  input: { companyId: string; name: string; baseUrl?: string },
+  input: { companyId: string; name: string },
   session: AdminSession
 ): Promise<CompanyTargetApplication> {
   assertCanManageMasterData(session);
@@ -561,7 +557,6 @@ export async function createCompanyTargetApplication(
     throw new MasterDataError("Target application name is required.");
   }
 
-  const baseUrl = input.baseUrl?.trim() ?? "";
   const client = await getPool().connect();
 
   try {
@@ -569,11 +564,11 @@ export async function createCompanyTargetApplication(
 
     const result = await client.query<{ id: string }>(
       `
-        INSERT INTO company_target_applications (company_id, name, base_url, created_by, updated_by)
-        VALUES ($1, $2, $3, $4, $4)
+        INSERT INTO company_target_applications (company_id, name, created_by, updated_by)
+        VALUES ($1, $2, $3, $3)
         RETURNING id
       `,
-      [input.companyId, name, baseUrl, session.user.id]
+      [input.companyId, name, session.user.id]
     );
 
     await client.query("COMMIT");
@@ -600,7 +595,7 @@ export async function createCompanyTargetApplication(
 
 export async function updateCompanyTargetApplication(
   id: string,
-  input: { name: string; baseUrl?: string },
+  input: { name: string },
   session: AdminSession
 ): Promise<CompanyTargetApplication> {
   assertCanManageMasterData(session);
@@ -632,10 +627,10 @@ export async function updateCompanyTargetApplication(
     const result = await getPool().query(
       `
         UPDATE company_target_applications
-        SET name = $2, base_url = $3, updated_by = $4, updated_at = now()
+        SET name = $2, updated_by = $3, updated_at = now()
         WHERE id = $1 AND deleted_at IS NULL
       `,
-      [id, name, input.baseUrl?.trim() ?? "", session.user.id]
+      [id, name, session.user.id]
     );
 
     if (result.rowCount !== 1) {

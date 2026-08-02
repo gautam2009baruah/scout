@@ -31,7 +31,6 @@ export async function GET(request: NextRequest) {
       targetApps: targetApps.map((app) => ({
         id: app.id,
         name: app.name,
-        base_url: app.baseUrl,
         created_at: app.createdAt,
       })),
     });

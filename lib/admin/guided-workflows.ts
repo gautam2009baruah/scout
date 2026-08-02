@@ -13,6 +13,8 @@ export type GuidedWorkflowRow = Guide & {
   topicId: string | null;
   recordedActions: RecordedAction[];
   createdByName: string | null;
+  versionMajor: number;
+  versionBuild: number;
 };
 
 export type GuidedWorkflowTargetAppRow = {
@@ -20,7 +22,6 @@ export type GuidedWorkflowTargetAppRow = {
   companyId: string;
   companyName: string;
   name: string;
-  baseUrl: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -91,6 +92,8 @@ function mapGuide(row: {
   title: string;
   description: string;
   status: GuideStatus;
+  version_major: number;
+  version_build: number;
   recorded_actions_json: RecordedAction[];
   steps_json: GuideStep[];
   pre_workflow_confirmation_html: string;
@@ -117,6 +120,8 @@ function mapGuide(row: {
     title: row.title,
     description: row.description,
     status: row.status,
+    versionMajor: row.version_major,
+    versionBuild: row.version_build,
     preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
     preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
     recordedActions,
@@ -291,6 +296,8 @@ const guideSelect = `
     guided_workflow_guides.title,
     guided_workflow_guides.description,
     guided_workflow_guides.status,
+    guided_workflow_guides.published_version_major AS version_major,
+    guided_workflow_guides.published_version_build AS version_build,
     guided_workflow_guides.recorded_actions_json,
     guided_workflow_guides.steps_json,
     guided_workflow_guides.pre_workflow_confirmation_html,
@@ -311,7 +318,6 @@ const targetAppSelect = `
     company_target_applications.company_id,
     companies.name AS company_name,
     company_target_applications.name,
-    company_target_applications.base_url,
     company_target_applications.created_at,
     company_target_applications.updated_at
   FROM company_target_applications
@@ -348,7 +354,6 @@ function mapTargetApp(row: {
   company_id: string;
   company_name: string;
   name: string;
-  base_url: string;
   created_at: Date;
   updated_at: Date;
 }): GuidedWorkflowTargetAppRow {
@@ -357,7 +362,6 @@ function mapTargetApp(row: {
     companyId: row.company_id,
     companyName: row.company_name,
     name: row.name,
-    baseUrl: row.base_url,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   };
@@ -505,7 +509,6 @@ export async function listGuidedWorkflowTargetApps(session: AdminSession) {
 export async function createGuidedWorkflowTargetApp(input: {
   companyId: string;
   name: string;
-  baseUrl?: string;
 }, session: AdminSession) {
   await assertCompanyAccess(input.companyId, session);
   const name = input.name.trim();
@@ -514,17 +517,16 @@ export async function createGuidedWorkflowTargetApp(input: {
     throw new GuidedWorkflowError("Target app name is required.");
   }
 
-  const baseUrl = input.baseUrl?.trim() || "";
   const canonicalTargetApp = await withPoolRetry(() =>
     getPool().query<{ id: string }>(
       `
-        INSERT INTO company_target_applications (company_id, name, base_url, created_by, updated_by)
-        VALUES ($1, $2, $3, $4, $4)
+        INSERT INTO company_target_applications (company_id, name, created_by, updated_by)
+        VALUES ($1, $2, $3, $3)
         ON CONFLICT (company_id, lower(name)) WHERE deleted_at IS NULL
-        DO UPDATE SET base_url = EXCLUDED.base_url, updated_by = EXCLUDED.updated_by, updated_at = now()
+        DO UPDATE SET updated_by = EXCLUDED.updated_by, updated_at = now()
         RETURNING id
       `,
-      [input.companyId, name, baseUrl, session.user.id]
+      [input.companyId, name, session.user.id]
     )
   );
 
@@ -687,10 +689,9 @@ export async function createGuidedWorkflowRecordingSession(input: {
     id: string;
     company_id: string;
     name: string;
-    base_url: string;
   }>(
     `
-      SELECT id, company_id, name, base_url
+      SELECT id, company_id, name
       FROM company_target_applications
       WHERE id = $1
         AND deleted_at IS NULL
@@ -1375,6 +1376,61 @@ export async function updateGuidedWorkflow(id: string, input: {
     params
   );
 
+  // Publishing snapshots the guide's current content as a new version — this
+  // is what environment promotion pins to, so editing/republishing never
+  // silently changes what an already-promoted environment serves. This
+  // publish becomes (nextMajor, nextBuild); only the build counter advances
+  // here — major only moves via a first-time production promotion (see
+  // promoteGuideToEnvironment).
+  if (input.status === "published") {
+    const nextResult = await getPool().query<{ next_major: number; next_build: number }>(
+      `SELECT next_major, next_build FROM guided_workflow_guides WHERE id = $1`,
+      [id]
+    );
+    const next = nextResult.rows[0];
+    if (next) {
+      const versionMajor = next.next_major;
+      const versionBuild = next.next_build;
+
+      const snapshotResult = await getPool().query<{
+        steps_json: GuideStep[];
+        title: string;
+        description: string;
+        pre_workflow_confirmation_html: string;
+        pre_workflow_confirmation_enabled: boolean;
+      }>(
+        `
+          UPDATE guided_workflow_guides
+          SET next_build = next_build + 1, published_version_major = $2, published_version_build = $3
+          WHERE id = $1
+          RETURNING steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled
+        `,
+        [id, versionMajor, versionBuild]
+      );
+      const snapshot = snapshotResult.rows[0];
+      if (snapshot) {
+        await getPool().query(
+          `
+            INSERT INTO guided_workflow_guide_versions
+              (guide_id, version_major, version_build, steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, created_by)
+            VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)
+          `,
+          [
+            id,
+            versionMajor,
+            versionBuild,
+            JSON.stringify(snapshot.steps_json),
+            snapshot.title,
+            snapshot.description,
+            snapshot.pre_workflow_confirmation_html,
+            snapshot.pre_workflow_confirmation_enabled,
+            session.user.id,
+          ]
+        );
+      }
+    }
+  }
+
   if (input.steps && currentGuide.topicId && recordedActions) {
     const actionRows = recordedActions
       .map((action, index) => ({
@@ -1554,7 +1610,7 @@ export async function createGuideFromRecordingSession(topicId: string, session: 
   return guide;
 }
 
-export async function getPublishedGuidesForPlayer(input: { targetAppId: string }) {
+export async function getPublishedGuidesForPlayer(input: { targetAppId: string; environmentId: string }) {
   if (!input.targetAppId) {
     throw new GuidedWorkflowError("Target app is required.");
   }
@@ -1566,7 +1622,8 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string }
     title: string;
     description: string;
     status: GuideStatus;
-    version: number;
+    version_major: number;
+    version_build: number;
     analytics_logging_enabled: boolean | null;
     steps_json: GuideStep[];
     pre_workflow_confirmation_html: string;
@@ -1578,25 +1635,30 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string }
       SELECT guided_workflow_guides.id,
              company_target_applications.company_id,
              guided_workflow_guides.topic_id,
-             guided_workflow_guides.title,
-             guided_workflow_guides.description,
+             gwv.title,
+             gwv.description,
              guided_workflow_guides.status,
-             guided_workflow_guides.version,
+             gwer.version_major, gwer.version_build,
              guided_workflow_topics.analytics_logging_enabled,
-             guided_workflow_guides.steps_json,
-             guided_workflow_guides.pre_workflow_confirmation_html,
-             guided_workflow_guides.pre_workflow_confirmation_enabled,
+             gwv.steps_json,
+             gwv.pre_workflow_confirmation_html,
+             gwv.pre_workflow_confirmation_enabled,
              guided_workflow_guides.created_at,
              guided_workflow_guides.updated_at
       FROM guided_workflow_guides
+      INNER JOIN guided_workflow_environment_releases gwer
+        ON gwer.guide_id = guided_workflow_guides.id AND gwer.environment_id = $2
+          AND gwer.deleted_at IS NULL
+      INNER JOIN guided_workflow_guide_versions gwv
+        ON gwv.guide_id = guided_workflow_guides.id AND gwv.version_major = gwer.version_major AND gwv.version_build = gwer.version_build
       LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
       LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_guides.target_app_id
       WHERE guided_workflow_guides.target_app_id = $1
         AND guided_workflow_guides.status = 'published'
         AND (guided_workflow_topics.id IS NULL OR guided_workflow_topics.deleted_at IS NULL)
-      ORDER BY updated_at DESC
+      ORDER BY guided_workflow_guides.updated_at DESC
     `,
-    [input.targetAppId]
+    [input.targetAppId, input.environmentId]
   );
 
   return result.rows.map((row) =>
@@ -1604,7 +1666,8 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string }
       id: row.id,
       companyId: row.company_id,
       topicId: row.topic_id,
-      version: Number(row.version ?? 1),
+      versionMajor: row.version_major,
+      versionBuild: row.version_build,
       analyticsLoggingEnabled: row.analytics_logging_enabled !== false,
       title: row.title,
       description: row.description,
@@ -1618,7 +1681,7 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string }
   );
 }
 
-export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId: string }): Promise<PlayerTrainingSession[]> {
+export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId: string; environmentId: string }): Promise<PlayerTrainingSession[]> {
   await getPublishedGuidesForPlayer(input);
 
   const result = await getPool().query<{
@@ -1646,13 +1709,13 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
         guided_workflow_topics.title AS topic_title,
         guided_workflow_topics.description AS topic_description,
         guided_workflow_guides.id AS guide_id,
-        guided_workflow_guides.description AS guide_description,
+        gwv.description AS guide_description,
         guided_workflow_guides.status AS guide_status,
         guided_workflow_topics.analytics_logging_enabled,
-        guided_workflow_guides.pre_workflow_confirmation_html,
-        guided_workflow_guides.pre_workflow_confirmation_enabled,
+        gwv.pre_workflow_confirmation_html,
+        gwv.pre_workflow_confirmation_enabled,
         guided_workflow_topics.actions_count,
-        guided_workflow_guides.steps_json,
+        gwv.steps_json,
         guided_workflow_guides.updated_at AS guide_updated_at,
         guided_workflow_topics.sort_order AS topic_sort_order
       FROM guided_workflow_recording_sessions
@@ -1660,6 +1723,11 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
         ON guided_workflow_topics.recording_session_id = guided_workflow_recording_sessions.id
       INNER JOIN guided_workflow_guides
         ON guided_workflow_guides.id = guided_workflow_topics.guide_id
+      INNER JOIN guided_workflow_environment_releases gwer
+        ON gwer.guide_id = guided_workflow_guides.id AND gwer.environment_id = $2
+          AND gwer.deleted_at IS NULL
+      INNER JOIN guided_workflow_guide_versions gwv
+        ON gwv.guide_id = guided_workflow_guides.id AND gwv.version_major = gwer.version_major AND gwv.version_build = gwer.version_build
       WHERE guided_workflow_recording_sessions.company_target_application_id = $1
         AND guided_workflow_guides.target_app_id = $1
         AND guided_workflow_guides.status = 'published'
@@ -1667,7 +1735,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
         AND guided_workflow_topics.deleted_at IS NULL
       ORDER BY guided_workflow_recording_sessions.updated_at DESC, guided_workflow_topics.sort_order ASC, guided_workflow_topics.created_at ASC
     `,
-    [input.targetAppId]
+    [input.targetAppId, input.environmentId]
   );
 
   const sessions = new Map<string, PlayerTrainingSession>();
@@ -1700,4 +1768,200 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
 
 function countEnabledSteps(steps: GuideStep[]) {
   return steps.filter((step) => step.enabled !== false).length;
+}
+
+// ============================================================================
+// Environment releases (version-pinned promotion — see
+// db/migrations/004_versioned_environment_releases.sql)
+// ============================================================================
+
+export type GuideEnvironmentReleaseRow = {
+  id: string;
+  name: string;
+  isProduction: boolean;
+  releasedVersionMajor: number | null;
+  releasedVersionBuild: number | null;
+  releasedAt: string | null;
+};
+
+export async function getGuideVersionInfo(guideId: string): Promise<{ versionMajor: number; versionBuild: number } | null> {
+  const result = await getPool().query<{ published_version_major: number; published_version_build: number }>(
+    `SELECT published_version_major, published_version_build FROM guided_workflow_guides WHERE id = $1`,
+    [guideId]
+  );
+  if ((result.rowCount ?? 0) === 0) {
+    return null;
+  }
+  return { versionMajor: result.rows[0].published_version_major, versionBuild: result.rows[0].published_version_build };
+}
+
+export async function getGuideEnvironmentReleases(guideId: string): Promise<GuideEnvironmentReleaseRow[]> {
+  const pool = getPool();
+  const guideResult = await pool.query<{ target_app_id: string | null }>(
+    `SELECT target_app_id FROM guided_workflow_guides WHERE id = $1`,
+    [guideId]
+  );
+  if ((guideResult.rowCount ?? 0) === 0) {
+    throw new GuidedWorkflowError("Guide not found.", 404);
+  }
+
+  const result = await pool.query<{
+    id: string;
+    name: string;
+    is_production: boolean;
+    released_version_major: number | null;
+    released_version_build: number | null;
+    released_at: Date | null;
+  }>(
+    `
+      SELECT env.id, env.name, env.is_production,
+        gwer.version_major AS released_version_major, gwer.version_build AS released_version_build, gwer.released_at
+      FROM chatbot_api_key_environments env
+      LEFT JOIN guided_workflow_environment_releases gwer
+        ON gwer.environment_id = env.id AND gwer.guide_id = $2 AND gwer.deleted_at IS NULL
+      WHERE env.target_app_id = $1
+      ORDER BY env.name ASC
+    `,
+    [guideResult.rows[0].target_app_id, guideId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    isProduction: row.is_production,
+    releasedVersionMajor: row.released_version_major,
+    releasedVersionBuild: row.released_version_build,
+    releasedAt: row.released_at?.toISOString() ?? null,
+  }));
+}
+
+// versionMajor/versionBuild select which published snapshot to promote — not
+// necessarily the latest. Lets an admin promote an older, already-tested
+// build instead of (or to roll back from) whatever was published most
+// recently. The major ratchet only advances the first time THIS build is
+// promoted to a production-flagged environment — re-promoting an
+// already-released build (to the same or a different production
+// environment) never bumps it again, and demoting a production environment
+// back to an old build never moves it backward either, since the ratchet
+// lives on the guide row, not on any environment's current pin.
+export async function promoteGuideToEnvironment(guideId: string, environmentId: string, versionMajor: number, versionBuild: number, actorUserId: string): Promise<void> {
+  const pool = getPool();
+  const versionResult = await pool.query<{ id: string; promoted_to_production: boolean }>(
+    `SELECT id, promoted_to_production FROM guided_workflow_guide_versions WHERE guide_id = $1 AND version_major = $2 AND version_build = $3`,
+    [guideId, versionMajor, versionBuild]
+  );
+  if ((versionResult.rowCount ?? 0) === 0) {
+    throw new GuidedWorkflowError(`Version ${versionMajor}.${String(versionBuild).padStart(3, "0")} of this guide was not found.`, 404);
+  }
+
+  const envResult = await pool.query<{ is_production: boolean }>(
+    `SELECT is_production FROM chatbot_api_key_environments WHERE id = $1`,
+    [environmentId]
+  );
+  if ((envResult.rowCount ?? 0) === 0) {
+    throw new GuidedWorkflowError("Environment not found.", 404);
+  }
+
+  await pool.query(
+    `
+      INSERT INTO guided_workflow_environment_releases
+        (guide_id, environment_id, version_major, version_build, released_at, released_by)
+      VALUES ($1, $2, $3, $4, now(), $5)
+      ON CONFLICT (guide_id, environment_id) DO UPDATE
+      SET version_major = EXCLUDED.version_major, version_build = EXCLUDED.version_build,
+        deleted_at = NULL, deleted_by = NULL, released_at = now(), released_by = $5
+    `,
+    [guideId, environmentId, versionMajor, versionBuild, actorUserId]
+  );
+
+  if (envResult.rows[0].is_production && !versionResult.rows[0].promoted_to_production) {
+    await pool.query(`UPDATE guided_workflow_guide_versions SET promoted_to_production = true WHERE id = $1`, [versionResult.rows[0].id]);
+    await pool.query(
+      `UPDATE guided_workflow_guides SET next_major = next_major + 1, next_build = 0 WHERE id = $1`,
+      [guideId]
+    );
+  }
+}
+
+export async function revokeGuideFromEnvironment(guideId: string, environmentId: string, actorUserId: string): Promise<void> {
+  await getPool().query(
+    `
+      UPDATE guided_workflow_environment_releases
+      SET deleted_at = now(), deleted_by = $3
+      WHERE guide_id = $1 AND environment_id = $2 AND deleted_at IS NULL
+    `,
+    [guideId, environmentId, actorUserId]
+  );
+}
+
+export type GuideVersionSummary = {
+  versionMajor: number;
+  versionBuild: number;
+  promotedToProduction: boolean;
+  createdAt: string;
+  changeNotes: string | null;
+};
+
+export async function listGuideVersionSummaries(guideId: string): Promise<GuideVersionSummary[]> {
+  const result = await getPool().query<{ version_major: number; version_build: number; promoted_to_production: boolean; created_at: Date; change_notes: string | null }>(
+    `SELECT version_major, version_build, promoted_to_production, created_at, change_notes FROM guided_workflow_guide_versions WHERE guide_id = $1 ORDER BY version_major DESC, version_build DESC`,
+    [guideId]
+  );
+
+  return result.rows.map((row) => ({
+    versionMajor: row.version_major,
+    versionBuild: row.version_build,
+    promotedToProduction: row.promoted_to_production,
+    createdAt: row.created_at.toISOString(),
+    changeNotes: row.change_notes,
+  }));
+}
+
+export type GuideVersionContent = {
+  versionMajor: number;
+  versionBuild: number;
+  title: string;
+  description: string;
+  steps: GuideStep[];
+  preWorkflowConfirmationHtml: string;
+  preWorkflowConfirmationEnabled: boolean;
+};
+
+// Loads a past published version's full content, for restoring it back into
+// the editor (see components/admin/guided-workflow-console.tsx) — loading
+// only updates the in-memory editor state, nothing is persisted until the
+// admin explicitly saves/republishes, which creates a new version from it.
+export async function getGuideVersionContent(guideId: string, versionMajor: number, versionBuild: number): Promise<GuideVersionContent | null> {
+  const result = await getPool().query<{
+    version_major: number;
+    version_build: number;
+    title: string;
+    description: string;
+    steps_json: GuideStep[];
+    pre_workflow_confirmation_html: string;
+    pre_workflow_confirmation_enabled: boolean;
+  }>(
+    `
+      SELECT version_major, version_build, title, description, steps_json, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled
+      FROM guided_workflow_guide_versions
+      WHERE guide_id = $1 AND version_major = $2 AND version_build = $3
+      LIMIT 1
+    `,
+    [guideId, versionMajor, versionBuild]
+  );
+
+  if ((result.rowCount ?? 0) === 0) {
+    return null;
+  }
+
+  const row = result.rows[0];
+  return {
+    versionMajor: row.version_major,
+    versionBuild: row.version_build,
+    title: row.title,
+    description: row.description,
+    steps: row.steps_json ?? [],
+    preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
+    preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
+  };
 }

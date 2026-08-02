@@ -50,7 +50,19 @@ export type Orchestration = {
   targetAppId?: string | null;
   name: string;
   description: string | null;
-  version: number;
+  // MAJOR.BUILD of the most recently published snapshot (e.g. 1.003) — null
+  // equivalent is 1/0 for a never-published orchestration, matching the old
+  // version column's default-of-1 behavior. BUILD increments on every
+  // publish; MAJOR only advances the first time a published build is
+  // promoted to a production-flagged environment (see
+  // promoteOrchestrationToEnvironment in lib/orchestrations/db.ts) — it's a
+  // one-way ratchet, never derived from what's currently live anywhere.
+  versionMajor: number;
+  versionBuild: number;
+  // The major/build the next publish() call will assign — exposed mainly so
+  // the designer can preview "this publish will become vX.Y" before it happens.
+  nextVersionMajor: number;
+  nextVersionBuild: number;
   status: OrchestrationStatus;
   variables: Record<string, unknown>;
   createdAt: string;
@@ -77,6 +89,11 @@ export type Orchestration = {
   // Planner draft with "Allow [requester] to re-run this from chat"
   // checked. Audit/provenance only — see db/migrations/135_ai_planner_step9.sql.
   originatingExternalUserId: string | null;
+  // Only populated by getOrchestrationPage when called with an environmentId
+  // filter (the live, API-key-authenticated chat matching path) — the
+  // orchestration_environment_releases version pinned for that environment.
+  releasedVersionMajor?: number;
+  releasedVersionBuild?: number;
 };
 
 // ============================================================================
@@ -658,7 +675,8 @@ export type OrchestrationExecutionStatus =
 export type OrchestrationExecution = {
   id: string;
   orchestrationId: string;
-  orchestrationVersion: number;
+  orchestrationVersionMajor: number;
+  orchestrationVersionBuild: number;
   status: OrchestrationExecutionStatus;
   context: Record<string, unknown>; // shared execution context
   triggerData: Record<string, unknown> | null;
@@ -721,7 +739,13 @@ export type OrchestrationApproval = {
 export type OrchestrationVersion = {
   id: string;
   orchestrationId: string;
-  version: number;
+  versionMajor: number;
+  versionBuild: number;
+  // True once this exact build has ever been promoted to a
+  // production-flagged environment — the trigger condition for bumping the
+  // major ratchet. Re-promoting it (to the same or another production
+  // environment) afterward never bumps it again.
+  promotedToProduction: boolean;
   snapshot: OrchestrationSnapshot;
   createdAt: string;
   createdById?: string | null;

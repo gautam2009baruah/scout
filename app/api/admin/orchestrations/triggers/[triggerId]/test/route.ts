@@ -44,7 +44,8 @@ export async function POST(
         ot.status,
         o.name as orchestration_name,
         o.status as orchestration_status,
-        o.version,
+        o.published_version_major,
+        o.published_version_build,
         o.company_id
        FROM orchestration_triggers ot
        INNER JOIN orchestrations o ON ot.orchestration_id = o.id
@@ -76,7 +77,8 @@ export async function POST(
     // Create execution record
     const execution = await createExecution({
       orchestrationId: trigger.orchestration_id,
-      orchestrationVersion: trigger.version,
+      orchestrationVersionMajor: trigger.published_version_major,
+      orchestrationVersionBuild: trigger.published_version_build,
       context: {
         trigger: {
           type: trigger.trigger_type,

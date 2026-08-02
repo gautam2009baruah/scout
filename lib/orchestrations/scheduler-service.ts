@@ -256,11 +256,12 @@ export class OrchestrationSchedulerService {
       // Get orchestration details
       const orchResult = await pool.query<{
         id: string;
-        version: number;
+        published_version_major: number;
+        published_version_build: number;
         name: string;
         variables: any;
       }>(
-        `SELECT id, version, name, variables
+        `SELECT id, published_version_major, published_version_build, name, variables
          FROM orchestrations
          WHERE id = $1 AND status = 'published'`,
         [trigger.orchestrationId]
@@ -279,7 +280,8 @@ export class OrchestrationSchedulerService {
       };
       const execution = await createExecution({
         orchestrationId: orchestration.id,
-        orchestrationVersion: orchestration.version,
+        orchestrationVersionMajor: orchestration.published_version_major,
+        orchestrationVersionBuild: orchestration.published_version_build,
         context: {
           trigger: {
             type: "schedule",

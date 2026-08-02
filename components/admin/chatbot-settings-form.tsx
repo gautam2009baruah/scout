@@ -10,13 +10,11 @@ import {
   KeyRound,
   Pause,
   Pencil,
-  Plus,
   RefreshCw,
   RotateCw,
   Save,
   Settings2,
   ShieldCheck,
-  Trash2,
   X
 } from "lucide-react";
 import type { ChatbotLifecycleSettings, ChatbotLifecycleSettingsRecord } from "@/lib/chat/lifecycle-settings";
@@ -208,12 +206,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   const [rotatedApiKey, setRotatedApiKey] = useState<string | null>(null);
   const [rotatedApiKeyCopied, setRotatedApiKeyCopied] = useState(false);
 
-  const [environmentModalOpen, setEnvironmentModalOpen] = useState(false);
-  const [environmentModalTargetAppId, setEnvironmentModalTargetAppId] = useState(defaultTargetAppId);
-  const [newEnvironmentName, setNewEnvironmentName] = useState("");
-  const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
-  const [editingEnvironmentName, setEditingEnvironmentName] = useState("");
-
   const { showToast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
 
@@ -233,7 +225,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
   const [loadingEmbedRecords, setLoadingEmbedRecords] = useState(false);
 
   const apiKeyEnvironments = apiKeyForm.targetAppId ? (environmentsByTargetApp[apiKeyForm.targetAppId] ?? []) : [];
-  const modalEnvironments = environmentModalTargetAppId ? (environmentsByTargetApp[environmentModalTargetAppId] ?? []) : [];
 
   const nonRevokedApiKeys = useMemo(
     () => apiKeys
@@ -574,89 +565,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
     });
   }
 
-  async function addEnvironment() {
-    const name = newEnvironmentName.trim();
-    if (!name) {
-      showToast("Environment name is required.", "error");
-      return;
-    }
-
-    const response = await fetch("/api/admin/chatbot-settings/environments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, targetAppId: environmentModalTargetAppId })
-    });
-
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      showToast(typeof body?.message === "string" ? body.message : "Unable to create environment.", "error");
-      return;
-    }
-
-    setEnvironmentsByTargetApp((current) => ({
-      ...current,
-      [environmentModalTargetAppId]: Array.isArray(body?.environments) ? body.environments : []
-    }));
-    setNewEnvironmentName("");
-    showToast("Environment created.", "success");
-  }
-
-  async function updateEnvironment(id: string) {
-    const name = editingEnvironmentName.trim();
-    if (!name) {
-      showToast("Environment name is required.", "error");
-      return;
-    }
-
-    const response = await fetch(`/api/admin/chatbot-settings/environments/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name })
-    });
-
-    const body = await response.json().catch(() => null);
-    if (!response.ok) {
-      showToast(typeof body?.message === "string" ? body.message : "Unable to update environment.", "error");
-      return;
-    }
-
-    const next = Array.isArray(body?.environments) ? body.environments : [];
-    const nextTargetAppId = next[0]?.targetAppId || environmentModalTargetAppId;
-    setEnvironmentsByTargetApp((current) => ({
-      ...current,
-      [nextTargetAppId]: next
-    }));
-    setEditingEnvironmentId(null);
-    setEditingEnvironmentName("");
-    await loadApiKeys();
-    showToast("Environment updated.", "success");
-  }
-
-  function requestDeleteEnvironment(id: string, name: string) {
-    setConfirmDialog({
-      title: "Delete Environment",
-      message: `Delete environment "${name}"? This is allowed only when no API key uses it.`,
-      confirmLabel: "Delete",
-      onConfirm: async () => {
-        setConfirmDialog(null);
-        const response = await fetch(`/api/admin/chatbot-settings/environments/${id}`, { method: "DELETE" });
-        const body = await response.json().catch(() => null);
-        if (!response.ok) {
-          showToast(typeof body?.message === "string" ? body.message : "Unable to delete environment.", "error");
-          return;
-        }
-
-        setEnvironmentsByTargetApp((current) => ({
-          ...current,
-          [environmentModalTargetAppId]: Array.isArray(body?.environments) ? body.environments : []
-        }));
-        if (apiKeyForm.environment === name) {
-          setApiKeyForm((current) => ({ ...current, environment: "" }));
-        }
-        showToast("Environment deleted.", "success");
-      }
-    });
-  }
 
   function copyRotatedApiKey() {
     if (!rotatedApiKey) return;
@@ -1004,7 +912,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
-                    <span className="inline-flex items-center gap-1.5">Environment <HelpHint text="Create and manage your own environment names. No default values are injected." /></span>
+                    <span className="inline-flex items-center gap-1.5">Environment <HelpHint text="Environments are created and managed under Company & Role Setup → Manage Environments." /></span>
                     <select
                       className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       onChange={(event) => setApiKeyForm((current) => ({ ...current, environment: event.target.value }))}
@@ -1018,26 +926,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                     </select>
                   </label>
 
-                  <div className="flex items-end">
-                    <div className="relative group">
-                      <button
-                        className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        onClick={() => {
-                          setEnvironmentModalTargetAppId(apiKeyForm.targetAppId);
-                          setEnvironmentModalOpen(true);
-                          void loadEnvironments(apiKeyForm.targetAppId).catch((error) => {
-                            showToast(error instanceof Error ? error.message : "Unable to load environments.", "error");
-                          });
-                        }}
-                        type="button"
-                        disabled={editingKeyId !== null}
-                        title="Create, edit, or delete environment values for this dropdown."
-                        aria-label="Manage environments"
-                      >
-                        <Plus className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-[2fr_1fr_auto] md:items-end">
@@ -1395,84 +1283,6 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
           ) : null}
         </div>
       </div>
-
-      {environmentModalOpen ? (
-        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-slate-900">Manage Environments</h3>
-              <button className="rounded-md border border-slate-200 p-2 text-slate-700" onClick={() => setEnvironmentModalOpen(false)} type="button">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]">
-              <select
-                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm md:col-span-2"
-                value={environmentModalTargetAppId}
-                onChange={(event) => {
-                  const nextTargetAppId = event.target.value;
-                  setEnvironmentModalTargetAppId(nextTargetAppId);
-                  setEditingEnvironmentId(null);
-                  setEditingEnvironmentName("");
-                  void loadEnvironments(nextTargetAppId).catch((error) => {
-                    showToast(error instanceof Error ? error.message : "Unable to load environments.", "error");
-                  });
-                }}
-              >
-                {sortedTargetApps.map((app) => (
-                  <option key={app.id} value={app.id}>{app.name}</option>
-                ))}
-              </select>
-              <input
-                className="h-10 rounded-lg border border-slate-200 px-3 text-sm"
-                placeholder="New environment name"
-                value={newEnvironmentName}
-                onChange={(event) => setNewEnvironmentName(event.target.value)}
-              />
-              <button className="inline-flex h-10 items-center rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white" onClick={addEnvironment} type="button">Add environment</button>
-            </div>
-
-            <div className="mt-4 max-h-64 overflow-auto rounded-lg border border-slate-200">
-              {modalEnvironments.length === 0 ? (
-                <p className="p-4 text-sm text-slate-500">No environments created yet.</p>
-              ) : (
-                <div className="divide-y divide-slate-200">
-                  {modalEnvironments.map((env) => (
-                    <div className="flex items-center gap-2 p-3" key={env.id}>
-                      {editingEnvironmentId === env.id ? (
-                        <input
-                          className="h-9 flex-1 rounded-md border border-slate-200 px-2 text-sm"
-                          value={editingEnvironmentName}
-                          onChange={(event) => setEditingEnvironmentName(event.target.value)}
-                        />
-                      ) : (
-                        <p className="flex-1 text-sm text-slate-800">{env.name}</p>
-                      )}
-
-                      {editingEnvironmentId === env.id ? (
-                        <>
-                          <button className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700" onClick={() => void updateEnvironment(env.id)} type="button">Save</button>
-                          <button className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700" onClick={() => { setEditingEnvironmentId(null); setEditingEnvironmentName(""); }} type="button">Cancel</button>
-                        </>
-                      ) : (
-                        <>
-                          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700" onClick={() => { setEditingEnvironmentId(env.id); setEditingEnvironmentName(env.name); }} type="button">
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 text-red-700" onClick={() => requestDeleteEnvironment(env.id, env.name)} type="button">
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {rotatedApiKey ? (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">

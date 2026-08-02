@@ -41,8 +41,9 @@ export async function POST(request: Request) {
     );
   }
 
+  let apiKeyRecord;
   try {
-    await assertChatbotApiKeyAccess(request, {
+    apiKeyRecord = await assertChatbotApiKeyAccess(request, {
       companyId: resolvedCompanyId,
       targetAppId: resolvedTargetAppId,
       userId: body.user_id,
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
       company_id: resolvedCompanyId,
       user_id: body.user_id,
       target_app_id: resolvedTargetAppId,
+      environment_id: apiKeyRecord.environmentId,
       question: body.question,
       conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,
       top_k: typeof body.top_k !== "undefined" ? Number(body.top_k) : undefined,

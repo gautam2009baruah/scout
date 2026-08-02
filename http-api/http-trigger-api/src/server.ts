@@ -282,7 +282,8 @@ async function handle(request: RequestLike, params: { shortName: string; pathSeg
   const execution = await dispatchHttpTrigger({
     triggerId: resolved.triggerId,
     orchestrationId: resolved.orchestrationId,
-    orchestrationVersion: resolved.orchestrationVersion,
+    orchestrationVersionMajor: resolved.orchestrationVersionMajor,
+    orchestrationVersionBuild: resolved.orchestrationVersionBuild,
     config: resolved.config,
     correlationId,
     authType: authResult.authType || "none",

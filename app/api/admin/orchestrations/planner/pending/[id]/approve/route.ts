@@ -72,7 +72,8 @@ export async function POST(
 
     const execution = await createExecution({
       orchestrationId,
-      orchestrationVersion: published.version,
+      orchestrationVersionMajor: published.versionMajor,
+      orchestrationVersionBuild: published.versionBuild,
       context: {},
       triggerData: {
         triggerType: "chatbot",

@@ -44,8 +44,7 @@ export async function POST(request: Request) {
     const app = await createCompanyTargetApplication(
       {
         companyId: body.companyId,
-        name: body.name,
-        baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : ""
+        name: body.name
       },
       session
     );

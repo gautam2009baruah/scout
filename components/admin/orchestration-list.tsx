@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import { Edit, Trash2, RefreshCw, Clock, X, Search, Filter, Link2 } from "lucide-react";
 import type { Orchestration } from "@/shared/orchestrationTypes";
+import { formatVersion } from "./version-history-modal";
 
 interface OrchestrationListProps {
   onLoad: (orchestration: Orchestration) => void;
@@ -256,7 +257,7 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
                       <div className="flex items-center gap-4 text-xs text-slate-500">
                         <span>Created: {formatDate(orch.createdAt)}</span>
                         <span>Updated: {formatDate(orch.updatedAt)}</span>
-                        <span>Version: {orch.version}</span>
+                        <span>Version: {formatVersion(orch.versionMajor, orch.versionBuild)}</span>
                       </div>
                     </div>
 

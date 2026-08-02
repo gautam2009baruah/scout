@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { Building2, CircleHelp, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import { useToast } from "./toast";
 import type { AdminModule } from "@/lib/admin/permissions";
@@ -21,7 +21,14 @@ type CompanyTargetApplication = {
   companyId: string;
   companyName: string;
   name: string;
-  baseUrl: string;
+};
+
+type ChatbotEnvironment = {
+  id: string;
+  targetAppId: string;
+  name: string;
+  url: string;
+  isProduction: boolean;
 };
 
 type ConfirmDialog = {
@@ -32,6 +39,17 @@ type ConfirmDialog = {
 async function readMessage(response: Response, fallback: string) {
   const body = await response.json().catch(() => null);
   return typeof body?.message === "string" ? body.message : fallback;
+}
+
+function HelpHint({ text }: { text: string }) {
+  return (
+    <span className="relative inline-flex items-center align-middle group">
+      <CircleHelp className="h-3.5 w-3.5 text-slate-400" />
+      <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 rounded-md border border-slate-200 bg-slate-900 px-3 py-2 text-xs leading-5 text-slate-100 shadow-lg whitespace-normal break-words opacity-0 invisible transition-opacity duration-150 group-hover:visible group-hover:opacity-100">
+        {text}
+      </span>
+    </span>
+  );
 }
 
 export function MasterDataForms({ companies, modules, currentCompanyId, editingRole, onRoleEditComplete }: MasterDataFormsProps) {
@@ -48,10 +66,28 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
   const [targetApps, setTargetApps] = useState<CompanyTargetApplication[]>([]);
   const [loadingTargetApps, setLoadingTargetApps] = useState(false);
   const [targetAppName, setTargetAppName] = useState("");
-  const [targetAppBaseUrl, setTargetAppBaseUrl] = useState("");
   const [editingTargetAppId, setEditingTargetAppId] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog>(null);
+  const [showEnvironmentsModal, setShowEnvironmentsModal] = useState(false);
+  const [environmentTargetAppId, setEnvironmentTargetAppId] = useState<string | null>(null);
+  const [environmentsByTargetApp, setEnvironmentsByTargetApp] = useState<Record<string, ChatbotEnvironment[]>>({});
+  const [loadingEnvironments, setLoadingEnvironments] = useState(false);
+  const [newEnvironmentName, setNewEnvironmentName] = useState("");
+  const [newEnvironmentUrl, setNewEnvironmentUrl] = useState("");
+  const [newEnvironmentIsProduction, setNewEnvironmentIsProduction] = useState(false);
+  const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
+  const [isSavingEnvironment, setIsSavingEnvironment] = useState(false);
   const allModuleKeys = modules.map((module) => String(module.key));
+  const modalEnvironments = environmentTargetAppId ? (environmentsByTargetApp[environmentTargetAppId] ?? []) : [];
+
+  function isValidHttpUrl(value: string) {
+    try {
+      const parsed = new URL(value.trim());
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
 
   useEffect(() => {
     setRoleName(editingRole?.name ?? "");
@@ -90,7 +126,6 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
     setShowTargetAppModal(true);
     setEditingTargetAppId(null);
     setTargetAppName("");
-    setTargetAppBaseUrl("");
     await loadTargetApps();
   }
 
@@ -98,13 +133,11 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
     setShowTargetAppModal(false);
     setEditingTargetAppId(null);
     setTargetAppName("");
-    setTargetAppBaseUrl("");
   }
 
   function beginEditTargetApp(app: CompanyTargetApplication) {
     setEditingTargetAppId(app.id);
     setTargetAppName(app.name);
-    setTargetAppBaseUrl(app.baseUrl || "");
   }
 
   async function saveTargetApp(event: FormEvent<HTMLFormElement>) {
@@ -127,8 +160,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyId: currentCompanyId,
-          name: targetAppName,
-          baseUrl: targetAppBaseUrl
+          name: targetAppName
         })
       }
     );
@@ -143,7 +175,6 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
     }
 
     setTargetAppName("");
-    setTargetAppBaseUrl("");
     setEditingTargetAppId(null);
     await loadTargetApps();
     setIsSavingTargetApp(false);
@@ -171,12 +202,154 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
         if (editingTargetAppId === id) {
           setEditingTargetAppId(null);
           setTargetAppName("");
-          setTargetAppBaseUrl("");
         }
 
         await loadTargetApps();
         setIsSavingTargetApp(false);
         showToast("Target application deleted.");
+      }
+    });
+  }
+
+  async function loadEnvironments(targetAppId: string) {
+    if (!targetAppId) {
+      return;
+    }
+
+    setLoadingEnvironments(true);
+    const response = await fetch(`/api/admin/chatbot-settings/environments?targetAppId=${encodeURIComponent(targetAppId)}`, { method: "GET" });
+    const body = await response.json().catch(() => null);
+    setLoadingEnvironments(false);
+
+    if (!response.ok) {
+      showToast(typeof body?.message === "string" ? body.message : "Unable to load environments.", "error");
+      return;
+    }
+
+    setEnvironmentsByTargetApp((current) => ({
+      ...current,
+      [targetAppId]: Array.isArray(body?.environments) ? body.environments : []
+    }));
+  }
+
+  async function openEnvironmentsModal() {
+    setShowEnvironmentsModal(true);
+    resetEnvironmentForm();
+
+    let apps = targetApps;
+    if (apps.length === 0) {
+      await loadTargetApps();
+      apps = targetApps;
+    }
+
+    const firstTargetAppId = apps[0]?.id ?? null;
+    setEnvironmentTargetAppId(firstTargetAppId);
+    if (firstTargetAppId) {
+      await loadEnvironments(firstTargetAppId);
+    }
+  }
+
+  function closeEnvironmentsModal() {
+    setShowEnvironmentsModal(false);
+    setEditingEnvironmentId(null);
+    setNewEnvironmentName("");
+    setNewEnvironmentUrl("");
+    setNewEnvironmentIsProduction(false);
+  }
+
+  function resetEnvironmentForm() {
+    setEditingEnvironmentId(null);
+    setNewEnvironmentName("");
+    setNewEnvironmentUrl("");
+    setNewEnvironmentIsProduction(false);
+  }
+
+  function beginEditEnvironment(env: ChatbotEnvironment) {
+    setEditingEnvironmentId(env.id);
+    setNewEnvironmentName(env.name);
+    setNewEnvironmentUrl(env.url);
+    setNewEnvironmentIsProduction(env.isProduction);
+  }
+
+  // Single create/update form, mirroring the target-app modal above — edits
+  // open in this shared form rather than turning the list row itself into
+  // inputs.
+  async function saveEnvironment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!environmentTargetAppId) {
+      return;
+    }
+
+    const name = newEnvironmentName.trim();
+    if (!name) {
+      showToast("Environment name is required.", "error");
+      return;
+    }
+
+    if (!isValidHttpUrl(newEnvironmentUrl)) {
+      showToast("A valid environment URL is required.", "error");
+      return;
+    }
+
+    setIsSavingEnvironment(true);
+
+    const isEditing = Boolean(editingEnvironmentId);
+    const response = await fetch(
+      isEditing ? `/api/admin/chatbot-settings/environments/${editingEnvironmentId}` : "/api/admin/chatbot-settings/environments",
+      {
+        method: isEditing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          url: newEnvironmentUrl.trim(),
+          targetAppId: environmentTargetAppId,
+          isProduction: newEnvironmentIsProduction
+        })
+      }
+    );
+
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      setIsSavingEnvironment(false);
+      showToast(typeof body?.message === "string" ? body.message : isEditing ? "Unable to update environment." : "Unable to create environment.", "error");
+      return;
+    }
+
+    const next = Array.isArray(body?.environments) ? body.environments : [];
+    const nextTargetAppId = next[0]?.targetAppId || environmentTargetAppId;
+    setEnvironmentsByTargetApp((current) => ({
+      ...current,
+      [nextTargetAppId]: next
+    }));
+    resetEnvironmentForm();
+    setIsSavingEnvironment(false);
+    showToast(isEditing ? "Environment updated." : "Environment created.");
+  }
+
+  function requestDeleteEnvironment(id: string, name: string) {
+    setConfirmDialog({
+      message: `Delete environment "${name}"? This is allowed only when no API key uses it.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        if (!environmentTargetAppId) {
+          return;
+        }
+
+        const response = await fetch(`/api/admin/chatbot-settings/environments/${id}`, { method: "DELETE" });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) {
+          showToast(typeof body?.message === "string" ? body.message : "Unable to delete environment.", "error");
+          return;
+        }
+
+        setEnvironmentsByTargetApp((current) => ({
+          ...current,
+          [environmentTargetAppId]: Array.isArray(body?.environments) ? body.environments : []
+        }));
+        if (editingEnvironmentId === id) {
+          resetEnvironmentForm();
+        }
+        showToast("Environment deleted.");
       }
     });
   }
@@ -314,6 +487,14 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
         >
           Manage target applications
         </button>
+
+        <button
+          className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          onClick={openEnvironmentsModal}
+          type="button"
+        >
+          Manage Environments
+        </button>
       </form>
 
       <form id="role-form" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" onSubmit={saveRole}>
@@ -415,7 +596,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
             <div className="space-y-4 px-5 py-4">
               <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={saveTargetApp}>
                 <p className="text-sm text-slate-500">Managing apps for selected company: <span className="font-medium text-slate-700">{companies.find((company) => company.id === currentCompanyId)?.name ?? "Current company"}</span></p>
-                <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto_auto]">
+                <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto]">
                   <input
                     className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
                     onChange={(event) => setTargetAppName(event.target.value)}
@@ -423,13 +604,6 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                     required
                     type="text"
                     value={targetAppName}
-                  />
-                  <input
-                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
-                    onChange={(event) => setTargetAppBaseUrl(event.target.value)}
-                    placeholder="https://app.example.com"
-                    type="text"
-                    value={targetAppBaseUrl}
                   />
                   <button
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
@@ -445,7 +619,6 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                       onClick={() => {
                         setEditingTargetAppId(null);
                         setTargetAppName("");
-                        setTargetAppBaseUrl("");
                       }}
                       type="button"
                     >
@@ -460,24 +633,22 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="px-3 py-2 text-left font-semibold text-slate-700">Name</th>
-                      <th className="px-3 py-2 text-left font-semibold text-slate-700">Base URL</th>
                       <th className="px-3 py-2 text-right font-semibold text-slate-700">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
                     {loadingTargetApps ? (
                       <tr>
-                        <td className="px-3 py-4 text-slate-500" colSpan={3}>Loading target applications...</td>
+                        <td className="px-3 py-4 text-slate-500" colSpan={2}>Loading target applications...</td>
                       </tr>
                     ) : targetApps.length === 0 ? (
                       <tr>
-                        <td className="px-3 py-4 text-slate-500" colSpan={3}>No target applications found.</td>
+                        <td className="px-3 py-4 text-slate-500" colSpan={2}>No target applications found.</td>
                       </tr>
                     ) : (
                       targetApps.map((app) => (
                         <tr key={app.id}>
                           <td className="px-3 py-3 text-slate-900">{app.name}</td>
-                          <td className="px-3 py-3 text-slate-600">{app.baseUrl || "-"}</td>
                           <td className="px-3 py-3">
                             <div className="flex justify-end gap-1">
                               <button
@@ -503,6 +674,130 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showEnvironmentsModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">Manage Environments</h3>
+                <p className="text-sm text-slate-500">Create, update, or delete environments and their URLs per target application.</p>
+              </div>
+              <button className="rounded-md p-1 text-slate-500 hover:bg-slate-100" onClick={closeEnvironmentsModal} type="button">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-4">
+              <select
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                value={environmentTargetAppId ?? ""}
+                onChange={(event) => {
+                  const nextTargetAppId = event.target.value;
+                  setEnvironmentTargetAppId(nextTargetAppId);
+                  resetEnvironmentForm();
+                  void loadEnvironments(nextTargetAppId);
+                }}
+              >
+                {targetApps.length === 0 ? <option value="">No target applications found</option> : null}
+                {targetApps.map((app) => (
+                  <option key={app.id} value={app.id}>{app.name}</option>
+                ))}
+              </select>
+
+              <form className="grid gap-3 rounded-lg border border-slate-200 p-4" onSubmit={saveEnvironment}>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <input
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+                    onChange={(event) => setNewEnvironmentName(event.target.value)}
+                    placeholder="Environment name"
+                    required
+                    type="text"
+                    value={newEnvironmentName}
+                  />
+                  <input
+                    className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
+                    onChange={(event) => setNewEnvironmentUrl(event.target.value)}
+                    placeholder="https://app.example.com"
+                    required
+                    type="text"
+                    value={newEnvironmentUrl}
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    checked={newEnvironmentIsProduction}
+                    className="h-4 w-4 rounded border-slate-300"
+                    onChange={(event) => setNewEnvironmentIsProduction(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span className="inline-flex items-center gap-1.5">
+                    Is production
+                    <HelpHint text="Versions are v{major}.{build} (e.g. 1.003). Publishing bumps the build number. The major number only advances the first time a build is promoted to an environment marked production here — promoting that same build to another production environment afterward, or rolling a production environment back to an older build, never changes it again." />
+                  </span>
+                </label>
+                <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+                  <button
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                    disabled={!environmentTargetAppId || isSavingEnvironment}
+                    type="submit"
+                  >
+                    {isSavingEnvironment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    {editingEnvironmentId ? "Update environment" : "Add environment"}
+                  </button>
+                  {editingEnvironmentId ? (
+                    <button
+                      className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      onClick={resetEnvironmentForm}
+                      type="button"
+                    >
+                      Cancel edit
+                    </button>
+                  ) : <span />}
+                </div>
+              </form>
+
+              <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
+                {loadingEnvironments ? (
+                  <p className="p-4 text-sm text-slate-500">Loading environments...</p>
+                ) : modalEnvironments.length === 0 ? (
+                  <p className="p-4 text-sm text-slate-500">No environments created yet.</p>
+                ) : (
+                  <div className="divide-y divide-slate-200">
+                    {modalEnvironments.map((env) => (
+                      <div className="grid grid-cols-[1fr_1fr_auto] items-center gap-2 p-3" key={env.id}>
+                        <p className="truncate text-sm text-slate-800">
+                          {env.name}
+                          {env.isProduction ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Production</span> : null}
+                        </p>
+                        <p className="truncate text-sm text-slate-500">{env.url || "-"}</p>
+                        <div className="flex justify-end gap-1">
+                          <button
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-700"
+                            onClick={() => beginEditEnvironment(env)}
+                            title="Edit"
+                            type="button"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 text-red-700"
+                            onClick={() => requestDeleteEnvironment(env.id, env.name)}
+                            title="Delete"
+                            type="button"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

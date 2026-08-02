@@ -5,7 +5,8 @@ import { HTTP_TRIGGER_RESERVED_SHORT_NAMES, SHORT_NAME_PATTERN } from "./constan
 export type HttpTriggerResolution = {
   triggerId: string;
   orchestrationId: string;
-  orchestrationVersion: number;
+  orchestrationVersionMajor: number;
+  orchestrationVersionBuild: number;
   orchestrationName: string;
   triggerName: string;
   status: string;
@@ -66,7 +67,8 @@ export async function resolveHttpTriggerByShortName(shortName: string): Promise<
   const result = await pool.query<{
     trigger_id: string;
     orchestration_id: string;
-    orchestration_version: number;
+    orchestration_version_major: number;
+    orchestration_version_build: number;
     orchestration_name: string;
     trigger_name: string;
     trigger_status: string;
@@ -76,7 +78,8 @@ export async function resolveHttpTriggerByShortName(shortName: string): Promise<
     `SELECT
        t.id AS trigger_id,
        t.orchestration_id,
-       o.version AS orchestration_version,
+       o.published_version_major AS orchestration_version_major,
+       o.published_version_build AS orchestration_version_build,
        o.name AS orchestration_name,
        t.name AS trigger_name,
        t.status AS trigger_status,
@@ -99,7 +102,8 @@ export async function resolveHttpTriggerByShortName(shortName: string): Promise<
   return {
     triggerId: row.trigger_id,
     orchestrationId: row.orchestration_id,
-    orchestrationVersion: row.orchestration_version,
+    orchestrationVersionMajor: row.orchestration_version_major,
+    orchestrationVersionBuild: row.orchestration_version_build,
     orchestrationName: row.orchestration_name,
     triggerName: row.trigger_name,
     status: row.trigger_status,

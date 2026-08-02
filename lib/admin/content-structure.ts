@@ -678,7 +678,7 @@ async function getTopicCompanyId(topicId: string) {
   return companyId;
 }
 
-async function assertCanManageFolderDocumentAccess(folderId: string, session: AdminSession) {
+export async function assertCanManageFolderDocumentAccess(folderId: string, session: AdminSession) {
   const companyId = await getTopicCompanyId(folderId);
 
   if (isAdmin(session)) {

@@ -7,7 +7,8 @@ import { writeHttpTriggerAuditLog } from "./audit";
 export async function dispatchHttpTrigger(input: {
   triggerId: string;
   orchestrationId: string;
-  orchestrationVersion: number;
+  orchestrationVersionMajor: number;
+  orchestrationVersionBuild: number;
   config: HttpApiTriggerConfig;
   correlationId: string;
   authType: string;
@@ -27,7 +28,8 @@ export async function dispatchHttpTrigger(input: {
 }) {
   const execution = await createExecution({
     orchestrationId: input.orchestrationId,
-    orchestrationVersion: input.orchestrationVersion,
+    orchestrationVersionMajor: input.orchestrationVersionMajor,
+    orchestrationVersionBuild: input.orchestrationVersionBuild,
     context: {
       trigger: {
         type: "http_api",

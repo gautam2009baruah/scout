@@ -14,6 +14,11 @@ export type CachedKeyRecord = {
   // bound to exactly one target app.
   targetAppId: string;
   allowedOrigins: string[];
+  // chatbot_api_keys.environment_id is NOT NULL — every valid key is always
+  // bound to exactly one environment (see chatbot_api_key_environments,
+  // managed under Chatbot Settings). Used to gate which environment-released
+  // orchestrations/guides/folders this request can see.
+  environmentId: string;
 };
 
 type CacheEntry = {
@@ -115,12 +120,14 @@ async function loadKeyRecord(hashedKey: string): Promise<CachedKeyRecord | null>
     company_id: string;
     target_app_id: string;
     allowed_origins_json: string[] | null;
+    environment_id: string;
   }>(
     `
       SELECT
         cta.company_id,
         k.target_app_id,
-        COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json
+        COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
+        k.environment_id
       FROM chatbot_api_keys k
       INNER JOIN company_target_applications cta ON cta.id = k.target_app_id
       WHERE k.key_hash = $1
@@ -142,6 +149,7 @@ async function loadKeyRecord(hashedKey: string): Promise<CachedKeyRecord | null>
     companyId: row.company_id,
     targetAppId: row.target_app_id,
     allowedOrigins: Array.isArray(row.allowed_origins_json) ? row.allowed_origins_json : [],
+    environmentId: row.environment_id,
   };
 
   keyCache.set(hashedKey, { record, expiresAt: Date.now() + getCacheTtlMs() });

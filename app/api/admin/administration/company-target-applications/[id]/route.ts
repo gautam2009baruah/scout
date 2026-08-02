@@ -32,8 +32,7 @@ export async function PUT(request: Request, context: RouteContext) {
     const app = await updateCompanyTargetApplication(
       id,
       {
-        name: body.name,
-        baseUrl: typeof body.baseUrl === "string" ? body.baseUrl : ""
+        name: body.name
       },
       session
     );

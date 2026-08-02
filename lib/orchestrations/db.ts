@@ -37,7 +37,10 @@ type OrchestrationRow = {
   target_app_id?: string | null;
   name: string;
   description: string | null;
-  version: number;
+  published_version_major: number;
+  published_version_build: number;
+  next_major: number;
+  next_build: number;
   status: OrchestrationStatus;
 
   variables: Record<string, unknown>;
@@ -52,6 +55,8 @@ type OrchestrationRow = {
   published_by_email: string | null;
   ai_planner_drafting_trigger_type: string | null;
   originating_external_user_id: string | null;
+  released_version_major?: number;
+  released_version_build?: number;
 };
 
 // Step 3b: best-effort re-index into orchestration_embeddings after a save.
@@ -72,7 +77,10 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
     targetAppId: row.target_app_id || null,
     name: row.name,
     description: row.description,
-    version: row.version,
+    versionMajor: row.published_version_major,
+    versionBuild: row.published_version_build,
+    nextVersionMajor: row.next_major,
+    nextVersionBuild: row.next_build,
     status: row.status,
     variables: row.variables,
     createdAt: row.created_at.toISOString(),
@@ -86,6 +94,8 @@ function mapOrchestrationRow(row: OrchestrationRow): Orchestration {
     publishedByEmail: row.published_by_email,
     isAiPlanner: row.ai_planner_drafting_trigger_type === "chatbot",
     originatingExternalUserId: row.originating_external_user_id,
+    releasedVersionMajor: row.released_version_major,
+    releasedVersionBuild: row.released_version_build,
   };
 }
 
@@ -171,6 +181,10 @@ export async function getOrchestrationPage(filters: {
   page?: number;
   pageSize?: number;
   userId?: string;
+  // Only set by the live, API-key-authenticated chat matching path (see
+  // app/api/chatbot/workflow-router/route.ts) — never by admin-facing list
+  // views, which must keep showing orchestrations regardless of release state.
+  environmentId?: string;
 }) {
   const pool = getPool();
   const page = Math.max(1, Number(filters.page) || 1);
@@ -221,10 +235,17 @@ export async function getOrchestrationPage(filters: {
       )
     )`);
   }
+  let releaseJoin = "";
+  if (filters.environmentId) {
+    params.push(filters.environmentId);
+    releaseJoin = `INNER JOIN orchestration_environment_releases oer
+      ON oer.orchestration_id = o.id AND oer.environment_id = $${params.length}
+        AND oer.deleted_at IS NULL`;
+  }
 
   const where = conditions.join(" AND ");
   const countResult = await pool.query<{ total: string }>(
-    `SELECT COUNT(*)::text AS total FROM orchestrations o WHERE ${where}`,
+    `SELECT COUNT(*)::text AS total FROM orchestrations o ${releaseJoin} WHERE ${where}`,
     params
   );
   const total = Number(countResult.rows[0]?.total || 0);
@@ -235,10 +256,12 @@ export async function getOrchestrationPage(filters: {
     SELECT o.*, created_user.email AS created_by_email,
       updated_user.email AS updated_by_email,
       published_user.email AS published_by_email
+      ${filters.environmentId ? ", oer.version_major AS released_version_major, oer.version_build AS released_version_build" : ""}
     FROM orchestrations o
     LEFT JOIN users created_user ON created_user.id = o.created_by
     LEFT JOIN users updated_user ON updated_user.id = o.updated_by
     LEFT JOIN users published_user ON published_user.id = o.published_by
+    ${releaseJoin}
     WHERE ${where}
     ORDER BY o.updated_at DESC
     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -403,17 +426,23 @@ export async function publishOrchestration(
     }
   }
 
-  // Increment version number before creating snapshot
-  const newVersion = orchestration.version + 1;
+  // This publish becomes (nextMajor, nextBuild); only the build counter
+  // advances here — major only moves via a first-time production promotion
+  // (see promoteOrchestrationToEnvironment).
+  const versionMajor = orchestration.nextVersionMajor;
+  const versionBuild = orchestration.nextVersionBuild;
   await pool.query(
-    `UPDATE orchestrations SET version = $1, updated_at = now() WHERE id = $2`,
-    [newVersion, id]
+    `UPDATE orchestrations
+     SET next_build = next_build + 1, published_version_major = $1, published_version_build = $2, updated_at = now()
+     WHERE id = $3`,
+    [versionMajor, versionBuild, id]
   );
 
-  // Create version snapshot with new version number
+  // Create version snapshot with the new version
   await createOrchestrationVersion({
     orchestrationId: id,
-    version: newVersion,
+    versionMajor,
+    versionBuild,
     snapshot: { orchestration, nodes, connections },
     createdById: publishedById,
     changeNotes: "Published",
@@ -997,7 +1026,8 @@ export async function deleteConnection(id: string): Promise<void> {
 type ExecutionRow = {
   id: string;
   orchestration_id: string;
-  orchestration_version: number;
+  orchestration_version_major: number;
+  orchestration_version_build: number;
   status: OrchestrationExecutionStatus;
   context: Record<string, unknown>;
   trigger_data: Record<string, unknown> | null;
@@ -1012,7 +1042,8 @@ function mapExecutionRow(row: ExecutionRow): OrchestrationExecution {
   return {
     id: row.id,
     orchestrationId: row.orchestration_id,
-    orchestrationVersion: row.orchestration_version,
+    orchestrationVersionMajor: row.orchestration_version_major,
+    orchestrationVersionBuild: row.orchestration_version_build,
     status: row.status,
     context: row.context,
     triggerData: row.trigger_data,
@@ -1026,20 +1057,22 @@ function mapExecutionRow(row: ExecutionRow): OrchestrationExecution {
 
 export async function createExecution(data: {
   orchestrationId: string;
-  orchestrationVersion: number;
+  orchestrationVersionMajor: number;
+  orchestrationVersionBuild: number;
   context?: Record<string, unknown>;
   triggerData?: Record<string, unknown> | null;
   triggeredBy: string;
 }): Promise<OrchestrationExecution> {
   const pool = getPool();
   const result = await pool.query<ExecutionRow>(
-    `INSERT INTO orchestration_executions 
-     (orchestration_id, orchestration_version, context, trigger_data, triggered_by)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO orchestration_executions
+     (orchestration_id, orchestration_version_major, orchestration_version_build, context, trigger_data, triggered_by)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [
       data.orchestrationId,
-      data.orchestrationVersion,
+      data.orchestrationVersionMajor,
+      data.orchestrationVersionBuild,
       JSON.stringify(data.context || {}),
       data.triggerData ? JSON.stringify(data.triggerData) : null,
       data.triggeredBy,
@@ -1590,7 +1623,9 @@ export async function getApprovals(filters: {
 type VersionRow = {
   id: string;
   orchestration_id: string;
-  version: number;
+  version_major: number;
+  version_build: number;
+  promoted_to_production: boolean;
   snapshot: OrchestrationSnapshot;
   created_at: Date;
   created_by: string | null;
@@ -1602,7 +1637,9 @@ function mapVersionRow(row: VersionRow): OrchestrationVersion {
   return {
     id: row.id,
     orchestrationId: row.orchestration_id,
-    version: row.version,
+    versionMajor: row.version_major,
+    versionBuild: row.version_build,
+    promotedToProduction: row.promoted_to_production,
     snapshot: row.snapshot,
     createdAt: row.created_at.toISOString(),
     createdById: row.created_by,
@@ -1613,20 +1650,22 @@ function mapVersionRow(row: VersionRow): OrchestrationVersion {
 
 export async function createOrchestrationVersion(data: {
   orchestrationId: string;
-  version: number;
+  versionMajor: number;
+  versionBuild: number;
   snapshot: OrchestrationSnapshot;
   createdById: string;
   changeNotes?: string;
 }): Promise<OrchestrationVersion> {
   const pool = getPool();
   const result = await pool.query<VersionRow>(
-    `INSERT INTO orchestration_versions 
-     (orchestration_id, version, snapshot, created_by, change_notes)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO orchestration_versions
+     (orchestration_id, version_major, version_build, snapshot, created_by, change_notes)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [
       data.orchestrationId,
-      data.version,
+      data.versionMajor,
+      data.versionBuild,
       JSON.stringify(data.snapshot),
       data.createdById,
       data.changeNotes || null,
@@ -1645,9 +1684,174 @@ export async function getOrchestrationVersions(
      FROM orchestration_versions v
      LEFT JOIN users created_user ON created_user.id = v.created_by
      WHERE v.orchestration_id = $1
-     ORDER BY v.version DESC`,
+     ORDER BY v.version_major DESC, v.version_build DESC`,
     [orchestrationId]
   );
 
   return result.rows.map(mapVersionRow);
+}
+
+// Loads the exact graph published at a given version, for version-pinned
+// execution (see app/api/chatbot/workflow-router/route.ts) — the snapshot's
+// nodes/connections are stored in the same shape getNodes/getConnections
+// return, so no reconstruction is needed.
+export async function getOrchestrationVersionSnapshot(
+  orchestrationId: string,
+  versionMajor: number,
+  versionBuild: number
+): Promise<OrchestrationSnapshot | null> {
+  const pool = getPool();
+  const result = await pool.query<{ snapshot: OrchestrationSnapshot }>(
+    `SELECT snapshot FROM orchestration_versions WHERE orchestration_id = $1 AND version_major = $2 AND version_build = $3 LIMIT 1`,
+    [orchestrationId, versionMajor, versionBuild]
+  );
+
+  return result.rows[0]?.snapshot ?? null;
+}
+
+// ============================================================================
+// Environment releases (version-pinned promotion — see
+// db/migrations/004_versioned_environment_releases.sql,
+// db/migrations/005_major_build_versioning.sql)
+// ============================================================================
+
+export type OrchestrationEnvironmentReleaseRow = {
+  id: string;
+  name: string;
+  isProduction: boolean;
+  releasedVersionMajor: number | null;
+  releasedVersionBuild: number | null;
+  releasedAt: string | null;
+};
+
+export async function getOrchestrationEnvironmentReleases(
+  orchestrationId: string
+): Promise<OrchestrationEnvironmentReleaseRow[]> {
+  const pool = getPool();
+  const orchestration = await getOrchestrationById(orchestrationId);
+  if (!orchestration) {
+    throw new Error(`Orchestration ${orchestrationId} not found`);
+  }
+
+  const result = await pool.query<{
+    id: string;
+    name: string;
+    is_production: boolean;
+    released_version_major: number | null;
+    released_version_build: number | null;
+    released_at: Date | null;
+  }>(
+    `
+      SELECT env.id, env.name, env.is_production,
+        oer.version_major AS released_version_major, oer.version_build AS released_version_build, oer.released_at
+      FROM chatbot_api_key_environments env
+      LEFT JOIN orchestration_environment_releases oer
+        ON oer.environment_id = env.id AND oer.orchestration_id = $2 AND oer.deleted_at IS NULL
+      WHERE env.target_app_id = $1
+      ORDER BY env.name ASC
+    `,
+    [orchestration.targetAppId, orchestrationId]
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    isProduction: row.is_production,
+    releasedVersionMajor: row.released_version_major,
+    releasedVersionBuild: row.released_version_build,
+    releasedAt: row.released_at?.toISOString() ?? null,
+  }));
+}
+
+// versionMajor/versionBuild select which published snapshot to promote — not
+// necessarily the latest. Lets an admin promote an older, already-tested
+// build instead of (or to roll back from) whatever was published most
+// recently. The major ratchet only advances the first time THIS build is
+// promoted to a production-flagged environment — re-promoting an
+// already-released build (to the same or a different production
+// environment) never bumps it again, and demoting a production environment
+// back to an old build never moves it backward either, since the ratchet
+// lives on the orchestration row, not on any environment's current pin.
+export async function promoteOrchestrationToEnvironment(
+  orchestrationId: string,
+  environmentId: string,
+  versionMajor: number,
+  versionBuild: number,
+  actorUserId: string
+): Promise<void> {
+  const pool = getPool();
+
+  const versionResult = await pool.query<{ id: string; promoted_to_production: boolean }>(
+    `SELECT id, promoted_to_production FROM orchestration_versions WHERE orchestration_id = $1 AND version_major = $2 AND version_build = $3 LIMIT 1`,
+    [orchestrationId, versionMajor, versionBuild]
+  );
+  if ((versionResult.rowCount ?? 0) === 0) {
+    throw new Error(`Version ${versionMajor}.${String(versionBuild).padStart(3, "0")} of this orchestration was not found.`);
+  }
+
+  const envResult = await pool.query<{ is_production: boolean }>(
+    `SELECT is_production FROM chatbot_api_key_environments WHERE id = $1`,
+    [environmentId]
+  );
+  if ((envResult.rowCount ?? 0) === 0) {
+    throw new Error("Environment not found.");
+  }
+
+  await pool.query(
+    `
+      INSERT INTO orchestration_environment_releases
+        (orchestration_id, environment_id, version_major, version_build, released_at, released_by)
+      VALUES ($1, $2, $3, $4, now(), $5)
+      ON CONFLICT (orchestration_id, environment_id) DO UPDATE
+      SET version_major = EXCLUDED.version_major, version_build = EXCLUDED.version_build,
+        deleted_at = NULL, deleted_by = NULL, released_at = now(), released_by = $5
+    `,
+    [orchestrationId, environmentId, versionMajor, versionBuild, actorUserId]
+  );
+
+  if (envResult.rows[0].is_production && !versionResult.rows[0].promoted_to_production) {
+    await pool.query(`UPDATE orchestration_versions SET promoted_to_production = true WHERE id = $1`, [versionResult.rows[0].id]);
+    await pool.query(
+      `UPDATE orchestrations SET next_major = next_major + 1, next_build = 0 WHERE id = $1`,
+      [orchestrationId]
+    );
+  }
+}
+
+export type OrchestrationVersionSummary = {
+  versionMajor: number;
+  versionBuild: number;
+  promotedToProduction: boolean;
+  createdAt: string;
+  changeNotes: string | null;
+};
+
+export async function listOrchestrationVersionSummaries(orchestrationId: string): Promise<OrchestrationVersionSummary[]> {
+  const result = await getPool().query<{ version_major: number; version_build: number; promoted_to_production: boolean; created_at: Date; change_notes: string | null }>(
+    `SELECT version_major, version_build, promoted_to_production, created_at, change_notes FROM orchestration_versions WHERE orchestration_id = $1 ORDER BY version_major DESC, version_build DESC`,
+    [orchestrationId]
+  );
+
+  return result.rows.map((row) => ({
+    versionMajor: row.version_major,
+    versionBuild: row.version_build,
+    promotedToProduction: row.promoted_to_production,
+    createdAt: row.created_at.toISOString(),
+    changeNotes: row.change_notes,
+  }));
+}
+
+export async function revokeOrchestrationFromEnvironment(
+  orchestrationId: string,
+  environmentId: string,
+  actorUserId: string
+): Promise<void> {
+  await getPool().query(
+    `
+      UPDATE orchestration_environment_releases
+      SET deleted_at = now(), deleted_by = $3
+      WHERE orchestration_id = $1 AND environment_id = $2 AND deleted_at IS NULL
+    `,
+    [orchestrationId, environmentId, actorUserId]
+  );
 }

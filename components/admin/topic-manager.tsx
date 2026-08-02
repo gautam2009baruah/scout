@@ -6,6 +6,7 @@ import { Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2,
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./topic-tree";
 import { TopicTreeList } from "./topic-tree-list";
+import { EnvironmentReleaseModal } from "./environment-release-modal";
 import type { RoleSummary } from "@/lib/admin/administration";
 import type { TopicAccessGrant, TopicRow, TopicTreeNode, TopicUserOption } from "@/lib/admin/content-structure";
 import { useToast } from "./toast";
@@ -272,6 +273,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [versionSummaryLoading, setVersionSummaryLoading] = useState(false);
   const [versionCompareLoading, setVersionCompareLoading] = useState(false);
   const [folderAccessTarget, setFolderAccessTarget] = useState<TopicActionTarget | null>(null);
+  const [folderEnvironmentTarget, setFolderEnvironmentTarget] = useState<TopicActionTarget | null>(null);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadProgressLabel, setUploadProgressLabel] = useState("");
@@ -779,6 +781,21 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setFolderAccessTarget(target);
     setFolderAccessRoleIds(body.access.roleIds ?? []);
     setFolderAccessUserIds(body.access.userIds ?? []);
+  }
+
+  function openFolderEnvironmentModal(target: TopicActionTarget) {
+    if (!target.topicId) {
+      return;
+    }
+
+    setActionTarget(null);
+
+    if (!target.targetAppIds?.length) {
+      showToast("Assign a target app to this folder before releasing it to an environment.", "error");
+      return;
+    }
+
+    setFolderEnvironmentTarget(target);
   }
 
   async function saveDocumentAccess(event: FormEvent<HTMLFormElement>) {
@@ -1339,6 +1356,15 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   Chatbot Access
                 </button>
                 <button
+                  className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+                  onClick={() => openFolderEnvironmentModal(actionTarget)}
+                  title="Uploading documents alone does not make this folder searchable to chat users — release it to an environment too"
+                  type="button"
+                >
+                  <Globe2 className="h-4 w-4 text-indigo-600" />
+                  Environments
+                </button>
+                <button
                   className={`flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold ${
                     canManageAccess
                       ? "text-red-700 hover:bg-red-50"
@@ -1745,6 +1771,21 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
             </div>
           </form>
         </div>
+      ) : null}
+
+      {folderEnvironmentTarget && folderEnvironmentTarget.targetAppIds?.length ? (
+        <EnvironmentReleaseModal
+          apiUrl={`/api/admin/content-structure/${folderEnvironmentTarget.topicId}/environments`}
+          onClose={() => setFolderEnvironmentTarget(null)}
+          onError={(message) => showToast(message, "error")}
+          onSaved={() => showToast("Environment releases updated.", "success")}
+          targetAppId={folderEnvironmentTarget.targetAppIds[0]}
+          title={
+            folderEnvironmentTarget.targetAppIds.length > 1
+              ? `${folderEnvironmentTarget.topicName} (${folderEnvironmentTarget.targetAppNames?.[0] || "first assigned target app"})`
+              : folderEnvironmentTarget.topicName
+          }
+        />
       ) : null}
 
       {uploadTarget ? (

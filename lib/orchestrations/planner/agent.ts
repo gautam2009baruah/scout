@@ -96,7 +96,8 @@ async function defaultExecuteOrchestration(input: {
 
   const execution = await createExecution({
     orchestrationId: input.orchestrationId,
-    orchestrationVersion: orchestration.version,
+    orchestrationVersionMajor: orchestration.versionMajor,
+    orchestrationVersionBuild: orchestration.versionBuild,
     context: {},
     triggerData: {
       triggerType: "chatbot",

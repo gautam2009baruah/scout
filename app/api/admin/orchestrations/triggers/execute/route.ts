@@ -113,7 +113,8 @@ export async function POST(request: NextRequest) {
     // Create orchestration execution
     const execution = await createExecution({
       orchestrationId,
-      orchestrationVersion: orchestration.version,
+      orchestrationVersionMajor: orchestration.versionMajor,
+      orchestrationVersionBuild: orchestration.versionBuild,
       context: {
         trigger: triggerContext,
       },
