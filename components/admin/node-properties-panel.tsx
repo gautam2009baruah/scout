@@ -4734,9 +4734,10 @@ function SwitchConfig({ config, updateConfig, edges, currentNode }: any) {
           {routes.map((route: any, index: number) => {
             const connected = routeIsConnected(String(route.id));
             return (
-              <details className="rounded-lg border border-slate-200 bg-slate-50" key={route.id}>
+              <details className="group rounded-lg border border-slate-200 bg-slate-50" key={route.id}>
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-2 p-3 [&::-webkit-details-marker]:hidden">
-                  <span className="text-xs font-semibold text-slate-600">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform group-open:rotate-90" />
                     {String(route.name || "").trim() || `Route ${index + 1}`}
                   </span>
                   <div className="flex items-center gap-1">

@@ -16,6 +16,7 @@ import type {
   OrchestrationExecutionStatus,
   NodeExecutionStatus,
   ApprovalStatus,
+  SwitchNodeConfig,
 } from "@/shared/orchestrationTypes";
 import { createTrigger } from "./triggers";
 import { clearTriggerCache } from "./chatbot-trigger-matcher";
@@ -345,6 +346,14 @@ export async function publishOrchestration(
     );
     if (!hasDefaultConnection) {
       throw new Error(`Cannot publish: Switch / Router "${switchNode.label}" must have its Default output connected`);
+    }
+
+    const routes = (switchNode.config as SwitchNodeConfig | undefined)?.routes ?? [];
+    const unusedRoute = routes.find(route =>
+      !connections.some(connection => connection.sourceNodeId === switchNode.id && connection.sourceHandle === route.id)
+    );
+    if (unusedRoute) {
+      throw new Error(`Cannot publish: Switch / Router "${switchNode.label}" has an unconnected route "${unusedRoute.name || "Untitled route"}"`);
     }
   }
 

@@ -747,6 +747,18 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
       return false;
     }
 
+    for (const node of nodes) {
+      if (node.data.nodeType !== "switch") continue;
+      const routes = Array.isArray(node.data.config?.routes) ? node.data.config.routes : [];
+      const unusedRoute = routes.find(
+        (route: any) => !edges.some((edge) => edge.source === node.id && edge.sourceHandle === route.id)
+      );
+      if (unusedRoute) {
+        showToast(`Cannot save: Switch / Router "${node.data.label}" has an unconnected route "${unusedRoute.name || "Untitled route"}". Connect it or remove it.`, "error");
+        return false;
+      }
+    }
+
     // Validate nodes are compatible with current trigger type before saving
     const incompatibleNodes = nodes.filter(node => {
       const nodeType = node.data.nodeType;
