@@ -77,7 +77,7 @@ export function buildOrchestrationSummaryText(orchestration: Orchestration, node
 export async function indexOrchestration(orchestration: Orchestration, nodes: OrchestrationNode[]): Promise<void> {
   const summaryText = buildOrchestrationSummaryText(orchestration, nodes);
 
-  const provider = await getEmbeddingProvider();
+  const provider = await getEmbeddingProvider(orchestration.companyId, orchestration.targetAppId || undefined);
   const embedding = await provider.embed_text(summaryText);
   const mode = await getOrchestrationEmbeddingColumnMode();
 

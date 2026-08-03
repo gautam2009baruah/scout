@@ -29,6 +29,7 @@ type ChatbotEnvironment = {
   name: string;
   url: string;
   isProduction: boolean;
+  activityLoggingEnabled: boolean;
 };
 
 type ConfirmDialog = {
@@ -75,6 +76,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
   const [newEnvironmentName, setNewEnvironmentName] = useState("");
   const [newEnvironmentUrl, setNewEnvironmentUrl] = useState("");
   const [newEnvironmentIsProduction, setNewEnvironmentIsProduction] = useState(false);
+  const [newEnvironmentActivityLoggingEnabled, setNewEnvironmentActivityLoggingEnabled] = useState(false);
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<string | null>(null);
   const [isSavingEnvironment, setIsSavingEnvironment] = useState(false);
   const allModuleKeys = modules.map((module) => String(module.key));
@@ -255,6 +257,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
     setNewEnvironmentName("");
     setNewEnvironmentUrl("");
     setNewEnvironmentIsProduction(false);
+    setNewEnvironmentActivityLoggingEnabled(false);
   }
 
   function resetEnvironmentForm() {
@@ -262,6 +265,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
     setNewEnvironmentName("");
     setNewEnvironmentUrl("");
     setNewEnvironmentIsProduction(false);
+    setNewEnvironmentActivityLoggingEnabled(false);
   }
 
   function beginEditEnvironment(env: ChatbotEnvironment) {
@@ -269,6 +273,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
     setNewEnvironmentName(env.name);
     setNewEnvironmentUrl(env.url);
     setNewEnvironmentIsProduction(env.isProduction);
+    setNewEnvironmentActivityLoggingEnabled(env.activityLoggingEnabled);
   }
 
   // Single create/update form, mirroring the target-app modal above — edits
@@ -303,7 +308,8 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
           name,
           url: newEnvironmentUrl.trim(),
           targetAppId: environmentTargetAppId,
-          isProduction: newEnvironmentIsProduction
+          isProduction: newEnvironmentIsProduction,
+          activityLoggingEnabled: newEnvironmentActivityLoggingEnabled
         })
       }
     );
@@ -741,6 +747,18 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                     <HelpHint text="Versions are v{major}.{build} (e.g. 1.003). Publishing bumps the build number. The major number only advances the first time a build is promoted to an environment marked production here — promoting that same build to another production environment afterward, or rolling a production environment back to an older build, never changes it again." />
                   </span>
                 </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    checked={newEnvironmentActivityLoggingEnabled}
+                    className="h-4 w-4 rounded border-slate-300"
+                    onChange={(event) => setNewEnvironmentActivityLoggingEnabled(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span className="inline-flex items-center gap-1.5">
+                    Log trigger &amp; chat activity
+                    <HelpHint text="Off by default. When enabled, chatbot-triggered orchestration runs and chat queries made through this environment are recorded for Triggers Monitoring and Chatbot Analytics. Leave disabled for environments (e.g. dev/test) you don't want accumulating monitoring data." />
+                  </span>
+                </label>
                 <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
                   <button
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
@@ -774,6 +792,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                         <p className="truncate text-sm text-slate-800">
                           {env.name}
                           {env.isProduction ? <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Production</span> : null}
+                          {env.activityLoggingEnabled ? <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">Logging</span> : null}
                         </p>
                         <p className="truncate text-sm text-slate-500">{env.url || "-"}</p>
                         <div className="flex justify-end gap-1">

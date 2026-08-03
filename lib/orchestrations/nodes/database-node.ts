@@ -562,7 +562,7 @@ export async function executeDatabaseNode(
     const maxRows = getMaxRows(config);
     const allowSelectStar = config.allowSelectStar === true;
     const schemaSummary = normalizeSchemaSummary(schemaRow.schema_json);
-    const provider = await getLLMProvider(companyId);
+    const provider = await getLLMProvider(companyId, targetAppId || undefined);
     const readiness = await assessDatabaseRequestReadiness({
       provider,
       userRequest,

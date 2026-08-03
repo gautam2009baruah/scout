@@ -31,6 +31,10 @@ type EmbeddingProviderConfig = {
   api_key: string;
   is_active: boolean;
   is_primary: boolean;
+  target_app_id: string | null;
+  environment_id: string | null;
+  target_app_name?: string | null;
+  environment_name?: string | null;
 };
 
 type LLMProviderConfig = {
@@ -42,6 +46,20 @@ type LLMProviderConfig = {
   api_key: string;
   is_active: boolean;
   is_primary: boolean;
+  target_app_id: string | null;
+  environment_id: string | null;
+  target_app_name?: string | null;
+  environment_name?: string | null;
+};
+
+type TargetAppOption = {
+  id: string;
+  name: string;
+};
+
+type EnvironmentOption = {
+  id: string;
+  name: string;
 };
 
 type ProviderOption = {
@@ -57,6 +75,7 @@ type AIConfigurationFormProps = {
   config: AIConfig;
   embeddingProviders: ProviderOption[];
   llmProviders: ProviderOption[];
+  targetApps: TargetAppOption[];
 };
 
 type Feedback = {
@@ -78,6 +97,8 @@ type EmbeddingDraft = {
   api_key: string;
   is_active: boolean;
   is_primary: boolean;
+  target_app_id: string;
+  environment_id: string;
 };
 
 type LLMDraft = {
@@ -88,6 +109,8 @@ type LLMDraft = {
   api_key: string;
   is_active: boolean;
   is_primary: boolean;
+  target_app_id: string;
+  environment_id: string;
 };
 
 const initialFeedback: Feedback = {
@@ -130,7 +153,9 @@ function buildEmbeddingDraft(option: ProviderOption): EmbeddingDraft {
     endpoint: defaultEmbeddingEndpointFor(option.key, option.default_model || ""),
     api_key: "",
     is_active: true,
-    is_primary: false
+    is_primary: false,
+    target_app_id: "",
+    environment_id: ""
   };
 }
 
@@ -142,7 +167,9 @@ function buildLlmDraft(option: ProviderOption): LLMDraft {
     endpoint: defaultLlmEndpointFor(option.key, option.default_model || ""),
     api_key: "",
     is_active: true,
-    is_primary: false
+    is_primary: false,
+    target_app_id: "",
+    environment_id: ""
   };
 }
 
@@ -183,7 +210,7 @@ function HintTooltip({ text }: { text: string }) {
   );
 }
 
-export function AIConfigurationForm({ companyName, config, embeddingProviders, llmProviders }: AIConfigurationFormProps) {
+export function AIConfigurationForm({ companyName, config, embeddingProviders, llmProviders, targetApps }: AIConfigurationFormProps) {
   const [activeTab, setActiveTab] = useState<"llm" | "embedding">("llm");
   const [adminConfig, setAdminConfig] = useState(config);
   const [feedback, setFeedback] = useState<Feedback>(initialFeedback);
@@ -196,9 +223,33 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
   const [embeddingDraft, setEmbeddingDraft] = useState<EmbeddingDraft>(buildEmbeddingDraft(defaultEmbeddingProvider));
   const [llmDraft, setLlmDraft] = useState<LLMDraft>(buildLlmDraft(defaultLlmProvider));
+  const [environmentsByTargetApp, setEnvironmentsByTargetApp] = useState<Record<string, EnvironmentOption[]>>({});
 
   const embeddingProviderMap = useMemo(() => new Map(embeddingProviders.map((item) => [item.key, item])), [embeddingProviders]);
   const llmProviderMap = useMemo(() => new Map(llmProviders.map((item) => [item.key, item])), [llmProviders]);
+  const sortedTargetApps = useMemo(() => [...targetApps].sort((a, b) => a.name.localeCompare(b.name)), [targetApps]);
+
+  const embeddingEnvironments = embeddingDraft.target_app_id ? (environmentsByTargetApp[embeddingDraft.target_app_id] ?? []) : [];
+  const llmEnvironments = llmDraft.target_app_id ? (environmentsByTargetApp[llmDraft.target_app_id] ?? []) : [];
+
+  async function loadEnvironments(targetAppId: string) {
+    if (!targetAppId || environmentsByTargetApp[targetAppId]) {
+      return;
+    }
+
+    const response = await fetch(`/api/admin/ai-configuration/environments?targetAppId=${encodeURIComponent(targetAppId)}`, { method: "GET" });
+    const body = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      showToast(typeof body?.message === "string" ? body.message : "Unable to load environments.", "error");
+      return;
+    }
+
+    const environments: EnvironmentOption[] = Array.isArray(body?.environments)
+      ? body.environments.map((item: { id: string; name: string }) => ({ id: item.id, name: item.name }))
+      : [];
+    setEnvironmentsByTargetApp((prev) => ({ ...prev, [targetAppId]: environments }));
+  }
 
   function resetEmbeddingDraft() {
     setEmbeddingDraft(buildEmbeddingDraft(defaultEmbeddingProvider));
@@ -233,6 +284,8 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
         api_key: embeddingDraft.api_key,
         is_active: embeddingDraft.is_active,
         is_primary: embeddingDraft.is_primary,
+        target_app_id: embeddingDraft.target_app_id || null,
+        environment_id: embeddingDraft.environment_id || null,
         reembed_documents: reembedDocuments
       })
     });
@@ -274,7 +327,9 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
         endpoint: llmDraft.endpoint,
         api_key: llmDraft.api_key,
         is_active: llmDraft.is_active,
-        is_primary: llmDraft.is_primary
+        is_primary: llmDraft.is_primary,
+        target_app_id: llmDraft.target_app_id || null,
+        environment_id: llmDraft.environment_id || null
       })
     });
 
@@ -300,8 +355,13 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
       endpoint: configItem.endpoint || defaultEmbeddingEndpointFor(configItem.provider, configItem.model),
       api_key: configItem.api_key,
       is_active: configItem.is_active,
-      is_primary: configItem.is_primary
+      is_primary: configItem.is_primary,
+      target_app_id: configItem.target_app_id || "",
+      environment_id: configItem.environment_id || ""
     });
+    if (configItem.target_app_id) {
+      void loadEnvironments(configItem.target_app_id);
+    }
     setActiveTab("embedding");
   }
 
@@ -313,8 +373,13 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
       endpoint: configItem.endpoint || defaultLlmEndpointFor(configItem.provider, configItem.model),
       api_key: configItem.api_key,
       is_active: configItem.is_active,
-      is_primary: configItem.is_primary
+      is_primary: configItem.is_primary,
+      target_app_id: configItem.target_app_id || "",
+      environment_id: configItem.environment_id || ""
     });
+    if (configItem.target_app_id) {
+      void loadEnvironments(configItem.target_app_id);
+    }
     setActiveTab("llm");
   }
 
@@ -468,6 +533,49 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    Target App
+                    <HintTooltip text="Leave unset to apply this configuration company-wide, across every target app and environment." />
+                  </span>
+                  <select
+                    className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
+                    onChange={(event) => {
+                      const nextTargetAppId = event.target.value;
+                      setEmbeddingDraft((prev) => ({ ...prev, target_app_id: nextTargetAppId, environment_id: "" }));
+                      if (nextTargetAppId) {
+                        void loadEnvironments(nextTargetAppId);
+                      }
+                    }}
+                    value={embeddingDraft.target_app_id}
+                  >
+                    <option value="">Company-wide (all target apps)</option>
+                    {sortedTargetApps.map((app) => (
+                      <option key={app.id} value={app.id}>{app.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    Environment
+                    <HintTooltip text="Leave unset to apply this configuration to every environment of the selected target app." />
+                  </span>
+                  <select
+                    className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                    disabled={!embeddingDraft.target_app_id}
+                    onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, environment_id: event.target.value }))}
+                    value={embeddingDraft.environment_id}
+                  >
+                    <option value="">All environments</option>
+                    {embeddingEnvironments.map((env) => (
+                      <option key={env.id} value={env.id}>{env.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
                 <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700">
                   <input checked={embeddingDraft.is_active} onChange={(event) => setEmbeddingDraft((prev) => ({ ...prev, is_active: event.target.checked }))} type="checkbox" />
                   Mark as active
@@ -510,6 +618,8 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Model</th>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Dim</th>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Endpoint</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Target App</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Environment</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-700">Active</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-700">Primary</th>
                   <th className="px-3 py-2 text-right font-semibold text-slate-700">Actions</th>
@@ -518,7 +628,7 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
               <tbody className="divide-y divide-slate-200 bg-white">
                 {adminConfig.embedding_configs.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-4 text-slate-500" colSpan={7}>No embedding configurations saved.</td>
+                    <td className="px-3 py-4 text-slate-500" colSpan={9}>No embedding configurations saved.</td>
                   </tr>
                 ) : adminConfig.embedding_configs.map((item) => (
                   <tr key={item.id}>
@@ -526,6 +636,8 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                     <td className="px-3 py-3 text-slate-900">{item.model}</td>
                     <td className="px-3 py-3 text-slate-700">{item.dimension || "-"}</td>
                     <td className="px-3 py-3 text-slate-700">{item.endpoint || "-"}</td>
+                    <td className="px-3 py-3 text-slate-700">{item.target_app_name ?? "Company-wide"}</td>
+                    <td className="px-3 py-3 text-slate-700">{item.environment_name ?? "All environments"}</td>
                     <td className="px-3 py-3 text-center">
                       <button className="inline-flex items-center justify-center" onClick={() => patchConfig("embedding", item.id, "toggle_active", !item.is_active)} type="button">
                         {item.is_active ? <ToggleRight className="h-5 w-5 text-emerald-600" /> : <ToggleLeft className="h-5 w-5 text-slate-400" />}
@@ -626,6 +738,49 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                   </label>
                 </div>
               </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    Target App
+                    <HintTooltip text="Leave unset to apply this configuration company-wide, across every target app and environment." />
+                  </span>
+                  <select
+                    className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
+                    onChange={(event) => {
+                      const nextTargetAppId = event.target.value;
+                      setLlmDraft((prev) => ({ ...prev, target_app_id: nextTargetAppId, environment_id: "" }));
+                      if (nextTargetAppId) {
+                        void loadEnvironments(nextTargetAppId);
+                      }
+                    }}
+                    value={llmDraft.target_app_id}
+                  >
+                    <option value="">Company-wide (all target apps)</option>
+                    {sortedTargetApps.map((app) => (
+                      <option key={app.id} value={app.id}>{app.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    Environment
+                    <HintTooltip text="Leave unset to apply this configuration to every environment of the selected target app." />
+                  </span>
+                  <select
+                    className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+                    disabled={!llmDraft.target_app_id}
+                    onChange={(event) => setLlmDraft((prev) => ({ ...prev, environment_id: event.target.value }))}
+                    value={llmDraft.environment_id}
+                  >
+                    <option value="">All environments</option>
+                    {llmEnvironments.map((env) => (
+                      <option key={env.id} value={env.id}>{env.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
             <div className="mt-3 flex gap-2">
               <button className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={feedback.status === "submitting"} type="submit">
@@ -649,6 +804,8 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Provider</th>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Model</th>
                   <th className="px-3 py-2 text-left font-semibold text-slate-700">Endpoint</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Target App</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700">Environment</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-700">Active</th>
                   <th className="px-3 py-2 text-center font-semibold text-slate-700">Primary</th>
                   <th className="px-3 py-2 text-right font-semibold text-slate-700">Actions</th>
@@ -657,13 +814,15 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
               <tbody className="divide-y divide-slate-200 bg-white">
                 {adminConfig.llm_configs.length === 0 ? (
                   <tr>
-                    <td className="px-3 py-4 text-slate-500" colSpan={6}>No LLM configurations saved.</td>
+                    <td className="px-3 py-4 text-slate-500" colSpan={8}>No LLM configurations saved.</td>
                   </tr>
                 ) : adminConfig.llm_configs.map((item) => (
                   <tr key={item.id}>
                     <td className="px-3 py-3 text-slate-700">{item.provider}</td>
                     <td className="px-3 py-3 text-slate-900">{item.model}</td>
                     <td className="px-3 py-3 text-slate-700">{item.endpoint || "-"}</td>
+                    <td className="px-3 py-3 text-slate-700">{item.target_app_name ?? "Company-wide"}</td>
+                    <td className="px-3 py-3 text-slate-700">{item.environment_name ?? "All environments"}</td>
                     <td className="px-3 py-3 text-center">
                       <button className="inline-flex items-center justify-center" onClick={() => patchConfig("llm", item.id, "toggle_active", !item.is_active)} type="button">
                         {item.is_active ? <ToggleRight className="h-5 w-5 text-emerald-600" /> : <ToggleLeft className="h-5 w-5 text-slate-400" />}

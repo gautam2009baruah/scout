@@ -1331,7 +1331,7 @@ export async function generateDocumentVersionChangeSummary(
     };
   }
 
-  const provider = await getLLMProvider();
+  const provider = await getLLMProvider(session.user.tenantId);
   const aiSummary = await provider.generate_answer(
     buildChangeSummarySystemPrompt(),
     buildChangeSummaryUserPrompt(comparison),

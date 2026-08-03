@@ -62,7 +62,7 @@ export type PlannerTurnInput = {
 export type PlannerAgentDeps = {
   findMatchingOrchestration: typeof findMatchingOrchestration;
   buildPlannerContext: typeof buildPlannerContext;
-  draftWithLLM: (input: { companyId: string; systemPrompt: string; userPrompt: string; contextText: string }) => Promise<string>;
+  draftWithLLM: (input: { companyId: string; targetAppId: string; systemPrompt: string; userPrompt: string; contextText: string }) => Promise<string>;
   executeOrchestration: (input: {
     orchestrationId: string;
     externalUserId: string;
@@ -77,8 +77,8 @@ export type PlannerAgentDeps = {
   getActivePendingPlanRequest: (input: { targetAppId: string; externalUserId: string }) => Promise<{ id: string } | null>;
 };
 
-async function defaultDraftWithLLM(input: { companyId: string; systemPrompt: string; userPrompt: string; contextText: string }) {
-  const provider = await getLLMProvider(input.companyId);
+async function defaultDraftWithLLM(input: { companyId: string; targetAppId: string; systemPrompt: string; userPrompt: string; contextText: string }) {
+  const provider = await getLLMProvider(input.companyId, input.targetAppId);
   return provider.generate_answer(input.systemPrompt, input.userPrompt, input.contextText);
 }
 
@@ -213,6 +213,7 @@ async function runDraftingRound(
 
     const raw = await deps.draftWithLLM({
       companyId: input.companyId,
+      targetAppId: input.targetAppId,
       systemPrompt,
       userPrompt: userPrompt + retryNote,
       contextText,

@@ -1569,6 +1569,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
               orchestrationId={orchestration?.id}
               companyId={orchestration?.companyId}
               targetAppId={orchestration?.targetAppId}
+              isViewingHistoricalVersion={loadedVersion !== null}
               onClose={() => setIsPropertiesOpen(false)}
               onUpdate={(updates) => updateSelectedNode(updates)}
               onDelete={deleteSelectedNode}

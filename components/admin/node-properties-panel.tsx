@@ -58,13 +58,19 @@ interface NodePropertiesPanelProps {
   orchestrationId?: string; // Orchestration ID for saving to database
   companyId?: string; // Company ID for filtering email credentials
   targetAppId?: string | null; // Target App ID for filtering email credentials
+  // True when the canvas currently holds a historical version's snapshot
+  // (loaded via "load an older version") rather than the live orchestration_nodes
+  // rows. Snapshot node ids are reused as React Flow keys but do not exist in
+  // the DB once any later save/publish has regenerated the live nodes, so a
+  // direct per-node PUT by id would fail — see handleSave below.
+  isViewingHistoricalVersion?: boolean;
   onClose: () => void;
   onUpdate: (updates: Partial<Node>) => void;
   onDelete: () => void;
   onDatabaseSave?: () => void; // Called after successful database save
 }
 
-export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestrationId, companyId, targetAppId, onClose, onUpdate, onDelete, onDatabaseSave }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestrationId, companyId, targetAppId, isViewingHistoricalVersion, onClose, onUpdate, onDelete, onDatabaseSave }: NodePropertiesPanelProps) {
   const nodeType = node.data.nodeType as NodeType;
   const defaultNodeLabel = NODE_CONFIGS.find((item) => item.type === nodeType)?.label || "";
   const editableNodeLabel = node.data.label === defaultNodeLabel ? "" : (node.data.label || "");
@@ -520,10 +526,16 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       },
     });
 
-    // Save to database if orchestrationId is available and node exists in DB
-    // Check if node has a database ID (UUID format) vs temporary client ID (node-timestamp)
-    const hasDbId = orchestrationId && node.id && !node.id.startsWith('node-');
-    
+    // Save to database if orchestrationId is available and node exists in DB.
+    // Check if node has a database ID (UUID format) vs temporary client ID (node-timestamp).
+    // While viewing a historical version, node ids are a past snapshot's ids —
+    // real UUIDs, but not necessarily live rows (every full "Save Changes" on
+    // the canvas deletes and recreates all nodes with fresh ids). A direct PUT
+    // by id would 404 in that case, so route this through the in-memory-only
+    // path instead; only the top-level "Save Changes" button correctly
+    // persists edits made on top of a loaded historical version.
+    const hasDbId = orchestrationId && node.id && !node.id.startsWith('node-') && !isViewingHistoricalVersion;
+
     if (hasDbId) {
       try {
         const response = await fetch('/api/admin/orchestrations/nodes', {
@@ -568,10 +580,14 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         return;
       }
     } else {
-      // No database ID (new node not yet saved) - just show info for in-memory save
+      // No live database row to PUT against — either a brand-new node not yet
+      // saved, or a node loaded from a historical version snapshot. Either
+      // way the change is only in memory until the top-level Save runs.
       if (typeof window !== 'undefined' && window.showScoutNotification) {
         window.showScoutNotification({
-          message: 'Node configuration saved. Click "Save Draft" to persist to database.',
+          message: isViewingHistoricalVersion
+            ? 'Node configuration updated. You\'re viewing an older version — click "Save Changes" at the top to persist it.'
+            : 'Node configuration saved. Click "Save Draft" to persist to database.',
           type: 'info',
           duration: 4000,
         });
@@ -691,8 +707,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} orchestrationId={orchestrationId} />}
         {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} />}
         {nodeType === "data_capture" && <DataCaptureConfig config={localConfig} updateConfig={updateLocalConfig} />}
-        {nodeType === "ai_extraction" && <AIExtractionConfig config={localConfig} updateConfig={updateLocalConfig} />}
-        {nodeType === "ai_task" && <AITaskConfig config={localConfig} updateConfig={updateLocalConfig} />}
+        {nodeType === "ai_extraction" && <AIExtractionConfig config={localConfig} updateConfig={updateLocalConfig} targetAppId={targetAppId} />}
+        {nodeType === "ai_task" && <AITaskConfig config={localConfig} updateConfig={updateLocalConfig} targetAppId={targetAppId} />}
         {nodeType === "knowledge_search" && <KnowledgeSearchConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "condition" && <ConditionConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "switch" && <SwitchConfig config={localConfig} updateConfig={updateLocalConfig} edges={edges} currentNode={node} />}
@@ -809,11 +825,16 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   );
   
   // Email credentials for email trigger
-  type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean; target_app_id: string | null };
+  type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean; target_app_id: string | null; environments?: Array<{ id: string; name: string }> };
   const [emailCredentials, setEmailCredentials] = useState<EmailCredential[]>([]);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
   const [emailInboxOpen, setEmailInboxOpen] = useState(false);
   const emailInboxRef = useRef<HTMLDivElement>(null);
+  // Since a credential can now be listed once per linked environment (same
+  // cred.id, different row), tracking cred.id alone would highlight every
+  // one of that credential's rows at once. This tracks the exact row last
+  // clicked so only it is highlighted.
+  const [selectedEmailInboxRowKey, setSelectedEmailInboxRowKey] = useState<string | null>(null);
   const [generatedCredential, setGeneratedCredential] = useState<{
     title: string;
     value: string;
@@ -1568,49 +1589,69 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                 </a>
               </div>
             ) : (
-              <div ref={emailInboxRef} className="relative min-w-0 w-full">
-                <button
-                  type="button"
-                  className="flex w-full min-w-0 items-center justify-between gap-2 rounded border border-slate-300 bg-white px-3 py-2 text-left text-sm"
-                  onClick={() => setEmailInboxOpen((open) => !open)}
-                  aria-haspopup="listbox"
-                  aria-expanded={emailInboxOpen}
-                >
-                  <span className="min-w-0 whitespace-normal break-words">
-                    {(() => {
-                      const selected = emailCredentials.find((cred) => cred.id === config.emailCredentialId);
-                      return selected
-                        ? `${selected.name} (${selected.email_address}) - ${selected.provider.toUpperCase()}`
-                        : "Select email inbox";
-                    })()}
-                  </span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
-                </button>
-                {emailInboxOpen && (
-                  <div
-                    role="listbox"
-                    className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
-                  >
-                    {emailCredentials.map((cred) => (
-                      <button
-                        key={cred.id}
-                        type="button"
-                        role="option"
-                        aria-selected={config.emailCredentialId === cred.id}
-                        className={`block w-full min-w-0 whitespace-normal break-words px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                          config.emailCredentialId === cred.id ? "bg-slate-100 font-medium" : ""
-                        }`}
-                        onClick={() => {
-                          updateConfig({ emailCredentialId: cred.id });
-                          setEmailInboxOpen(false);
-                        }}
+              (() => {
+                // One row per environment the credential is linked to, since a
+                // single credential can now apply to several environments —
+                // showing it once per environment makes clear which
+                // environment(s) this pick is valid for at runtime.
+                const rows = emailCredentials.flatMap((cred) =>
+                  (cred.environments && cred.environments.length > 0 ? cred.environments : [null]).map((env) => ({
+                    cred,
+                    env,
+                    key: `${cred.id}-${env?.id ?? "none"}`,
+                  }))
+                );
+                // Fall back to the first row for the saved credential id until
+                // the user explicitly clicks a row in this session.
+                const effectiveSelectedKey = selectedEmailInboxRowKey
+                  ?? rows.find((row) => row.cred.id === config.emailCredentialId)?.key
+                  ?? null;
+                const selectedRow = rows.find((row) => row.key === effectiveSelectedKey) || null;
+
+                return (
+                  <div ref={emailInboxRef} className="relative min-w-0 w-full">
+                    <button
+                      type="button"
+                      className="flex w-full min-w-0 items-center justify-between gap-2 rounded border border-slate-300 bg-white px-3 py-2 text-left text-sm"
+                      onClick={() => setEmailInboxOpen((open) => !open)}
+                      aria-haspopup="listbox"
+                      aria-expanded={emailInboxOpen}
+                    >
+                      <span className="min-w-0 whitespace-normal break-words">
+                        {selectedRow
+                          ? `${selectedRow.cred.name} (${selectedRow.cred.email_address}) - ${selectedRow.cred.provider.toUpperCase()} — ${selectedRow.env?.name ?? "N/A"}`
+                          : "Select email inbox"}
+                      </span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                    </button>
+                    {emailInboxOpen && (
+                      <div
+                        role="listbox"
+                        className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
                       >
-                        {cred.name} ({cred.email_address}) - {cred.provider.toUpperCase()}
-                      </button>
-                    ))}
+                        {rows.map(({ cred, env, key }) => (
+                          <button
+                            key={key}
+                            type="button"
+                            role="option"
+                            aria-selected={key === effectiveSelectedKey}
+                            className={`block w-full min-w-0 whitespace-normal break-words px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+                              key === effectiveSelectedKey ? "bg-slate-100 font-medium" : ""
+                            }`}
+                            onClick={() => {
+                              updateConfig({ emailCredentialId: cred.id });
+                              setSelectedEmailInboxRowKey(key);
+                              setEmailInboxOpen(false);
+                            }}
+                          >
+                            {cred.name} ({cred.email_address}) - {cred.provider.toUpperCase()} — {env?.name ?? "N/A"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()
             )}
             <p className="mt-1 text-xs text-slate-500">
               Email credentials are pre-configured in Email Credentials Manager
@@ -3468,7 +3509,61 @@ function DataCaptureConfig({ config, updateConfig }: any) {
   );
 }
 
-function AIExtractionConfig({ config, updateConfig }: any) {
+type AiProviderInfo = {
+  provider: string;
+  model: string;
+  scope?: "company" | "target_app";
+  environments?: Array<{ id: string; name: string; provider: string; model: string; isOverride: boolean }>;
+};
+
+// Shared by AIExtractionConfig/AITaskConfig. AI Configuration can override
+// the LLM per target app and per environment, so once a target app is known
+// there's no single "active" provider — this shows the target-app default
+// plus a breakdown of any environment that overrides it.
+function AiProviderNotice({ info }: { info: AiProviderInfo | null }) {
+  if (!info) {
+    return (
+      <div className="order-2 rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
+        <span className="italic">loading…</span>
+      </div>
+    );
+  }
+
+  const overrides = (info.environments || []).filter((env) => env.isOverride);
+
+  return (
+    <div className="order-2 rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
+      <div>
+        {info.scope === "target_app" ? "Default AI provider for this target app" : "Default AI provider"}:{" "}
+        <span className="font-semibold">
+          {info.provider}
+          {info.model ? ` (${info.model})` : ""}
+        </span>
+      </div>
+      {info.scope === "target_app" && (
+        overrides.length > 0 ? (
+          <div className="mt-1">
+            Per-environment overrides:
+            <ul className="mt-0.5 list-disc pl-4">
+              {overrides.map((env) => (
+                <li key={env.id}>
+                  {env.name}: <span className="font-semibold">{env.provider}{env.model ? ` (${env.model})` : ""}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <div className="mt-1">No environment-specific overrides — every environment of this target app uses this default.</div>
+        )
+      )}
+      <div className="mt-1">
+        Change this on the <span className="font-semibold">AI Configuration</span> page.
+      </div>
+    </div>
+  );
+}
+
+function AIExtractionConfig({ config, updateConfig, targetAppId }: any) {
   const [schemaFields, setSchemaFields] = useState<Array<{ key: string; type: string; description: string; required: boolean }>>(
     Object.entries(config.schema || {}).map(([key, def]) => {
       if (def && typeof def === "object") {
@@ -3483,8 +3578,13 @@ function AIExtractionConfig({ config, updateConfig }: any) {
     })
   );
 
-  // Active LLM provider (from AI Configuration), shown for reference
-  const [activeProvider, setActiveProvider] = useState<{ provider: string; model: string } | null>(null);
+  // Default LLM provider (from AI Configuration), shown for reference —
+  // scoped to this orchestration's target app when known, since AI
+  // Configuration can now override the provider per environment too (see
+  // ai-provider/route.ts). There is no single "active" provider once a
+  // target app is known — only a default plus whichever environments (if
+  // any) have their own override.
+  const [activeProvider, setActiveProvider] = useState<AiProviderInfo | null>(null);
 
   // Seed default config values on mount so they persist even if the user
   // never touches these fields before saving.
@@ -3501,11 +3601,12 @@ function AIExtractionConfig({ config, updateConfig }: any) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/admin/orchestrations/ai-provider")
+    const query = targetAppId ? `?targetAppId=${encodeURIComponent(targetAppId)}` : "";
+    fetch(`/api/admin/orchestrations/ai-provider${query}`)
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled && data.success) {
-          setActiveProvider({ provider: data.provider, model: data.model });
+          setActiveProvider({ provider: data.provider, model: data.model, scope: data.scope, environments: data.environments });
         }
       })
       .catch(() => {
@@ -3514,7 +3615,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [targetAppId]);
 
   useEffect(() => {
     const schema = schemaFields.reduce((acc, field) => {
@@ -3530,22 +3631,7 @@ function AIExtractionConfig({ config, updateConfig }: any) {
     <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
       <div className="flex flex-col gap-4">
       {/* Active provider */}
-      <div className="order-2 rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
-        <div>
-          Active AI provider:{" "}
-          {activeProvider ? (
-            <span className="font-semibold">
-              {activeProvider.provider}
-              {activeProvider.model ? ` (${activeProvider.model})` : ""}
-            </span>
-          ) : (
-            <span className="italic">loading…</span>
-          )}
-        </div>
-        <div className="mt-1">
-          Change it on the <span className="font-semibold">AI Configuration</span> page.
-        </div>
-      </div>
+      <AiProviderNotice info={activeProvider} />
 
       {/* How to use */}
       <div className="order-3">
@@ -3797,7 +3883,7 @@ function CollapsibleHelp({ title, children }: { title: string; children: React.R
   );
 }
 
-function AITaskConfig({ config, updateConfig }: any) {
+function AITaskConfig({ config, updateConfig, targetAppId }: any) {
   const [outputFields, setOutputFields] = useState<Array<{ key: string; type: string; description: string }>>(
     Array.isArray(config.outputFields) && config.outputFields.length > 0
       ? config.outputFields.map((field: any) => ({
@@ -3808,8 +3894,10 @@ function AITaskConfig({ config, updateConfig }: any) {
       : [{ key: "", type: "string", description: "" }]
   );
 
-  // Active LLM provider (from AI Configuration), shown for reference
-  const [activeProvider, setActiveProvider] = useState<{ provider: string; model: string } | null>(null);
+  // Default LLM provider (from AI Configuration), shown for reference — see
+  // the comment on AiProviderNotice above for why this is a "default", not
+  // a single "active" provider, once a target app is known.
+  const [activeProvider, setActiveProvider] = useState<AiProviderInfo | null>(null);
 
   // Seed default config values on mount so they persist even if the user
   // never touches these fields before saving.
@@ -3827,11 +3915,12 @@ function AITaskConfig({ config, updateConfig }: any) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/admin/orchestrations/ai-provider")
+    const query = targetAppId ? `?targetAppId=${encodeURIComponent(targetAppId)}` : "";
+    fetch(`/api/admin/orchestrations/ai-provider${query}`)
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled && data.success) {
-          setActiveProvider({ provider: data.provider, model: data.model });
+          setActiveProvider({ provider: data.provider, model: data.model, scope: data.scope, environments: data.environments });
         }
       })
       .catch(() => {
@@ -3840,7 +3929,7 @@ function AITaskConfig({ config, updateConfig }: any) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [targetAppId]);
 
   useEffect(() => {
     updateConfig({ outputFields });
@@ -3852,22 +3941,7 @@ function AITaskConfig({ config, updateConfig }: any) {
     <div className="grid grid-cols-1 gap-6 md:grid-cols-[2fr_3fr]">
       <div className="flex flex-col gap-4">
       {/* Active provider */}
-      <div className="order-2 rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
-        <div>
-          Active AI provider:{" "}
-          {activeProvider ? (
-            <span className="font-semibold">
-              {activeProvider.provider}
-              {activeProvider.model ? ` (${activeProvider.model})` : ""}
-            </span>
-          ) : (
-            <span className="italic">loading…</span>
-          )}
-        </div>
-        <div className="mt-1">
-          Change it on the <span className="font-semibold">AI Configuration</span> page.
-        </div>
-      </div>
+      <AiProviderNotice info={activeProvider} />
 
       {/* How to use */}
       <div className="order-3">
@@ -4950,7 +5024,27 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [testState, setTestState] = useState<Record<string, { loading: boolean; status: "idle" | "success" | "error"; message: string }>>({});
-  const [senderProviders, setSenderProviders] = useState<Array<{ id: string; provider: string; name: string; from_name: string | null; from_email: string }>>([]);
+  const [senderProviders, setSenderProviders] = useState<Array<{ id: string; provider: string; name: string; from_name: string | null; from_email: string; environments: Array<{ id: string; name: string }> }>>([]);
+  // A native <select> can't usefully show a provider once per linked
+  // environment (duplicate option values break controlled-select selection
+  // in the browser), so this dropdown is hand-rolled instead — same pattern
+  // as the Email Trigger node's inbox picker.
+  const [senderProviderOpen, setSenderProviderOpen] = useState(false);
+  const senderProviderRef = useRef<HTMLDivElement>(null);
+  const [selectedSenderProviderRowKey, setSelectedSenderProviderRowKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!senderProviderOpen) return;
+
+    const closeSenderProvider = (event: MouseEvent) => {
+      if (!senderProviderRef.current?.contains(event.target as globalThis.Node)) {
+        setSenderProviderOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", closeSenderProvider);
+    return () => document.removeEventListener("mousedown", closeSenderProvider);
+  }, [senderProviderOpen]);
 
   useEffect(() => {
     let active = true;
@@ -4980,6 +5074,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
               name: String(item.name || ""),
               from_name: item.from_name ? String(item.from_name) : null,
               from_email: String(item.from_email || ""),
+              environments: Array.isArray(item.environments) ? item.environments : [],
             }))
           );
         }
@@ -5448,27 +5543,71 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                   <div className="grid grid-cols-1 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">Sender provider <span className="text-red-500">*</span></label>
-                      <select
-                        className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
-                        value={channel.senderCredentialId || ""}
-                        onChange={(e) => {
-                          const selectedId = e.target.value;
-                          const selectedProvider = senderProviders.find((provider) => provider.id === selectedId);
-                          const autoFromName = selectedProvider?.from_name || selectedProvider?.name || "";
+                      {(() => {
+                        const rows = senderProviders.flatMap((provider) =>
+                          (provider.environments.length > 0 ? provider.environments : [null]).map((env) => ({
+                            provider,
+                            env,
+                            key: `${provider.id}-${env?.id ?? "none"}`,
+                          }))
+                        );
+                        const effectiveSelectedKey = selectedSenderProviderRowKey
+                          ?? rows.find((row) => row.provider.id === channel.senderCredentialId)?.key
+                          ?? null;
+                        const selectedRow = rows.find((row) => row.key === effectiveSelectedKey) || null;
 
-                          setChannel("email", {
-                            senderCredentialId: selectedId,
-                            fromName: autoFromName,
-                          });
-                        }}
-                      >
-                        <option value="">Select active provider</option>
-                        {senderProviders.map((provider) => (
-                          <option key={provider.id} value={provider.id}>
-                            {provider.provider.toUpperCase()} - {provider.name}
-                          </option>
-                        ))}
-                      </select>
+                        return (
+                          <div ref={senderProviderRef} className="relative min-w-0 w-full">
+                            <button
+                              type="button"
+                              className={`flex w-full min-w-0 items-center justify-between gap-2 rounded border bg-white px-2 py-1.5 text-left text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
+                              onClick={() => setSenderProviderOpen((open) => !open)}
+                              aria-haspopup="listbox"
+                              aria-expanded={senderProviderOpen}
+                            >
+                              <span className="min-w-0 whitespace-normal break-words">
+                                {selectedRow
+                                  ? `${selectedRow.provider.provider.toUpperCase()} - ${selectedRow.provider.name} — ${selectedRow.env?.name ?? "N/A"}`
+                                  : "Select active provider"}
+                              </span>
+                              <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                            </button>
+                            {senderProviderOpen && (
+                              <div
+                                role="listbox"
+                                className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
+                              >
+                                {/* One row per environment the provider is linked to, since a
+                                    single sender credential can now apply to several
+                                    environments — this makes clear which environment(s) this
+                                    pick is valid for at runtime. */}
+                                {rows.map(({ provider, env, key }) => (
+                                  <button
+                                    key={key}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={key === effectiveSelectedKey}
+                                    className={`block w-full min-w-0 whitespace-normal break-words px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+                                      key === effectiveSelectedKey ? "bg-slate-100 font-medium" : ""
+                                    }`}
+                                    onClick={() => {
+                                      const autoFromName = provider.from_name || provider.name || "";
+                                      setChannel("email", {
+                                        senderCredentialId: provider.id,
+                                        fromName: autoFromName,
+                                      });
+                                      setSelectedSenderProviderRowKey(key);
+                                      setSenderProviderOpen(false);
+                                    }}
+                                  >
+                                    {provider.provider.toUpperCase()} - {provider.name} — {env?.name ?? "N/A"}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                       <p className="mt-1 text-xs text-slate-500">Active sender providers scoped to this target app.</p>
                       {channelErrors.email.senderCredentialId && <p className="mt-1 text-xs text-red-600">{channelErrors.email.senderCredentialId}</p>}
                     </div>
@@ -6558,7 +6697,7 @@ function ForEachConfig({ config, updateConfig, companyId, targetAppId }: any) {
           {bodyNodeType === "notification" && (
             <NotificationConfig config={bodyConfig} updateConfig={updateBodyConfig} companyId={companyId} targetAppId={targetAppId} />
           )}
-          {bodyNodeType === "ai_extraction" && <AIExtractionConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
+          {bodyNodeType === "ai_extraction" && <AIExtractionConfig config={bodyConfig} updateConfig={updateBodyConfig} targetAppId={targetAppId} />}
           {bodyNodeType === "variable" && <VariableConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
           {bodyNodeType === "data_formatter" && <DataFormatterConfig config={bodyConfig} updateConfig={updateBodyConfig} />}
         </div>

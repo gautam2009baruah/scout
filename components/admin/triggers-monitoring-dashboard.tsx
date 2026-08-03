@@ -25,6 +25,7 @@ import { TRIGGER_TYPE_LABELS } from "@/shared/orchestrationTypes";
 import { useToast } from "./toast";
 
 type TargetAppOption = { id: string; name: string; companyId: string };
+type EnvironmentOption = { id: string; name: string };
 
 // Only automated trigger types are meaningful to monitor here.
 const MONITORABLE_TRIGGER_TYPES = ["manual", "chatbot", "email", "schedule", "http_api"] as const;
@@ -71,6 +72,7 @@ type ExecutionRow = {
   executionStatus: string | null;
   triggeredAt: string;
   triggeredBy: string | null;
+  environmentName: string | null;
   errorMessage: string | null;
   emailSubject: string | null;
   emailFrom: string | null;
@@ -190,10 +192,12 @@ export function TriggersMonitoringDashboard({
       triggerType: "all",
       status: "all",
       targetAppId: "all",
+      environmentId: "all",
       from,
       to,
     };
   });
+  const [environmentsByTargetApp, setEnvironmentsByTargetApp] = useState<Record<string, EnvironmentOption[]>>({});
   // Per-trigger expand + executions state, keyed by trigger id
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [executions, setExecutions] = useState<Record<string, ExecutionsState>>({});
@@ -215,8 +219,26 @@ export function TriggersMonitoringDashboard({
       : targetApps.filter((app) => app.companyId === selectedCompanyId);
 
   useEffect(() => {
-    setFilter((current) => ({ ...current, targetAppId: "all" }));
+    setFilter((current) => ({ ...current, targetAppId: "all", environmentId: "all" }));
   }, [selectedCompanyId]);
+
+  const environmentOptions = filter.targetAppId !== "all" ? (environmentsByTargetApp[filter.targetAppId] ?? []) : [];
+
+  const loadEnvironments = async (targetAppId: string) => {
+    if (!targetAppId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/triggers-monitoring/environments?targetAppId=${encodeURIComponent(targetAppId)}`);
+      const data = await response.json();
+      if (Array.isArray(data.environments)) {
+        setEnvironmentsByTargetApp((current) => ({ ...current, [targetAppId]: data.environments }));
+      }
+    } catch (error) {
+      console.error("Failed to load environments:", error);
+    }
+  };
 
   const loadTriggers = async () => {
     setLoading(true);
@@ -231,6 +253,7 @@ export function TriggersMonitoringDashboard({
       if (filter.status !== "all") params.append("status", filter.status);
       if (selectedCompanyId) params.append("companyId", selectedCompanyId);
       if (filter.targetAppId !== "all") params.append("targetAppId", filter.targetAppId);
+      if (filter.environmentId !== "all") params.append("environmentId", filter.environmentId);
       const fromIso = localInputToUtcIso(filter.from);
       const toIso = localInputToUtcIso(filter.to);
       if (fromIso) params.append("from", fromIso);
@@ -273,6 +296,7 @@ export function TriggersMonitoringDashboard({
       const toIso = localInputToUtcIso(filter.to);
       if (fromIso) params.append("from", fromIso);
       if (toIso) params.append("to", toIso);
+      if (filter.environmentId !== "all") params.append("environmentId", filter.environmentId);
 
       const response = await fetch(
         `/api/admin/orchestrations/triggers/${triggerId}/executions?${params.toString()}`
@@ -425,7 +449,13 @@ export function TriggersMonitoringDashboard({
               <select
                 className="rounded border border-slate-300 px-3 py-1.5 text-sm"
                 value={filter.targetAppId}
-                onChange={(e) => setFilter({ ...filter, targetAppId: e.target.value })}
+                onChange={(e) => {
+                  const nextTargetAppId = e.target.value;
+                  setFilter({ ...filter, targetAppId: nextTargetAppId, environmentId: "all" });
+                  if (nextTargetAppId !== "all") {
+                    void loadEnvironments(nextTargetAppId);
+                  }
+                }}
               >
                 <option value="all">All Target Apps</option>
                 {availableTargetApps.map((app) => (
@@ -436,6 +466,25 @@ export function TriggersMonitoringDashboard({
               </select>
             </div>
           )}
+
+          <div>
+            <label className="block text-xs font-medium text-slate-700 mb-1">
+              Environment
+            </label>
+            <select
+              className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+              disabled={filter.targetAppId === "all"}
+              value={filter.environmentId}
+              onChange={(e) => setFilter({ ...filter, environmentId: e.target.value })}
+            >
+              <option value="all">{filter.targetAppId === "all" ? "Select a target app first" : "All Environments"}</option>
+              {environmentOptions.map((env) => (
+                <option key={env.id} value={env.id}>
+                  {env.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -469,7 +518,9 @@ export function TriggersMonitoringDashboard({
               <option value="inactive">Inactive Only</option>
             </select>
           </div>
+        </div>
 
+        <div className="flex items-end gap-4 flex-wrap mt-4">
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">
               Executions From
@@ -604,6 +655,9 @@ export function TriggersMonitoringDashboard({
                                   {execStatusIcon(exec.executionStatus)}
                                   <span className="text-slate-900 whitespace-nowrap">
                                     {formatDateTime(exec.triggeredAt)}
+                                  </span>
+                                  <span className="whitespace-nowrap rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                                    {exec.environmentName || "N/A"}
                                   </span>
                                   {trigger.triggerType === "email" && exec.emailSubject && (
                                     <span className="text-slate-600 truncate">

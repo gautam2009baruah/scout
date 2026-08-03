@@ -23,6 +23,30 @@ async function validateTargetAppScope(companyId: string, targetAppId: string | n
   return (scopeCheck.rowCount ?? 0) > 0;
 }
 
+function normalizeEnvironmentIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(new Set(value.map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+async function validateEnvironmentIds(targetAppId: string, environmentIds: string[]) {
+  if (environmentIds.length === 0) {
+    return false;
+  }
+
+  const result = await getPool().query<{ id: string }>(
+    `SELECT id
+     FROM target_app_environments
+     WHERE id = ANY($1::uuid[])
+       AND target_app_id = $2`,
+    [environmentIds, targetAppId]
+  );
+
+  return (result.rowCount ?? 0) === environmentIds.length;
+}
+
 /**
  * GET /api/orchestrations/email-credentials?companyId=xxx
  * List all email credentials for specified company (or all if admin)
@@ -45,7 +69,7 @@ export async function GET(request: NextRequest) {
     
     // Fetch credentials with their assigned target app
     const result = await pool.query(
-      `SELECT 
+      `SELECT
         ec.id,
         ec.company_id,
         ec.target_app_id,
@@ -57,7 +81,13 @@ export async function GET(request: NextRequest) {
         ec.last_tested_at,
         ec.last_test_status,
         ec.last_test_error,
-        ec.created_at
+        ec.created_at,
+        COALESCE((
+          SELECT json_agg(json_build_object('id', e.id, 'name', e.name) ORDER BY e.name)
+          FROM email_credential_environments ece
+          JOIN target_app_environments e ON e.id = ece.environment_id
+          WHERE ece.email_credential_id = ec.id
+        ), '[]'::json) AS environments
        FROM email_credentials ec
        LEFT JOIN company_target_applications cta ON cta.id = ec.target_app_id
        WHERE ($1::uuid IS NULL OR ec.company_id = $1::uuid)
@@ -127,6 +157,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const environmentIds = normalizeEnvironmentIds(body.environmentIds);
+    if (!(await validateEnvironmentIds(String(targetAppId), environmentIds))) {
+      return NextResponse.json(
+        { success: false, error: "At least one valid environment is required." },
+        { status: 400 }
+      );
+    }
+
     const createdBy = session.user.id;
 
     const pool = getPool();
@@ -156,6 +194,12 @@ export async function POST(request: NextRequest) {
           provider === "imap" ? (imapTls !== false) : null,
           createdBy,
         ]
+      );
+
+      await client.query(
+        `INSERT INTO email_credential_environments (email_credential_id, environment_id)
+         SELECT $1, unnest($2::uuid[])`,
+        [result.rows[0].id, environmentIds]
       );
 
       await client.query('COMMIT');

@@ -133,7 +133,7 @@ export async function matchChatbotTriggers(
   }
   
   // Use AI to match intent
-  const bestMatch = await findBestIntentMatch(userMessage, triggers);
+  const bestMatch = await findBestIntentMatch(userMessage, triggers, companyId);
   
   if (!bestMatch) {
     console.log('⚠️ No AI match found, trying fallback string matching...');
@@ -287,7 +287,8 @@ async function findBestIntentMatch(
     orchestration_name: string;
     name: string;
     config: ChatbotTriggerConfig;
-  }>
+  }>,
+  companyId?: string
 ): Promise<{
   trigger: typeof triggers[0];
   confidence: number;
@@ -320,7 +321,7 @@ Respond with ONLY a JSON object in this format:
 If the user message doesn't clearly match any intent, set matchedIndex to null and confidence to 0.`;
   
   try {
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(companyId);
     const response = await provider.generate_answer(
       "You are an intent classification system. Respond only with valid JSON.",
       prompt,

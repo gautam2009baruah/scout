@@ -277,7 +277,7 @@ export class RetrievalEngine {
       const [vectorRaw, bm25Raw, visualRaw] = await Promise.all([
         plan.keywordOnly
           ? Promise.resolve([])
-          : VectorSearchService.search(company_id, plan.searchQuery, roleIds, config.vector_top_k, user_id),
+          : VectorSearchService.search(company_id, plan.searchQuery, roleIds, config.vector_top_k, user_id, undefined, target_app_id, environment_id),
         BM25SearchService.search(company_id, plan.searchQuery, roleIds, config.bm25_top_k, user_id),
         plan.keywordOnly
           ? Promise.resolve([])

@@ -965,7 +965,14 @@ export class OrchestrationEngine {
         throw new Error("Clarification request expired");
       }
 
-      const resolvedValues = await resolveClarificationValues(clarification, input.responseText, input.attachment);
+      const orchestrationForClarification = await getOrchestrationById(this.execution.orchestrationId);
+      const resolvedValues = await resolveClarificationValues(
+        clarification,
+        input.responseText,
+        input.attachment,
+        orchestrationForClarification?.companyId,
+        orchestrationForClarification?.targetAppId || undefined
+      );
       const unresolvedFields = clarification.missingFields.filter((field) => !hasMeaningfulValue(resolvedValues[field.key]));
       if (unresolvedFields.length > 0) {
         throw new Error(
@@ -1090,7 +1097,9 @@ async function resolveClarificationValues(
     missingFields: Array<{ key: string; type: string; description?: string }>;
   },
   responseText: string,
-  attachment?: { id?: string; name?: string; fileType?: string; storagePath?: string; sizeBytes?: number }
+  attachment?: { id?: string; name?: string; fileType?: string; storagePath?: string; sizeBytes?: number },
+  companyId?: string,
+  targetAppId?: string
 ): Promise<Record<string, unknown>> {
   // File-type fields never come from LLM text-mapping — a file reference
   // can't be inferred from chat text, it comes from the attachment the user
@@ -1110,7 +1119,7 @@ async function resolveClarificationValues(
   const otherClarification = { missingFields: otherFields };
 
   try {
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(companyId, targetAppId);
     const systemPrompt = [
       "You map a user's follow-up reply to a set of missing structured fields.",
       "Return only valid JSON with exactly the requested keys.",

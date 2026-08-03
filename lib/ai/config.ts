@@ -25,6 +25,10 @@ export type EmbeddingProviderConfigRow = {
   api_key: string;
   is_active: boolean;
   is_primary: boolean;
+  target_app_id: string | null;
+  environment_id: string | null;
+  target_app_name?: string | null;
+  environment_name?: string | null;
 };
 
 export type LLMProviderConfigRow = {
@@ -36,6 +40,10 @@ export type LLMProviderConfigRow = {
   api_key: string;
   is_active: boolean;
   is_primary: boolean;
+  target_app_id: string | null;
+  environment_id: string | null;
+  target_app_name?: string | null;
+  environment_name?: string | null;
 };
 
 export type AdminAIProviderConfig = {
@@ -83,32 +91,56 @@ function envConfig(): AIProviderConfig {
   };
 }
 
-export async function getAIProviderConfig(companyId?: string): Promise<AIProviderConfig> {
+// Resolves the most specific active row for (company, target app, environment):
+// exact target-app+environment match, then target-app match with no environment
+// set (applies to every environment of that target app), then a company-wide row
+// (target_app_id IS NULL, applies to every target app/environment).
+const SCOPED_EMBEDDING_QUERY = `
+  SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary, target_app_id, environment_id
+  FROM ai_embedding_provider_configs
+  WHERE company_id = $1
+    AND deleted_at IS NULL
+    AND is_active = true
+    AND (target_app_id = $2::uuid OR target_app_id IS NULL)
+    AND (target_app_id IS DISTINCT FROM $2::uuid OR environment_id = $3::uuid OR environment_id IS NULL)
+  ORDER BY
+    CASE
+      WHEN target_app_id = $2::uuid AND environment_id = $3::uuid THEN 0
+      WHEN target_app_id = $2::uuid AND environment_id IS NULL THEN 1
+      WHEN target_app_id IS NULL THEN 2
+      ELSE 3
+    END,
+    is_primary DESC,
+    updated_at DESC
+  LIMIT 1
+`;
+
+const SCOPED_LLM_QUERY = `
+  SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary, target_app_id, environment_id
+  FROM ai_llm_provider_configs
+  WHERE company_id = $1
+    AND deleted_at IS NULL
+    AND is_active = true
+    AND (target_app_id = $2::uuid OR target_app_id IS NULL)
+    AND (target_app_id IS DISTINCT FROM $2::uuid OR environment_id = $3::uuid OR environment_id IS NULL)
+  ORDER BY
+    CASE
+      WHEN target_app_id = $2::uuid AND environment_id = $3::uuid THEN 0
+      WHEN target_app_id = $2::uuid AND environment_id IS NULL THEN 1
+      WHEN target_app_id IS NULL THEN 2
+      ELSE 3
+    END,
+    is_primary DESC,
+    updated_at DESC
+  LIMIT 1
+`;
+
+export async function getAIProviderConfig(companyId?: string, targetAppId?: string, environmentId?: string): Promise<AIProviderConfig> {
   try {
     if (companyId) {
       const [companyEmbeddingResult, companyLlmResult] = await Promise.all([
-        getPool().query<EmbeddingProviderConfigRow>(
-          `
-            SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary
-            FROM ai_embedding_provider_configs
-            WHERE company_id = $1
-              AND deleted_at IS NULL
-            ORDER BY is_primary DESC, is_active DESC, updated_at DESC
-            LIMIT 1
-          `,
-          [companyId]
-        ),
-        getPool().query<LLMProviderConfigRow>(
-          `
-            SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary
-            FROM ai_llm_provider_configs
-            WHERE company_id = $1
-              AND deleted_at IS NULL
-            ORDER BY is_primary DESC, is_active DESC, updated_at DESC
-            LIMIT 1
-          `,
-          [companyId]
-        )
+        getPool().query<EmbeddingProviderConfigRow>(SCOPED_EMBEDDING_QUERY, [companyId, targetAppId || null, environmentId || null]),
+        getPool().query<LLMProviderConfigRow>(SCOPED_LLM_QUERY, [companyId, targetAppId || null, environmentId || null])
       ]);
 
       const companyEmbedding = companyEmbeddingResult.rows[0];
@@ -133,7 +165,7 @@ export async function getAIProviderConfig(companyId?: string): Promise<AIProvide
     const [embeddingResult, llmResult] = await Promise.all([
       getPool().query<EmbeddingProviderConfigRow>(
         `
-          SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary
+          SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary, target_app_id, environment_id
           FROM ai_embedding_provider_configs
           WHERE is_active = true
             AND deleted_at IS NULL
@@ -142,7 +174,7 @@ export async function getAIProviderConfig(companyId?: string): Promise<AIProvide
       ),
       getPool().query<LLMProviderConfigRow>(
         `
-          SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary
+          SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary, target_app_id, environment_id
           FROM ai_llm_provider_configs
           WHERE is_active = true
             AND deleted_at IS NULL
@@ -271,29 +303,35 @@ export async function updateAIProviderConfig(
   return getAIProviderConfig();
 }
 
-export async function getAdminAIProviderConfig(companyId?: string): Promise<AdminAIProviderConfig> {
-  const active = await getAIProviderConfig(companyId);
+export async function getAdminAIProviderConfig(companyId?: string, targetAppId?: string, environmentId?: string): Promise<AdminAIProviderConfig> {
+  const active = await getAIProviderConfig(companyId, targetAppId, environmentId);
 
   try {
     const [embeddingResult, llmResult] = companyId
       ? await Promise.all([
         getPool().query<EmbeddingProviderConfigRow>(
           `
-            SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary
-            FROM ai_embedding_provider_configs
-            WHERE company_id = $1
-              AND deleted_at IS NULL
-            ORDER BY is_primary DESC, provider ASC, model ASC, created_at ASC
+            SELECT c.id, c.company_id, c.provider, c.model, c.dimension, c.endpoint, c.api_key, c.is_active, c.is_primary,
+                   c.target_app_id, c.environment_id, ta.name AS target_app_name, env.name AS environment_name
+            FROM ai_embedding_provider_configs c
+            LEFT JOIN company_target_applications ta ON ta.id = c.target_app_id
+            LEFT JOIN target_app_environments env ON env.id = c.environment_id
+            WHERE c.company_id = $1
+              AND c.deleted_at IS NULL
+            ORDER BY c.is_primary DESC, c.provider ASC, c.model ASC, c.created_at ASC
           `,
           [companyId]
         ),
         getPool().query<LLMProviderConfigRow>(
           `
-            SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary
-            FROM ai_llm_provider_configs
-            WHERE company_id = $1
-              AND deleted_at IS NULL
-            ORDER BY is_primary DESC, provider ASC, model ASC, created_at ASC
+            SELECT c.id, c.company_id, c.provider, c.model, c.endpoint, c.api_key, c.is_active, c.is_primary,
+                   c.target_app_id, c.environment_id, ta.name AS target_app_name, env.name AS environment_name
+            FROM ai_llm_provider_configs c
+            LEFT JOIN company_target_applications ta ON ta.id = c.target_app_id
+            LEFT JOIN target_app_environments env ON env.id = c.environment_id
+            WHERE c.company_id = $1
+              AND c.deleted_at IS NULL
+            ORDER BY c.is_primary DESC, c.provider ASC, c.model ASC, c.created_at ASC
           `,
           [companyId]
         )
@@ -301,7 +339,7 @@ export async function getAdminAIProviderConfig(companyId?: string): Promise<Admi
       : await Promise.all([
         getPool().query<EmbeddingProviderConfigRow>(
           `
-            SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary
+            SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary, target_app_id, environment_id
             FROM ai_embedding_provider_configs
             WHERE deleted_at IS NULL
             ORDER BY provider ASC, model ASC, created_at ASC
@@ -309,7 +347,7 @@ export async function getAdminAIProviderConfig(companyId?: string): Promise<Admi
         ),
         getPool().query<LLMProviderConfigRow>(
           `
-            SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary
+            SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary, target_app_id, environment_id
             FROM ai_llm_provider_configs
             WHERE deleted_at IS NULL
             ORDER BY provider ASC, model ASC, created_at ASC
@@ -334,7 +372,9 @@ export async function getAdminAIProviderConfig(companyId?: string): Promise<Admi
         endpoint: active.embedding_endpoint,
         api_key: active.embedding_api_key,
         is_active: true,
-        is_primary: true
+        is_primary: true,
+        target_app_id: null,
+        environment_id: null
       }],
       llm_configs: [{
         id: "",
@@ -344,7 +384,9 @@ export async function getAdminAIProviderConfig(companyId?: string): Promise<Admi
         endpoint: active.llm_endpoint,
         api_key: active.llm_api_key,
         is_active: true,
-        is_primary: true
+        is_primary: true,
+        target_app_id: null,
+        environment_id: null
       }]
     };
   }

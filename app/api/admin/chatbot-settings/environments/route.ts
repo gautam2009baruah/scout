@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "targetAppId is required." }, { status: 400 });
     }
 
-    const environments = await createChatbotKeyEnvironment(session, targetAppId, String(body.name || ""), String(body.url || ""), body.isProduction === true);
+    const environments = await createChatbotKeyEnvironment(session, targetAppId, String(body.name || ""), String(body.url || ""), body.isProduction === true, body.activityLoggingEnabled === true);
     return NextResponse.json({ environments });
   } catch (error) {
     if (error instanceof ChatbotSettingsError) {

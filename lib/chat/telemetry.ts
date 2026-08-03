@@ -12,6 +12,7 @@ export type ChatTokenUsage = {
 export type RecordChatQueryTelemetryInput = {
   user_id: string;
   target_app_id?: string;
+  environment_id?: string;
   conversation_id?: string;
   question: string;
   answer: string;
@@ -51,6 +52,24 @@ async function resolveCanonicalTargetAppId(targetAppId?: string) {
   return canonical.rows[0]?.id ?? null;
 }
 
+// Opt-in gate: an environment only accumulates Chatbot Analytics/Triggers
+// Monitoring data once an admin explicitly enables it under Manage
+// Environments (mirrors guided_workflow_topics.analytics_logging_enabled in
+// lib/guided-workflows/analytics.ts). Environments default to disabled, so a
+// missing/unresolvable environment id is treated as disabled too.
+async function isActivityLoggingEnabledForEnvironment(environmentId?: string) {
+  if (!environmentId || !isUuid(environmentId)) {
+    return false;
+  }
+
+  const result = await getPool().query<{ activity_logging_enabled: boolean }>(
+    `SELECT activity_logging_enabled FROM target_app_environments WHERE id = $1`,
+    [environmentId]
+  );
+
+  return result.rows[0]?.activity_logging_enabled === true;
+}
+
 async function canPersistTelemetryUser(userId: string) {
   if (!isUuid(userId)) {
     return false;
@@ -72,12 +91,18 @@ async function canPersistTelemetryUser(userId: string) {
 export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryInput): Promise<string> {
   const canonicalTargetAppId = await resolveCanonicalTargetAppId(input.target_app_id);
   const externalUserId = String(input.user_id || "").trim() || null;
+  const environmentId = input.environment_id && isUuid(input.environment_id) ? input.environment_id : null;
+
+  if (environmentId && !(await isActivityLoggingEnabledForEnvironment(environmentId))) {
+    return randomUUID();
+  }
 
   try {
     const result = await getPool().query<{ id: string }>(
       `
         INSERT INTO chat_query_telemetry (
           target_app_id,
+          environment_id,
           external_user_id,
           conversation_id,
           question,
@@ -98,14 +123,15 @@ export async function recordChatQueryTelemetry(input: RecordChatQueryTelemetryIn
           error_message
         )
         VALUES (
-          $1, $2, $3, $4, $5, $6, $7,
-          $8, $9, $10::jsonb, $11, $12, $13,
-          $14, $15, $16, $17, $18::jsonb, $19
+          $1, $2, $3, $4, $5, $6, $7, $8,
+          $9, $10, $11::jsonb, $12, $13, $14,
+          $15, $16, $17, $18, $19::jsonb, $20
         )
         RETURNING id
       `,
       [
         canonicalTargetAppId,
+        environmentId,
         externalUserId,
         input.conversation_id || null,
         input.question,

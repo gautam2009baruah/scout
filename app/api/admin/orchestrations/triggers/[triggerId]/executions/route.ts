@@ -39,6 +39,7 @@ export async function GET(
     );
     const from = searchParams.get("from") || undefined; // ISO datetime (UTC)
     const to = searchParams.get("to") || undefined; // ISO datetime (UTC)
+    const environmentId = searchParams.get("environmentId") || undefined;
     const offset = (page - 1) * pageSize;
 
     const pool = getPool();
@@ -62,7 +63,7 @@ export async function GET(
       return await getEmailExecutions(pool, triggerId, page, pageSize, offset, from, to);
     }
 
-    return await getLogExecutions(pool, triggerId, page, pageSize, offset, from, to);
+    return await getLogExecutions(pool, triggerId, page, pageSize, offset, from, to, environmentId);
   } catch (error: any) {
     console.error("[TriggerExecutionsAPI] Error:", error);
 
@@ -131,6 +132,7 @@ async function getEmailExecutions(
     executionStatus: row.execution_status,
     triggeredAt: row.received_at,
     triggeredBy: null,
+    environmentName: null,
     errorMessage: row.error_message,
     emailSubject: row.email_subject,
     emailFrom: row.email_from,
@@ -156,7 +158,8 @@ async function getLogExecutions(
   pageSize: number,
   offset: number,
   from?: string,
-  to?: string
+  to?: string,
+  environmentId?: string
 ) {
   const conditions: string[] = ["tel.trigger_id = $1"];
   const params: any[] = [triggerId];
@@ -170,6 +173,11 @@ async function getLogExecutions(
   if (to) {
     conditions.push(`tel.triggered_at <= $${paramIndex}`);
     params.push(to);
+    paramIndex++;
+  }
+  if (environmentId) {
+    conditions.push(`tel.environment_id = $${paramIndex}`);
+    params.push(environmentId);
     paramIndex++;
   }
 
@@ -192,6 +200,7 @@ async function getLogExecutions(
          tel.triggered_at,
          tel.triggered_by,
          tel.execution_id,
+         tel.environment_id,
          ROW_NUMBER() OVER (
            PARTITION BY COALESCE(tel.execution_id::text, tel.id::text)
            ORDER BY tel.triggered_at DESC, tel.id DESC
@@ -205,9 +214,12 @@ async function getLogExecutions(
        ranked_logs.error_message,
        ranked_logs.triggered_at,
        ranked_logs.triggered_by,
+       ranked_logs.environment_id,
+       env.name AS environment_name,
        oe.status AS execution_status
      FROM ranked_logs
      LEFT JOIN orchestration_executions oe ON ranked_logs.execution_id = oe.id
+     LEFT JOIN target_app_environments env ON env.id = ranked_logs.environment_id
      WHERE ranked_logs.row_number = 1
      ORDER BY ranked_logs.triggered_at DESC
      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
@@ -219,6 +231,7 @@ async function getLogExecutions(
     status: row.status,
     executionStatus: row.execution_status,
     triggeredAt: row.triggered_at,
+    environmentName: row.environment_name || null,
     triggeredBy: row.triggered_by,
     errorMessage: row.error_message,
     emailSubject: null,

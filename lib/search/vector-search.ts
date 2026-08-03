@@ -32,7 +32,9 @@ export class VectorSearchService {
     user_role_ids: string[],
     top_k = 10,
     user_id?: string,
-    options?: SearchAccessOptions
+    options?: SearchAccessOptions,
+    target_app_id?: string,
+    environment_id?: string
   ): Promise<VectorSearchResult[]> {
     const normalizedQuery = query.trim();
     const limit = Math.min(50, Math.max(1, Number(top_k) || 10));
@@ -46,7 +48,7 @@ export class VectorSearchService {
       throw new Error("Search query is required.");
     }
 
-    const provider = await getEmbeddingProvider();
+    const provider = await getEmbeddingProvider(company_id, target_app_id, environment_id);
     const queryEmbedding = await provider.embed_text(normalizedQuery);
     const mode = await getEmbeddingColumnMode();
 

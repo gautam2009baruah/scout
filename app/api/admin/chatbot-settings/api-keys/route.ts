@@ -31,19 +31,6 @@ export async function GET() {
   }
 }
 
-export async function PATCH() {
-  const session = await getCurrentAdminSession();
-  if (!session) {
-    return NextResponse.json({ message: "Authentication required." }, { status: 401 });
-  }
-
-  if (!hasModuleAccess(session, MODULE_KEYS.chatbotSettings)) {
-    return NextResponse.json({ message: "You do not have permission to manage chatbot settings." }, { status: 403 });
-  }
-
-  return NextResponse.json({ message: "Use per-key strict environment enforcement on API key create/update." }, { status: 400 });
-}
-
 export async function POST(request: Request) {
   const session = await getCurrentAdminSession();
   if (!session) {
@@ -64,8 +51,6 @@ export async function POST(request: Request) {
       name: String(body.name || "").trim(),
       targetAppId: typeof body.targetAppId === "string" && body.targetAppId.trim() ? body.targetAppId : null,
       environment: String(body.environment || ""),
-      strictEnvironmentEnforcement: body.strictEnvironmentEnforcement === true,
-      allowedOrigins: Array.isArray(body.allowedOrigins) ? body.allowedOrigins.map(String) : [],
       expiresAt: typeof body.expiresAt === "string" ? body.expiresAt : null
     });
 

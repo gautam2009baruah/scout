@@ -212,7 +212,6 @@ export type ChatbotApiKeyRecord = {
   targetAppId: string | null;
   targetAppName: string | null;
   environment: string;
-  strictEnvironmentEnforcement: boolean;
   status: ChatbotApiKeyStatus;
   isActive: boolean;
   allowedOrigins: string[];
@@ -226,8 +225,6 @@ export type CreateChatbotApiKeyInput = {
   name: string;
   targetAppId?: string | null;
   environment: string;
-  strictEnvironmentEnforcement?: boolean;
-  allowedOrigins?: string[];
   expiresAt?: string | null;
 };
 
@@ -237,6 +234,7 @@ export type ChatbotKeyEnvironmentRecord = {
   name: string;
   url: string;
   isProduction: boolean;
+  activityLoggingEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -337,6 +335,9 @@ function parseExpiryDate(value?: string | null) {
   return parsed;
 }
 
+// Returns the environment's own URL so callers can derive allowed_origins_json
+// from it directly — API keys are always scoped to exactly the environment's
+// URL, never a client-supplied value (see createChatbotApiKey/updateChatbotApiKey).
 async function assertEnvironmentExists(session: AdminSession, companyId: string, targetAppId: string, environment: string) {
   const normalized = normalizeEnvironment(environment);
   if (!normalized) {
@@ -345,10 +346,10 @@ async function assertEnvironmentExists(session: AdminSession, companyId: string,
 
   await assertTargetAppAccess(session, companyId, targetAppId);
 
-  const result = await getPool().query<{ id: string }>(
+  const result = await getPool().query<{ id: string; url: string }>(
     `
-      SELECT id
-      FROM chatbot_api_key_environments
+      SELECT id, url
+      FROM target_app_environments
       WHERE target_app_id = $1
         AND normalized_name = $2
       LIMIT 1
@@ -359,6 +360,13 @@ async function assertEnvironmentExists(session: AdminSession, companyId: string,
   if ((result.rowCount ?? 0) === 0) {
     throw new ChatbotSettingsError("Selected environment is not available. Create it first.", 400);
   }
+
+  const url = result.rows[0].url?.trim() || "";
+  if (!url) {
+    throw new ChatbotSettingsError("The selected environment has no URL configured. Set one under Manage Environments first.", 400);
+  }
+
+  return url;
 }
 
 async function ensureNoOtherActiveKeyInEnvironment(
@@ -375,7 +383,7 @@ async function ensureNoOtherActiveKeyInEnvironment(
     `
       SELECT id
       FROM chatbot_api_keys k
-      INNER JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      INNER JOIN target_app_environments env ON env.id = k.environment_id
       WHERE k.target_app_id = $1
         AND env.normalized_name = $2
         AND status = 'active'
@@ -490,7 +498,6 @@ function mapChatbotApiKeyRow(row: {
   target_app_name: string | null;
   environment_id?: string;
   environment: string;
-  strict_environment_enforcement: boolean;
   status: ChatbotApiKeyStatus;
   is_active: boolean;
   allowed_origins_json: string[] | null;
@@ -506,7 +513,6 @@ function mapChatbotApiKeyRow(row: {
     targetAppId: row.target_app_id,
     targetAppName: row.target_app_name,
     environment: row.environment,
-    strictEnvironmentEnforcement: row.strict_environment_enforcement === true,
     status: row.status,
     isActive: row.is_active,
     allowedOrigins: row.allowed_origins_json ?? [],
@@ -529,7 +535,6 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
     target_app_name: string | null;
     environment_id: string;
     environment: string;
-    strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
     is_active: boolean;
     allowed_origins_json: string[] | null;
@@ -547,7 +552,6 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
         cta.name AS target_app_name,
         k.environment_id,
         env.name AS environment,
-        COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
         k.is_active,
         COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
@@ -557,7 +561,7 @@ export async function listChatbotApiKeys(session: AdminSession): Promise<Chatbot
         k.updated_at
       FROM chatbot_api_keys k
       LEFT JOIN company_target_applications cta ON cta.id = k.target_app_id
-      INNER JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      INNER JOIN target_app_environments env ON env.id = k.environment_id
       WHERE cta.company_id = $1
       ORDER BY CASE WHEN COALESCE(k.status, 'active') = 'revoked' THEN 1 ELSE 0 END ASC, k.created_at DESC
     `,
@@ -585,14 +589,12 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
   if (!targetAppId) {
     throw new ChatbotSettingsError("Target application is required.", 400);
   }
-  await assertEnvironmentExists(session, companyId, targetAppId, environment);
+  const environmentUrl = await assertEnvironmentExists(session, companyId, targetAppId, environment);
 
-  const allowedOrigins = normalizeOrigins(input.allowedOrigins);
-  if (allowedOrigins.length === 0) {
-    throw new ChatbotSettingsError("At least one allowed origin is required.", 400);
-  }
+  // Allowed origins are never client-supplied — the key is locked to the
+  // environment's own URL so it only ever works against that one origin.
+  const allowedOrigins = normalizeOrigins([environmentUrl]);
   const expiresAt = parseExpiryDate(input.expiresAt);
-  const strictEnvironmentEnforcement = input.strictEnvironmentEnforcement === true;
 
   await assertUniqueApiKeyNamePerTargetApp(companyId, targetAppId, name, "active");
 
@@ -600,7 +602,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
     `
       SELECT k.id
       FROM chatbot_api_keys k
-      INNER JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      INNER JOIN target_app_environments env ON env.id = k.environment_id
       WHERE k.target_app_id = $1
         AND env.normalized_name = $2
         AND status = 'active'
@@ -623,7 +625,6 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
     target_app_id: string | null;
     target_app_name: string | null;
     environment: string;
-    strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
     is_active: boolean;
     allowed_origins_json: string[] | null;
@@ -639,7 +640,6 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         key_hash,
         target_app_id,
         environment_id,
-        strict_environment_enforcement,
         is_active,
         status,
         allowed_origins_json,
@@ -647,7 +647,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, (SELECT id FROM chatbot_api_key_environments WHERE target_app_id = $4 AND normalized_name = $5 LIMIT 1), $6, $7, $8, $9::jsonb, $10, $11, $11)
+      VALUES ($1, $2, $3, $4, (SELECT id FROM target_app_environments WHERE target_app_id = $4 AND normalized_name = $5 LIMIT 1), $6, $7, $8::jsonb, $9, $10, $10)
       RETURNING
         chatbot_api_keys.id,
         chatbot_api_keys.name,
@@ -655,8 +655,7 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
         chatbot_api_keys.target_app_id,
         chatbot_api_keys.environment_id,
         (SELECT name FROM company_target_applications WHERE id = chatbot_api_keys.target_app_id) AS target_app_name,
-        (SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_api_keys.environment_id) AS environment,
-        COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
+        (SELECT name FROM target_app_environments WHERE id = chatbot_api_keys.environment_id) AS environment,
         chatbot_api_keys.status,
         chatbot_api_keys.is_active,
         COALESCE(chatbot_api_keys.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
@@ -671,7 +670,6 @@ export async function createChatbotApiKey(session: AdminSession, input: CreateCh
       generated.keyHash,
       targetAppId,
       environment,
-      strictEnvironmentEnforcement,
       initialIsActive,
       initialStatus,
       JSON.stringify(allowedOrigins),
@@ -695,8 +693,6 @@ export async function updateChatbotApiKey(
     name?: string;
     targetAppId?: string | null;
     environment?: string;
-    strictEnvironmentEnforcement?: boolean;
-    allowedOrigins?: string[];
     expiresAt?: string | null;
   }
 ) {
@@ -709,16 +705,16 @@ export async function updateChatbotApiKey(
     environment_id: string;
     status: ChatbotApiKeyStatus;
     target_app_id: string | null;
-    strict_environment_enforcement: boolean;
+    allowed_origins_json: string[] | null;
   }>(
     `
       SELECT
         name,
-        COALESCE((SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_api_keys.environment_id), '') AS environment,
+        COALESCE((SELECT name FROM target_app_environments WHERE id = chatbot_api_keys.environment_id), '') AS environment,
         environment_id,
         COALESCE(status, 'active')::text AS status,
         target_app_id,
-        COALESCE(strict_environment_enforcement, false) AS strict_environment_enforcement
+        COALESCE(allowed_origins_json, '[]'::jsonb) AS allowed_origins_json
       FROM chatbot_api_keys
       WHERE id = $1
         AND EXISTS (
@@ -754,7 +750,7 @@ export async function updateChatbotApiKey(
     throw new ChatbotSettingsError("Target application is required.", 400);
   }
 
-  await assertEnvironmentExists(session, companyId, nextTargetAppId, nextEnvironment);
+  const nextEnvironmentUrl = await assertEnvironmentExists(session, companyId, nextTargetAppId, nextEnvironment);
 
   if (input.status === "active" && current.rows[0].status !== "suspended") {
     throw new ChatbotSettingsError("Only suspended API keys can be re-activated.", 400);
@@ -803,7 +799,7 @@ export async function updateChatbotApiKey(
   }
 
   if (typeof input.environment === "string") {
-    updates.push(`environment_id = (SELECT id FROM chatbot_api_key_environments WHERE target_app_id = $${index + 1} AND normalized_name = $${index} LIMIT 1)`);
+    updates.push(`environment_id = (SELECT id FROM target_app_environments WHERE target_app_id = $${index + 1} AND normalized_name = $${index} LIMIT 1)`);
     values.push(nextEnvironment, nextTargetAppId);
     index += 1;
     index += 1;
@@ -815,19 +811,15 @@ export async function updateChatbotApiKey(
     index += 1;
   }
 
-  if (typeof input.strictEnvironmentEnforcement === "boolean") {
-    updates.push(`strict_environment_enforcement = $${index}`);
-    values.push(input.strictEnvironmentEnforcement === true);
-    index += 1;
-  }
-
-  if (Array.isArray(input.allowedOrigins)) {
-    const normalizedOrigins = normalizeOrigins(input.allowedOrigins);
-    if (normalizedOrigins.length === 0) {
-      throw new ChatbotSettingsError("At least one allowed origin is required.", 400);
-    }
+  // Allowed origins are never client-supplied — always re-derived from the
+  // (possibly unchanged) environment's own URL, so a key can never drift
+  // from the environment it's locked to. Only written when it actually
+  // changes, so a no-op edit doesn't trip the "no updates" guard below.
+  const nextAllowedOrigins = normalizeOrigins([nextEnvironmentUrl]);
+  const currentAllowedOrigins = current.rows[0].allowed_origins_json ?? [];
+  if (JSON.stringify(nextAllowedOrigins) !== JSON.stringify(currentAllowedOrigins)) {
     updates.push(`allowed_origins_json = $${index}::jsonb`);
-    values.push(JSON.stringify(normalizedOrigins));
+    values.push(JSON.stringify(nextAllowedOrigins));
     index += 1;
   }
 
@@ -854,7 +846,6 @@ export async function updateChatbotApiKey(
     target_app_id: string | null;
     target_app_name: string | null;
     environment: string;
-    strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
     is_active: boolean;
     allowed_origins_json: string[] | null;
@@ -883,8 +874,7 @@ export async function updateChatbotApiKey(
         (SELECT cta.name
          FROM company_target_applications cta
          WHERE cta.id = chatbot_api_keys.target_app_id) AS target_app_name,
-        COALESCE((SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_api_keys.environment_id), '') AS environment,
-        COALESCE(chatbot_api_keys.strict_environment_enforcement, false) AS strict_environment_enforcement,
+        COALESCE((SELECT name FROM target_app_environments WHERE id = chatbot_api_keys.environment_id), '') AS environment,
         COALESCE(chatbot_api_keys.status, CASE WHEN chatbot_api_keys.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
         chatbot_api_keys.is_active,
         COALESCE(chatbot_api_keys.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
@@ -913,7 +903,7 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
         COALESCE(env.normalized_name, 'production') AS environment,
         COALESCE(k.status, 'active')::text AS status
       FROM chatbot_api_keys k
-      LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      LEFT JOIN target_app_environments env ON env.id = k.environment_id
       WHERE k.id = $1
         AND EXISTS (
           SELECT 1
@@ -970,7 +960,6 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
     target_app_name: string | null;
     environment_id: string;
     environment: string;
-    strict_environment_enforcement: boolean;
     status: ChatbotApiKeyStatus;
     is_active: boolean;
     allowed_origins_json: string[] | null;
@@ -988,7 +977,6 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
         cta.name AS target_app_name,
         k.environment_id,
         COALESCE(env.name, '') AS environment,
-        COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement,
         COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END)::text AS status,
         k.is_active,
         COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
@@ -998,7 +986,7 @@ export async function rotateChatbotApiKey(session: AdminSession, apiKeyId: strin
         k.updated_at
       FROM chatbot_api_keys k
       LEFT JOIN company_target_applications cta ON cta.id = k.target_app_id
-      LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      LEFT JOIN target_app_environments env ON env.id = k.environment_id
       WHERE k.id = $1
         AND cta.company_id = $2
       LIMIT 1
@@ -1034,12 +1022,13 @@ export async function listChatbotKeyEnvironments(session: AdminSession, targetAp
     name: string;
     url: string;
     is_production: boolean;
+    activity_logging_enabled: boolean;
     created_at: Date;
     updated_at: Date;
   }>(
     `
-      SELECT id, target_app_id, name, url, is_production, created_at, updated_at
-      FROM chatbot_api_key_environments
+      SELECT id, target_app_id, name, url, is_production, activity_logging_enabled, created_at, updated_at
+      FROM target_app_environments
       WHERE target_app_id = $1
       ORDER BY name ASC
     `,
@@ -1052,12 +1041,13 @@ export async function listChatbotKeyEnvironments(session: AdminSession, targetAp
     name: row.name,
     url: row.url,
     isProduction: row.is_production,
+    activityLoggingEnabled: row.activity_logging_enabled,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString()
   }));
 }
 
-export async function createChatbotKeyEnvironment(session: AdminSession, targetAppId: string, nameInput: string, urlInput: string, isProduction: boolean) {
+export async function createChatbotKeyEnvironment(session: AdminSession, targetAppId: string, nameInput: string, urlInput: string, isProduction: boolean, activityLoggingEnabled: boolean) {
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
   await assertTargetAppAccess(session, companyId, targetAppId);
@@ -1071,18 +1061,19 @@ export async function createChatbotKeyEnvironment(session: AdminSession, targetA
 
   await getPool().query(
     `
-      INSERT INTO chatbot_api_key_environments (
+      INSERT INTO target_app_environments (
         target_app_id,
         name,
         normalized_name,
         url,
         is_production,
+        activity_logging_enabled,
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $6)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
     `,
-    [targetAppId, normalized, normalized, url, isProduction === true, session.user.id]
+    [targetAppId, normalized, normalized, url, isProduction === true, activityLoggingEnabled === true, session.user.id]
   ).catch((error: unknown) => {
     if (error instanceof Error && /unique/i.test(error.message)) {
       throw new ChatbotSettingsError("Environment already exists.", 409);
@@ -1093,7 +1084,7 @@ export async function createChatbotKeyEnvironment(session: AdminSession, targetA
   return listChatbotKeyEnvironments(session, targetAppId);
 }
 
-export async function updateChatbotKeyEnvironment(session: AdminSession, id: string, nameInput: string, urlInput: string, isProduction: boolean) {
+export async function updateChatbotKeyEnvironment(session: AdminSession, id: string, nameInput: string, urlInput: string, isProduction: boolean, activityLoggingEnabled: boolean) {
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
 
@@ -1106,12 +1097,12 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
   const existing = await getPool().query<{ normalized_name: string; target_app_id: string }>(
     `
       SELECT normalized_name, target_app_id
-      FROM chatbot_api_key_environments
+      FROM target_app_environments
       WHERE id = $1
         AND EXISTS (
           SELECT 1
           FROM company_target_applications cta
-          WHERE cta.id = chatbot_api_key_environments.target_app_id
+          WHERE cta.id = target_app_environments.target_app_id
             AND cta.company_id = $2
             AND cta.deleted_at IS NULL
         )
@@ -1128,17 +1119,18 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
 
   await getPool().query(
     `
-      UPDATE chatbot_api_key_environments
+      UPDATE target_app_environments
       SET name = $1,
           normalized_name = $2,
           url = $3,
           is_production = $4,
-          updated_by = $5,
+          activity_logging_enabled = $5,
+          updated_by = $6,
           updated_at = now()
-      WHERE id = $6
-        AND target_app_id = $7
+      WHERE id = $7
+        AND target_app_id = $8
     `,
-    [normalized, normalized, url, isProduction === true, session.user.id, id, existing.rows[0].target_app_id]
+    [normalized, normalized, url, isProduction === true, activityLoggingEnabled === true, session.user.id, id, existing.rows[0].target_app_id]
   ).catch((error: unknown) => {
     if (error instanceof Error && /unique/i.test(error.message)) {
       throw new ChatbotSettingsError("Environment already exists.", 409);
@@ -1158,12 +1150,12 @@ export async function deleteChatbotKeyEnvironment(session: AdminSession, id: str
   const envResult = await getPool().query<{ id: string; target_app_id: string }>(
     `
       SELECT id, target_app_id
-      FROM chatbot_api_key_environments
+      FROM target_app_environments
       WHERE id = $1
         AND EXISTS (
           SELECT 1
           FROM company_target_applications cta
-          WHERE cta.id = chatbot_api_key_environments.target_app_id
+          WHERE cta.id = target_app_environments.target_app_id
             AND cta.company_id = $2
             AND cta.deleted_at IS NULL
         )
@@ -1194,7 +1186,7 @@ export async function deleteChatbotKeyEnvironment(session: AdminSession, id: str
 
   await getPool().query(
     `
-      DELETE FROM chatbot_api_key_environments
+      DELETE FROM target_app_environments
       WHERE id = $1
         AND target_app_id = $2
     `,
@@ -1283,7 +1275,7 @@ export async function listChatbotEmbedPackages(
        AND k.environment_id = p.environment_id
        AND k.key_prefix = p.api_key_prefix
        AND (k.target_app_id IS NULL OR k.target_app_id = p.target_app_id)
-      INNER JOIN chatbot_api_key_environments env ON env.id = p.environment_id
+      INNER JOIN target_app_environments env ON env.id = p.environment_id
       WHERE cta.company_id = $1
         AND p.deleted_at IS NULL
         AND COALESCE(k.status, CASE WHEN k.is_active THEN 'active' ELSE 'suspended' END) = 'active'
@@ -1369,7 +1361,7 @@ export async function resolveChatbotApiKeyContext(
         k.key_prefix
       FROM chatbot_api_keys k
       LEFT JOIN company_target_applications cta ON cta.id = k.target_app_id
-      LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      LEFT JOIN target_app_environments env ON env.id = k.environment_id
       WHERE cta.company_id = $1
         AND k.key_hash = $2
         AND k.status = 'active'
@@ -1438,7 +1430,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         k.target_app_id
       FROM chatbot_api_keys k
       INNER JOIN company_target_applications cta ON cta.id = k.target_app_id
-      LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
+      LEFT JOIN target_app_environments env ON env.id = k.environment_id
       WHERE k.target_app_id = $1
         AND k.key_hash = $2
         AND k.status = 'active'
@@ -1508,7 +1500,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         updated_by,
         deleted_at
       )
-      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, (SELECT id FROM chatbot_api_key_environments WHERE target_app_id = $2 AND normalized_name = $3 LIMIT 1), $4, $5, $6, $7, $8, $9, $10, $10, NULL)
+      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, (SELECT id FROM target_app_environments WHERE target_app_id = $2 AND normalized_name = $3 LIMIT 1), $4, $5, $6, $7, $8, $9, $10, $10, NULL)
       ON CONFLICT (id)
       DO UPDATE SET
         target_app_id = EXCLUDED.target_app_id,
@@ -1528,7 +1520,7 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
         chatbot_embed_packages.target_app_id,
         (SELECT name FROM company_target_applications WHERE id = chatbot_embed_packages.target_app_id) AS target_app_name,
         chatbot_embed_packages.environment_id,
-        (SELECT name FROM chatbot_api_key_environments WHERE id = chatbot_embed_packages.environment_id) AS environment,
+        (SELECT name FROM target_app_environments WHERE id = chatbot_embed_packages.environment_id) AS environment,
         chatbot_embed_packages.user_id_placeholder,
         chatbot_embed_packages.scout_url,
         chatbot_embed_packages.api_url,

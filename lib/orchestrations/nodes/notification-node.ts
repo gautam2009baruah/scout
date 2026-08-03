@@ -338,6 +338,7 @@ async function sendEmailNotification(
   }
   const companyId = resolveContextValue(context, ["companyId", "company_id", "trigger.input.companyId", "trigger.input.company_id", "trigger.companyId", "trigger.company_id"]);
   const targetAppId = resolveContextValue(context, ["targetAppId", "target_app_id", "trigger.input.targetAppId", "trigger.input.target_app_id", "trigger.targetAppId", "trigger.target_app_id"]);
+  const environmentId = resolveContextValue(context, ["environmentId", "environment_id", "trigger.input.environmentId", "trigger.input.environment_id", "trigger.environmentId", "trigger.environment_id"]);
 
   const attachments = Array.isArray(channelConfig.attachments)
     ? channelConfig.attachments
@@ -359,6 +360,7 @@ async function sendEmailNotification(
     senderCredentialId: senderCredentialId || undefined,
     companyId: companyId || undefined,
     targetAppId: targetAppId || undefined,
+    environmentId: environmentId || undefined,
     htmlBody: channelConfig.bodyFormat === "rich_text" ? body : undefined,
     priority: channelConfig.priority || "normal",
     attachments,

@@ -405,6 +405,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
     const queryId = await recordChatQueryTelemetry({
       target_app_id: input.target_app_id?.trim() || undefined,
+      environment_id: input.environment_id?.trim() || undefined,
       user_id: userId,
       conversation_id: conversationId,
       question,
@@ -470,6 +471,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
     const queryId = await recordChatQueryTelemetry({
       target_app_id: input.target_app_id?.trim() || undefined,
+      environment_id: input.environment_id?.trim() || undefined,
       user_id: userId,
       conversation_id: conversationId,
       question,
@@ -535,7 +537,10 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   const { retrievalQuery, condensed } = await condenseQuestionForRetrieval({
     question,
-    conversationMessages: conversationWindow.messages
+    conversationMessages: conversationWindow.messages,
+    companyId,
+    targetAppId: input.target_app_id?.trim() || undefined,
+    environmentId: input.environment_id?.trim() || undefined
   });
 
   const retrieval = await RetrievalEngine.retrieve(companyId, userId, retrievalQuery, topK, input.target_app_id?.trim() || undefined, input.environment_id?.trim() || undefined);
@@ -562,6 +567,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
     const queryId = await recordChatQueryTelemetry({
       target_app_id: input.target_app_id?.trim() || undefined,
+      environment_id: input.environment_id?.trim() || undefined,
       user_id: userId,
       conversation_id: conversationId,
       question,
@@ -627,7 +633,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
     return response;
   }
 
-  const provider = await getLLMProvider();
+  const provider = await getLLMProvider(companyId, input.target_app_id?.trim() || undefined, input.environment_id?.trim() || undefined);
   const systemPrompt = buildSystemPrompt();
   const llmContext = buildLLMContext(retrieval.chunks);
   const answer = await provider.generate_answer(systemPrompt, buildUserPrompt(question, conversationWindow.messages), llmContext);
@@ -671,6 +677,7 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
 
   const queryId = await recordChatQueryTelemetry({
     target_app_id: input.target_app_id?.trim() || undefined,
+    environment_id: input.environment_id?.trim() || undefined,
     user_id: userId,
     conversation_id: conversationId,
     question,

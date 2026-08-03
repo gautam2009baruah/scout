@@ -16,6 +16,8 @@ type PendingPlanRequest = {
   draftOrchestrationId: string | null;
   targetAppId: string | null;
   targetAppName: string | null;
+  environmentId: string | null;
+  environmentName: string | null;
   status: PendingPlanRequestStatus;
   resolvedAt: string | null;
   resolvedByName: string | null;
@@ -23,6 +25,11 @@ type PendingPlanRequest = {
 };
 
 type TargetApp = {
+  id: string;
+  name: string;
+};
+
+type EnvironmentOption = {
   id: string;
   name: string;
 };
@@ -162,9 +169,27 @@ export function PendingAiPlans() {
   const [targetApps, setTargetApps] = useState<TargetApp[]>([]);
   const [openingId, setOpeningId] = useState<string | null>(null);
 
+  const [environmentsByTargetApp, setEnvironmentsByTargetApp] = useState<Record<string, EnvironmentOption[]>>({});
+
+  const loadEnvironments = useCallback(async (targetAppId: string) => {
+    if (!targetAppId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/pending-ai-plans/environments?targetAppId=${encodeURIComponent(targetAppId)}`);
+      const data = await response.json();
+      if (Array.isArray(data.environments)) {
+        setEnvironmentsByTargetApp((current) => ({ ...current, [targetAppId]: data.environments }));
+      }
+    } catch {
+      // Non-critical — the environment filter just stays empty.
+    }
+  }, []);
+
   // Active Pending Requests tab
-  const [activeFilterDraft, setActiveFilterDraft] = useState({ targetAppId: "", requestedFrom: "", requestedTo: "" });
-  const [activeFilter, setActiveFilter] = useState({ targetAppId: "", requestedFrom: "", requestedTo: "" });
+  const [activeFilterDraft, setActiveFilterDraft] = useState({ targetAppId: "", environmentId: "", requestedFrom: "", requestedTo: "" });
+  const [activeFilter, setActiveFilter] = useState({ targetAppId: "", environmentId: "", requestedFrom: "", requestedTo: "" });
   const [activePage, setActivePage] = useState(1);
   const [activePageSize, setActivePageSize] = useState(10);
   const [activeData, setActiveData] = useState<RequestsPage>({ requests: [], page: 1, pageSize: 10, total: 0, pageCount: 1 });
@@ -173,8 +198,8 @@ export function PendingAiPlans() {
   const [activeExpanded, setActiveExpanded] = useState<Record<string, boolean>>({});
 
   // Archived Requests tab
-  const [archivedFilterDraft, setArchivedFilterDraft] = useState({ targetAppId: "", resolvedFrom: "", resolvedTo: "", status: "all" });
-  const [archivedFilter, setArchivedFilter] = useState({ targetAppId: "", resolvedFrom: "", resolvedTo: "", status: "all" });
+  const [archivedFilterDraft, setArchivedFilterDraft] = useState({ targetAppId: "", environmentId: "", resolvedFrom: "", resolvedTo: "", status: "all" });
+  const [archivedFilter, setArchivedFilter] = useState({ targetAppId: "", environmentId: "", resolvedFrom: "", resolvedTo: "", status: "all" });
   const [archivedPage, setArchivedPage] = useState(1);
   const [archivedPageSize, setArchivedPageSize] = useState(10);
   const [archivedData, setArchivedData] = useState<RequestsPage>({ requests: [], page: 1, pageSize: 10, total: 0, pageCount: 1 });
@@ -204,6 +229,7 @@ export function PendingAiPlans() {
     try {
       const params = new URLSearchParams();
       if (activeFilter.targetAppId) params.set("targetAppId", activeFilter.targetAppId);
+      if (activeFilter.environmentId) params.set("environmentId", activeFilter.environmentId);
       const from = startOfDayIso(activeFilter.requestedFrom);
       const to = endOfDayIso(activeFilter.requestedTo);
       if (from) params.set("requestedFrom", from);
@@ -236,6 +262,7 @@ export function PendingAiPlans() {
     try {
       const params = new URLSearchParams();
       if (archivedFilter.targetAppId) params.set("targetAppId", archivedFilter.targetAppId);
+      if (archivedFilter.environmentId) params.set("environmentId", archivedFilter.environmentId);
       if (archivedFilter.status !== "all") params.set("status", archivedFilter.status);
       const from = startOfDayIso(archivedFilter.resolvedFrom);
       const to = endOfDayIso(archivedFilter.resolvedTo);
@@ -352,19 +379,42 @@ export function PendingAiPlans() {
               <Filter className="h-4 w-4" />
               Filters
             </div>
-            <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4 lg:grid-cols-[2fr_1fr_1fr_auto]">
+            <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
               <label className="flex min-w-0 flex-col">
                 <span className="mb-1 text-xs text-slate-500">Target Application</span>
                 <select
                   aria-label="Target application"
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
-                  onChange={(event) => setActiveFilterDraft({ ...activeFilterDraft, targetAppId: event.target.value })}
+                  onChange={(event) => {
+                    const nextTargetAppId = event.target.value;
+                    setActiveFilterDraft({ ...activeFilterDraft, targetAppId: nextTargetAppId, environmentId: "" });
+                    if (nextTargetAppId) {
+                      void loadEnvironments(nextTargetAppId);
+                    }
+                  }}
                   value={activeFilterDraft.targetAppId}
                 >
                   <option value="">All target apps</option>
                   {sortedTargetApps.map((app) => (
                     <option key={app.id} value={app.id}>
                       {app.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex min-w-0 flex-col">
+                <span className="mb-1 text-xs text-slate-500">Environment</span>
+                <select
+                  aria-label="Environment"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                  disabled={!activeFilterDraft.targetAppId}
+                  onChange={(event) => setActiveFilterDraft({ ...activeFilterDraft, environmentId: event.target.value })}
+                  value={activeFilterDraft.environmentId}
+                >
+                  <option value="">{activeFilterDraft.targetAppId ? "All environments" : "Select a target app first"}</option>
+                  {(environmentsByTargetApp[activeFilterDraft.targetAppId] ?? []).map((env) => (
+                    <option key={env.id} value={env.id}>
+                      {env.name}
                     </option>
                   ))}
                 </select>
@@ -418,6 +468,7 @@ export function PendingAiPlans() {
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                             Requester: {request.externalUserId}
                             {request.targetAppName ? ` • ${request.targetAppName}` : ""}
+                            {` • ${request.environmentName || "N/A"}`}
                           </p>
                           <p className="mt-1 truncate text-sm font-medium text-slate-900">{request.requestText}</p>
                         </div>
@@ -473,19 +524,42 @@ export function PendingAiPlans() {
               <Filter className="h-4 w-4" />
               Filters
             </div>
-            <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-5 lg:grid-cols-[2fr_1fr_1fr_1fr_auto]">
+            <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-5 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]">
               <label className="flex min-w-0 flex-col">
                 <span className="mb-1 text-xs text-slate-500">Target Application</span>
                 <select
                   aria-label="Target application"
                   className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm"
-                  onChange={(event) => setArchivedFilterDraft({ ...archivedFilterDraft, targetAppId: event.target.value })}
+                  onChange={(event) => {
+                    const nextTargetAppId = event.target.value;
+                    setArchivedFilterDraft({ ...archivedFilterDraft, targetAppId: nextTargetAppId, environmentId: "" });
+                    if (nextTargetAppId) {
+                      void loadEnvironments(nextTargetAppId);
+                    }
+                  }}
                   value={archivedFilterDraft.targetAppId}
                 >
                   <option value="">All target apps</option>
                   {sortedTargetApps.map((app) => (
                     <option key={app.id} value={app.id}>
                       {app.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex min-w-0 flex-col">
+                <span className="mb-1 text-xs text-slate-500">Environment</span>
+                <select
+                  aria-label="Environment"
+                  className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-400"
+                  disabled={!archivedFilterDraft.targetAppId}
+                  onChange={(event) => setArchivedFilterDraft({ ...archivedFilterDraft, environmentId: event.target.value })}
+                  value={archivedFilterDraft.environmentId}
+                >
+                  <option value="">{archivedFilterDraft.targetAppId ? "All environments" : "Select a target app first"}</option>
+                  {(environmentsByTargetApp[archivedFilterDraft.targetAppId] ?? []).map((env) => (
+                    <option key={env.id} value={env.id}>
+                      {env.name}
                     </option>
                   ))}
                 </select>
@@ -550,6 +624,7 @@ export function PendingAiPlans() {
                           <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                             Requester: {request.externalUserId}
                             {request.targetAppName ? ` • ${request.targetAppName}` : ""}
+                            {` • ${request.environmentName || "N/A"}`}
                           </p>
                           <p className="mt-1 truncate text-sm font-medium text-slate-900">{request.requestText}</p>
                         </div>

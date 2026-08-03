@@ -3,8 +3,14 @@
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { FlaskConical, Inbox, Mail, Pencil, Power, Send, ShieldCheck, Star, Trash2 } from "lucide-react";
 import { useToast } from "./toast";
+import { MultiSelectDropdown } from "./multi-select-dropdown";
 
 type TargetApp = {
+  id: string;
+  name: string;
+};
+
+type EnvironmentOption = {
   id: string;
   name: string;
 };
@@ -22,6 +28,7 @@ type EmailCredential = {
   created_at: string;
   target_app_id: string | null;
   target_app_name: string | null;
+  environments: EnvironmentOption[];
 };
 
 type NewInboxCredential = {
@@ -34,6 +41,7 @@ type NewInboxCredential = {
   imapPassword?: string;
   imapTls?: boolean;
   targetAppId: string;
+  environmentIds: string[];
 };
 
 type SenderCredential = {
@@ -54,11 +62,13 @@ type SenderCredential = {
   is_primary: boolean;
   updated_at: string;
   created_at: string;
+  environments: EnvironmentOption[];
 };
 
 type NewSenderCredential = {
   companyId: string;
   targetAppId: string;
+  environmentIds: string[];
   authenticationMode: "smtp_password" | "oauth2";
   provider: "smtp" | "gmail" | "outlook";
   name: string;
@@ -130,11 +140,13 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     imapPassword: "",
     imapTls: true,
     targetAppId: "",
+    environmentIds: [],
   });
 
   const [newSenderCredential, setNewSenderCredential] = useState<NewSenderCredential>({
     companyId: selectedCompanyId,
     targetAppId: "",
+    environmentIds: [],
     authenticationMode: "smtp_password",
     provider: "smtp",
     name: "",
@@ -162,6 +174,8 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
   const { showToast } = useToast();
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
+  const [environmentsByTargetApp, setEnvironmentsByTargetApp] = useState<Record<string, EnvironmentOption[]>>({});
+
   const targetAppOptions = useMemo(
     () => [...targetApps].sort((a, b) => a.name.localeCompare(b.name)),
     [targetApps]
@@ -170,6 +184,29 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     () => [{ id: "", name: "Select target application" }, ...targetAppOptions],
     [targetAppOptions]
   );
+
+  const inboxEnvironments = newCredential.targetAppId ? (environmentsByTargetApp[newCredential.targetAppId] ?? []) : [];
+  const senderEnvironments = newSenderCredential.targetAppId ? (environmentsByTargetApp[newSenderCredential.targetAppId] ?? []) : [];
+
+  const loadEnvironments = useCallback(async (targetAppId: string) => {
+    if (!targetAppId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/email-credentials/environments?targetAppId=${encodeURIComponent(targetAppId)}`);
+      const data = await response.json() as { environments?: EnvironmentOption[]; message?: string };
+
+      if (Array.isArray(data.environments)) {
+        setEnvironmentsByTargetApp((current) => ({ ...current, [targetAppId]: data.environments as EnvironmentOption[] }));
+      } else {
+        showToast(data.message || "Unable to load environments.", "error");
+      }
+    } catch (error) {
+      console.error("[Email Credentials] Load environments exception:", error);
+      showToast("Unable to load environments.", "error");
+    }
+  }, [showToast]);
 
   const loadTargetApps = useCallback(async (companyId: string) => {
     try {
@@ -229,11 +266,12 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     void loadCredentials();
     void loadSenderCredentials();
 
-    setNewCredential((current) => ({ ...current, companyId: selectedCompanyId, targetAppId: "" }));
+    setNewCredential((current) => ({ ...current, companyId: selectedCompanyId, targetAppId: "", environmentIds: [] }));
     setNewSenderCredential((current) => ({
       ...current,
       companyId: selectedCompanyId,
       targetAppId: "",
+      environmentIds: [],
       isPrimary: false,
     }));
   }, [loadCredentials, loadSenderCredentials, loadTargetApps, selectedCompanyId]);
@@ -250,6 +288,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
       imapPassword: "",
       imapTls: true,
       targetAppId: "",
+      environmentIds: [],
     });
   }
 
@@ -268,6 +307,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
           imap_port?: number | null;
           imap_tls?: boolean | null;
           target_app_id?: string | null;
+          environments?: EnvironmentOption[];
         };
       };
 
@@ -289,7 +329,11 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
         imapPassword: "",
         imapTls: credential.imap_tls !== false,
         targetAppId: credential.target_app_id || "",
+        environmentIds: (credential.environments || []).map((env) => env.id),
       });
+      if (credential.target_app_id) {
+        void loadEnvironments(credential.target_app_id);
+      }
     } catch (error) {
       console.error("[Email Credentials] Load inbox credential for edit error:", error);
       showToast("Unable to load inbox credential for edit.", "error");
@@ -304,6 +348,11 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
 
     if (!newCredential.targetAppId) {
       showToast("Target application is required", "error");
+      return;
+    }
+
+    if (newCredential.environmentIds.length === 0) {
+      showToast("At least one environment is required", "error");
       return;
     }
 
@@ -335,6 +384,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               imapPassword: newCredential.imapPassword,
               imapTls: newCredential.imapTls,
               targetAppId: newCredential.targetAppId,
+              environmentIds: newCredential.environmentIds,
             }
           : newCredential),
       });
@@ -435,6 +485,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
     setNewSenderCredential((current) => ({
       ...current,
       targetAppId: "",
+      environmentIds: [],
       authenticationMode: "smtp_password",
       name: "",
       description: "",
@@ -470,6 +521,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
           smtp_username: string | null;
           is_active: boolean;
           is_primary: boolean;
+          environments?: EnvironmentOption[];
         };
       };
 
@@ -484,6 +536,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
       setNewSenderCredential((current) => ({
         ...current,
         targetAppId: credential.target_app_id || "",
+        environmentIds: (credential.environments || []).map((env) => env.id),
         authenticationMode: "smtp_password",
         provider: credential.provider,
         name: credential.name,
@@ -498,6 +551,9 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
         isActive: credential.is_active,
         isPrimary: credential.is_primary,
       }));
+      if (credential.target_app_id) {
+        void loadEnvironments(credential.target_app_id);
+      }
     } catch (error) {
       console.error("[Email Credentials] Load sender credential for edit error:", error);
       showToast("Unable to load sender credential for edit.", "error");
@@ -541,6 +597,11 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
       return;
     }
 
+    if (newSenderCredential.environmentIds.length === 0) {
+      showToast("At least one environment is required.", "error");
+      return;
+    }
+
     if (newSenderCredential.authenticationMode !== "smtp_password") {
       showToast("Only SMTP password authentication is currently supported.", "error");
       return;
@@ -559,6 +620,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editingSenderId ? {
           targetAppId: newSenderCredential.targetAppId,
+          environmentIds: newSenderCredential.environmentIds,
           provider: newSenderCredential.provider,
           name: newSenderCredential.name,
           description: newSenderCredential.description || null,
@@ -574,6 +636,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
         } : {
           companyId: selectedCompanyId,
           targetAppId: newSenderCredential.targetAppId,
+          environmentIds: newSenderCredential.environmentIds,
           provider: newSenderCredential.provider,
           name: newSenderCredential.name,
           description: newSenderCredential.description || null,
@@ -772,18 +835,34 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
             <div className="rounded-lg border border-slate-200 bg-white p-6 space-y-4">
               <h4 className="text-lg font-semibold text-slate-900">{editingInboxId ? "Edit Email Trigger Inbox Credential" : "Add Email Trigger Inbox Credential"}</h4>
 
-              <label className="grid gap-1 text-sm font-medium text-slate-700">
-                Target Application *
-                <select
-                  className="h-11 rounded-lg border border-slate-300 px-3"
-                  value={newCredential.targetAppId}
-                  onChange={(event) => setNewCredential({ ...newCredential, targetAppId: event.target.value })}
-                >
-                  {targetAppSelectOptions.map((app) => (
-                    <option key={app.id || "__empty"} value={app.id}>{app.name}</option>
-                  ))}
-                </select>
-              </label>
+              <div className="grid gap-4 md:grid-cols-[1fr_2fr]">
+                <label className="grid gap-1 text-sm font-medium text-slate-700">
+                  Target Application *
+                  <select
+                    className="h-11 rounded-lg border border-slate-300 px-3"
+                    value={newCredential.targetAppId}
+                    onChange={(event) => {
+                      const nextTargetAppId = event.target.value;
+                      setNewCredential({ ...newCredential, targetAppId: nextTargetAppId, environmentIds: [] });
+                      if (nextTargetAppId) {
+                        void loadEnvironments(nextTargetAppId);
+                      }
+                    }}
+                  >
+                    {targetAppSelectOptions.map((app) => (
+                      <option key={app.id || "__empty"} value={app.id}>{app.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <MultiSelectDropdown
+                  emptyLabel={newCredential.targetAppId ? "Select environments" : "Select a target application first"}
+                  label="Environments *"
+                  onChange={(values) => setNewCredential({ ...newCredential, environmentIds: values })}
+                  options={inboxEnvironments.map((env) => ({ label: env.name, value: env.id }))}
+                  selectedValues={newCredential.environmentIds}
+                />
+              </div>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
@@ -840,8 +919,8 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Name</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Provider</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Target apps</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Environments</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Status</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Last test</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Actions</th>
                     </tr>
                   </thead>
@@ -854,8 +933,8 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                         <td className="px-4 py-3 text-sm text-slate-900">{cred.name}</td>
                         <td className="px-4 py-3 text-sm text-slate-700 uppercase">{cred.provider}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.target_app_name || "-"}</td>
+                        <td className="px-4 py-3 text-sm text-slate-700">{cred.environments.length ? cred.environments.map((env) => env.name).join(", ") : "-"}</td>
                         <td className="px-4 py-3 text-sm">{cred.is_active ? <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">Active</span> : <span className="rounded bg-red-100 px-2 py-0.5 text-red-800">Inactive</span>}</td>
-                        <td className="px-4 py-3 text-sm text-slate-700">{cred.last_tested_at ? new Date(cred.last_tested_at).toLocaleString() : "Never tested"}</td>
                         <td className="px-4 py-3 text-sm">
                           <div className="flex items-center gap-2">
                             <IconActionButton
@@ -936,18 +1015,32 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
               <h4 className="text-lg font-semibold text-slate-900">{editingSenderId ? "Edit Outbound Sender Credential" : "Add Outbound Sender Credential"}</h4>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <label className="grid gap-1 text-sm font-medium text-slate-700 md:col-span-2 xl:col-span-2">
+                  <label className="grid gap-1 text-sm font-medium text-slate-700">
                     Target Application *
                     <select
                       className="h-11 rounded-lg border border-slate-300 px-3"
                       value={newSenderCredential.targetAppId}
-                      onChange={(event) => setNewSenderCredential((current) => ({ ...current, targetAppId: event.target.value }))}
+                      onChange={(event) => {
+                        const nextTargetAppId = event.target.value;
+                        setNewSenderCredential((current) => ({ ...current, targetAppId: nextTargetAppId, environmentIds: [] }));
+                        if (nextTargetAppId) {
+                          void loadEnvironments(nextTargetAppId);
+                        }
+                      }}
                     >
                       {targetAppSelectOptions.map((app) => (
                         <option key={app.id || "__empty"} value={app.id}>{app.name}</option>
                       ))}
                     </select>
                   </label>
+
+                  <MultiSelectDropdown
+                    emptyLabel={newSenderCredential.targetAppId ? "Select environments" : "Select a target application first"}
+                    label="Environments *"
+                    onChange={(values) => setNewSenderCredential((current) => ({ ...current, environmentIds: values }))}
+                    options={senderEnvironments.map((env) => ({ label: env.name, value: env.id }))}
+                    selectedValues={newSenderCredential.environmentIds}
+                  />
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
                   Authentication Mode
@@ -1040,6 +1133,7 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Sno</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Name</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Target Applications</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Environments</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">From identity</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">SMTP</th>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Status</th>
@@ -1048,12 +1142,13 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                   </thead>
                   <tbody className="divide-y divide-slate-200">
                     {senderCredentials.length === 0 ? (
-                      <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-500">No outbound sender credentials configured yet.</td></tr>
+                      <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-500">No outbound sender credentials configured yet.</td></tr>
                     ) : senderCredentials.map((cred, index) => (
                       <tr key={cred.id} className="hover:bg-slate-50">
                         <td className="px-4 py-3 text-sm text-slate-700">{index + 1}</td>
                         <td className="px-4 py-3 text-sm text-slate-900 inline-flex items-center gap-1.5">{cred.name}{cred.is_primary ? <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" /> : null}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.target_app_name || "Company level"}</td>
+                        <td className="px-4 py-3 text-sm text-slate-700">{cred.environments.length ? cred.environments.map((env) => env.name).join(", ") : "-"}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.from_name ? `${cred.from_name} <${cred.from_email}>` : cred.from_email}</td>
                         <td className="px-4 py-3 text-sm text-slate-700">{cred.smtp_host || "-"}{cred.smtp_port ? `:${cred.smtp_port}` : ""}</td>
                         <td className="px-4 py-3 text-sm">{cred.is_active ? <span className="rounded bg-emerald-100 px-2 py-0.5 text-emerald-800">Active</span> : <span className="rounded bg-red-100 px-2 py-0.5 text-red-800">Inactive</span>}</td>

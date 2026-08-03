@@ -10,6 +10,8 @@ export type PendingPlanRequest = {
   id: string;
   targetAppId: string;
   targetAppName: string | null;
+  environmentId: string | null;
+  environmentName: string | null;
   externalUserId: string;
   conversationId: string | null;
   draftOrchestrationId: string | null;
@@ -37,6 +39,8 @@ type PendingPlanRequestRow = {
   id: string;
   target_app_id: string;
   target_app_name: string | null;
+  environment_id: string | null;
+  environment_name: string | null;
   external_user_id: string;
   conversation_id: string | null;
   draft_orchestration_id: string | null;
@@ -57,6 +61,8 @@ function mapRow(row: PendingPlanRequestRow): PendingPlanRequest {
     id: row.id,
     targetAppId: row.target_app_id,
     targetAppName: row.target_app_name ?? null,
+    environmentId: row.environment_id ?? null,
+    environmentName: row.environment_name ?? null,
     externalUserId: row.external_user_id,
     conversationId: row.conversation_id,
     draftOrchestrationId: row.draft_orchestration_id,
@@ -127,6 +133,7 @@ export async function getActivePendingPlanRequest(input: {
  */
 export async function createPendingPlanRequest(input: {
   targetAppId: string;
+  environmentId?: string | null;
   externalUserId: string;
   conversationId?: string | null;
   requestText: string;
@@ -137,13 +144,14 @@ export async function createPendingPlanRequest(input: {
     const result = await getPool().query<PendingPlanRequestRow>(
       `
         INSERT INTO ai_planner_pending_requests (
-          target_app_id, external_user_id, conversation_id, request_text, draft_plan, plan_summary
+          target_app_id, environment_id, external_user_id, conversation_id, request_text, draft_plan, plan_summary
         )
-        VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
         RETURNING *
       `,
       [
         input.targetAppId,
+        input.environmentId || null,
         input.externalUserId,
         input.conversationId || null,
         input.requestText,
@@ -165,6 +173,7 @@ export async function createPendingPlanRequest(input: {
 export async function listPendingPlanRequests(input: {
   companyId: string;
   targetAppId?: string | null;
+  environmentId?: string | null;
   requestedFrom?: string | null;
   requestedTo?: string | null;
   page?: number;
@@ -179,6 +188,7 @@ export async function listPendingPlanRequests(input: {
     input.targetAppId || null,
     input.requestedFrom || null,
     input.requestedTo || null,
+    input.environmentId || null,
   ];
 
   const whereClause = `
@@ -187,17 +197,19 @@ export async function listPendingPlanRequests(input: {
       AND ($2::uuid IS NULL OR r.target_app_id = $2)
       AND ($3::timestamptz IS NULL OR r.created_at >= $3)
       AND ($4::timestamptz IS NULL OR r.created_at <= $4)
+      AND ($5::uuid IS NULL OR r.environment_id = $5)
   `;
 
   const [rowsResult, countResult] = await Promise.all([
     getPool().query<PendingPlanRequestRow>(
       `
-        SELECT r.*, cta.name AS target_app_name
+        SELECT r.*, cta.name AS target_app_name, env.name AS environment_name
         FROM ai_planner_pending_requests r
         INNER JOIN company_target_applications cta ON cta.id = r.target_app_id
+        LEFT JOIN target_app_environments env ON env.id = r.environment_id
         ${whereClause}
         ORDER BY r.created_at ASC
-        LIMIT $5 OFFSET $6
+        LIMIT $6 OFFSET $7
       `,
       [...params, pageSize, offset]
     ),
@@ -227,6 +239,7 @@ export async function listPendingPlanRequests(input: {
 export async function listResolvedPlanRequests(input: {
   companyId: string;
   targetAppId?: string | null;
+  environmentId?: string | null;
   status?: "approved" | "rejected" | "all";
   resolvedFrom?: string | null;
   resolvedTo?: string | null;
@@ -244,6 +257,7 @@ export async function listResolvedPlanRequests(input: {
     input.resolvedFrom || null,
     input.resolvedTo || null,
     status,
+    input.environmentId || null,
   ];
 
   const whereClause = `
@@ -253,18 +267,20 @@ export async function listResolvedPlanRequests(input: {
       AND ($3::timestamptz IS NULL OR r.resolved_at >= $3)
       AND ($4::timestamptz IS NULL OR r.resolved_at <= $4)
       AND ($5::text IS NULL OR r.status = $5)
+      AND ($6::uuid IS NULL OR r.environment_id = $6)
   `;
 
   const [rowsResult, countResult] = await Promise.all([
     getPool().query<PendingPlanRequestRow>(
       `
-        SELECT r.*, cta.name AS target_app_name, u.name AS resolved_by_name
+        SELECT r.*, cta.name AS target_app_name, u.name AS resolved_by_name, env.name AS environment_name
         FROM ai_planner_pending_requests r
         INNER JOIN company_target_applications cta ON cta.id = r.target_app_id
         LEFT JOIN users u ON u.id = r.resolved_by
+        LEFT JOIN target_app_environments env ON env.id = r.environment_id
         ${whereClause}
         ORDER BY r.resolved_at DESC
-        LIMIT $6 OFFSET $7
+        LIMIT $7 OFFSET $8
       `,
       [...params, pageSize, offset]
     ),

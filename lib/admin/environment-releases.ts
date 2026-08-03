@@ -1,6 +1,6 @@
 // Shared logic for environment-gated content releases (orchestrations, guided
 // workflow guides, RAG folders) — reuses the environment list already managed
-// under Chatbot Settings (chatbot_api_key_environments). See
+// under Chatbot Settings (target_app_environments). See
 // db/migrations/002_environment_releases.sql for the three release tables.
 //
 // Publishing content is not sufficient on its own for it to be eligible on
@@ -24,7 +24,7 @@ export type EnvironmentOption = {
 
 export async function listEnvironmentsForTargetApp(targetAppId: string): Promise<EnvironmentOption[]> {
   const result = await getPool().query<{ id: string; name: string }>(
-    `SELECT id, name FROM chatbot_api_key_environments WHERE target_app_id = $1 ORDER BY name ASC`,
+    `SELECT id, name FROM target_app_environments WHERE target_app_id = $1 ORDER BY name ASC`,
     [targetAppId]
   );
 

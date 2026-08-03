@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AIConfigurationForm, AdminShell } from "@/components/admin";
 import { adminAIProviderConfig, getAdminAIProviderConfig } from "@/lib/ai/config";
+import { listGuidedWorkflowTargetApps } from "@/lib/admin/guided-workflows";
 import { MODULE_KEYS, requireModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
@@ -35,7 +36,13 @@ export default async function AIConfigurationPage() {
 
   requireModuleAccess(session, MODULE_KEYS.aiConfiguration);
 
-  const config = adminAIProviderConfig(await getAdminAIProviderConfig(session.user.tenantId));
+  const [config, allTargetApps] = await Promise.all([
+    getAdminAIProviderConfig(session.user.tenantId).then(adminAIProviderConfig),
+    listGuidedWorkflowTargetApps(session)
+  ]);
+  const targetApps = allTargetApps
+    .filter((app) => app.companyId === session.user.tenantId)
+    .map((app) => ({ id: app.id, name: app.name }));
 
   return (
     <AdminShell active={MODULE_KEYS.aiConfiguration} session={session}>
@@ -44,6 +51,7 @@ export default async function AIConfigurationPage() {
         config={config}
         embeddingProviders={embeddingProviders}
         llmProviders={llmProviders}
+        targetApps={targetApps}
       />
     </AdminShell>
   );

@@ -11,6 +11,11 @@ type TargetAppOption = {
   companyId: string;
 };
 
+type EnvironmentOption = {
+  id: string;
+  name: string;
+};
+
 type SummaryResponse = {
   summary: {
     totalQueries: number;
@@ -283,6 +288,9 @@ export function SearchAnalyticsDashboard({
   const [appliedToUtc, setAppliedToUtc] = useState(() => toUtcIso(toDateTimeLocalValue(new Date())) || new Date().toISOString());
   const [targetAppId, setTargetAppId] = useState("all");
   const [appliedTargetAppId, setAppliedTargetAppId] = useState("all");
+  const [environmentId, setEnvironmentId] = useState("all");
+  const [appliedEnvironmentId, setAppliedEnvironmentId] = useState("all");
+  const [environmentsByTargetApp, setEnvironmentsByTargetApp] = useState<Record<string, EnvironmentOption[]>>({});
   const [answerStatus, setAnswerStatus] = useState("all");
   const [appliedAnswerStatus, setAppliedAnswerStatus] = useState("all");
   const [rawPage, setRawPage] = useState(1);
@@ -316,6 +324,32 @@ export function SearchAnalyticsDashboard({
     }
   }, [availableTargetApps, targetAppId]);
 
+  const environmentOptions = targetAppId !== "all" ? (environmentsByTargetApp[targetAppId] ?? []) : [];
+
+  async function loadEnvironments(nextTargetAppId: string) {
+    if (!nextTargetAppId || nextTargetAppId === "all") {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/admin/search-analytics/environments?targetAppId=${encodeURIComponent(nextTargetAppId)}`);
+      const data = await response.json();
+      if (Array.isArray(data.environments)) {
+        setEnvironmentsByTargetApp((current) => ({ ...current, [nextTargetAppId]: data.environments }));
+      }
+    } catch (error) {
+      console.error("Failed to load environments:", error);
+    }
+  }
+
+  function handleTargetAppChange(nextTargetAppId: string) {
+    setTargetAppId(nextTargetAppId);
+    setEnvironmentId("all");
+    if (nextTargetAppId !== "all") {
+      void loadEnvironments(nextTargetAppId);
+    }
+  }
+
   useEffect(() => {
     setRawPage(1);
   }, [rawPageSize]);
@@ -340,6 +374,7 @@ export function SearchAnalyticsDashboard({
         summaryParams.set("toUtc", appliedToUtc);
         if (selectedCompanyId) summaryParams.set("companyId", selectedCompanyId);
         if (appliedTargetAppId !== "all") summaryParams.set("targetAppId", appliedTargetAppId);
+        if (appliedEnvironmentId !== "all") summaryParams.set("environmentId", appliedEnvironmentId);
         if (appliedAnswerStatus !== "all") summaryParams.set("answerStatus", appliedAnswerStatus);
 
         const rawParams = new URLSearchParams(summaryParams);
@@ -395,7 +430,7 @@ export function SearchAnalyticsDashboard({
     return () => {
       cancelled = true;
     };
-  }, [appliedFromUtc, appliedToUtc, appliedTargetAppId, appliedAnswerStatus, rawPage, rawPageSize, selectedCompanyId]);
+  }, [appliedFromUtc, appliedToUtc, appliedTargetAppId, appliedEnvironmentId, appliedAnswerStatus, rawPage, rawPageSize, selectedCompanyId]);
 
   function applyFilters() {
     const nextFromUtc = toUtcIso(fromInput);
@@ -412,6 +447,7 @@ export function SearchAnalyticsDashboard({
     setAppliedFromUtc(nextFromUtc);
     setAppliedToUtc(nextToUtc);
     setAppliedTargetAppId(targetAppId);
+    setAppliedEnvironmentId(environmentId);
     setAppliedAnswerStatus(answerStatus);
     setRawPage(1);
   }
@@ -530,7 +566,7 @@ export function SearchAnalyticsDashboard({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 lg:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)_minmax(180px,1fr)_minmax(160px,1fr)_auto]">
+          <div className="grid grid-cols-1 items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 lg:grid-cols-2 xl:grid-cols-[minmax(200px,1fr)_minmax(200px,1fr)_minmax(160px,1fr)_minmax(160px,1fr)_minmax(140px,1fr)_auto]">
             <label className="flex min-w-0 flex-col gap-1">
               <span className="text-xs font-semibold uppercase text-slate-500">From datetime</span>
               <input className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700" type="datetime-local" value={fromInput} onChange={(event) => setFromInput(event.target.value)} />
@@ -542,10 +578,20 @@ export function SearchAnalyticsDashboard({
             <FilterSelect
               label="Target app"
               value={targetAppId}
-              onChange={setTargetAppId}
+              onChange={handleTargetAppChange}
               options={[
                 { label: "All target apps", value: "all" },
                 ...availableTargetApps.map((app) => ({ label: app.name, value: app.id })),
+              ]}
+            />
+            <FilterSelect
+              label="Environment"
+              value={environmentId}
+              onChange={setEnvironmentId}
+              disabled={targetAppId === "all"}
+              options={[
+                { label: targetAppId === "all" ? "Select a target app first" : "All environments", value: "all" },
+                ...environmentOptions.map((env) => ({ label: env.name, value: env.id })),
               ]}
             />
             <FilterSelect
@@ -966,11 +1012,11 @@ function Metric({ icon, label, value, loading }: { icon: React.ReactNode; label:
   );
 }
 
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ label: string; value: string }> }) {
+function FilterSelect({ label, value, onChange, options, disabled }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ label: string; value: string }>; disabled?: boolean }) {
   return (
     <label className="flex min-w-0 flex-col gap-1">
       <span className="text-xs font-semibold uppercase text-slate-500">{label}</span>
-      <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700" value={value} onChange={(event) => onChange(event.target.value)}>
+      <select className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 disabled:bg-slate-100 disabled:text-slate-400" disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>

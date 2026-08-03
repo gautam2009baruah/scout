@@ -91,6 +91,7 @@ export async function POST(request: Request) {
       try {
         await recordChatQueryTelemetry({
           target_app_id: resolvedTargetAppId,
+          environment_id: apiKeyRecord.environmentId,
           user_id: body.user_id,
           conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,
           question: body.question,

@@ -96,7 +96,7 @@ export async function findMatchingOrchestration(input: {
 
   const threshold = input.confidenceThreshold ?? (await getEffectiveMatchConfidenceThreshold(input.companyId, input.targetAppId));
 
-  const provider = await getEmbeddingProvider();
+  const provider = await getEmbeddingProvider(input.companyId, input.targetAppId);
   const queryEmbedding = await provider.embed_text(requestText);
   const mode = await getOrchestrationEmbeddingColumnMode();
 

@@ -123,6 +123,7 @@ export async function POST(
         status: "started",
         payload: triggerData || {},
         triggeredBy: typeof triggerData?.userMessage === "string" ? "chatbot" : undefined,
+        environmentId: typeof triggerData?.environmentId === "string" ? triggerData.environmentId : undefined,
       });
       await updateTriggerLastTriggered(triggerId);
     }

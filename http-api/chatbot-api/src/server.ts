@@ -295,14 +295,9 @@ const server = createServer(async (request, response) => {
         return;
       }
 
-      const requestedEnvironment = String(
-        parsedBody.environment || request.headers["x-scout-environment"] || ""
-      ).trim();
-
       const auth = await authorizer.authenticate(
         request,
         companyContext.id,
-        requestedEnvironment,
         targetAppContext.id
       );
       if (!auth.ok) {

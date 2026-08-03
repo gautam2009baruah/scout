@@ -45,11 +45,41 @@ function getPollingInterval(config) {
 }
 
 /**
+ * An inbox credential must be linked to at least one environment that the
+ * trigger's owning orchestration is actively released to (see
+ * orchestration_environment_releases, 002_environment_releases_and_versioning.sql).
+ * Unlike the sender-credential path (which validates against a concrete
+ * request-time environmentId), polling has no single "current" environment,
+ * so this checks for any overlap between the two sets.
+ */
+async function isCredentialAllowedForTrigger(orchestrationId, credentialId) {
+  const releasedResult = await pool.query(
+    `SELECT environment_id FROM orchestration_environment_releases WHERE orchestration_id = $1 AND deleted_at IS NULL`,
+    [orchestrationId]
+  );
+  const releasedEnvironmentIds = releasedResult.rows.map((row) => row.environment_id);
+  if (releasedEnvironmentIds.length === 0) {
+    return false;
+  }
+
+  const credentialResult = await pool.query(
+    `SELECT 1 FROM email_credential_environments WHERE email_credential_id = $1 AND environment_id = ANY($2::uuid[]) LIMIT 1`,
+    [credentialId, releasedEnvironmentIds]
+  );
+  return (credentialResult.rowCount ?? 0) > 0;
+}
+
+/**
  * Fetch emails for a specific provider
  */
 async function fetchEmailsForProvider(trigger, config, since) {
   const { provider, credentialId } = config;
-  
+
+  if (credentialId && !(await isCredentialAllowedForTrigger(trigger.orchestrationId, credentialId))) {
+    console.warn(`Trigger ${trigger.id}: Credential ${credentialId} is not scoped to any environment this orchestration is released to`);
+    return [];
+  }
+
   if (provider === "gmail") {
     if (!credentialId) {
       console.warn(`Trigger ${trigger.id}: No credential ID configured for Gmail`);

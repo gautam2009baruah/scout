@@ -210,7 +210,7 @@ export async function executeAITaskNode(
       ? (await resolveCompanyIdForTargetApp(targetAppId)) || directCompanyId
       : directCompanyId;
 
-    const provider = await getLLMProvider(companyId || undefined);
+    const provider = await getLLMProvider(companyId || undefined, targetAppId || undefined);
     const outputFormat: "text" | "json" = config.outputFormat === "json" ? "json" : "text";
     const outputFields = Array.isArray(config.outputFields) ? config.outputFields : [];
 

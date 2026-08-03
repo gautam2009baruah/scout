@@ -14,8 +14,6 @@ type CacheValue = {
   companyId: string;
   targetAppId: string | null;
   allowedOrigins: string[];
-  keyEnvironment: string;
-  strictEnvironmentEnforcement: boolean;
   expiresAt: number;
 };
 
@@ -91,10 +89,6 @@ function isOriginAllowed(hostname: string, rules: string[]) {
   return normalized.some((rule) => matchesOriginRule(hostname, rule));
 }
 
-function normalizeEnvironment(value: string) {
-  return String(value || "").trim().toLowerCase();
-}
-
 export class CompanyApiKeyAuthorizer {
   private readonly cache = new Map<string, CacheValue>();
 
@@ -120,8 +114,6 @@ export class CompanyApiKeyAuthorizer {
       companyId: string;
       targetAppId: string | null;
       allowedOrigins: string[];
-      keyEnvironment: string;
-      strictEnvironmentEnforcement: boolean;
     }
   ) {
     this.cache.set(hash, {
@@ -150,7 +142,6 @@ export class CompanyApiKeyAuthorizer {
   async authenticate(
     request: IncomingMessage,
     companyId: string,
-    requestedEnvironment?: string,
     requestedTargetAppId?: string | null
   ): Promise<AuthResult> {
     const token = extractToken(request.headers);
@@ -188,17 +179,6 @@ export class CompanyApiKeyAuthorizer {
         return { ok: false, error: "API key is not allowed for this origin." };
       }
 
-      if (cached.strictEnvironmentEnforcement) {
-        const normalizedRequestedEnvironment = normalizeEnvironment(requestedEnvironment || "");
-        if (!normalizedRequestedEnvironment) {
-          return { ok: false, error: "Environment is required for this API key." };
-        }
-
-        if (normalizedRequestedEnvironment !== normalizeEnvironment(cached.keyEnvironment)) {
-          return { ok: false, error: "API key is not allowed for this environment." };
-        }
-      }
-
       return { ok: true, apiKeyId: cached.id, source: "database" };
     }
 
@@ -207,20 +187,15 @@ export class CompanyApiKeyAuthorizer {
       company_id: string;
       target_app_id: string | null;
       allowed_origins_json: string[] | null;
-      environment: string;
-      strict_environment_enforcement: boolean;
     }>(
       `
         SELECT
           k.id,
           cta.company_id,
           k.target_app_id,
-          COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json,
-          COALESCE(env.normalized_name, 'production') AS environment,
-          COALESCE(k.strict_environment_enforcement, false) AS strict_environment_enforcement
+          COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json
         FROM chatbot_api_keys k
         INNER JOIN company_target_applications cta ON cta.id = k.target_app_id
-        LEFT JOIN chatbot_api_key_environments env ON env.id = k.environment_id
         WHERE key_hash = $1
           AND status = 'active'
           AND is_active = true
@@ -238,9 +213,7 @@ export class CompanyApiKeyAuthorizer {
         id: row.id,
         companyId: row.company_id,
         targetAppId: row.target_app_id,
-        allowedOrigins,
-        keyEnvironment: row.environment,
-        strictEnvironmentEnforcement: row.strict_environment_enforcement === true
+        allowedOrigins
       });
       if (row.company_id !== companyId) {
         return { ok: false, error: "API key is not allowed for this company." };
@@ -259,17 +232,6 @@ export class CompanyApiKeyAuthorizer {
       const requestHost = parseOriginFromRequest(request);
       if (!isOriginAllowed(requestHost, allowedOrigins)) {
         return { ok: false, error: "API key is not allowed for this origin." };
-      }
-
-      if (row.strict_environment_enforcement) {
-        const normalizedRequestedEnvironment = normalizeEnvironment(requestedEnvironment || "");
-        if (!normalizedRequestedEnvironment) {
-          return { ok: false, error: "Environment is required for this API key." };
-        }
-
-        if (normalizedRequestedEnvironment !== normalizeEnvironment(row.environment)) {
-          return { ok: false, error: "API key is not allowed for this environment." };
-        }
       }
 
       return { ok: true, apiKeyId: row.id, source: "database" };

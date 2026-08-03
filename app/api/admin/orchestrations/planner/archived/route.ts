@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
     const result = await listResolvedPlanRequests({
       companyId: session.user.tenantId,
       targetAppId: searchParams.get("targetAppId"),
+      environmentId: searchParams.get("environmentId"),
       status,
       resolvedFrom: searchParams.get("resolvedFrom"),
       resolvedTo: searchParams.get("resolvedTo"),

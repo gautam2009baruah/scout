@@ -26,6 +26,30 @@ async function validateTargetAppScope(companyId: string, targetAppId: string | n
   }
 }
 
+function normalizeEnvironmentIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(new Set(value.map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+async function validateEnvironmentIds(targetAppId: string, environmentIds: string[]) {
+  if (environmentIds.length === 0) {
+    return false;
+  }
+
+  const result = await getPool().query<{ id: string }>(
+    `SELECT id
+     FROM target_app_environments
+     WHERE id = ANY($1::uuid[])
+       AND target_app_id = $2`,
+    [environmentIds, targetAppId]
+  );
+
+  return (result.rowCount ?? 0) === environmentIds.length;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = await getCurrentAdminSession();
@@ -78,7 +102,13 @@ export async function GET(request: NextRequest) {
           esc.is_active,
           esc.is_primary,
           esc.updated_at,
-          esc.created_at
+          esc.created_at,
+          COALESCE((
+            SELECT json_agg(json_build_object('id', e.id, 'name', e.name) ORDER BY e.name)
+            FROM email_sender_credential_environments esce
+            JOIN target_app_environments e ON e.id = esce.environment_id
+            WHERE esce.email_sender_credential_id = esc.id
+          ), '[]'::json) AS environments
         FROM email_sender_credentials esc
         LEFT JOIN company_target_applications cta ON cta.id = esc.target_app_id
         WHERE esc.company_id = $1
@@ -136,6 +166,11 @@ export async function POST(request: NextRequest) {
     }
 
     await validateTargetAppScope(companyId, targetAppId);
+
+    const environmentIds = normalizeEnvironmentIds(body.environmentIds);
+    if (!(await validateEnvironmentIds(targetAppId, environmentIds))) {
+      return NextResponse.json({ success: false, error: "At least one valid environment is required." }, { status: 400 });
+    }
 
     const client = await getPool().connect();
     try {
@@ -203,6 +238,12 @@ export async function POST(request: NextRequest) {
           isPrimary && isActive,
           session.user.id
         ]
+      );
+
+      await client.query(
+        `INSERT INTO email_sender_credential_environments (email_sender_credential_id, environment_id)
+         SELECT $1, unnest($2::uuid[])`,
+        [result.rows[0].id, environmentIds]
       );
 
       await client.query("COMMIT");

@@ -12,6 +12,7 @@ export type EmailMessage = {
   senderCredentialId?: string;
   companyId?: string;
   targetAppId?: string;
+  environmentId?: string;
   htmlBody?: string;
   attachments?: Array<{
     filename?: string;
@@ -79,6 +80,21 @@ async function resolveSenderCredential(message: EmailMessage) {
 
   if (message.targetAppId && credential.target_app_id && credential.target_app_id !== message.targetAppId) {
     throw new Error("Selected sender provider is not scoped to this target app");
+  }
+
+  if (message.environmentId) {
+    const environmentCheck = await getPool().query<{ id: string }>(
+      `SELECT 1
+       FROM email_sender_credential_environments
+       WHERE email_sender_credential_id = $1
+         AND environment_id = $2
+       LIMIT 1`,
+      [credential.id, message.environmentId]
+    );
+
+    if ((environmentCheck.rowCount ?? 0) === 0) {
+      throw new Error("Selected sender provider is not scoped to this environment");
+    }
   }
 
   if (!credential.smtp_host || !credential.smtp_username || !credential.smtp_password) {

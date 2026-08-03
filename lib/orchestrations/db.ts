@@ -1744,7 +1744,7 @@ export async function getOrchestrationEnvironmentReleases(
     `
       SELECT env.id, env.name, env.is_production,
         oer.version_major AS released_version_major, oer.version_build AS released_version_build, oer.released_at
-      FROM chatbot_api_key_environments env
+      FROM target_app_environments env
       LEFT JOIN orchestration_environment_releases oer
         ON oer.environment_id = env.id AND oer.orchestration_id = $2 AND oer.deleted_at IS NULL
       WHERE env.target_app_id = $1
@@ -1790,7 +1790,7 @@ export async function promoteOrchestrationToEnvironment(
   }
 
   const envResult = await pool.query<{ is_production: boolean }>(
-    `SELECT is_production FROM chatbot_api_key_environments WHERE id = $1`,
+    `SELECT is_production FROM target_app_environments WHERE id = $1`,
     [environmentId]
   );
   if ((envResult.rowCount ?? 0) === 0) {

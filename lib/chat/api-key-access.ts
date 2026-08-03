@@ -15,7 +15,7 @@ export type CachedKeyRecord = {
   targetAppId: string;
   allowedOrigins: string[];
   // chatbot_api_keys.environment_id is NOT NULL — every valid key is always
-  // bound to exactly one environment (see chatbot_api_key_environments,
+  // bound to exactly one environment (see target_app_environments,
   // managed under Chatbot Settings). Used to gate which environment-released
   // orchestrations/guides/folders this request can see.
   environmentId: string;

@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status") || undefined; // "active" or non-active
     const companyId = searchParams.get("companyId") || undefined;
     const targetAppId = searchParams.get("targetAppId") || undefined;
+    const environmentId = searchParams.get("environmentId") || undefined;
     const from = searchParams.get("from") || null; // ISO datetime (UTC)
     const to = searchParams.get("to") || null; // ISO datetime (UTC)
 
@@ -30,9 +31,12 @@ export async function GET(request: NextRequest) {
 
     // $1/$2 are the (optional) email received_at date range used by the email
     // stat subqueries so the counts match the executions panel exactly.
-    // The dynamic trigger filters start at $3.
-    const params: any[] = [from, to];
-    let paramIndex = 3;
+    // $3 is the (optional) environment filter, applied only to
+    // trigger_execution_logs (chatbot-type triggers) — email/other trigger
+    // types have no environment_id, so they're unaffected by this filter.
+    // The dynamic trigger filters start at $4.
+    const params: any[] = [from, to, environmentId || null];
+    let paramIndex = 4;
 
     // Build query with filters.
     // Note: orchestration_triggers uses a `status` text column ('active' |
@@ -87,6 +91,7 @@ export async function GET(request: NextRequest) {
           WHERE tel.trigger_id = ot.id
             AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
             AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
+            AND ($3::uuid IS NULL OR tel.environment_id = $3::uuid)
         ) as schedule_execution_count,
         (
           SELECT COUNT(DISTINCT COALESCE(tel.execution_id::text, tel.id::text))::int FROM trigger_execution_logs tel
@@ -94,12 +99,14 @@ export async function GET(request: NextRequest) {
             AND tel.status = 'failed'
             AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
             AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
+            AND ($3::uuid IS NULL OR tel.environment_id = $3::uuid)
         ) as schedule_error_count,
         (
           SELECT MAX(tel.triggered_at) FROM trigger_execution_logs tel
           WHERE tel.trigger_id = ot.id
             AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
             AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
+            AND ($3::uuid IS NULL OR tel.environment_id = $3::uuid)
         ) as schedule_last_run,
         (
           SELECT tel.error_message FROM trigger_execution_logs tel
@@ -107,6 +114,7 @@ export async function GET(request: NextRequest) {
             AND tel.status = 'failed'
             AND ($1::timestamptz IS NULL OR tel.triggered_at >= $1::timestamptz)
             AND ($2::timestamptz IS NULL OR tel.triggered_at <= $2::timestamptz)
+            AND ($3::uuid IS NULL OR tel.environment_id = $3::uuid)
           ORDER BY tel.triggered_at DESC
           LIMIT 1
         ) as schedule_last_error
@@ -114,6 +122,14 @@ export async function GET(request: NextRequest) {
       INNER JOIN orchestrations o ON ot.orchestration_id = o.id
       LEFT JOIN company_target_applications cta ON cta.id = o.target_app_id
       WHERE 1 = 1
+        AND (
+          $3::uuid IS NULL
+          OR EXISTS (
+            SELECT 1 FROM trigger_execution_logs tel3
+            WHERE tel3.trigger_id = ot.id
+              AND tel3.environment_id = $3::uuid
+          )
+        )
     `;
 
     if (companyId) {

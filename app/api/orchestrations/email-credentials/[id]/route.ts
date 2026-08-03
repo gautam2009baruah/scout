@@ -20,6 +20,30 @@ async function validateTargetAppScope(companyId: string, targetAppId: string | n
   return (scopeCheck.rowCount ?? 0) > 0;
 }
 
+function normalizeEnvironmentIds(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(new Set(value.map((item) => String(item || "").trim()).filter(Boolean)));
+}
+
+async function validateEnvironmentIds(targetAppId: string, environmentIds: string[]) {
+  if (environmentIds.length === 0) {
+    return false;
+  }
+
+  const result = await getPool().query<{ id: string }>(
+    `SELECT id
+     FROM target_app_environments
+     WHERE id = ANY($1::uuid[])
+       AND target_app_id = $2`,
+    [environmentIds, targetAppId]
+  );
+
+  return (result.rowCount ?? 0) === environmentIds.length;
+}
+
 /**
  * GET /api/orchestrations/email-credentials/[id]
  * Get full details of a single email credential (for editing)
@@ -45,7 +69,7 @@ export async function GET(
 
     // Fetch credential details with target app (excluding password for security)
     const result = await pool.query(
-      `SELECT 
+      `SELECT
         ec.id,
         ec.company_id,
         ec.target_app_id,
@@ -59,7 +83,13 @@ export async function GET(
         ec.is_active,
         ec.last_tested_at,
         ec.last_test_status,
-        ec.created_at
+        ec.created_at,
+        COALESCE((
+          SELECT json_agg(json_build_object('id', e.id, 'name', e.name) ORDER BY e.name)
+          FROM email_credential_environments ece
+          JOIN target_app_environments e ON e.id = ece.environment_id
+          WHERE ece.email_credential_id = ec.id
+        ), '[]'::json) AS environments
        FROM email_credentials ec
        LEFT JOIN company_target_applications cta ON cta.id = ec.target_app_id
        WHERE ec.id = $1
@@ -204,7 +234,7 @@ export async function PATCH(
 
       // Check if credential exists
       const checkResult = await client.query(
-        `SELECT provider, company_id FROM email_credentials
+        `SELECT provider, company_id, target_app_id FROM email_credentials
          WHERE id = $1`,
         [credentialId]
       );
@@ -226,6 +256,19 @@ export async function PATCH(
       }
 
       const provider = checkResult.rows[0].provider;
+      const effectiveTargetAppId = targetAppId !== undefined ? (targetAppId ? String(targetAppId) : null) : checkResult.rows[0].target_app_id;
+
+      let environmentIds: string[] | undefined;
+      if (body.environmentIds !== undefined) {
+        environmentIds = normalizeEnvironmentIds(body.environmentIds);
+        if (!effectiveTargetAppId || !(await validateEnvironmentIds(effectiveTargetAppId, environmentIds))) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { success: false, error: "At least one valid environment is required." },
+            { status: 400 }
+          );
+        }
+      }
 
       if (targetAppId !== undefined) {
         const isValidTargetApp = await validateTargetAppScope(session.user.tenantId, targetAppId ? String(targetAppId) : null);
@@ -287,7 +330,7 @@ export async function PATCH(
       values.push(String(targetAppId));
     }
 
-    if (updates.length === 0) {
+    if (updates.length === 0 && environmentIds === undefined) {
       await client.query('ROLLBACK');
       client.release();
       return NextResponse.json(
@@ -308,6 +351,18 @@ export async function PATCH(
          WHERE id = $${paramIndex}
          RETURNING id, target_app_id, provider, name, email_address, is_active`,
         values
+      );
+    }
+
+    if (environmentIds !== undefined) {
+      await client.query(
+        `DELETE FROM email_credential_environments WHERE email_credential_id = $1`,
+        [credentialId]
+      );
+      await client.query(
+        `INSERT INTO email_credential_environments (email_credential_id, environment_id)
+         SELECT $1, unnest($2::uuid[])`,
+        [credentialId, environmentIds]
       );
     }
 

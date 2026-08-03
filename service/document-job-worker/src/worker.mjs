@@ -406,8 +406,8 @@ function normalizeEmbeddingModel(provider, model) {
   return cleanModel;
 }
 
-async function embedLocalMockText(text) {
-  const config = await getEmbeddingConfig();
+async function embedLocalMockText(text, companyId) {
+  const config = await getEmbeddingConfig(companyId);
   const vector = new Array(config.dimension).fill(0);
   const tokens = text.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 
@@ -421,23 +421,46 @@ async function embedLocalMockText(text) {
   return normalizeVector(vector);
 }
 
-async function getEmbeddingConfig() {
+async function getEmbeddingConfig(companyId) {
   try {
-    const result = await client.query(
-      `
-        SELECT
-          provider,
-          model,
-          dimension,
-          endpoint,
-          api_key
-        FROM ai_embedding_provider_configs
-        WHERE is_active = true
-          AND deleted_at IS NULL
-        ORDER BY is_primary DESC, updated_at DESC
-        LIMIT 1
-      `
-    );
+    // Company-wide primary only (target_app_id/environment_id IS NULL): document
+    // ingestion isn't tied to a single target app (a folder can map to several via
+    // folder_target_apps), so per-target-app embedding selection is ambiguous here.
+    const result = companyId
+      ? await client.query(
+          `
+            SELECT
+              provider,
+              model,
+              dimension,
+              endpoint,
+              api_key
+            FROM ai_embedding_provider_configs
+            WHERE company_id = $1
+              AND target_app_id IS NULL
+              AND environment_id IS NULL
+              AND is_active = true
+              AND deleted_at IS NULL
+            ORDER BY is_primary DESC, updated_at DESC
+            LIMIT 1
+          `,
+          [companyId]
+        )
+      : await client.query(
+          `
+            SELECT
+              provider,
+              model,
+              dimension,
+              endpoint,
+              api_key
+            FROM ai_embedding_provider_configs
+            WHERE is_active = true
+              AND deleted_at IS NULL
+            ORDER BY is_primary DESC, updated_at DESC
+            LIMIT 1
+          `
+        );
     const row = result.rows[0];
 
     if (row) {
@@ -456,14 +479,14 @@ async function getEmbeddingConfig() {
   return defaultEmbeddingConfig;
 }
 
-async function embedLocalBGEBatch(texts, config) {
+async function embedLocalBGEBatch(texts, config, companyId) {
   try {
     return await requestLocalEmbeddings(config.model, texts, config);
   } catch {
     try {
       return await requestLocalEmbeddings("nomic-embed-text", texts, config);
     } catch {
-      return Promise.all(texts.map((text) => embedLocalMockText(text)));
+      return Promise.all(texts.map((text) => embedLocalMockText(text, companyId)));
     }
   }
 }
@@ -585,11 +608,11 @@ async function embedCustomBatch(texts, config) {
   return payload.embeddings ?? payload.data?.map((item) => item.embedding);
 }
 
-async function embedBatch(texts) {
-  const config = await getEmbeddingConfig();
+async function embedBatch(texts, companyId) {
+  const config = await getEmbeddingConfig(companyId);
 
   if (config.provider === "local_bge") {
-    return embedLocalBGEBatch(texts, config);
+    return embedLocalBGEBatch(texts, config, companyId);
   }
 
   if (config.provider === "openai") {
@@ -981,8 +1004,9 @@ async function embedDocument(job) {
     [job.document_id]
   );
 
+  const documentCompanyId = chunks[0].company_id;
   const embeddingMode = await getEmbeddingColumnMode();
-  const embeddingConfig = await getEmbeddingConfig();
+  const embeddingConfig = await getEmbeddingConfig(documentCompanyId);
 
   await client.query("BEGIN");
 
@@ -991,7 +1015,7 @@ async function embedDocument(job) {
 
     for (let start = 0; start < chunks.length; start += embeddingBatchSize) {
       const batch = chunks.slice(start, start + embeddingBatchSize);
-      const embeddings = await embedBatch(batch.map((chunk) => buildEmbeddingText(chunk)));
+      const embeddings = await embedBatch(batch.map((chunk) => buildEmbeddingText(chunk)), documentCompanyId);
 
       await client.query(
         `

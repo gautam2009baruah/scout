@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId: externalUserId });
+    const apiKeyRecord = await assertChatbotApiKeyAccess(request, { companyId, targetAppId, userId: externalUserId });
     await assertScopedTargetAppAccess({ companyId, userId: externalUserId, targetAppId });
 
     const persistedConversationId = await getOrCreateConversation({
@@ -131,6 +131,7 @@ export async function POST(request: NextRequest) {
       try {
         await createPendingPlanRequest({
           targetAppId,
+          environmentId: apiKeyRecord.environmentId,
           externalUserId,
           conversationId: persistedConversationId,
           requestText: result.draftPlan.requestText,

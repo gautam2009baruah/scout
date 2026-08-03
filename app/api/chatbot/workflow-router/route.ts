@@ -319,6 +319,9 @@ async function classifyClarificationTurn(input: {
   message: string;
   clarificationPrompt: string;
   history: Array<{ role?: string; text?: string }>;
+  companyId?: string;
+  targetAppId?: string;
+  environmentId?: string;
 }): Promise<ClarificationTurnDecision> {
   const normalized = input.message
     .trim()
@@ -328,7 +331,7 @@ async function classifyClarificationTurn(input: {
     .replace(/\s+/g, " ");
 
   try {
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(input.companyId, input.targetAppId, input.environmentId);
     const recentContext = input.history
       .slice(-6)
       .map((entry) => `${String(entry.role || "unknown").toUpperCase()}: ${String(entry.text || "")}`)
@@ -447,14 +450,16 @@ function resolveFollowUpMessageHeuristic(
 
 async function resolveActionRequestFromConversation(
   message: string,
-  history: Array<{ role?: string; text?: string }>
+  history: Array<{ role?: string; text?: string }>,
+  companyId?: string,
+  targetAppId?: string
 ): Promise<ActionContextResolution> {
   if (history.length === 0) {
     return { message, confidence: 1, usedLLM: false };
   }
 
   try {
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(companyId, targetAppId);
     const contextText = history
       .slice(-10)
       .map((entry) => `${(entry.role || "unknown").toUpperCase()}: ${String(entry.text || "")}`)
@@ -707,14 +712,17 @@ function scoreCandidateHeuristically(message: string, candidate: ChatbotWorkflow
 
 async function findEligibleCandidateWithAi(
   message: string,
-  candidates: ChatbotWorkflowCandidate[]
+  candidates: ChatbotWorkflowCandidate[],
+  companyId?: string,
+  targetAppId?: string,
+  environmentId?: string
 ): Promise<{ candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null> {
   if (candidates.length === 0) {
     return null;
   }
 
   try {
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(companyId, targetAppId, environmentId);
     const compactCandidates = candidates.map((candidate, index) => ({
       index,
       id: candidate.id,
@@ -806,7 +814,7 @@ async function findEligibleCandidateWithAi(
 async function findEligibleOrchestration(
   message: string,
   candidates: ChatbotWorkflowCandidate[],
-  options?: { forceActionMode?: boolean; alternateMessage?: string }
+  options?: { forceActionMode?: boolean; alternateMessage?: string; companyId?: string; targetAppId?: string; environmentId?: string }
 ): Promise<{ candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null> {
   const semanticMessages = [message];
   if (
@@ -844,7 +852,7 @@ async function findEligibleOrchestration(
 
   let bestAiMatch: { candidate: ChatbotWorkflowCandidate; confidence: number; reason: string } | null = null;
   for (const semanticMessage of semanticMessages) {
-    const aiMatch = await findEligibleCandidateWithAi(semanticMessage, candidates);
+    const aiMatch = await findEligibleCandidateWithAi(semanticMessage, candidates, options?.companyId, options?.targetAppId, options?.environmentId);
     if (aiMatch && (!bestAiMatch || aiMatch.confidence > bestAiMatch.confidence)) {
       bestAiMatch = aiMatch;
     }
@@ -935,7 +943,10 @@ async function assessExecutionReadiness(
   candidate: ChatbotWorkflowCandidate,
   message: string,
   history: Array<{ role?: string; text?: string }>,
-  extractedVariables: Record<string, unknown>
+  extractedVariables: Record<string, unknown>,
+  companyId?: string,
+  targetAppId?: string,
+  environmentId?: string
 ): Promise<ExecutionReadinessAssessment> {
   const conversation = [
     ...history
@@ -954,7 +965,7 @@ async function assessExecutionReadiness(
   });
 
   try {
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(companyId, targetAppId, environmentId);
     const systemPrompt = [
       "You are a pre-execution conversation planner for workflow automation.",
       "Decide whether the conversation contains enough business information to execute the selected workflow without making a material guess.",
@@ -1023,7 +1034,10 @@ async function assessExecutionReadiness(
 async function extractRequiredVariablesFromConversation(
   requiredVariables: RequiredVariableDefinition[],
   message: string,
-  history: Array<{ role?: string; text?: string }>
+  history: Array<{ role?: string; text?: string }>,
+  companyId?: string,
+  targetAppId?: string,
+  environmentId?: string
 ): Promise<{ values: Record<string, unknown>; missing: RequiredVariableDefinition[] }> {
   if (requiredVariables.length === 0) {
     return { values: {}, missing: [] };
@@ -1045,7 +1059,7 @@ async function extractRequiredVariablesFromConversation(
   }
 
   try {
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(companyId, targetAppId, environmentId);
     const systemPrompt = [
       "Extract required orchestration input values from conversation.",
       "Return JSON only in this shape:",
@@ -1094,7 +1108,7 @@ export async function POST(request: NextRequest) {
     const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
     const attachmentId = typeof body.attachmentId === "string" ? body.attachmentId.trim() : "";
     const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
-    const contextResolution = await resolveActionRequestFromConversation(rawMessage, history);
+    const contextResolution = await resolveActionRequestFromConversation(rawMessage, history, companyId || undefined, targetAppId || undefined);
     const message = contextResolution.message;
 
     if (!companyId || !userId || !message) {
@@ -1127,7 +1141,7 @@ export async function POST(request: NextRequest) {
       }
 
       const candidates = await loadChatbotWorkflowCandidates(companyId, targetAppId, apiKeyRecord.environmentId);
-      const match = await findEligibleOrchestration(rawMessage, candidates, { forceActionMode: false });
+      const match = await findEligibleOrchestration(rawMessage, candidates, { forceActionMode: false, companyId, targetAppId, environmentId: apiKeyRecord.environmentId });
       // Suggestions are review-only and cannot execute, so favor recall while
       // still requiring a meaningful orchestration match. A trigger configured
       // stricter than this floor keeps its own higher bar.
@@ -1182,6 +1196,9 @@ export async function POST(request: NextRequest) {
               message: rawMessage,
               clarificationPrompt: clarification.prompt,
               history,
+              companyId,
+              targetAppId,
+              environmentId: apiKeyRecord.environmentId,
             });
 
             if (clarificationDecision !== "answer") {
@@ -1353,6 +1370,9 @@ export async function POST(request: NextRequest) {
       : await findEligibleOrchestration(message, candidates, {
         forceActionMode,
         alternateMessage: rawMessage,
+        companyId,
+        targetAppId,
+        environmentId: apiKeyRecord.environmentId,
       });
     if (!match) {
       return NextResponse.json({
@@ -1388,13 +1408,19 @@ export async function POST(request: NextRequest) {
     const variableExtraction = await extractRequiredVariablesFromConversation(
       selected.requiredVariables,
       message,
-      history
+      history,
+      companyId,
+      targetAppId,
+      apiKeyRecord.environmentId
     );
     const readiness = await assessExecutionReadiness(
       selected,
       message,
       history,
-      variableExtraction.values
+      variableExtraction.values,
+      companyId,
+      targetAppId,
+      apiKeyRecord.environmentId
     );
 
     if (variableExtraction.missing.length > 0 || !readiness.ready) {
@@ -1491,6 +1517,7 @@ export async function POST(request: NextRequest) {
         triggerType: "chatbot",
         companyId,
         targetAppId: targetAppId || undefined,
+        environmentId: apiKeyRecord.environmentId || undefined,
         conversationId: persistedConversationId,
         userMessage: message,
         confidence: match.confidence,
@@ -1522,6 +1549,7 @@ export async function POST(request: NextRequest) {
       status: "started",
       payload: triggerAuditPayload,
       triggeredBy: userId,
+      environmentId: apiKeyRecord.environmentId,
     });
 
     // Orchestrations with a "workflow" or "data_capture" node touch the live DOM
@@ -1563,6 +1591,7 @@ export async function POST(request: NextRequest) {
             triggerType: "chatbot",
             companyId,
             targetAppId: targetAppId || undefined,
+            environmentId: apiKeyRecord.environmentId || undefined,
             conversationId: persistedConversationId,
             userMessage: message,
             confidence: match.confidence,
@@ -1592,6 +1621,7 @@ export async function POST(request: NextRequest) {
       triggerId: selected.triggerId,
       triggeredBy: userId,
       auditPayload: triggerAuditPayload,
+      environmentId: apiKeyRecord.environmentId,
     });
 
     if (executionResult.status === "paused") {
@@ -1791,6 +1821,7 @@ async function executeChatbotExecution(input: {
   triggerId: string | null;
   triggeredBy: string;
   auditPayload: Record<string, unknown>;
+  environmentId?: string;
 }) {
   try {
     const snapshot = await getOrchestrationVersionSnapshot(input.orchestrationId, input.execution.orchestrationVersionMajor, input.execution.orchestrationVersionBuild);
@@ -1809,6 +1840,7 @@ async function executeChatbotExecution(input: {
         payload: input.auditPayload,
         errorMessage: result.error,
         triggeredBy: input.triggeredBy,
+        environmentId: input.environmentId,
       });
 
       await updateTriggerLastTriggered(input.triggerId, result.error || "Unknown execution error");
@@ -1829,6 +1861,7 @@ async function executeChatbotExecution(input: {
         payload: input.auditPayload,
         errorMessage: error instanceof Error ? error.message : "Unknown execution error",
         triggeredBy: input.triggeredBy,
+        environmentId: input.environmentId,
       });
 
       await updateTriggerLastTriggered(

@@ -269,6 +269,20 @@ export async function updateTriggerLastTriggered(
 // Trigger Execution Logs
 // ============================================================================
 
+// Opt-in gate: only chatbot-type triggers pass `environmentId` (the calling
+// API key's environment). When provided, the environment must have activity
+// logging explicitly enabled under Manage Environments (defaults to off) or
+// the log row is silently skipped. Every other trigger type omits
+// `environmentId` and keeps logging exactly as before, unaffected.
+async function isActivityLoggingEnabledForEnvironment(environmentId: string) {
+  const result = await getPool().query<{ activity_logging_enabled: boolean }>(
+    `SELECT activity_logging_enabled FROM target_app_environments WHERE id = $1`,
+    [environmentId]
+  );
+
+  return result.rows[0]?.activity_logging_enabled === true;
+}
+
 export async function createTriggerLog(data: {
   triggerId: string;
   orchestrationId: string;
@@ -277,13 +291,18 @@ export async function createTriggerLog(data: {
   payload: Record<string, unknown>;
   errorMessage?: string;
   triggeredBy?: string;
-}): Promise<TriggerExecutionLog> {
+  environmentId?: string;
+}): Promise<TriggerExecutionLog | null> {
   const pool = getPool();
 
+  if (data.environmentId && !(await isActivityLoggingEnabledForEnvironment(data.environmentId))) {
+    return null;
+  }
+
   const result = await pool.query<TriggerLogRow>(
-    `INSERT INTO trigger_execution_logs 
-     (trigger_id, orchestration_id, execution_id, status, payload, error_message, triggered_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO trigger_execution_logs
+     (trigger_id, orchestration_id, execution_id, status, payload, error_message, triggered_by, environment_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
     [
       data.triggerId,
@@ -293,6 +312,7 @@ export async function createTriggerLog(data: {
       JSON.stringify(data.payload),
       data.errorMessage || null,
       data.triggeredBy || null,
+      data.environmentId || null,
     ]
   );
 

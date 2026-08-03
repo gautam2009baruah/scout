@@ -538,7 +538,7 @@ export async function POST(request: NextRequest) {
     const hasConversationContext = suppliedHistory.some((item) => String(item.text || "").trim());
 
     if (!isObviousCasualMessage(message) || hasConversationContext) {
-      const provider = await getLLMProvider();
+      const provider = await getLLMProvider(companyId, targetAppId || undefined);
       const normalizedHistory = suppliedHistory
         .map((item) => ({
           role: item.role === "assistant" ? "assistant" : item.role === "user" ? "user" : "unknown",

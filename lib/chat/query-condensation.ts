@@ -59,6 +59,9 @@ export type CondensedQuery = {
 export async function condenseQuestionForRetrieval(input: {
   question: string;
   conversationMessages: ConversationContextEntry[];
+  companyId?: string;
+  targetAppId?: string;
+  environmentId?: string;
 }): Promise<CondensedQuery> {
   const { question, conversationMessages } = input;
 
@@ -68,7 +71,7 @@ export async function condenseQuestionForRetrieval(input: {
 
   try {
     const transcript = buildTranscript(conversationMessages);
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(input.companyId, input.targetAppId, input.environmentId);
     const rewritten = await withTimeout(
       provider.generate_answer(
         buildCondensationSystemPrompt(),

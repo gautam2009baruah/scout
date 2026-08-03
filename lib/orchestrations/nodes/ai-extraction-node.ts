@@ -4,6 +4,16 @@
 import type { AIExtractionNodeConfig } from "@/shared/orchestrationTypes";
 import { evaluateExpression, resolveVariablePath, setVariablePath } from "../expression-evaluator";
 import { getLLMProvider } from "@/lib/llm/providers";
+import { resolveCompanyIdForTargetApp } from "../target-app-scope";
+
+function firstNonEmptyString(values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
+}
 
 /**
  * Extract structured data from input using AI
@@ -70,11 +80,23 @@ export async function executeAIExtractionNode(
     const systemPrompt = buildExtractionSystemPrompt(config, extractionMode);
     const userPrompt = buildExtractionUserPrompt(config, extractionMode, runtimeInstruction);
 
+    const targetAppId = firstNonEmptyString([
+      resolveVariablePath("targetAppId", context),
+      resolveVariablePath("trigger.input.targetAppId", context),
+    ]);
+    const directCompanyId = firstNonEmptyString([
+      resolveVariablePath("companyId", context),
+      resolveVariablePath("trigger.input.companyId", context),
+    ]);
+    const companyId = targetAppId
+      ? (await resolveCompanyIdForTargetApp(targetAppId)) || directCompanyId
+      : directCompanyId;
+
     // Call the active AI provider (configured on the AI Configuration page).
     // generate_answer is a grounded method: the input text must be passed as the
     // CONTEXT (3rd arg). Passing an empty context makes the provider refuse with
     // "I could not find enough information in the available documents."
-    const provider = await getLLMProvider();
+    const provider = await getLLMProvider(companyId || undefined, targetAppId || undefined);
     const aiResponse = await provider.generate_answer(systemPrompt, userPrompt, inputText);
 
     // Parse JSON response

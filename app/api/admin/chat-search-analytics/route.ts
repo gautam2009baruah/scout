@@ -25,6 +25,7 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const companyId = params.get("companyId") || "";
   const targetAppId = params.get("targetAppId") || "";
+  const environmentId = params.get("environmentId") || "";
   const answerStatus = params.get("answerStatus") || "";
   const fromUtc = params.get("fromUtc") || "";
   const toUtc = params.get("toUtc") || "";
@@ -72,6 +73,11 @@ export async function GET(request: Request) {
   if (targetAppId) {
     sqlParams.push(targetAppId);
     filter += ` AND t.target_app_id = $${sqlParams.length}`;
+  }
+
+  if (environmentId) {
+    sqlParams.push(environmentId);
+    filter += ` AND t.environment_id = $${sqlParams.length}`;
   }
 
   if (answerStatus && ["answered", "no_answer", "failed"].includes(answerStatus)) {

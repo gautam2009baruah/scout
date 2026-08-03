@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const result = await listPendingPlanRequests({
       companyId: session.user.tenantId,
       targetAppId: searchParams.get("targetAppId"),
+      environmentId: searchParams.get("environmentId"),
       requestedFrom: searchParams.get("requestedFrom"),
       requestedTo: searchParams.get("requestedTo"),
       page: searchParams.get("page") ? parseInt(searchParams.get("page")!, 10) : undefined,
