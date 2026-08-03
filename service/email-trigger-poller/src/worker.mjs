@@ -45,14 +45,16 @@ function getPollingInterval(config) {
 }
 
 /**
- * An inbox credential must be linked to at least one environment that the
- * trigger's owning orchestration is actively released to (see
- * orchestration_environment_releases, 002_environment_releases_and_versioning.sql).
- * Unlike the sender-credential path (which validates against a concrete
- * request-time environmentId), polling has no single "current" environment,
- * so this checks for any overlap between the two sets.
+ * An inbox credential must be usable for the environment this trigger row
+ * is polling. Rows fanned out for a specific environment (trigger.environmentId
+ * set — see lib/orchestrations/db.ts's email trigger publish sync) just need
+ * that one environment to be actively released
+ * (orchestration_environment_releases, 002_environment_releases_and_versioning.sql).
+ * Legacy, un-scoped rows (environmentId null) keep the original behavior:
+ * the credential must overlap *some* released environment, since there's no
+ * single environment to check against.
  */
-async function isCredentialAllowedForTrigger(orchestrationId, credentialId) {
+async function isCredentialAllowedForTrigger(orchestrationId, credentialId, environmentId) {
   const releasedResult = await pool.query(
     `SELECT environment_id FROM orchestration_environment_releases WHERE orchestration_id = $1 AND deleted_at IS NULL`,
     [orchestrationId]
@@ -60,6 +62,10 @@ async function isCredentialAllowedForTrigger(orchestrationId, credentialId) {
   const releasedEnvironmentIds = releasedResult.rows.map((row) => row.environment_id);
   if (releasedEnvironmentIds.length === 0) {
     return false;
+  }
+
+  if (environmentId) {
+    return releasedEnvironmentIds.includes(environmentId);
   }
 
   const credentialResult = await pool.query(
@@ -75,8 +81,8 @@ async function isCredentialAllowedForTrigger(orchestrationId, credentialId) {
 async function fetchEmailsForProvider(trigger, config, since) {
   const { provider, credentialId } = config;
 
-  if (credentialId && !(await isCredentialAllowedForTrigger(trigger.orchestrationId, credentialId))) {
-    console.warn(`Trigger ${trigger.id}: Credential ${credentialId} is not scoped to any environment this orchestration is released to`);
+  if (credentialId && !(await isCredentialAllowedForTrigger(trigger.orchestrationId, credentialId, trigger.environmentId))) {
+    console.warn(`Trigger ${trigger.id}: Credential ${credentialId} is not scoped to a released environment for this orchestration`);
     return [];
   }
 
@@ -266,7 +272,8 @@ async function processEmailTriggerPolling(trigger, since) {
           triggerId,
           trigger.orchestrationId,
           email,
-          config
+          config,
+          trigger.environmentId || null
         );
         
         if (result.success) {

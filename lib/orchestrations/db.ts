@@ -513,84 +513,140 @@ export async function publishOrchestration(
   }
 
   if (triggerNodeConfig.triggerType === 'email') {
-    console.log('Auto-creating/updating email trigger record...');
+    console.log('Auto-creating/updating email trigger record(s)...');
 
     try {
-      if (!triggerNodeConfig.emailCredentialId) {
-        throw new Error("Email credential is required for email trigger");
+      // Fan out into one orchestration_triggers row per (environment,
+      // credential) pair selected in emailCredentialIdsByEnvironment — each
+      // environment can poll multiple inboxes. The legacy flat
+      // emailCredentialId only produces a single un-scoped (environment_id =
+      // NULL) row, and only when no per-environment selections exist at all,
+      // so untouched configs keep polling exactly as before while switching
+      // cleanly to explicit per-environment polling once adopted (no
+      // double-firing from a default row overlapping an override row).
+      const byEnvironment: Record<string, string[]> = triggerNodeConfig.emailCredentialIdsByEnvironment || {};
+      const desiredPairs: Array<{ environmentId: string | null; credentialId: string }> = [];
+      for (const [environmentId, credentialIds] of Object.entries(byEnvironment)) {
+        for (const credentialId of Array.isArray(credentialIds) ? credentialIds : []) {
+          if (credentialId) {
+            desiredPairs.push({ environmentId, credentialId });
+          }
+        }
+      }
+      if (desiredPairs.length === 0 && triggerNodeConfig.emailCredentialId) {
+        desiredPairs.push({ environmentId: null, credentialId: triggerNodeConfig.emailCredentialId });
       }
 
-      const credentialResult = await pool.query<{
+      if (desiredPairs.length === 0) {
+        throw new Error("At least one email inbox is required for email trigger");
+      }
+
+      const credentialIds = Array.from(new Set(desiredPairs.map((pair) => pair.credentialId)));
+      const credentialsResult = await pool.query<{
         id: string;
         provider: "gmail" | "outlook" | "imap";
         email_address: string;
       }>(
         `SELECT id, provider, email_address
          FROM email_credentials
-         WHERE id = $1 AND company_id = $2 AND is_active = true`,
-        [triggerNodeConfig.emailCredentialId, orchestration.companyId]
+         WHERE id = ANY($1::uuid[]) AND company_id = $2 AND is_active = true`,
+        [credentialIds, orchestration.companyId]
       );
+      const credentialsById = new Map(credentialsResult.rows.map((row) => [row.id, row]));
 
-      const credential = credentialResult.rows[0];
-      if (!credential) {
-        throw new Error("Selected email credential was not found or is inactive");
-      }
+      const environmentIds = Array.from(
+        new Set(desiredPairs.map((pair) => pair.environmentId).filter((envId): envId is string => Boolean(envId)))
+      );
+      const environmentsResult = environmentIds.length
+        ? await pool.query<{ id: string; name: string }>(
+            `SELECT id, name FROM target_app_environments WHERE id = ANY($1::uuid[])`,
+            [environmentIds]
+          )
+        : { rows: [] as Array<{ id: string; name: string }> };
+      const environmentNamesById = new Map(environmentsResult.rows.map((row) => [row.id, row.name]));
 
-      const emailTriggerConfig: EmailTriggerConfig = {
-        type: "email",
-        provider: credential.provider,
-        mailbox: credential.email_address,
-        folder: triggerNodeConfig.folder || "INBOX",
-        senderFilter: triggerNodeConfig.senderFilter || undefined,
-        subjectContains: triggerNodeConfig.subjectContains || undefined,
-        bodyContains: triggerNodeConfig.bodyContains || undefined,
-        unreadOnly: triggerNodeConfig.unreadOnly !== false,
-        hasAttachment: triggerNodeConfig.hasAttachment === true,
-        pollingIntervalMinutes: Number(triggerNodeConfig.pollingIntervalMinutes) || 5,
-        markAsProcessed: triggerNodeConfig.markAsProcessed !== false,
-        credentialId: credential.id,
-        enabled: triggerNodeConfig.enabled !== false,
-      };
-
-      const existingTriggers = await pool.query(
-        `SELECT id FROM orchestration_triggers
+      const existingTriggers = await pool.query<{ id: string; environment_id: string | null; config: any }>(
+        `SELECT id, environment_id, config FROM orchestration_triggers
          WHERE orchestration_id = $1 AND trigger_type = 'email'`,
         [id]
       );
 
-      if (existingTriggers.rows.length === 0) {
-        await createTrigger({
-          orchestrationId: id,
-          triggerType: "email",
-          name: `${orchestration.name} - Email Trigger`,
-          description: `Auto-created email trigger for ${orchestration.name}`,
-          config: emailTriggerConfig,
-          createdById: publishedById,
-        });
-
-        console.log('Email trigger created successfully');
-      } else {
-        const triggerId = existingTriggers.rows[0].id;
-        await pool.query(
-          `UPDATE orchestration_triggers
-           SET name = $1,
-               description = $2,
-               config = $3,
-               status = $4,
-               updated_by = $5,
-               updated_at = NOW()
-           WHERE id = $6`,
-          [
-            `${orchestration.name} - Email Trigger`,
-            `Auto-created email trigger for ${orchestration.name}`,
-            JSON.stringify(emailTriggerConfig),
-            emailTriggerConfig.enabled ? "active" : "inactive",
-            publishedById,
-            triggerId,
-          ]
+      const findExisting = (environmentId: string | null, credentialId: string) =>
+        existingTriggers.rows.find(
+          (row) => (row.environment_id || null) === environmentId && row.config?.credentialId === credentialId
         );
 
-        console.log('Email trigger updated successfully');
+      const keptTriggerIds = new Set<string>();
+
+      for (const pair of desiredPairs) {
+        const credential = credentialsById.get(pair.credentialId);
+        if (!credential) {
+          throw new Error("Selected email credential was not found or is inactive");
+        }
+
+        const emailTriggerConfig: EmailTriggerConfig = {
+          type: "email",
+          provider: credential.provider,
+          mailbox: credential.email_address,
+          folder: triggerNodeConfig.folder || "INBOX",
+          senderFilter: triggerNodeConfig.senderFilter || undefined,
+          subjectContains: triggerNodeConfig.subjectContains || undefined,
+          bodyContains: triggerNodeConfig.bodyContains || undefined,
+          unreadOnly: triggerNodeConfig.unreadOnly !== false,
+          hasAttachment: triggerNodeConfig.hasAttachment === true,
+          pollingIntervalMinutes: Number(triggerNodeConfig.pollingIntervalMinutes) || 5,
+          markAsProcessed: triggerNodeConfig.markAsProcessed !== false,
+          credentialId: credential.id,
+          enabled: triggerNodeConfig.enabled !== false,
+        };
+
+        const triggerName = pair.environmentId
+          ? `${orchestration.name} - Email Trigger (${environmentNamesById.get(pair.environmentId) || pair.environmentId})`
+          : `${orchestration.name} - Email Trigger`;
+
+        const existing = findExisting(pair.environmentId, pair.credentialId);
+
+        if (!existing) {
+          const created = await createTrigger({
+            orchestrationId: id,
+            triggerType: "email",
+            name: triggerName,
+            description: `Auto-created email trigger for ${orchestration.name}`,
+            config: emailTriggerConfig,
+            createdById: publishedById,
+            environmentId: pair.environmentId,
+          });
+          keptTriggerIds.add(created.id);
+          console.log(`Email trigger created (environment: ${pair.environmentId ?? "default"})`);
+        } else {
+          await pool.query(
+            `UPDATE orchestration_triggers
+             SET name = $1,
+                 description = $2,
+                 config = $3,
+                 status = $4,
+                 updated_by = $5,
+                 updated_at = NOW()
+             WHERE id = $6`,
+            [
+              triggerName,
+              `Auto-created email trigger for ${orchestration.name}`,
+              JSON.stringify(emailTriggerConfig),
+              emailTriggerConfig.enabled ? "active" : "inactive",
+              publishedById,
+              existing.id,
+            ]
+          );
+          keptTriggerIds.add(existing.id);
+          console.log(`Email trigger updated (environment: ${pair.environmentId ?? "default"})`);
+        }
+      }
+
+      // Remove rows for (environment, credential) pairs no longer selected.
+      const staleTriggerIds = existingTriggers.rows.map((row) => row.id).filter((rowId) => !keptTriggerIds.has(rowId));
+      if (staleTriggerIds.length > 0) {
+        await pool.query(`DELETE FROM orchestration_triggers WHERE id = ANY($1::uuid[])`, [staleTriggerIds]);
+        console.log(`Removed ${staleTriggerIds.length} stale email trigger row(s)`);
       }
     } catch (error) {
       console.error('Failed to auto-create/update email trigger:', error);

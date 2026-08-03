@@ -110,7 +110,8 @@ export async function processEmailTrigger(
   triggerId: string,
   orchestrationId: string,
   email: EmailMessage,
-  config: EmailTriggerConfig
+  config: EmailTriggerConfig,
+  environmentId: string | null = null
 ): Promise<{ success: boolean; executionId?: string; messageId?: string; error?: string }> {
   const pool = await getPool();
   
@@ -157,6 +158,11 @@ export async function processEmailTrigger(
         bodyHtml: email.bodyHtml,
         receivedAt: email.receivedAt.toISOString(),
         attachments,
+        // Which environment's inbox matched (from the fanned-out
+        // orchestration_triggers row) — lets a downstream Notification node
+        // in this same execution auto-resolve its own per-environment
+        // sender instead of always falling back to its default.
+        environmentId: environmentId || undefined,
       },
       triggeredBy: `email:${email.from}`,
     });
@@ -296,17 +302,19 @@ export async function getActiveEmailTriggers(): Promise<Array<{
   name: string;
   config: EmailTriggerConfig;
   lastPolledAt: Date | null;
+  environmentId: string | null;
 }>> {
   const pool = await getPool();
-  
+
   const result = await pool.query<{
     id: string;
     orchestration_id: string;
     name: string;
     config: EmailTriggerConfig;
     last_polled_at: Date | null;
+    environment_id: string | null;
   }>(
-    `SELECT t.id, t.orchestration_id, t.name, t.config, t.last_polled_at
+    `SELECT t.id, t.orchestration_id, t.name, t.config, t.last_polled_at, t.environment_id
      FROM orchestration_triggers t
      INNER JOIN orchestrations o ON o.id = t.orchestration_id
      WHERE t.trigger_type = 'email'
@@ -315,13 +323,14 @@ export async function getActiveEmailTriggers(): Promise<Array<{
        AND o.status = 'published'
      ORDER BY t.last_polled_at ASC NULLS FIRST`
   );
-  
+
   return result.rows.map(row => ({
     id: row.id,
     orchestrationId: row.orchestration_id,
     name: row.name,
     config: row.config,
     lastPolledAt: row.last_polled_at,
+    environmentId: row.environment_id,
   }));
 }
 

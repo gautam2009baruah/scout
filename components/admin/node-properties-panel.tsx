@@ -139,8 +139,14 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
       if (!String(localConfig.triggerType || "").trim()) {
         return { valid: false, error: "Trigger type is required" };
       }
-      if (localConfig.triggerType === "email" && !String(localConfig.emailCredentialId || "").trim()) {
-        return { valid: false, error: "Email inbox is required" };
+      if (localConfig.triggerType === "email") {
+        const byEnvironment = localConfig.emailCredentialIdsByEnvironment || {};
+        const hasEnvironmentInbox = Object.values(byEnvironment).some(
+          (ids) => Array.isArray(ids) && ids.length > 0
+        );
+        if (!hasEnvironmentInbox && !String(localConfig.emailCredentialId || "").trim()) {
+          return { valid: false, error: "At least one email inbox is required (per environment, or the Default)" };
+        }
       }
       if (localConfig.triggerType === "manual") {
         const inputFields = Array.isArray(localConfig.inputFields) ? localConfig.inputFields : [];
@@ -828,31 +834,41 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   type EmailCredential = { id: string; name: string; email_address: string; provider: string; is_active: boolean; target_app_id: string | null; environments?: Array<{ id: string; name: string }> };
   const [emailCredentials, setEmailCredentials] = useState<EmailCredential[]>([]);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
-  const [emailInboxOpen, setEmailInboxOpen] = useState(false);
-  const emailInboxRef = useRef<HTMLDivElement>(null);
-  // Since a credential can now be listed once per linked environment (same
-  // cred.id, different row), tracking cred.id alone would highlight every
-  // one of that credential's rows at once. This tracks the exact row last
-  // clicked so only it is highlighted.
-  const [selectedEmailInboxRowKey, setSelectedEmailInboxRowKey] = useState<string | null>(null);
+  // Inboxes are picked per environment (multi-select — poll all selected
+  // inboxes for that environment), plus a legacy single "Default" inbox
+  // kept for backward compatibility with configs saved before this existed.
+  const [triggerEnvironments, setTriggerEnvironments] = useState<Array<{ id: string; name: string }>>([]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadTriggerEnvironments = async () => {
+      if (!targetAppId) {
+        if (active) setTriggerEnvironments([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/orchestrations/environments?targetAppId=${encodeURIComponent(String(targetAppId))}`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active) setTriggerEnvironments(Array.isArray(payload?.environments) ? payload.environments : []);
+      } catch {
+        if (active) setTriggerEnvironments([]);
+      }
+    };
+
+    void loadTriggerEnvironments();
+
+    return () => {
+      active = false;
+    };
+  }, [targetAppId]);
   const [generatedCredential, setGeneratedCredential] = useState<{
     title: string;
     value: string;
     copied: boolean;
   } | null>(null);
-
-  useEffect(() => {
-    if (!emailInboxOpen) return;
-
-    const closeEmailInbox = (event: MouseEvent) => {
-      if (!emailInboxRef.current?.contains(event.target as globalThis.Node)) {
-        setEmailInboxOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", closeEmailInbox);
-    return () => document.removeEventListener("mousedown", closeEmailInbox);
-  }, [emailInboxOpen]);
 
   const createRandomSecret = useCallback((length = 40) => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
@@ -1575,7 +1591,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
           
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Email Inbox *
+              Email Inbox(es) *
             </label>
             {loadingCredentials ? (
               <div className="w-full rounded border border-slate-300 px-3 py-2 text-sm text-slate-500 bg-slate-50">
@@ -1583,75 +1599,63 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               </div>
             ) : emailCredentials.length === 0 ? (
               <div className="w-full rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                No active email credentials found for this {targetAppId ? 'target app' : 'company'}. 
+                No active email credentials found for this {targetAppId ? 'target app' : 'company'}.
                 <a href="/control-panel/orchestration-designer/email-credentials" target="_blank" className="underline ml-1">
                   Configure email credentials
                 </a>
               </div>
             ) : (
-              (() => {
-                // One row per environment the credential is linked to, since a
-                // single credential can now apply to several environments —
-                // showing it once per environment makes clear which
-                // environment(s) this pick is valid for at runtime.
-                const rows = emailCredentials.flatMap((cred) =>
-                  (cred.environments && cred.environments.length > 0 ? cred.environments : [null]).map((env) => ({
-                    cred,
-                    env,
-                    key: `${cred.id}-${env?.id ?? "none"}`,
-                  }))
-                );
-                // Fall back to the first row for the saved credential id until
-                // the user explicitly clicks a row in this session.
-                const effectiveSelectedKey = selectedEmailInboxRowKey
-                  ?? rows.find((row) => row.cred.id === config.emailCredentialId)?.key
-                  ?? null;
-                const selectedRow = rows.find((row) => row.key === effectiveSelectedKey) || null;
+              <div className="space-y-2">
+                <p className="text-xs text-slate-500">
+                  Pick which inbox(es) to poll per environment — this build gets promoted across environments without republishing just to point at a different inbox. An environment with nothing selected isn&apos;t polled.
+                </p>
+                {triggerEnvironments.map((env) => {
+                  const byEnv: Record<string, string[]> = config.emailCredentialIdsByEnvironment || {};
+                  const selected = byEnv[env.id] || [];
+                  const options = emailCredentials
+                    .filter((cred) => (cred.environments || []).some((credEnv) => credEnv.id === env.id))
+                    .map((cred) => ({
+                      value: cred.id,
+                      label: `${cred.name} (${cred.email_address}) - ${cred.provider.toUpperCase()}`,
+                    }));
 
-                return (
-                  <div ref={emailInboxRef} className="relative min-w-0 w-full">
-                    <button
-                      type="button"
-                      className="flex w-full min-w-0 items-center justify-between gap-2 rounded border border-slate-300 bg-white px-3 py-2 text-left text-sm"
-                      onClick={() => setEmailInboxOpen((open) => !open)}
-                      aria-haspopup="listbox"
-                      aria-expanded={emailInboxOpen}
-                    >
-                      <span className="min-w-0 whitespace-normal break-words">
-                        {selectedRow
-                          ? `${selectedRow.cred.name} (${selectedRow.cred.email_address}) - ${selectedRow.cred.provider.toUpperCase()} — ${selectedRow.env?.name ?? "N/A"}`
-                          : "Select email inbox"}
+                  return (
+                    <div key={env.id} className="flex items-center gap-2">
+                      <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600" title={env.name}>
+                        {env.name}
                       </span>
-                      <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
-                    </button>
-                    {emailInboxOpen && (
-                      <div
-                        role="listbox"
-                        className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
-                      >
-                        {rows.map(({ cred, env, key }) => (
-                          <button
-                            key={key}
-                            type="button"
-                            role="option"
-                            aria-selected={key === effectiveSelectedKey}
-                            className={`block w-full min-w-0 whitespace-normal break-words px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                              key === effectiveSelectedKey ? "bg-slate-100 font-medium" : ""
-                            }`}
-                            onClick={() => {
-                              updateConfig({ emailCredentialId: cred.id });
-                              setSelectedEmailInboxRowKey(key);
-                              setEmailInboxOpen(false);
-                            }}
-                          >
-                            {cred.name} ({cred.email_address}) - {cred.provider.toUpperCase()} — {env?.name ?? "N/A"}
-                          </button>
-                        ))}
+                      <div className="min-w-0 flex-1">
+                        <MultiSelectDropdown
+                          label=""
+                          options={options}
+                          selectedValues={selected}
+                          emptyLabel={options.length === 0 ? "No inbox linked to this environment" : "Select inbox(es)"}
+                          onChange={(values) => {
+                            updateConfig({
+                              emailCredentialIdsByEnvironment: { ...byEnv, [env.id]: values },
+                            });
+                          }}
+                        />
                       </div>
-                    )}
-                  </div>
-                );
-              })()
+                    </div>
+                  );
+                })}
+                <div className="flex items-center gap-2">
+                  <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600">Default (legacy)</span>
+                  <select
+                    className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                    value={config.emailCredentialId || ""}
+                    onChange={(e) => updateConfig({ emailCredentialId: e.target.value })}
+                  >
+                    <option value="">None</option>
+                    {emailCredentials.map((cred) => (
+                      <option key={cred.id} value={cred.id}>
+                        {cred.name} ({cred.email_address}) - {cred.provider.toUpperCase()}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             )}
             <p className="mt-1 text-xs text-slate-500">
               Email credentials are pre-configured in Email Credentials Manager
@@ -5025,26 +5029,56 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [testState, setTestState] = useState<Record<string, { loading: boolean; status: "idle" | "success" | "error"; message: string }>>({});
   const [senderProviders, setSenderProviders] = useState<Array<{ id: string; provider: string; name: string; from_name: string | null; from_email: string; environments: Array<{ id: string; name: string }> }>>([]);
-  // A native <select> can't usefully show a provider once per linked
-  // environment (duplicate option values break controlled-select selection
-  // in the browser), so this dropdown is hand-rolled instead — same pattern
-  // as the Email Trigger node's inbox picker.
-  const [senderProviderOpen, setSenderProviderOpen] = useState(false);
-  const senderProviderRef = useRef<HTMLDivElement>(null);
-  const [selectedSenderProviderRowKey, setSelectedSenderProviderRowKey] = useState<string | null>(null);
+  // Sender is picked per environment (one row per environment, plus a
+  // required "Default" row) rather than the old single dropdown that
+  // duplicated a provider once per linked environment — a native <select>
+  // can't usefully show a provider more than once anyway (duplicate option
+  // values break controlled-select selection in the browser), so these
+  // pickers are hand-rolled. Only one row's listbox is open at a time,
+  // tracked by env id (or "default").
+  const [environments, setEnvironments] = useState<Array<{ id: string; name: string }>>([]);
+  const [openSenderPickerKey, setOpenSenderPickerKey] = useState<string | null>(null);
+  const senderPickersRef = useRef<HTMLDivElement>(null);
+  const [envTestState, setEnvTestState] = useState<Record<string, { loading: boolean; status: "idle" | "success" | "error"; message: string }>>({});
 
   useEffect(() => {
-    if (!senderProviderOpen) return;
+    if (!openSenderPickerKey) return;
 
-    const closeSenderProvider = (event: MouseEvent) => {
-      if (!senderProviderRef.current?.contains(event.target as globalThis.Node)) {
-        setSenderProviderOpen(false);
+    const closeSenderPickers = (event: MouseEvent) => {
+      if (!senderPickersRef.current?.contains(event.target as globalThis.Node)) {
+        setOpenSenderPickerKey(null);
       }
     };
 
-    document.addEventListener("mousedown", closeSenderProvider);
-    return () => document.removeEventListener("mousedown", closeSenderProvider);
-  }, [senderProviderOpen]);
+    document.addEventListener("mousedown", closeSenderPickers);
+    return () => document.removeEventListener("mousedown", closeSenderPickers);
+  }, [openSenderPickerKey]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadEnvironments = async () => {
+      if (!targetAppId) {
+        if (active) setEnvironments([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/orchestrations/environments?targetAppId=${encodeURIComponent(String(targetAppId))}`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active) setEnvironments(Array.isArray(payload?.environments) ? payload.environments : []);
+      } catch {
+        if (active) setEnvironments([]);
+      }
+    };
+
+    void loadEnvironments();
+
+    return () => {
+      active = false;
+    };
+  }, [targetAppId]);
 
   useEffect(() => {
     let active = true;
@@ -5375,6 +5409,58 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
     }
   };
 
+  // Per-environment variant of handleTestSend("email") — passes environmentId
+  // in the test context so resolution picks that environment's override (or
+  // falls back to the default, same as a real execution would).
+  const handleTestSendEmailForEnvironment = async (environmentId: string) => {
+    const channelConfig = channels.email || {};
+    setEnvTestState((prev) => ({
+      ...prev,
+      [environmentId]: { loading: true, status: "idle", message: "Sending test notification..." },
+    }));
+
+    try {
+      const response = await fetch("/api/admin/orchestrations/test-notification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          config: {
+            type: "notification",
+            channels: { email: { ...channelConfig, enabled: true } },
+          },
+          context: {
+            testMode: true,
+            companyId: companyId || null,
+            targetAppId: targetAppId || null,
+            environmentId,
+            trigger: { id: "test-trigger", timestamp: new Date().toISOString() },
+            variables: { status: "test", referenceId: "TEST-001" },
+            workflow: { currentNode: "notification" },
+          },
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok || payload?.result?.success === false) {
+        throw new Error(payload?.result?.error || payload?.error || payload?.message || "Test send failed");
+      }
+
+      setEnvTestState((prev) => ({
+        ...prev,
+        [environmentId]: { loading: false, status: "success", message: "Test notification sent successfully" },
+      }));
+    } catch (error) {
+      setEnvTestState((prev) => ({
+        ...prev,
+        [environmentId]: {
+          loading: false,
+          status: "error",
+          message: error instanceof Error ? error.message : "Test send failed",
+        },
+      }));
+    }
+  };
+
   const renderVariableButtons = (channelKey: string, field: string) => (
     <div className="mt-1 flex flex-wrap gap-1">
       {variableTokens.map((token) => (
@@ -5543,52 +5629,127 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                   <div className="grid grid-cols-1 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 mb-1">Sender provider <span className="text-red-500">*</span></label>
-                      {(() => {
-                        const rows = senderProviders.flatMap((provider) =>
-                          (provider.environments.length > 0 ? provider.environments : [null]).map((env) => ({
-                            provider,
-                            env,
-                            key: `${provider.id}-${env?.id ?? "none"}`,
-                          }))
-                        );
-                        const effectiveSelectedKey = selectedSenderProviderRowKey
-                          ?? rows.find((row) => row.provider.id === channel.senderCredentialId)?.key
-                          ?? null;
-                        const selectedRow = rows.find((row) => row.key === effectiveSelectedKey) || null;
+                      <p className="mb-2 text-xs text-slate-500">
+                        Pick a sender per environment so promoting this build to another environment doesn&apos;t require republishing. Environments left on &quot;Use default&quot; fall back to the Default row below.
+                      </p>
+                      <div ref={senderPickersRef} className="space-y-2">
+                        {environments.map((env) => {
+                          const byEnv = channel.senderCredentialIdByEnvironment || {};
+                          const selectedId = String(byEnv[env.id] || "");
+                          const options = senderProviders.filter((provider) =>
+                            provider.environments.some((provEnv) => provEnv.id === env.id)
+                          );
+                          const selectedProvider = options.find((provider) => provider.id === selectedId) || null;
+                          const pickerKey = `env-${env.id}`;
+                          const envTest = envTestState[env.id];
 
-                        return (
-                          <div ref={senderProviderRef} className="relative min-w-0 w-full">
+                          return (
+                            <div key={env.id} className="flex items-center gap-2">
+                              <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600" title={env.name}>
+                                {env.name}
+                              </span>
+                              <div className="relative min-w-0 flex-1">
+                                <button
+                                  type="button"
+                                  className="flex w-full min-w-0 items-center justify-between gap-2 rounded border border-slate-300 bg-white px-2 py-1.5 text-left text-sm disabled:opacity-50"
+                                  onClick={() => setOpenSenderPickerKey((open) => (open === pickerKey ? null : pickerKey))}
+                                  aria-haspopup="listbox"
+                                  aria-expanded={openSenderPickerKey === pickerKey}
+                                  disabled={options.length === 0}
+                                >
+                                  <span className="min-w-0 truncate">
+                                    {selectedProvider
+                                      ? `${selectedProvider.provider.toUpperCase()} - ${selectedProvider.name}`
+                                      : options.length === 0
+                                      ? "No sender linked to this environment"
+                                      : "Use default"}
+                                  </span>
+                                  <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                                </button>
+                                {openSenderPickerKey === pickerKey && options.length > 0 && (
+                                  <div
+                                    role="listbox"
+                                    className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
+                                  >
+                                    <button
+                                      type="button"
+                                      role="option"
+                                      aria-selected={!selectedId}
+                                      className={`block w-full min-w-0 truncate px-3 py-2 text-left text-sm hover:bg-slate-100 ${!selectedId ? "bg-slate-100 font-medium" : ""}`}
+                                      onClick={() => {
+                                        const rest = { ...byEnv };
+                                        delete rest[env.id];
+                                        setChannel("email", { senderCredentialIdByEnvironment: rest });
+                                        setOpenSenderPickerKey(null);
+                                      }}
+                                    >
+                                      Use default
+                                    </button>
+                                    {options.map((provider) => (
+                                      <button
+                                        key={provider.id}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={provider.id === selectedId}
+                                        className={`block w-full min-w-0 truncate px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+                                          provider.id === selectedId ? "bg-slate-100 font-medium" : ""
+                                        }`}
+                                        onClick={() => {
+                                          setChannel("email", {
+                                            senderCredentialIdByEnvironment: { ...byEnv, [env.id]: provider.id },
+                                          });
+                                          setOpenSenderPickerKey(null);
+                                        }}
+                                      >
+                                        {provider.provider.toUpperCase()} - {provider.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                className="shrink-0 rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                                onClick={() => handleTestSendEmailForEnvironment(env.id)}
+                                disabled={(!selectedId && !channel.senderCredentialId) || envTest?.loading}
+                                title="Send a test email using this environment's resolved sender"
+                              >
+                                {envTest?.loading ? "Testing..." : "Test"}
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <div className="flex items-center gap-2">
+                          <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600">Default</span>
+                          <div className="relative min-w-0 flex-1">
                             <button
                               type="button"
                               className={`flex w-full min-w-0 items-center justify-between gap-2 rounded border bg-white px-2 py-1.5 text-left text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
-                              onClick={() => setSenderProviderOpen((open) => !open)}
+                              onClick={() => setOpenSenderPickerKey((open) => (open === "default" ? null : "default"))}
                               aria-haspopup="listbox"
-                              aria-expanded={senderProviderOpen}
+                              aria-expanded={openSenderPickerKey === "default"}
                             >
-                              <span className="min-w-0 whitespace-normal break-words">
-                                {selectedRow
-                                  ? `${selectedRow.provider.provider.toUpperCase()} - ${selectedRow.provider.name} — ${selectedRow.env?.name ?? "N/A"}`
-                                  : "Select active provider"}
+                              <span className="min-w-0 truncate">
+                                {(() => {
+                                  const selected = senderProviders.find((provider) => provider.id === channel.senderCredentialId);
+                                  return selected ? `${selected.provider.toUpperCase()} - ${selected.name}` : "Select active provider";
+                                })()}
                               </span>
                               <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
                             </button>
-                            {senderProviderOpen && (
+                            {openSenderPickerKey === "default" && (
                               <div
                                 role="listbox"
                                 className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
                               >
-                                {/* One row per environment the provider is linked to, since a
-                                    single sender credential can now apply to several
-                                    environments — this makes clear which environment(s) this
-                                    pick is valid for at runtime. */}
-                                {rows.map(({ provider, env, key }) => (
+                                {senderProviders.map((provider) => (
                                   <button
-                                    key={key}
+                                    key={provider.id}
                                     type="button"
                                     role="option"
-                                    aria-selected={key === effectiveSelectedKey}
-                                    className={`block w-full min-w-0 whitespace-normal break-words px-3 py-2 text-left text-sm hover:bg-slate-100 ${
-                                      key === effectiveSelectedKey ? "bg-slate-100 font-medium" : ""
+                                    aria-selected={provider.id === channel.senderCredentialId}
+                                    className={`block w-full min-w-0 truncate px-3 py-2 text-left text-sm hover:bg-slate-100 ${
+                                      provider.id === channel.senderCredentialId ? "bg-slate-100 font-medium" : ""
                                     }`}
                                     onClick={() => {
                                       const autoFromName = provider.from_name || provider.name || "";
@@ -5596,18 +5757,17 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                                         senderCredentialId: provider.id,
                                         fromName: autoFromName,
                                       });
-                                      setSelectedSenderProviderRowKey(key);
-                                      setSenderProviderOpen(false);
+                                      setOpenSenderPickerKey(null);
                                     }}
                                   >
-                                    {provider.provider.toUpperCase()} - {provider.name} — {env?.name ?? "N/A"}
+                                    {provider.provider.toUpperCase()} - {provider.name}
                                   </button>
                                 ))}
                               </div>
                             )}
                           </div>
-                        );
-                      })()}
+                        </div>
+                      </div>
                       <p className="mt-1 text-xs text-slate-500">Active sender providers scoped to this target app.</p>
                       {channelErrors.email.senderCredentialId && <p className="mt-1 text-xs text-red-600">{channelErrors.email.senderCredentialId}</p>}
                     </div>

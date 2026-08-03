@@ -310,7 +310,14 @@ export type NotificationNodeConfig = {
   channels?: {
     email?: {
       enabled: boolean;
+      // Default sender, used when the execution has no known environment
+      // (e.g. manual/schedule/HTTP triggers) or when the known environment
+      // has no entry in senderCredentialIdByEnvironment.
       senderCredentialId?: string;
+      // Optional per-environment overrides so a build can be promoted
+      // across environments without re-publishing a new version just to
+      // point at a different sender. Keyed by target_app_environments.id.
+      senderCredentialIdByEnvironment?: Record<string, string>;
       fromName?: string;
       to?: string;
       cc?: string;
@@ -856,6 +863,9 @@ export type OrchestrationTrigger = {
   updatedById?: string | null;
   createdByEmail: string | null;
   updatedByEmail: string | null;
+  // Only meaningful for trigger_type = 'email': which environment this
+  // fanned-out inbox row polls for (null = legacy, un-scoped default row).
+  environmentId?: string | null;
 };
 
 export type TriggerExecutionLog = {

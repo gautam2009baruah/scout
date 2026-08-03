@@ -32,6 +32,7 @@ type TriggerRow = {
   updated_by: string | null;
   created_by_email: string | null;
   updated_by_email: string | null;
+  environment_id: string | null;
 };
 
 function mapTriggerRow(row: TriggerRow): OrchestrationTrigger {
@@ -51,6 +52,7 @@ function mapTriggerRow(row: TriggerRow): OrchestrationTrigger {
     updatedById: row.updated_by,
     createdByEmail: row.created_by_email,
     updatedByEmail: row.updated_by_email,
+    environmentId: row.environment_id,
   };
 }
 
@@ -91,9 +93,12 @@ export async function createTrigger(data: {
   description?: string;
   config: TriggerConfig;
   createdById: string;
+  // Only meaningful for trigger_type = 'email': which environment this
+  // fanned-out inbox row polls for (NULL = legacy, un-scoped default row).
+  environmentId?: string | null;
 }): Promise<OrchestrationTrigger> {
   const pool = getPool();
-  
+
   // Encrypt sensitive data in config before storing
   const encryptedConfig = encryptTriggerConfig(data.config);
   const endpointSlug =
@@ -102,9 +107,9 @@ export async function createTrigger(data: {
       : null;
 
   const result = await pool.query<TriggerRow>(
-    `INSERT INTO orchestration_triggers 
-     (orchestration_id, trigger_type, name, description, config, endpoint_slug, created_by, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+    `INSERT INTO orchestration_triggers
+     (orchestration_id, trigger_type, name, description, config, endpoint_slug, environment_id, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
      RETURNING *`,
     [
       data.orchestrationId,
@@ -113,6 +118,7 @@ export async function createTrigger(data: {
       data.description || null,
       JSON.stringify(encryptedConfig),
       endpointSlug,
+      data.environmentId || null,
       data.createdById,
     ]
   );

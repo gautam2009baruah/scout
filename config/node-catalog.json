@@ -550,9 +550,9 @@
       },
       {
         "field": "channels.email",
-        "type": "{ enabled, senderCredentialId?, fromName?, to?, cc?, bcc?, subject?, body?, bodyFormat?, attachments?[{name?,url?,contentType?}], priority?, delivery?{mode,scheduledAt}, retry?{enabled,maxAttempts,delaySeconds} }",
+        "type": "{ enabled, senderCredentialId?, senderCredentialIdByEnvironment?{[environmentId]: credentialId}, fromName?, to?, cc?, bcc?, subject?, body?, bodyFormat?, attachments?[{name?,url?,contentType?}], priority?, delivery?{mode,scheduledAt}, retry?{enabled,maxAttempts,delaySeconds} }",
         "required": false,
-        "description": ""
+        "description": "senderCredentialId is the default sender; senderCredentialIdByEnvironment optionally overrides it per environment (set via the panel's per-environment picker, not by the planner) so a build can be promoted across environments without republishing."
       },
       {
         "field": "channels.internal",
@@ -587,7 +587,7 @@
     ],
     "validationRules": [
       "At least one channel must resolve to enabled:true, else throws \"At least one notification channel must be enabled\".",
-      "email: `to` and `body` required (after interpolation); `senderCredentialId` required (throws \"Email sender provider is required\").",
+      "email: `to` and `body` required (after interpolation); a sender must resolve — the environment-specific override in `senderCredentialIdByEnvironment` if the execution's environment matches an entry, else the default `senderCredentialId` (throws \"Email sender provider is required\" if neither resolves).",
       "internal: `message` required; at least one of users/roles/teams/groups required; resolving those to at least one active user id is required (throws \"Unable to resolve any active internal recipients\" otherwise).",
       "teams: webhookUrl must be a valid http(s) URL; `message` required.",
       "slack: webhookUrl must be a valid http(s) URL; `message` required.",

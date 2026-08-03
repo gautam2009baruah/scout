@@ -332,13 +332,19 @@ async function sendEmailNotification(
   const cc = interpolateString(channelConfig.cc || "", context);
   const bcc = interpolateString(channelConfig.bcc || "", context);
   const fromName = interpolateString(channelConfig.fromName || "", context);
-  const senderCredentialId = interpolateString(channelConfig.senderCredentialId || "", context);
-  if (!senderCredentialId) {
-    throw new Error("Email sender provider is required");
-  }
   const companyId = resolveContextValue(context, ["companyId", "company_id", "trigger.input.companyId", "trigger.input.company_id", "trigger.companyId", "trigger.company_id"]);
   const targetAppId = resolveContextValue(context, ["targetAppId", "target_app_id", "trigger.input.targetAppId", "trigger.input.target_app_id", "trigger.targetAppId", "trigger.target_app_id"]);
   const environmentId = resolveContextValue(context, ["environmentId", "environment_id", "trigger.input.environmentId", "trigger.input.environment_id", "trigger.environmentId", "trigger.environment_id"]);
+  // Environment-specific sender overrides the default when the execution's
+  // environment is known and has an override configured; otherwise falls
+  // back to the default sender (always required) — same tiering used by
+  // AI Configuration's company/target-app/environment scope resolution.
+  const byEnvironment = channelConfig.senderCredentialIdByEnvironment || {};
+  const rawSenderCredentialId = (environmentId && byEnvironment[environmentId]) || channelConfig.senderCredentialId || "";
+  const senderCredentialId = interpolateString(rawSenderCredentialId, context);
+  if (!senderCredentialId) {
+    throw new Error("Email sender provider is required");
+  }
 
   const attachments = Array.isArray(channelConfig.attachments)
     ? channelConfig.attachments

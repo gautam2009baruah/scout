@@ -300,7 +300,9 @@ multi-channel `channels` config.
   field list (recipients, subject/body, webhook URLs, action buttons,
   template names, etc.).
 - **Validation**: at least one channel must be enabled; per channel —
-  email needs `to`+`body`+`senderCredentialId`; internal needs `message` and
+  email needs `to`+`body`+a resolvable sender (`senderCredentialIdByEnvironment`
+  override for the execution's environment if one applies, else the default
+  `senderCredentialId`); internal needs `message` and
   at least one of users/roles/teams/groups that resolves to ≥1 active user;
   teams/slack need a valid `http(s)` webhook URL and `message`; sms needs
   recipients + message + a webhook URL (channel or

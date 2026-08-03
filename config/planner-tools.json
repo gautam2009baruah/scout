@@ -414,7 +414,8 @@
               "type": "object",
               "properties": {
                 "enabled": { "type": "boolean", "description": "Whether the email channel is active for this send." },
-                "senderCredentialId": { "type": "string", "description": "Required when enabled — id of the configured email-sending credential/provider." },
+                "senderCredentialId": { "type": "string", "description": "Required when enabled — id of the default email-sending credential/provider, used when no environment-specific override applies." },
+                "senderCredentialIdByEnvironment": { "type": "object", "description": "Optional, human-configured only — do not set. Maps target_app_environments.id to a credential id that overrides senderCredentialId when the execution's environment is known. Leave unset; omitting it never overwrites an existing operator-configured map." },
                 "fromName": { "type": "string", "description": "Display name for the sender." },
                 "to": { "type": "string", "description": "Required when enabled. Recipient address(es); supports variable interpolation." },
                 "cc": { "type": "string", "description": "CC address(es)." },
