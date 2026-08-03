@@ -1620,11 +1620,11 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                     }));
 
                   return (
-                    <div key={env.id} className="flex items-center gap-2">
-                      <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600" title={env.name}>
+                    <div key={env.id} className="space-y-1">
+                      <span className="block min-w-0 truncate text-xs font-medium text-slate-600" title={env.name}>
                         {env.name}
                       </span>
-                      <div className="min-w-0 flex-1">
+                      <div className="min-w-0">
                         <MultiSelectDropdown
                           label=""
                           options={options}
@@ -1640,10 +1640,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                     </div>
                   );
                 })}
-                <div className="flex items-center gap-2">
-                  <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600">Default (legacy)</span>
+                <div className="space-y-1">
+                  <span className="block text-xs font-medium text-slate-600">Default (legacy)</span>
                   <select
-                    className="min-w-0 flex-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                    className="w-full min-w-0 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
                     value={config.emailCredentialId || ""}
                     onChange={(e) => updateConfig({ emailCredentialId: e.target.value })}
                   >
@@ -5609,14 +5609,16 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                     />
                     Enable channel
                   </label>
-                  <button
-                    type="button"
-                    className="rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-                    onClick={() => handleTestSend(entry.key)}
-                    disabled={!isEnabled || state.loading}
-                  >
-                    {state.loading ? "Testing..." : "Test send"}
-                  </button>
+                  {entry.key !== "email" && (
+                    <button
+                      type="button"
+                      className="rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                      onClick={() => handleTestSend(entry.key)}
+                      disabled={!isEnabled || state.loading}
+                    >
+                      {state.loading ? "Testing..." : "Test send"}
+                    </button>
+                  )}
                 </div>
 
                 {state.status !== "idle" && (
@@ -5644,11 +5646,22 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                           const envTest = envTestState[env.id];
 
                           return (
-                            <div key={env.id} className="flex items-center gap-2">
-                              <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600" title={env.name}>
-                                {env.name}
-                              </span>
-                              <div className="relative min-w-0 flex-1">
+                            <div key={env.id} className="space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="min-w-0 truncate text-xs font-medium text-slate-600" title={env.name}>
+                                  {env.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                                  onClick={() => handleTestSendEmailForEnvironment(env.id)}
+                                  disabled={(!selectedId && !channel.senderCredentialId) || envTest?.loading}
+                                  title="Send a test email using this environment's resolved sender"
+                                >
+                                  {envTest?.loading ? "Testing..." : "Test"}
+                                </button>
+                              </div>
+                              <div className="relative min-w-0">
                                 <button
                                   type="button"
                                   className="flex w-full min-w-0 items-center justify-between gap-2 rounded border border-slate-300 bg-white px-2 py-1.5 text-left text-sm disabled:opacity-50"
@@ -5707,21 +5720,23 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                                   </div>
                                 )}
                               </div>
-                              <button
-                                type="button"
-                                className="shrink-0 rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-                                onClick={() => handleTestSendEmailForEnvironment(env.id)}
-                                disabled={(!selectedId && !channel.senderCredentialId) || envTest?.loading}
-                                title="Send a test email using this environment's resolved sender"
-                              >
-                                {envTest?.loading ? "Testing..." : "Test"}
-                              </button>
                             </div>
                           );
                         })}
-                        <div className="flex items-center gap-2">
-                          <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600">Default</span>
-                          <div className="relative min-w-0 flex-1">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-slate-600">Default</span>
+                            <button
+                              type="button"
+                              className="shrink-0 rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                              onClick={() => handleTestSend("email")}
+                              disabled={!isEnabled || state.loading}
+                              title="Send a test email using the default sender"
+                            >
+                              {state.loading ? "Testing..." : "Test"}
+                            </button>
+                          </div>
+                          <div className="relative min-w-0">
                             <button
                               type="button"
                               className={`flex w-full min-w-0 items-center justify-between gap-2 rounded border bg-white px-2 py-1.5 text-left text-sm ${channelErrors.email.senderCredentialId ? "border-red-400" : "border-slate-300"}`}
