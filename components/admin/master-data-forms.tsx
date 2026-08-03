@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, CircleHelp, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { Building2, HelpCircle, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import { useToast } from "./toast";
 import type { AdminModule } from "@/lib/admin/permissions";
@@ -44,9 +44,9 @@ async function readMessage(response: Response, fallback: string) {
 
 function HelpHint({ text }: { text: string }) {
   return (
-    <span className="relative inline-flex items-center align-middle group">
-      <CircleHelp className="h-3.5 w-3.5 text-slate-400" />
-      <span className="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 rounded-md border border-slate-200 bg-slate-900 px-3 py-2 text-xs leading-5 text-slate-100 shadow-lg whitespace-normal break-words opacity-0 invisible transition-opacity duration-150 group-hover:visible group-hover:opacity-100">
+    <span className="group relative inline-flex">
+      <HelpCircle className="h-3.5 w-3.5 cursor-help text-slate-400" tabIndex={0} />
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-64 -translate-x-1/2 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-normal normal-case leading-4 text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-within:opacity-100">
         {text}
       </span>
     </span>

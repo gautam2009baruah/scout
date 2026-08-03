@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { FlaskConical, Inbox, Mail, Pencil, Power, Send, ShieldCheck, Star, Trash2 } from "lucide-react";
+import { FlaskConical, HelpCircle, Inbox, Mail, Pencil, Power, Send, ShieldCheck, Star, Trash2 } from "lucide-react";
 import { useToast } from "./toast";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 
@@ -112,6 +112,17 @@ function IconActionButton({
     >
       {children}
     </button>
+  );
+}
+
+function HintTooltip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <HelpCircle className="h-3.5 w-3.5 cursor-help text-slate-400" tabIndex={0} />
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-1.5 w-64 -translate-x-1/2 rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-normal normal-case leading-4 text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-within:opacity-100">
+        {text}
+      </span>
+    </span>
   );
 }
 
@@ -874,23 +885,23 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                   </select>
                 </label>
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  Display name *
+                  <span className="inline-flex items-center gap-1.5">Display name * <HintTooltip text="A friendly name used to identify this mailbox when selecting an inbox credential for an Email Trigger. It is not shown to email senders." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" value={newCredential.name} onChange={(event) => setNewCredential({ ...newCredential, name: event.target.value })} placeholder="Support Inbox" />
                 </label>
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  Email address *
+                  <span className="inline-flex items-center gap-1.5">Email address * <HintTooltip text="The mailbox Scout will monitor for incoming messages. This address is also used as the username when Scout signs in to the IMAP server." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" type="email" value={newCredential.emailAddress} onChange={(event) => setNewCredential({ ...newCredential, emailAddress: event.target.value })} placeholder="support@company.com" />
                 </label>
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  IMAP host *
+                  <span className="inline-flex items-center gap-1.5">IMAP host * <HintTooltip text="The incoming-mail server hostname supplied by your email provider, such as imap.gmail.com. Scout connects to this server to poll the inbox." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" value={newCredential.imapHost || ""} onChange={(event) => setNewCredential({ ...newCredential, imapHost: event.target.value })} placeholder="imap.gmail.com" />
                 </label>
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  Port
+                  <span className="inline-flex items-center gap-1.5">Port <HintTooltip text="The IMAP server port. Port 993 is the usual choice for an encrypted TLS/SSL connection; use the value specified by your email provider." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" type="number" value={newCredential.imapPort || 993} onChange={(event) => setNewCredential({ ...newCredential, imapPort: Number(event.target.value) })} />
                 </label>
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  Password *
+                  <span className="inline-flex items-center gap-1.5">Password * <HintTooltip text="The password Scout uses to sign in to this mailbox over IMAP. If your provider uses multi-factor authentication, this is usually an app-specific password rather than your normal account password." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" type="password" value={newCredential.imapPassword || ""} onChange={(event) => setNewCredential({ ...newCredential, imapPassword: event.target.value })} placeholder="App password" />
                 </label>
               </div>
@@ -1060,42 +1071,42 @@ export function EmailCredentialsManager({ selectedCompanyId, selectedCompanyName
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  Credential name *
+                  <span className="inline-flex items-center gap-1.5">Credential name * <HintTooltip text="A friendly internal name used to identify this sender credential in Scout. Recipients do not see this value." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" value={newSenderCredential.name} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, name: event.target.value })} placeholder="Default Sender" />
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  From name
+                  <span className="inline-flex items-center gap-1.5">From name <HintTooltip text="The human-readable sender name recipients see in their inbox, such as Operations Team. If omitted, only the From email address is shown." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" value={newSenderCredential.fromName} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, fromName: event.target.value })} placeholder="Operations Team" />
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  From email *
+                  <span className="inline-flex items-center gap-1.5">From email * <HintTooltip text="The email address recipients see as the sender. Your SMTP provider must allow this account or address to send mail; otherwise delivery may be rejected." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" type="email" value={newSenderCredential.fromEmail} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, fromEmail: event.target.value })} placeholder="noreply@company.com" />
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  SMTP host *
+                  <span className="inline-flex items-center gap-1.5">SMTP host * <HintTooltip text="The outgoing-mail server hostname supplied by your email provider, such as smtp.office365.com. Scout connects here whenever it sends an email." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" value={newSenderCredential.smtpHost} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, smtpHost: event.target.value })} placeholder="smtp.office365.com" />
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  SMTP port
+                  <span className="inline-flex items-center gap-1.5">SMTP port <HintTooltip text="The port Scout uses to connect to the SMTP server. Common values are 587 for STARTTLS and 465 for implicit TLS; use the port required by your provider." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" type="number" value={newSenderCredential.smtpPort} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, smtpPort: Number(event.target.value) })} />
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  SMTP username *
+                  <span className="inline-flex items-center gap-1.5">SMTP username * <HintTooltip text="The account name Scout uses to authenticate with the SMTP server. Many providers require the full email address, but some issue a separate SMTP username." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" value={newSenderCredential.smtpUsername} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, smtpUsername: event.target.value })} placeholder="smtp-user" />
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700">
-                  SMTP password *
+                  <span className="inline-flex items-center gap-1.5">SMTP password * <HintTooltip text="The password Scout uses to authenticate with the SMTP server. This may be an app-specific password or SMTP credential issued by your provider." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" type="password" value={newSenderCredential.smtpPassword} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, smtpPassword: event.target.value })} placeholder="SMTP password" />
                 </label>
 
                 <label className="grid gap-1 text-sm font-medium text-slate-700 md:col-span-2 xl:col-span-2">
-                  Description
+                  <span className="inline-flex items-center gap-1.5">Description <HintTooltip text="Optional internal notes explaining which workflows or messages should use this sender. This text is not included in outgoing emails." /></span>
                   <input className="h-11 rounded-lg border border-slate-300 px-3" value={newSenderCredential.description} onChange={(event) => setNewSenderCredential({ ...newSenderCredential, description: event.target.value })} placeholder="Used by workflow notifications and autonomous email actions" />
                 </label>
               </div>
