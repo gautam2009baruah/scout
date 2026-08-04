@@ -173,7 +173,14 @@ export type OutputMappingField = {
 export type WorkflowNodeConfig = {
   type: "workflow";
   workflowId?: string;
-  workflowVersion?: number;
+  // Which version of the guide to run per orchestration environment (env id
+  // -> "major.build"), resolved independently of the guide's own
+  // Promote/Revoke state — a guide may be authored purely for use inside
+  // this orchestration and never separately promoted. When the execution's
+  // environment is unknown (manual/test runs), the guide's live draft is
+  // used instead; when known but unconfigured here, execution fails rather
+  // than silently falling back to live content.
+  guideVersionByEnvironment?: Record<string, string>;
   targetUrl?: string; // Target URL for workflow execution (can be expression)
   waitForCompletion?: boolean; // Whether to wait for workflow to complete
   inputMapping: Record<string, string>; // variable expressions to workflow inputs

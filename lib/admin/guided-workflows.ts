@@ -1398,12 +1398,13 @@ export async function updateGuidedWorkflow(id: string, input: {
         description: string;
         pre_workflow_confirmation_html: string;
         pre_workflow_confirmation_enabled: boolean;
+        recorded_actions_json: RecordedAction[];
       }>(
         `
           UPDATE guided_workflow_guides
           SET next_build = next_build + 1, published_version_major = $2, published_version_build = $3
           WHERE id = $1
-          RETURNING steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled
+          RETURNING steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, recorded_actions_json
         `,
         [id, versionMajor, versionBuild]
       );
@@ -1412,8 +1413,8 @@ export async function updateGuidedWorkflow(id: string, input: {
         await getPool().query(
           `
             INSERT INTO guided_workflow_guide_versions
-              (guide_id, version_major, version_build, steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, created_by)
-            VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9)
+              (guide_id, version_major, version_build, steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, recorded_actions_json, created_by)
+            VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9::jsonb, $10)
           `,
           [
             id,
@@ -1424,6 +1425,7 @@ export async function updateGuidedWorkflow(id: string, input: {
             snapshot.description,
             snapshot.pre_workflow_confirmation_html,
             snapshot.pre_workflow_confirmation_enabled,
+            JSON.stringify(snapshot.recorded_actions_json),
             session.user.id,
           ]
         );
@@ -1982,6 +1984,7 @@ export type GuideVersionContent = {
   steps: GuideStep[];
   preWorkflowConfirmationHtml: string;
   preWorkflowConfirmationEnabled: boolean;
+  recordedActions: RecordedAction[];
 };
 
 // Loads a past published version's full content, for restoring it back into
@@ -1997,9 +2000,10 @@ export async function getGuideVersionContent(guideId: string, versionMajor: numb
     steps_json: GuideStep[];
     pre_workflow_confirmation_html: string;
     pre_workflow_confirmation_enabled: boolean;
+    recorded_actions_json: RecordedAction[];
   }>(
     `
-      SELECT version_major, version_build, title, description, steps_json, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled
+      SELECT version_major, version_build, title, description, steps_json, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, recorded_actions_json
       FROM guided_workflow_guide_versions
       WHERE guide_id = $1 AND version_major = $2 AND version_build = $3 AND deleted_at IS NULL
       LIMIT 1
@@ -2020,5 +2024,19 @@ export async function getGuideVersionContent(guideId: string, versionMajor: numb
     steps: row.steps_json ?? [],
     preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
     preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
+    recordedActions: row.recorded_actions_json ?? [],
   };
+}
+
+// Resolves the guide version pinned to a Workflow node's per-environment
+// selection (guideVersionByEnvironment) — a plain lookup today, kept as its
+// own entry point so both call sites (lib/guided-workflows/executor.ts,
+// app/api/orchestrations/execute/[executionId]/route.ts) share one place to
+// change if resolution logic ever grows beyond a straight version fetch.
+export async function getGuideVersionForNodeEnvironment(
+  guideId: string,
+  versionMajor: number,
+  versionBuild: number
+): Promise<GuideVersionContent | null> {
+  return getGuideVersionContent(guideId, versionMajor, versionBuild);
 }

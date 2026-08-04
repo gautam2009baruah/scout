@@ -8,6 +8,16 @@ import {
   waitForWorkflowCompletion,
 } from "@/lib/guided-workflows/executor";
 
+function resolveContextValue(context: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = evaluateExpression(`{{${key}}}`, context);
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return "";
+}
+
 export async function executeWorkflowNode(
   config: WorkflowNodeConfig,
   context: Record<string, unknown>
@@ -124,6 +134,18 @@ export async function executeWorkflowNode(
     // Determine user ID from context if available
     const userId = context.userId ? String(context.userId) : undefined;
 
+    // Known only for chatbot/schedule/http/email-triggered runs — manual and
+    // in-designer test runs have none, in which case executeGuidedWorkflow
+    // falls back to the guide's live draft.
+    const environmentId = resolveContextValue(context, [
+      "environmentId",
+      "environment_id",
+      "trigger.input.environmentId",
+      "trigger.input.environment_id",
+      "trigger.environmentId",
+      "trigger.environment_id",
+    ]);
+
     // Execute the guided workflow (always auto mode). targetUrl is passed
     // through to executeGuidedWorkflow below — the interactive client player
     // (public/scout-orchestration-player.js) is what actually runs "workflow"
@@ -135,6 +157,8 @@ export async function executeWorkflowNode(
       parameters: workflowInputs,
       targetUrl,
       timeout: config.timeout,
+      environmentId: environmentId || undefined,
+      guideVersionByEnvironment: config.guideVersionByEnvironment,
     });
 
     // If configured to wait for completion, poll for status

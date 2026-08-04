@@ -4,7 +4,7 @@
  */
 
 import { getPool } from "@/lib/db/pool";
-import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
+import { getGuidedWorkflowById, getGuideVersionForNodeEnvironment } from "@/lib/admin/guided-workflows";
 import type { AdminSession } from "@/lib/admin/auth";
 import crypto from "node:crypto";
 
@@ -35,6 +35,13 @@ export type WorkflowExecutionOptions = {
   parameters?: Record<string, unknown>;
   targetUrl?: string;
   timeout?: number;
+  // Execution's resolved environment (chatbot/schedule/http/email-triggered
+  // runs only — manual/test runs have none) and the Workflow node's own
+  // environment -> "major.build" guide version map. When environmentId is
+  // set, the guide's live draft is never used — either the pinned version
+  // resolves, or execution fails.
+  environmentId?: string;
+  guideVersionByEnvironment?: Record<string, string>;
 };
 
 export type WorkflowExecutionResult = {
@@ -63,7 +70,46 @@ export async function executeGuidedWorkflow(
   const startedAt = new Date().toISOString();
 
   try {
-    // Get workflow details
+    if (options.environmentId) {
+      // Environment known: never fall back to the live draft — either the
+      // pinned version resolves, or this fails clearly (no silent mismatch
+      // between what's reported here and what the guide actually contains).
+      const pinnedKey = options.guideVersionByEnvironment?.[options.environmentId];
+      if (!pinnedKey) {
+        throw new Error(
+          `No guide version selected for this environment on this Workflow node (guide ${options.workflowId}).`
+        );
+      }
+
+      const [versionMajor, versionBuild] = pinnedKey.split(".").map(Number);
+      const pinnedVersion = await getGuideVersionForNodeEnvironment(options.workflowId, versionMajor, versionBuild);
+      if (!pinnedVersion) {
+        throw new Error(
+          `Pinned guide version ${pinnedKey} for this environment was not found (guide ${options.workflowId}) — it may have been pruned or deleted.`
+        );
+      }
+
+      return {
+        success: true,
+        executionId,
+        workflowId: options.workflowId,
+        workflowTitle: pinnedVersion.title,
+        status: "initiated",
+        startedAt,
+        steps: pinnedVersion.steps.length,
+        output: {
+          guideId: options.workflowId,
+          title: pinnedVersion.title,
+          description: pinnedVersion.description,
+          steps: pinnedVersion.steps.length,
+          targetUrl: options.targetUrl || "",
+          embedCode: generateEmbedCode(options.workflowId, executionId),
+        },
+      };
+    }
+
+    // No environment known (manual trigger / in-designer test run) — use
+    // the guide's live draft, same as before.
     const workflow = await getGuidedWorkflowById(options.workflowId, fallbackSession);
     if (!workflow) {
       throw new Error(`Workflow not found: ${options.workflowId}`);

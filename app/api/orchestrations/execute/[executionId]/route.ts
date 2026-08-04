@@ -4,7 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOrchestrationById, getNodes, getConnections, createNodeExecution } from "@/lib/orchestrations/db";
 import { createTriggerLog, updateTriggerLastTriggered } from "@/lib/orchestrations/triggers";
-import { getGuidedWorkflowById } from "@/lib/admin/guided-workflows";
+import { getGuidedWorkflowById, getGuideVersionForNodeEnvironment } from "@/lib/admin/guided-workflows";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 import type { AdminSession } from "@/lib/admin/auth";
@@ -203,24 +203,58 @@ async function buildExecutionPlan(
     // Add workflow-specific data
     if (node.nodeType === 'workflow' && node.config) {
       const workflowConfig = node.config as any;
-      
-      // Fetch guide data for workflow
+
       if (workflowConfig.workflowId) {
-        try {
-          const guide = await getGuidedWorkflowById(workflowConfig.workflowId, session);
-          if (guide?.recordedActions) {
-            (step as any).workflowId = workflowConfig.workflowId;
-            (step as any).guideData = guide.recordedActions;
-            (step as any).triggerPhrases = workflowConfig.triggerPhrases;
-            (step as any).matchRequired = workflowConfig.triggerPhrases && workflowConfig.triggerPhrases.length > 0;
-            (step as any).inputMapping = workflowConfig.inputMapping; // For auto-fill
-            (step as any).timeout = workflowConfig.timeout || 300000; // Default 5 minutes
-            
-            // Store guide data for next data_capture step
-            lastWorkflowGuideData = guide.recordedActions;
+        const environmentId = typeof triggerData?.environmentId === "string" ? triggerData.environmentId : "";
+
+        if (environmentId) {
+          // Environment known (chatbot/schedule/http/email-triggered runs):
+          // never fall back to the live guide — either the pinned version
+          // resolves, or this fails clearly instead of silently using
+          // possibly-mismatched live recordings for auto-fill.
+          const pinnedKey = workflowConfig.guideVersionByEnvironment?.[environmentId];
+          if (!pinnedKey) {
+            throw new Error(
+              `No guide version selected for this environment on Workflow node "${node.label}" (guide ${workflowConfig.workflowId}).`
+            );
           }
-        } catch (error) {
-          console.error(`Failed to fetch guide for workflow ${workflowConfig.workflowId}:`, error);
+
+          const [versionMajor, versionBuild] = String(pinnedKey).split(".").map(Number);
+          const pinnedVersion = await getGuideVersionForNodeEnvironment(workflowConfig.workflowId, versionMajor, versionBuild);
+          if (!pinnedVersion) {
+            throw new Error(
+              `Pinned guide version ${pinnedKey} for Workflow node "${node.label}" was not found — it may have been pruned or deleted.`
+            );
+          }
+
+          (step as any).workflowId = workflowConfig.workflowId;
+          (step as any).guideData = pinnedVersion.recordedActions;
+          (step as any).triggerPhrases = workflowConfig.triggerPhrases;
+          (step as any).matchRequired = workflowConfig.triggerPhrases && workflowConfig.triggerPhrases.length > 0;
+          (step as any).inputMapping = workflowConfig.inputMapping; // For auto-fill
+          (step as any).timeout = workflowConfig.timeout || 300000; // Default 5 minutes
+
+          // Store guide data for next data_capture step
+          lastWorkflowGuideData = pinnedVersion.recordedActions;
+        } else {
+          // No environment known (manual trigger / in-designer test run) —
+          // use the guide's live draft, same as before.
+          try {
+            const guide = await getGuidedWorkflowById(workflowConfig.workflowId, session);
+            if (guide?.recordedActions) {
+              (step as any).workflowId = workflowConfig.workflowId;
+              (step as any).guideData = guide.recordedActions;
+              (step as any).triggerPhrases = workflowConfig.triggerPhrases;
+              (step as any).matchRequired = workflowConfig.triggerPhrases && workflowConfig.triggerPhrases.length > 0;
+              (step as any).inputMapping = workflowConfig.inputMapping; // For auto-fill
+              (step as any).timeout = workflowConfig.timeout || 300000; // Default 5 minutes
+
+              // Store guide data for next data_capture step
+              lastWorkflowGuideData = guide.recordedActions;
+            }
+          } catch (error) {
+            console.error(`Failed to fetch guide for workflow ${workflowConfig.workflowId}:`, error);
+          }
         }
       }
     }

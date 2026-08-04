@@ -719,7 +719,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
           [&>div>div]:min-w-0
           [&_input]:max-w-sm [&_select]:max-w-xs [&_textarea]:max-w-lg`}>
         {nodeType === "trigger" && <TriggerConfig config={localConfig} updateConfig={updateLocalConfig} companyId={companyId} targetAppId={targetAppId} orchestrationId={orchestrationId} />}
-        {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} />}
+        {nodeType === "workflow" && <WorkflowConfig config={localConfig} updateConfig={updateLocalConfig} nodes={nodes} edges={edges} currentNode={node} targetAppId={targetAppId} />}
         {nodeType === "data_capture" && <DataCaptureConfig config={localConfig} updateConfig={updateLocalConfig} />}
         {nodeType === "ai_extraction" && <AIExtractionConfig config={localConfig} updateConfig={updateLocalConfig} targetAppId={targetAppId} />}
         {nodeType === "ai_task" && <AITaskConfig config={localConfig} updateConfig={updateLocalConfig} targetAppId={targetAppId} />}
@@ -2532,7 +2532,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   );
 }
 
-function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentNode }: any) {
+function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentNode, targetAppId }: any) {
   const [inputMappings, setInputMappings] = useState<Array<{ key: string; value: string }>>(
     Object.entries(config.inputMapping || {}).map(([key, value]) => ({ key, value: value as string }))
   );
@@ -2561,6 +2561,68 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
   }>>([]);
   const [fetchingWorkflowId, setFetchingWorkflowId] = useState<string | null>(null);
   const workflowCacheRef = useRef<Map<string, any>>(new Map());
+
+  // Which guide version to run per orchestration environment — resolved
+  // independently of the guide's own Promote/Revoke state (a guide may be
+  // authored purely for use inside this orchestration).
+  const [workflowEnvironments, setWorkflowEnvironments] = useState<Array<{ id: string; name: string }>>([]);
+  const [guideVersions, setGuideVersions] = useState<Array<{ versionMajor: number; versionBuild: number }>>([]);
+  const [loadingGuideVersions, setLoadingGuideVersions] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadWorkflowEnvironments = async () => {
+      if (!targetAppId) {
+        if (active) setWorkflowEnvironments([]);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/orchestrations/environments?targetAppId=${encodeURIComponent(String(targetAppId))}`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active) setWorkflowEnvironments(Array.isArray(payload?.environments) ? payload.environments : []);
+      } catch {
+        if (active) setWorkflowEnvironments([]);
+      }
+    };
+
+    void loadWorkflowEnvironments();
+
+    return () => {
+      active = false;
+    };
+  }, [targetAppId]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadGuideVersions = async () => {
+      if (!config.workflowId) {
+        if (active) setGuideVersions([]);
+        return;
+      }
+
+      setLoadingGuideVersions(true);
+      try {
+        const response = await fetch(`/api/admin/guided-workflows/${config.workflowId}/versions`);
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (active) setGuideVersions(Array.isArray(payload?.versions) ? payload.versions : []);
+      } catch {
+        if (active) setGuideVersions([]);
+      } finally {
+        if (active) setLoadingGuideVersions(false);
+      }
+    };
+
+    void loadGuideVersions();
+
+    return () => {
+      active = false;
+    };
+  }, [config.workflowId]);
 
   // Seed default config values on mount so they persist even if the user
   // never touches these fields before saving.
@@ -2911,6 +2973,65 @@ function WorkflowConfig({ config, updateConfig, nodes = [], edges = [], currentN
           {availableWorkflows.length} published workflow{availableWorkflows.length !== 1 ? "s" : ""} available
         </p>
       </div>
+
+      {config.workflowId && (
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-1">
+            Guide version per environment
+          </label>
+          <details className="mb-2 rounded border-l-4 border-indigo-500 bg-indigo-50 p-3">
+            <summary className="cursor-pointer text-xs font-semibold text-indigo-900 hover:text-indigo-700">
+              What does this do?
+            </summary>
+            <p className="mt-2 text-xs text-indigo-900/80">
+              Which version of this guide to run for each environment — independent of the guide&apos;s own Promote/Revoke state, since a guide can be authored purely for use here. Manual and in-designer test runs always use the guide&apos;s current draft. If an environment is left unset here, an environment-bound run for it will fail rather than silently using the draft.
+            </p>
+          </details>
+          {workflowEnvironments.length === 0 ? (
+            <div className="w-full rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              No environments found for this target app.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {workflowEnvironments.map((env) => {
+                const byEnv: Record<string, string> = config.guideVersionByEnvironment || {};
+                const value = byEnv[env.id] || "";
+                return (
+                  <div key={env.id}>
+                    <span className="block truncate text-xs font-medium text-slate-600" title={env.name}>
+                      {env.name}
+                    </span>
+                    <select
+                      className="mt-1 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                      value={value}
+                      disabled={loadingGuideVersions}
+                      onChange={(e) => {
+                        const rest = { ...byEnv };
+                        if (e.target.value) {
+                          rest[env.id] = e.target.value;
+                        } else {
+                          delete rest[env.id];
+                        }
+                        updateConfig({ guideVersionByEnvironment: rest });
+                      }}
+                    >
+                      <option value="">{loadingGuideVersions ? "Loading versions..." : "Not configured"}</option>
+                      {guideVersions.map((v) => {
+                        const key = `${v.versionMajor}.${v.versionBuild}`;
+                        return (
+                          <option key={key} value={key}>
+                            v{v.versionMajor}.{String(v.versionBuild).padStart(3, "0")}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Trigger Phrases Multi-Select (only show for chatbot triggers) */}
       {triggerType === "chatbot" && availableTriggerPhrases.length > 0 && (
