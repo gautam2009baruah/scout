@@ -25,6 +25,7 @@ import type { EmailTriggerConfig, ScheduleTriggerConfig } from "@/shared/orchest
 import { calculateNextRunTime } from "./scheduler/cron-utils";
 import { getSchedulerService } from "./scheduler-service";
 import { buildHttpApiTriggerConfig } from "./http-trigger/config";
+import { normalizeShortName } from "./http-trigger/endpoint-resolution";
 import { findUnreachableNodes } from "./graph-reachability";
 
 // ============================================================================
@@ -518,23 +519,19 @@ export async function publishOrchestration(
     try {
       // Fan out into one orchestration_triggers row per (environment,
       // credential) pair selected in emailCredentialIdsByEnvironment — each
-      // environment can poll multiple inboxes. The legacy flat
-      // emailCredentialId only produces a single un-scoped (environment_id =
-      // NULL) row, and only when no per-environment selections exist at all,
-      // so untouched configs keep polling exactly as before while switching
-      // cleanly to explicit per-environment polling once adopted (no
-      // double-firing from a default row overlapping an override row).
+      // environment can poll multiple inboxes. No unscoped fallback: every
+      // polled inbox must be assigned to an environment, same "no backward
+      // compatibility" posture as Schedule/HTTP — without a resolved
+      // environment there's no way to know which environment a matched
+      // email belongs to.
       const byEnvironment: Record<string, string[]> = triggerNodeConfig.emailCredentialIdsByEnvironment || {};
-      const desiredPairs: Array<{ environmentId: string | null; credentialId: string }> = [];
+      const desiredPairs: Array<{ environmentId: string; credentialId: string }> = [];
       for (const [environmentId, credentialIds] of Object.entries(byEnvironment)) {
         for (const credentialId of Array.isArray(credentialIds) ? credentialIds : []) {
           if (credentialId) {
             desiredPairs.push({ environmentId, credentialId });
           }
         }
-      }
-      if (desiredPairs.length === 0 && triggerNodeConfig.emailCredentialId) {
-        desiredPairs.push({ environmentId: null, credentialId: triggerNodeConfig.emailCredentialId });
       }
 
       if (desiredPairs.length === 0) {
@@ -571,9 +568,9 @@ export async function publishOrchestration(
         [id]
       );
 
-      const findExisting = (environmentId: string | null, credentialId: string) =>
+      const findExisting = (environmentId: string, credentialId: string) =>
         existingTriggers.rows.find(
-          (row) => (row.environment_id || null) === environmentId && row.config?.credentialId === credentialId
+          (row) => row.environment_id === environmentId && row.config?.credentialId === credentialId
         );
 
       const keptTriggerIds = new Set<string>();
@@ -600,9 +597,7 @@ export async function publishOrchestration(
           enabled: triggerNodeConfig.enabled !== false,
         };
 
-        const triggerName = pair.environmentId
-          ? `${orchestration.name} - Email Trigger (${environmentNamesById.get(pair.environmentId) || pair.environmentId})`
-          : `${orchestration.name} - Email Trigger`;
+        const triggerName = `${orchestration.name} - Email Trigger (${environmentNamesById.get(pair.environmentId) || pair.environmentId})`;
 
         const existing = findExisting(pair.environmentId, pair.credentialId);
 
@@ -617,7 +612,7 @@ export async function publishOrchestration(
             environmentId: pair.environmentId,
           });
           keptTriggerIds.add(created.id);
-          console.log(`Email trigger created (environment: ${pair.environmentId ?? "default"})`);
+          console.log(`Email trigger created (environment: ${pair.environmentId})`);
         } else {
           await pool.query(
             `UPDATE orchestration_triggers
@@ -638,7 +633,7 @@ export async function publishOrchestration(
             ]
           );
           keptTriggerIds.add(existing.id);
-          console.log(`Email trigger updated (environment: ${pair.environmentId ?? "default"})`);
+          console.log(`Email trigger updated (environment: ${pair.environmentId})`);
         }
       }
 
@@ -757,68 +752,93 @@ export async function publishOrchestration(
   }
 
   if (triggerNodeConfig.triggerType === "http_api") {
-    console.log("Auto-creating/updating HTTP/API trigger record...");
+    console.log("Auto-creating/updating HTTP/API trigger record(s)...");
 
     try {
-      const httpTriggerConfig = await buildHttpApiTriggerConfig(triggerNodeConfig, id);
+      // No unscoped endpoint: every callable URL must be explicitly assigned
+      // to an environment (shortNamesByEnvironment), same "must be promoted"
+      // posture as Schedule — without a resolved environment the system has
+      // no way to know which environment is calling or what to log against.
+      // Auth/methods/rate-limit/etc. are shared across every environment's
+      // endpoint (not meaningfully environment-specific); only the shortName
+      // (and, via resolution, the executed version) varies per row.
+      const shortNamesByEnvironment: Record<string, string> = triggerNodeConfig.shortNamesByEnvironment || {};
+      const desiredPairs = Object.entries(shortNamesByEnvironment)
+        .map(([environmentId, shortName]) => ({ environmentId, shortName: normalizeShortName(String(shortName || "").trim()) }))
+        .filter((pair) => pair.shortName);
 
-      const existingTriggers = await pool.query(
-        `SELECT id
-         FROM orchestration_triggers
+      const shortNameCounts = new Map<string, number>();
+      for (const pair of desiredPairs) {
+        shortNameCounts.set(pair.shortName, (shortNameCounts.get(pair.shortName) || 0) + 1);
+      }
+      const duplicateShortName = [...shortNameCounts.entries()].find(([, count]) => count > 1)?.[0];
+      if (duplicateShortName) {
+        throw new Error(`Short name "${duplicateShortName}" is used by more than one environment — each environment needs its own distinct short name.`);
+      }
+
+      const existingTriggers = await pool.query<{ id: string; environment_id: string | null; config: any }>(
+        `SELECT id, environment_id, config FROM orchestration_triggers
          WHERE orchestration_id = $1 AND trigger_type = 'http_api'`,
         [id]
       );
 
-      if (existingTriggers.rows.length === 0) {
-        const created = await createTrigger({
-          orchestrationId: id,
-          triggerType: "http_api",
-          name: `${orchestration.name} - HTTP/API Trigger`,
-          description: `Auto-created HTTP/API trigger for ${orchestration.name}`,
-          config: httpTriggerConfig,
-          createdById: publishedById,
-        });
-
-        await pool.query(
-          `UPDATE orchestration_triggers
-           SET endpoint_slug = $1,
-               status = $2,
-               updated_by = $3,
-               updated_at = NOW()
-           WHERE id = $4`,
-          [
-            httpTriggerConfig.shortName,
-            httpTriggerConfig.status === "active" ? "active" : httpTriggerConfig.status,
-            publishedById,
-            created.id,
-          ]
+      const findExisting = (environmentId: string, shortName: string) =>
+        existingTriggers.rows.find(
+          (row) => row.environment_id === environmentId && row.config?.shortName === shortName
         );
 
-        console.log("HTTP/API trigger created successfully");
-      } else {
-        const triggerId = existingTriggers.rows[0].id;
-        await pool.query(
-          `UPDATE orchestration_triggers
-           SET name = $1,
-               description = $2,
-               config = $3,
-               endpoint_slug = $4,
-               status = $5,
-               updated_by = $6,
-               updated_at = NOW()
-           WHERE id = $7`,
-          [
-            `${orchestration.name} - HTTP/API Trigger`,
-            `Auto-created HTTP/API trigger for ${orchestration.name}`,
-            JSON.stringify(httpTriggerConfig),
-            httpTriggerConfig.shortName,
-            httpTriggerConfig.status === "active" ? "active" : httpTriggerConfig.status,
-            publishedById,
-            triggerId,
-          ]
-        );
+      const keptTriggerIds = new Set<string>();
 
-        console.log("HTTP/API trigger updated successfully");
+      for (const pair of desiredPairs) {
+        const rawWithShortName = { ...triggerNodeConfig, shortName: pair.shortName };
+        const httpTriggerConfig = await buildHttpApiTriggerConfig(rawWithShortName, id);
+
+        const existing = findExisting(pair.environmentId, pair.shortName);
+
+        if (!existing) {
+          const created = await createTrigger({
+            orchestrationId: id,
+            triggerType: "http_api",
+            name: `${orchestration.name} - HTTP/API Trigger (${pair.shortName})`,
+            description: `Auto-created HTTP/API trigger for ${orchestration.name}`,
+            config: httpTriggerConfig,
+            createdById: publishedById,
+            environmentId: pair.environmentId,
+          });
+
+          keptTriggerIds.add(created.id);
+          console.log(`HTTP/API trigger created (environment: ${pair.environmentId}, short name: ${pair.shortName})`);
+        } else {
+          await pool.query(
+            `UPDATE orchestration_triggers
+             SET name = $1,
+                 description = $2,
+                 config = $3,
+                 endpoint_slug = $4,
+                 status = $5,
+                 updated_by = $6,
+                 updated_at = NOW()
+             WHERE id = $7`,
+            [
+              `${orchestration.name} - HTTP/API Trigger (${pair.shortName})`,
+              `Auto-created HTTP/API trigger for ${orchestration.name}`,
+              JSON.stringify(httpTriggerConfig),
+              httpTriggerConfig.shortName,
+              httpTriggerConfig.status === "active" ? "active" : httpTriggerConfig.status,
+              publishedById,
+              existing.id,
+            ]
+          );
+
+          keptTriggerIds.add(existing.id);
+          console.log(`HTTP/API trigger updated (environment: ${pair.environmentId}, short name: ${pair.shortName})`);
+        }
+      }
+
+      const staleTriggerIds = existingTriggers.rows.map((row) => row.id).filter((rowId) => !keptTriggerIds.has(rowId));
+      if (staleTriggerIds.length > 0) {
+        await pool.query(`DELETE FROM orchestration_triggers WHERE id = ANY($1::uuid[])`, [staleTriggerIds]);
+        console.log(`Removed ${staleTriggerIds.length} stale HTTP/API trigger row(s)`);
       }
     } catch (error) {
       console.error("Failed to auto-create/update HTTP/API trigger:", error);
@@ -1758,7 +1778,7 @@ export async function getOrchestrationVersionSnapshot(
 ): Promise<OrchestrationSnapshot | null> {
   const pool = getPool();
   const result = await pool.query<{ snapshot: OrchestrationSnapshot }>(
-    `SELECT snapshot FROM orchestration_versions WHERE orchestration_id = $1 AND version_major = $2 AND version_build = $3 LIMIT 1`,
+    `SELECT snapshot FROM orchestration_versions WHERE orchestration_id = $1 AND version_major = $2 AND version_build = $3 AND deleted_at IS NULL LIMIT 1`,
     [orchestrationId, versionMajor, versionBuild]
   );
 
@@ -1834,7 +1854,7 @@ export async function promoteOrchestrationToEnvironment(
   versionMajor: number,
   versionBuild: number,
   actorUserId: string
-): Promise<void> {
+): Promise<{ prunedVersionsCount: number }> {
   const pool = getPool();
 
   const versionResult = await pool.query<{ id: string; promoted_to_production: boolean }>(
@@ -1865,13 +1885,68 @@ export async function promoteOrchestrationToEnvironment(
     [orchestrationId, environmentId, versionMajor, versionBuild, actorUserId]
   );
 
-  if (envResult.rows[0].is_production && !versionResult.rows[0].promoted_to_production) {
-    await pool.query(`UPDATE orchestration_versions SET promoted_to_production = true WHERE id = $1`, [versionResult.rows[0].id]);
-    await pool.query(
-      `UPDATE orchestrations SET next_major = next_major + 1, next_build = 0 WHERE id = $1`,
-      [orchestrationId]
-    );
+  let prunedVersionsCount = 0;
+
+  if (envResult.rows[0].is_production) {
+    if (!versionResult.rows[0].promoted_to_production) {
+      await pool.query(`UPDATE orchestration_versions SET promoted_to_production = true WHERE id = $1`, [versionResult.rows[0].id]);
+      await pool.query(
+        `UPDATE orchestrations SET next_major = next_major + 1, next_build = 0 WHERE id = $1`,
+        [orchestrationId]
+      );
+    }
+
+    prunedVersionsCount = await pruneOldOrchestrationVersions(orchestrationId, versionMajor, actorUserId);
   }
+
+  return { prunedVersionsCount };
+}
+
+// Promoting a version to a production-flagged environment keeps only the
+// promoted major plus the 3 majors before it (e.g. promoting major 5 keeps
+// majors 2-5) — anything older is soft-deleted, except any specific
+// (major, build) still actively pinned by a live release to ANY environment
+// (not just the one just promoted to), which is always kept regardless of
+// age. This is per-version, not per-major: an old major with one pinned
+// build keeps just that build, its other unpinned builds still get pruned.
+async function pruneOldOrchestrationVersions(
+  orchestrationId: string,
+  promotedVersionMajor: number,
+  actorUserId: string
+): Promise<number> {
+  const cutoffMajor = promotedVersionMajor - 3;
+  if (cutoffMajor < 1) {
+    return 0;
+  }
+
+  const pool = getPool();
+
+  const pinnedResult = await pool.query<{ version_major: number; version_build: number }>(
+    `SELECT DISTINCT version_major, version_build FROM orchestration_environment_releases WHERE orchestration_id = $1 AND deleted_at IS NULL`,
+    [orchestrationId]
+  );
+  const pinnedKeys = new Set(pinnedResult.rows.map((row) => `${row.version_major}.${row.version_build}`));
+
+  const candidatesResult = await pool.query<{ id: string; version_major: number; version_build: number }>(
+    `SELECT id, version_major, version_build FROM orchestration_versions
+     WHERE orchestration_id = $1 AND version_major < $2 AND deleted_at IS NULL`,
+    [orchestrationId, cutoffMajor]
+  );
+
+  const idsToDelete = candidatesResult.rows
+    .filter((row) => !pinnedKeys.has(`${row.version_major}.${row.version_build}`))
+    .map((row) => row.id);
+
+  if (idsToDelete.length === 0) {
+    return 0;
+  }
+
+  await pool.query(
+    `UPDATE orchestration_versions SET deleted_at = now(), deleted_by = $2 WHERE id = ANY($1::uuid[])`,
+    [idsToDelete, actorUserId]
+  );
+
+  return idsToDelete.length;
 }
 
 export type OrchestrationVersionSummary = {
@@ -1884,7 +1959,7 @@ export type OrchestrationVersionSummary = {
 
 export async function listOrchestrationVersionSummaries(orchestrationId: string): Promise<OrchestrationVersionSummary[]> {
   const result = await getPool().query<{ version_major: number; version_build: number; promoted_to_production: boolean; created_at: Date; change_notes: string | null }>(
-    `SELECT version_major, version_build, promoted_to_production, created_at, change_notes FROM orchestration_versions WHERE orchestration_id = $1 ORDER BY version_major DESC, version_build DESC`,
+    `SELECT version_major, version_build, promoted_to_production, created_at, change_notes FROM orchestration_versions WHERE orchestration_id = $1 AND deleted_at IS NULL ORDER BY version_major DESC, version_build DESC`,
     [orchestrationId]
   );
 

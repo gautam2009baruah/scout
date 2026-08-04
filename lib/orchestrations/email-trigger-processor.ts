@@ -198,8 +198,8 @@ export async function processEmailTrigger(
     // Log trigger execution
     await pool.query(
       `INSERT INTO trigger_execution_logs
-       (trigger_id, orchestration_id, execution_id, status, payload, triggered_by)
-       VALUES ($1, $2, $3, 'started', $4, $5)`,
+       (trigger_id, orchestration_id, execution_id, status, payload, triggered_by, environment_id)
+       VALUES ($1, $2, $3, 'started', $4, $5, $6)`,
       [
         triggerId,
         orchestrationId,
@@ -210,6 +210,7 @@ export async function processEmailTrigger(
           subject: email.subject,
         }),
         `email:${email.from}`,
+        environmentId || null,
       ]
     );
     

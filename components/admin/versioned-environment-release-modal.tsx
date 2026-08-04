@@ -49,6 +49,7 @@ export function VersionedEnvironmentReleaseModal({ title, apiUrl, onClose, onSav
   const [selectedVersionByEnvironment, setSelectedVersionByEnvironment] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [actioningEnvironmentId, setActioningEnvironmentId] = useState<string | null>(null);
+  const [pruneNotice, setPruneNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +99,7 @@ export function VersionedEnvironmentReleaseModal({ title, apiUrl, onClose, onSav
 
   async function runAction(environmentId: string, action: "promote" | "revoke") {
     setActioningEnvironmentId(environmentId);
+    setPruneNotice(null);
 
     const selectedKey = selectedVersionByEnvironment[environmentId] ?? "";
     const [versionMajor, versionBuild] = selectedKey.split(".").map(Number);
@@ -123,6 +125,12 @@ export function VersionedEnvironmentReleaseModal({ title, apiUrl, onClose, onSav
     setCurrentVersionBuild(Number(body?.currentVersionBuild) || 0);
     setEnvironments(Array.isArray(body?.environments) ? body.environments : []);
     setVersions(Array.isArray(body?.versions) ? body.versions : []);
+
+    const prunedVersionsCount = Number(body?.prunedVersionsCount) || 0;
+    if (prunedVersionsCount > 0) {
+      setPruneNotice(`${prunedVersionsCount} older version${prunedVersionsCount === 1 ? "" : "s"} were cleaned up.`);
+    }
+
     onSaved?.();
   }
 
@@ -143,6 +151,17 @@ export function VersionedEnvironmentReleaseModal({ title, apiUrl, onClose, onSav
         <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
           Publishing alone does not change what a promoted environment sees. Editing and republishing creates a new build under the current major version (currently v{currentVersionLabel}) — each environment keeps running whatever build it was last promoted to. Pick any past published version below, not just the latest, e.g. to roll back. The major version only advances the first time a build is promoted to a production-flagged environment; re-promoting an already-released build elsewhere never bumps it again.
         </p>
+        <details className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+          <summary className="cursor-pointer font-semibold text-slate-700 hover:text-slate-900">
+            Older version cleanup
+          </summary>
+          <p className="mt-2 text-slate-600">
+            Promoting a version to a production-flagged environment automatically cleans up old generations: only the promoted major version and the 3 majors before it are kept. Older versions are deleted — except any version still actively released to another environment, which is always kept regardless of age.
+          </p>
+        </details>
+        {pruneNotice && (
+          <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">{pruneNotice}</p>
+        )}
         {loading ? (
           <p className="mt-4 text-sm text-slate-500">Loading...</p>
         ) : environments.length === 0 ? (

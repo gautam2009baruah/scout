@@ -114,6 +114,37 @@ async function handle(request: RequestLike, params: { shortName: string; pathSeg
     };
   }
 
+  // Every endpoint must resolve to an actively-released environment — there
+  // is no unscoped fallback (see lib/orchestrations/db.ts's http_api trigger
+  // sync). Without a resolved environment the system has no way to know
+  // which environment is calling or what to log the execution against, so
+  // this fails closed rather than falling back to "whatever's published."
+  if (!resolved.environmentId || resolved.orchestrationVersionMajor == null || resolved.orchestrationVersionBuild == null) {
+    await writeHttpTriggerAuditLog({
+      triggerId: resolved.triggerId,
+      orchestrationId: resolved.orchestrationId,
+      status: "failed",
+      payload: {
+        correlationId,
+        code: "ENVIRONMENT_NOT_RELEASED",
+        method: request.method,
+        path: request.nextUrl.pathname,
+      },
+      errorMessage: "Endpoint's environment is not currently released for this orchestration",
+    });
+
+    return {
+      status: 403,
+      correlationId,
+      body: {
+        success: false,
+        code: "ENVIRONMENT_NOT_RELEASED",
+        message: "This endpoint's environment is not currently released for this orchestration.",
+        correlationId,
+      },
+    };
+  }
+
   if (resolved.status === "revoked") {
     return {
       status: 403,
@@ -284,6 +315,7 @@ async function handle(request: RequestLike, params: { shortName: string; pathSeg
     orchestrationId: resolved.orchestrationId,
     orchestrationVersionMajor: resolved.orchestrationVersionMajor,
     orchestrationVersionBuild: resolved.orchestrationVersionBuild,
+    environmentId: resolved.environmentId,
     config: resolved.config,
     correlationId,
     authType: authResult.authType || "none",

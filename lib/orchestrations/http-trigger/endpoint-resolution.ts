@@ -5,12 +5,18 @@ import { HTTP_TRIGGER_RESERVED_SHORT_NAMES, SHORT_NAME_PATTERN } from "./constan
 export type HttpTriggerResolution = {
   triggerId: string;
   orchestrationId: string;
-  orchestrationVersionMajor: number;
-  orchestrationVersionBuild: number;
+  // Non-null only when the row's assigned environment is currently released
+  // (orchestration_environment_releases, not revoked) — sourced from that
+  // environment's pinned version, not orchestrations.published_version.
+  // Null means the endpoint cannot execute; callers must check this before
+  // dispatching (see http-api/http-trigger-api/src/server.ts).
+  orchestrationVersionMajor: number | null;
+  orchestrationVersionBuild: number | null;
   orchestrationName: string;
   triggerName: string;
   status: string;
   shortName: string;
+  environmentId: string | null;
   config: HttpApiTriggerConfig;
 };
 
@@ -67,26 +73,30 @@ export async function resolveHttpTriggerByShortName(shortName: string): Promise<
   const result = await pool.query<{
     trigger_id: string;
     orchestration_id: string;
-    orchestration_version_major: number;
-    orchestration_version_build: number;
+    orchestration_version_major: number | null;
+    orchestration_version_build: number | null;
     orchestration_name: string;
     trigger_name: string;
     trigger_status: string;
     endpoint_slug: string;
+    environment_id: string | null;
     config: HttpApiTriggerConfig;
   }>(
     `SELECT
        t.id AS trigger_id,
        t.orchestration_id,
-       o.published_version_major AS orchestration_version_major,
-       o.published_version_build AS orchestration_version_build,
+       oer.version_major AS orchestration_version_major,
+       oer.version_build AS orchestration_version_build,
        o.name AS orchestration_name,
        t.name AS trigger_name,
        t.status AS trigger_status,
        t.endpoint_slug,
+       t.environment_id,
        t.config
      FROM orchestration_triggers t
      INNER JOIN orchestrations o ON o.id = t.orchestration_id
+     LEFT JOIN orchestration_environment_releases oer
+       ON oer.orchestration_id = o.id AND oer.environment_id = t.environment_id AND oer.deleted_at IS NULL
      WHERE t.trigger_type = 'http_api'
        AND lower(t.endpoint_slug) = $1
        AND o.status = 'published'
@@ -108,6 +118,7 @@ export async function resolveHttpTriggerByShortName(shortName: string): Promise<
     triggerName: row.trigger_name,
     status: row.trigger_status,
     shortName: row.endpoint_slug,
+    environmentId: row.environment_id,
     config: row.config,
   };
 }

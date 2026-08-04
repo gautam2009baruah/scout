@@ -1844,7 +1844,13 @@ export async function getGuideEnvironmentReleases(guideId: string): Promise<Guid
 // environment) never bumps it again, and demoting a production environment
 // back to an old build never moves it backward either, since the ratchet
 // lives on the guide row, not on any environment's current pin.
-export async function promoteGuideToEnvironment(guideId: string, environmentId: string, versionMajor: number, versionBuild: number, actorUserId: string): Promise<void> {
+export async function promoteGuideToEnvironment(
+  guideId: string,
+  environmentId: string,
+  versionMajor: number,
+  versionBuild: number,
+  actorUserId: string
+): Promise<{ prunedVersionsCount: number }> {
   const pool = getPool();
   const versionResult = await pool.query<{ id: string; promoted_to_production: boolean }>(
     `SELECT id, promoted_to_production FROM guided_workflow_guide_versions WHERE guide_id = $1 AND version_major = $2 AND version_build = $3`,
@@ -1874,13 +1880,64 @@ export async function promoteGuideToEnvironment(guideId: string, environmentId: 
     [guideId, environmentId, versionMajor, versionBuild, actorUserId]
   );
 
-  if (envResult.rows[0].is_production && !versionResult.rows[0].promoted_to_production) {
-    await pool.query(`UPDATE guided_workflow_guide_versions SET promoted_to_production = true WHERE id = $1`, [versionResult.rows[0].id]);
-    await pool.query(
-      `UPDATE guided_workflow_guides SET next_major = next_major + 1, next_build = 0 WHERE id = $1`,
-      [guideId]
-    );
+  let prunedVersionsCount = 0;
+
+  if (envResult.rows[0].is_production) {
+    if (!versionResult.rows[0].promoted_to_production) {
+      await pool.query(`UPDATE guided_workflow_guide_versions SET promoted_to_production = true WHERE id = $1`, [versionResult.rows[0].id]);
+      await pool.query(
+        `UPDATE guided_workflow_guides SET next_major = next_major + 1, next_build = 0 WHERE id = $1`,
+        [guideId]
+      );
+    }
+
+    prunedVersionsCount = await pruneOldGuideVersions(guideId, versionMajor, actorUserId);
   }
+
+  return { prunedVersionsCount };
+}
+
+// Mirror of pruneOldOrchestrationVersions (lib/orchestrations/db.ts) — same
+// retention rule (promoted major + 3 prior majors kept), same per-version
+// "still actively pinned anywhere" exception, same soft-delete semantics.
+async function pruneOldGuideVersions(
+  guideId: string,
+  promotedVersionMajor: number,
+  actorUserId: string
+): Promise<number> {
+  const cutoffMajor = promotedVersionMajor - 3;
+  if (cutoffMajor < 1) {
+    return 0;
+  }
+
+  const pool = getPool();
+
+  const pinnedResult = await pool.query<{ version_major: number; version_build: number }>(
+    `SELECT DISTINCT version_major, version_build FROM guided_workflow_environment_releases WHERE guide_id = $1 AND deleted_at IS NULL`,
+    [guideId]
+  );
+  const pinnedKeys = new Set(pinnedResult.rows.map((row) => `${row.version_major}.${row.version_build}`));
+
+  const candidatesResult = await pool.query<{ id: string; version_major: number; version_build: number }>(
+    `SELECT id, version_major, version_build FROM guided_workflow_guide_versions
+     WHERE guide_id = $1 AND version_major < $2 AND deleted_at IS NULL`,
+    [guideId, cutoffMajor]
+  );
+
+  const idsToDelete = candidatesResult.rows
+    .filter((row) => !pinnedKeys.has(`${row.version_major}.${row.version_build}`))
+    .map((row) => row.id);
+
+  if (idsToDelete.length === 0) {
+    return 0;
+  }
+
+  await pool.query(
+    `UPDATE guided_workflow_guide_versions SET deleted_at = now(), deleted_by = $2 WHERE id = ANY($1::uuid[])`,
+    [idsToDelete, actorUserId]
+  );
+
+  return idsToDelete.length;
 }
 
 export async function revokeGuideFromEnvironment(guideId: string, environmentId: string, actorUserId: string): Promise<void> {
@@ -1904,7 +1961,7 @@ export type GuideVersionSummary = {
 
 export async function listGuideVersionSummaries(guideId: string): Promise<GuideVersionSummary[]> {
   const result = await getPool().query<{ version_major: number; version_build: number; promoted_to_production: boolean; created_at: Date; change_notes: string | null }>(
-    `SELECT version_major, version_build, promoted_to_production, created_at, change_notes FROM guided_workflow_guide_versions WHERE guide_id = $1 ORDER BY version_major DESC, version_build DESC`,
+    `SELECT version_major, version_build, promoted_to_production, created_at, change_notes FROM guided_workflow_guide_versions WHERE guide_id = $1 AND deleted_at IS NULL ORDER BY version_major DESC, version_build DESC`,
     [guideId]
   );
 
@@ -1944,7 +2001,7 @@ export async function getGuideVersionContent(guideId: string, versionMajor: numb
     `
       SELECT version_major, version_build, title, description, steps_json, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled
       FROM guided_workflow_guide_versions
-      WHERE guide_id = $1 AND version_major = $2 AND version_build = $3
+      WHERE guide_id = $1 AND version_major = $2 AND version_build = $3 AND deleted_at IS NULL
       LIMIT 1
     `,
     [guideId, versionMajor, versionBuild]

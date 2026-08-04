@@ -93,13 +93,16 @@ export async function PUT(request: Request, context: RouteContext) {
       return NextResponse.json({ message: "environmentId and action are required." }, { status: 400 });
     }
 
+    let prunedVersionsCount = 0;
+
     if (action === "promote") {
       const versionMajor = Number(body?.versionMajor);
       const versionBuild = Number(body?.versionBuild);
       if (!Number.isInteger(versionMajor) || versionMajor < 1 || !Number.isInteger(versionBuild) || versionBuild < 0) {
         return NextResponse.json({ message: "A valid version is required to promote." }, { status: 400 });
       }
-      await promoteGuideToEnvironment(id, environmentId, versionMajor, versionBuild, auth.session.user.id);
+      const result = await promoteGuideToEnvironment(id, environmentId, versionMajor, versionBuild, auth.session.user.id);
+      prunedVersionsCount = result.prunedVersionsCount;
     } else {
       await revokeGuideFromEnvironment(id, environmentId, auth.session.user.id);
     }
@@ -115,6 +118,7 @@ export async function PUT(request: Request, context: RouteContext) {
       currentVersionBuild: versionInfo?.versionBuild ?? 0,
       environments,
       versions,
+      prunedVersionsCount,
     });
   } catch (error) {
     if (error instanceof GuidedWorkflowError) {

@@ -6,7 +6,7 @@ import { getPool } from "@/lib/db/pool";
 import { createSchedulerEngine } from "./scheduler/factory";
 import type { ScheduledTrigger, ScheduleExecutionResult } from "./scheduler/types";
 import { calculateNextRunTime } from "./scheduler/cron-utils";
-import { createExecution, getConnections, getNodes } from "./db";
+import { createExecution, getConnections, getNodes, getOrchestrationEnvironmentReleases } from "./db";
 import { OrchestrationEngine } from "./engine";
 
 export class OrchestrationSchedulerService {
@@ -226,7 +226,15 @@ export class OrchestrationSchedulerService {
   }
 
   /**
-   * Execute orchestration when schedule fires (callback from engine)
+   * Execute orchestration when schedule fires (callback from engine).
+   *
+   * A schedule trigger has no ambient "current environment" the way a
+   * chatbot API key does, so there is no unscoped fallback: this fires once
+   * per environment the orchestration is actively promoted to (Promote /
+   * Revoke in the Environments modal — orchestration_environment_releases),
+   * each run using that environment's pinned version, not just whatever is
+   * newest published. An orchestration that has never been promoted
+   * anywhere simply doesn't run — by design, not an error condition.
    */
   private async executeOrchestration(trigger: ScheduledTrigger): Promise<ScheduleExecutionResult> {
     const triggeredAt = new Date().toISOString();
@@ -253,67 +261,7 @@ export class OrchestrationSchedulerService {
         return { success: true, triggeredAt };
       }
 
-      // Get orchestration details
-      const orchResult = await pool.query<{
-        id: string;
-        published_version_major: number;
-        published_version_build: number;
-        name: string;
-        variables: any;
-      }>(
-        `SELECT id, published_version_major, published_version_build, name, variables
-         FROM orchestrations
-         WHERE id = $1 AND status = 'published'`,
-        [trigger.orchestrationId]
-      );
-
-      if (orchResult.rowCount === 0) {
-        throw new Error("Orchestration not found or not published");
-      }
-
-      const orchestration = orchResult.rows[0];
-
-      const triggeredBy = `schedule:${trigger.id}`;
-      const triggerPayload = {
-        scheduledTime: triggeredAt,
-        scheduleType: trigger.config.scheduleType,
-      };
-      const execution = await createExecution({
-        orchestrationId: orchestration.id,
-        orchestrationVersionMajor: orchestration.published_version_major,
-        orchestrationVersionBuild: orchestration.published_version_build,
-        context: {
-          trigger: {
-            type: "schedule",
-            triggerId: trigger.id,
-            triggerName: trigger.name,
-            ...triggerPayload,
-          },
-          variables: {},
-        },
-        triggerData: triggerPayload,
-        triggeredBy,
-      });
-
-      const executionId = execution.id;
-
-      console.log(`[SchedulerService] ✅ Created execution: ${executionId}`);
-
-      // Log trigger execution
-      await pool.query(
-        `INSERT INTO trigger_execution_logs
-         (trigger_id, orchestration_id, execution_id, status, payload, triggered_at, triggered_by)
-         VALUES ($1, $2, $3, 'started', $4, NOW(), $5)`,
-        [
-          trigger.id,
-          orchestration.id,
-          executionId,
-          JSON.stringify(triggerPayload),
-          triggeredBy,
-        ]
-      );
-
-      // Calculate and update next run time
+      // Calculate and update next run time (timing itself isn't per-environment)
       const nextRun = calculateNextRunTime(trigger.config, new Date());
       if (nextRun) {
         await pool.query(
@@ -324,40 +272,110 @@ export class OrchestrationSchedulerService {
         );
       }
 
-      // Run through the normal orchestration engine so every node execution is
-      // recorded and can be displayed in Trigger Monitoring.
-      const nodes = await getNodes(orchestration.id);
-      const connections = await getConnections(orchestration.id);
-      const engine = new OrchestrationEngine(execution, nodes, connections);
-      const result = await engine.execute();
+      const releases = (await getOrchestrationEnvironmentReleases(trigger.orchestrationId)).filter(
+        (release) => release.releasedVersionMajor !== null && release.releasedVersionBuild !== null
+      );
 
-      if (!result.success) {
-        throw new Error(result.error || "Scheduled orchestration execution failed");
+      if (releases.length === 0) {
+        console.log(`[SchedulerService] Trigger ${trigger.id}: orchestration is not promoted to any environment, skipping`);
+        await pool.query(
+          `UPDATE orchestration_triggers SET last_error = $2, updated_at = NOW() WHERE id = $1`,
+          [trigger.id, "Orchestration is not promoted to any environment"]
+        );
+        return { success: true, triggeredAt };
       }
 
-      return {
-        success: true,
-        executionId,
-        triggeredAt,
-      };
+      const orchResult = await pool.query<{ id: string; name: string }>(
+        `SELECT id, name FROM orchestrations WHERE id = $1 AND status = 'published'`,
+        [trigger.orchestrationId]
+      );
+      if (orchResult.rowCount === 0) {
+        throw new Error("Orchestration not found or not published");
+      }
+      const orchestration = orchResult.rows[0];
+
+      const nodes = await getNodes(orchestration.id);
+      const connections = await getConnections(orchestration.id);
+
+      let lastExecutionId: string | undefined;
+      let successCount = 0;
+      let lastError: string | undefined;
+
+      for (const release of releases) {
+        const triggeredBy = `schedule:${trigger.id}`;
+        const triggerPayload = {
+          scheduledTime: triggeredAt,
+          scheduleType: trigger.config.scheduleType,
+          environmentId: release.id,
+        };
+
+        try {
+          const execution = await createExecution({
+            orchestrationId: orchestration.id,
+            orchestrationVersionMajor: release.releasedVersionMajor!,
+            orchestrationVersionBuild: release.releasedVersionBuild!,
+            context: {
+              trigger: {
+                type: "schedule",
+                triggerId: trigger.id,
+                triggerName: trigger.name,
+                ...triggerPayload,
+              },
+              variables: {},
+            },
+            triggerData: triggerPayload,
+            triggeredBy,
+          });
+
+          console.log(`[SchedulerService] ✅ Created execution ${execution.id} for environment ${release.name}`);
+
+          await pool.query(
+            `INSERT INTO trigger_execution_logs
+             (trigger_id, orchestration_id, execution_id, status, payload, triggered_at, triggered_by, environment_id)
+             VALUES ($1, $2, $3, 'started', $4, NOW(), $5, $6)`,
+            [trigger.id, orchestration.id, execution.id, JSON.stringify(triggerPayload), triggeredBy, release.id]
+          );
+
+          const engine = new OrchestrationEngine(execution, nodes, connections);
+          const result = await engine.execute();
+          if (!result.success) {
+            throw new Error(result.error || "Scheduled orchestration execution failed");
+          }
+
+          lastExecutionId = execution.id;
+          successCount += 1;
+        } catch (error: any) {
+          lastError = error.message;
+          console.error(`[SchedulerService] Error executing orchestration for environment ${release.name}:`, error);
+
+          await pool.query(
+            `INSERT INTO trigger_execution_logs
+             (trigger_id, orchestration_id, execution_id, status, payload, error_message, triggered_at, triggered_by, environment_id)
+             VALUES ($1, $2, NULL, 'failed', $3, $4, NOW(), $5, $6)`,
+            [trigger.id, orchestration.id, JSON.stringify(triggerPayload), error.message, `schedule:${trigger.id}`, release.id]
+          );
+        }
+      }
+
+      // Only surface an error on the trigger row if every released
+      // environment failed this cycle — a partial failure shouldn't flag the
+      // whole trigger as broken when other environments succeeded.
+      await pool.query(
+        `UPDATE orchestration_triggers SET last_error = $2, updated_at = NOW() WHERE id = $1`,
+        [trigger.id, successCount > 0 ? null : lastError || "Scheduled orchestration execution failed"]
+      );
+
+      if (successCount === 0) {
+        return { success: false, error: lastError, triggeredAt };
+      }
+
+      return { success: true, executionId: lastExecutionId, triggeredAt };
     } catch (error: any) {
       console.error(`[SchedulerService] Error executing orchestration:`, error);
 
-      // Log failed execution
       await pool.query(
-        `INSERT INTO trigger_execution_logs
-         (trigger_id, orchestration_id, execution_id, status, payload, error_message, triggered_at, triggered_by)
-         VALUES ($1, $2, NULL, 'failed', $3, $4, NOW(), $5)`,
-        [
-          trigger.id,
-          trigger.orchestrationId,
-          JSON.stringify({
-            scheduledTime: triggeredAt,
-            scheduleType: trigger.config.scheduleType,
-          }),
-          error.message,
-          `schedule:${trigger.id}`,
-        ]
+        `UPDATE orchestration_triggers SET last_error = $2, updated_at = NOW() WHERE id = $1`,
+        [trigger.id, error.message]
       );
 
       return {

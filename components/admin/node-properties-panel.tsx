@@ -144,8 +144,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
         const hasEnvironmentInbox = Object.values(byEnvironment).some(
           (ids) => Array.isArray(ids) && ids.length > 0
         );
-        if (!hasEnvironmentInbox && !String(localConfig.emailCredentialId || "").trim()) {
-          return { valid: false, error: "At least one email inbox is required (per environment, or the Default)" };
+        if (!hasEnvironmentInbox) {
+          return { valid: false, error: "At least one environment needs an inbox — an environment with none configured is never polled" };
         }
       }
       if (localConfig.triggerType === "manual") {
@@ -258,18 +258,26 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     }
 
     if (nodeType === "trigger" && localConfig.triggerType === "http_api") {
-      const shortName = String(localConfig.shortName || "").trim();
-      if (!shortName) {
-        return { valid: false, error: "HTTP/API short name is required" };
+      const shortNamesByEnvironment: Record<string, string> = localConfig.shortNamesByEnvironment || {};
+      const entries = Object.entries(shortNamesByEnvironment).filter(([, value]) => String(value || "").trim());
+      if (entries.length === 0) {
+        return { valid: false, error: "At least one environment needs a short name — an endpoint with no environment assigned cannot execute" };
       }
 
-      if (!/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/.test(shortName)) {
-        return {
-          valid: false,
-          error: "HTTP/API short name must be URL-safe (lowercase letters, numbers, hyphen)",
-        };
+      for (const [, value] of entries) {
+        const shortName = String(value).trim();
+        if (!/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/.test(shortName)) {
+          return {
+            valid: false,
+            error: `HTTP/API short name "${shortName}" must be URL-safe (lowercase letters, numbers, hyphen)`,
+          };
+        }
       }
 
+      const duplicates = entries.map(([, v]) => String(v).trim().toLowerCase());
+      if (new Set(duplicates).size !== duplicates.length) {
+        return { valid: false, error: "Each environment needs its own distinct short name" };
+      }
     }
 
     if (nodeType === "notification") {
@@ -811,7 +819,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   const [inputFields, setInputFields] = useState<any[]>(config.inputFields || []);
   const [examplePhrases, setExamplePhrases] = useState<string[]>(config.examplePhrases || []);
   const [requiredVariables, setRequiredVariables] = useState<any[]>(config.requiredVariables || []);
-  const [shortNameValidation, setShortNameValidation] = useState<{ valid: boolean; message: string } | null>(null);
+  const [shortNameValidation, setShortNameValidation] = useState<Record<string, { valid: boolean; message: string }>>({});
   const scheduleTimezone = config.timezone || detectDefaultCuratedTimeZone();
   const timezoneOptions = useMemo(() => getCuratedTimeZoneOptions(), []);
   const httpMethodOptions = useMemo(
@@ -1023,7 +1031,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
     if (triggerType !== "http_api") return;
 
     const defaults: Record<string, unknown> = {
-      shortName: config.shortName || "",
+      shortNamesByEnvironment: config.shortNamesByEnvironment || {},
       allowedMethods: Array.isArray(config.allowedMethods) && config.allowedMethods.length > 0
         ? config.allowedMethods
         : ["POST"],
@@ -1055,36 +1063,46 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   useEffect(() => {
     if (triggerType !== "http_api") return;
 
-    const shortName = String(config.shortName || "").trim().toLowerCase();
-    if (!shortName) {
-      setShortNameValidation(null);
+    const shortNamesByEnvironment: Record<string, string> = config.shortNamesByEnvironment || {};
+    const entries = Object.entries(shortNamesByEnvironment).filter(([, value]) => String(value || "").trim());
+    if (entries.length === 0) {
+      setShortNameValidation({});
       return;
     }
 
     const timer = setTimeout(async () => {
-      try {
-        const params = new URLSearchParams({ shortName });
-        if (orchestrationId) {
-          params.append("orchestrationId", orchestrationId);
-        }
+      const results: Record<string, { valid: boolean; message: string }> = {};
 
-        const response = await fetch(`/api/admin/orchestrations/triggers/http/validate?${params.toString()}`);
-        const data = await response.json();
-        if (data.valid) {
-          setShortNameValidation({ valid: true, message: "Endpoint name is available" });
-        } else {
-          const reason = Array.isArray(data.errors) && data.errors.length > 0
-            ? String(data.errors[0])
-            : "Invalid endpoint short name";
-          setShortNameValidation({ valid: false, message: reason });
-        }
-      } catch {
-        setShortNameValidation({ valid: false, message: "Unable to validate endpoint name" });
-      }
+      await Promise.all(
+        entries.map(async ([envId, rawValue]) => {
+          const shortName = String(rawValue).trim().toLowerCase();
+          try {
+            const params = new URLSearchParams({ shortName });
+            if (orchestrationId) {
+              params.append("orchestrationId", orchestrationId);
+            }
+
+            const response = await fetch(`/api/admin/orchestrations/triggers/http/validate?${params.toString()}`);
+            const data = await response.json();
+            if (data.valid) {
+              results[envId] = { valid: true, message: "Endpoint name is available" };
+            } else {
+              const reason = Array.isArray(data.errors) && data.errors.length > 0
+                ? String(data.errors[0])
+                : "Invalid endpoint short name";
+              results[envId] = { valid: false, message: reason };
+            }
+          } catch {
+            results[envId] = { valid: false, message: "Unable to validate endpoint name" };
+          }
+        })
+      );
+
+      setShortNameValidation(results);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [triggerType, config.shortName, orchestrationId]);
+  }, [triggerType, config.shortNamesByEnvironment, orchestrationId]);
 
   // Fetch email credentials when companyId and targetAppId are available and trigger type is email
   useEffect(() => {
@@ -1282,6 +1300,10 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
       {triggerType === "schedule" && (
         <div className="border-l-4 border-purple-500 bg-purple-50 p-4 rounded space-y-3">
           <h4 className="text-sm font-semibold text-slate-700">Schedule Settings</h4>
+
+          <div className="rounded border border-purple-200 bg-white px-3 py-2 text-xs text-slate-700">
+            Unlike Email Trigger and HTTP/API Trigger, there&apos;s no environment picker here — this schedule automatically fires once for every environment this orchestration is currently promoted to, each run using that environment&apos;s promoted version. An orchestration not promoted anywhere simply doesn&apos;t run. Manage this via <strong>Promote</strong> / <strong>Revoke</strong> &nbsp;in the orchestration&apos;s Environments modal, not in this panel.
+          </div>
 
           <details className="text-xs bg-white border border-purple-200 rounded p-2">
             <summary className="cursor-pointer font-semibold text-purple-900 hover:text-purple-700">
@@ -1640,21 +1662,6 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                     </div>
                   );
                 })}
-                <div className="space-y-1">
-                  <span className="block text-xs font-medium text-slate-600">Default (legacy)</span>
-                  <select
-                    className="w-full min-w-0 rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
-                    value={config.emailCredentialId || ""}
-                    onChange={(e) => updateConfig({ emailCredentialId: e.target.value })}
-                  >
-                    <option value="">None</option>
-                    {emailCredentials.map((cred) => (
-                      <option key={cred.id} value={cred.id}>
-                        {cred.name} ({cred.email_address}) - {cred.provider.toUpperCase()}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
             )}
             <p className="mt-1 text-xs text-slate-500">
@@ -1743,28 +1750,62 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Public Endpoint Short Name *</label>
-            <input
-              type="text"
-              className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="e.g. invoice-webhook"
-              value={config.shortName || ""}
-              onChange={(e) => updateConfig({ shortName: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
-            />
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mb-2 text-xs text-slate-500">
+              One short name per environment — each becomes its own callable URL, and each independently runs that environment's promoted (Promote/Revoke) version. An environment left blank has no endpoint at all: there is no shared/unscoped URL, since without a resolved environment the system has no way to know which environment is calling or what to log the execution against.
+            </p>
+            {triggerEnvironments.length === 0 ? (
+              <div className="w-full rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                No environments found for this target app. Add one under Manage Environments first.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {triggerEnvironments.map((env) => {
+                  const byEnv: Record<string, string> = config.shortNamesByEnvironment || {};
+                  const value = byEnv[env.id] || "";
+                  const validation = shortNameValidation[env.id];
+                  return (
+                    <div key={env.id}>
+                      <div className="flex items-center gap-2">
+                        <span className="w-28 shrink-0 truncate text-xs font-medium text-slate-600" title={env.name}>
+                          {env.name}
+                        </span>
+                        <input
+                          type="text"
+                          className="min-w-0 flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
+                          placeholder="e.g. invoice-webhook"
+                          value={value}
+                          onChange={(e) =>
+                            updateConfig({
+                              shortNamesByEnvironment: {
+                                ...byEnv,
+                                [env.id]: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                              },
+                            })
+                          }
+                        />
+                      </div>
+                      {validation && (
+                        <p className={`mt-1 ml-[7.5rem] text-xs ${validation.valid ? "text-emerald-700" : "text-red-600"}`}>
+                          {validation.message}
+                        </p>
+                      )}
+                      {value && (
+                        <div className="mt-1 ml-[7.5rem] rounded border border-cyan-200 bg-white px-3 py-2 text-xs text-cyan-900 font-mono break-all">
+                          {(typeof window !== "undefined" ? window.location.origin : "https://<domain>")}/apitrigger/{value}/
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="mt-2 text-xs text-slate-500">
               Use lowercase letters, numbers, and hyphens only. Internal IDs are never exposed.
             </p>
-            {shortNameValidation && (
-              <p className={`mt-1 text-xs ${shortNameValidation.valid ? "text-emerald-700" : "text-red-600"}`}>
-                {shortNameValidation.message}
-              </p>
-            )}
-            <div className="mt-2 rounded border border-cyan-200 bg-white px-3 py-2 text-xs text-cyan-900 font-mono break-all">
-              {(typeof window !== "undefined" ? window.location.origin : "https://<domain>")}/apitrigger/{config.shortName || "<short-name>"}/
-            </div>
             <details className="mt-2 text-xs bg-white border border-cyan-200 rounded p-2">
               <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">What happens after endpoint creation?</summary>
               <div className="mt-2 space-y-1 text-slate-700">
-                <p>Endpoint names are checked for duplicate conflicts and reserved words before publish. This endpoint is hosted by the Scout server deployment. You share this URL with consumers.</p>
+                <p>Endpoint names are checked for duplicate conflicts and reserved words before publish. Endpoints are hosted by the Scout server deployment. You share each environment's URL with the consumers that should call it.</p>
               </div>
             </details>
           </div>
@@ -1945,7 +1986,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: None</summary>
                 <div className="mt-2 space-y-2 text-slate-700">
                   <p>No authentication check is performed. Use this only for trusted/internal callers.</p>
-                  <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+                  <pre className="rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${Object.values(config.shortNamesByEnvironment || {}).find((v: any) => String(v || "").trim()) || "<short-name>"}/" \\
   -H "content-type: application/json" \\
   -d '{"event":"ping"}'`}</code></pre>
                 </div>
@@ -1958,7 +1999,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: API Key</summary>
                 <p className="mt-2 text-slate-700">Provide the key in the configured header. Example: x-api-key: &lt;key&gt;</p>
-                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${Object.values(config.shortNamesByEnvironment || {}).find((v: any) => String(v || "").trim()) || "<short-name>"}/" \\
   -H "${config.auth?.headerName || "x-api-key"}: <key>" \\
   -H "content-type: application/json" \\
   -d '{"event":"ping"}'`}</code></pre>
@@ -2068,7 +2109,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: Basic</summary>
                 <p className="mt-2 text-slate-700">Send standard Basic auth credentials. Example: Authorization: Basic &lt;base64(username:password)&gt;</p>
-                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${Object.values(config.shortNamesByEnvironment || {}).find((v: any) => String(v || "").trim()) || "<short-name>"}/" \\
   -u "username:password" \\
   -H "content-type: application/json" \\
   -d '{"event":"ping"}'`}</code></pre>
@@ -2154,7 +2195,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: OAuth 2.0 / JWT</summary>
                 <p className="mt-2 text-slate-700">Provide bearer token in Authorization header. Issuer, audience, and secret are validated.</p>
-                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${Object.values(config.shortNamesByEnvironment || {}).find((v: any) => String(v || "").trim()) || "<short-name>"}/" \\
   -H "authorization: Bearer <jwt>" \\
   -H "content-type: application/json" \\
   -d '{"event":"ping"}'`}</code></pre>
@@ -2206,7 +2247,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: HMAC</summary>
                 <p className="mt-2 text-slate-700">Sign METHOD + PATH + QUERY + TIMESTAMP + NONCE + BODY and send signature headers.</p>
-                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${Object.values(config.shortNamesByEnvironment || {}).find((v: any) => String(v || "").trim()) || "<short-name>"}/" \\
   -H "x-hmac-key-id: <key-id>" \\
   -H "x-signature-timestamp: <epoch-seconds>" \\
   -H "x-signature-nonce: <nonce>" \\
@@ -2295,7 +2336,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
               <details className="text-xs bg-cyan-50 border border-cyan-200 rounded p-2">
                 <summary className="cursor-pointer font-semibold text-cyan-900 hover:text-cyan-700">Auth help: Mutual TLS</summary>
                 <p className="mt-2 text-slate-700">Use when your gateway forwards validated client certificate identity to this endpoint.</p>
-                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${config.shortName || "<short-name>"}/" \\
+                <pre className="mt-2 rounded bg-slate-900 text-slate-100 p-2 overflow-x-auto"><code>{`curl -X POST "${typeof window !== "undefined" ? window.location.origin : "https://<domain>"}/apitrigger/${Object.values(config.shortNamesByEnvironment || {}).find((v: any) => String(v || "").trim()) || "<short-name>"}/" \\
   --cert client.crt --key client.key \\
   -H "content-type: application/json" \\
   -d '{"event":"ping"}'`}</code></pre>

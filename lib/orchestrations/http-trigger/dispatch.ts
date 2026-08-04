@@ -9,6 +9,10 @@ export async function dispatchHttpTrigger(input: {
   orchestrationId: string;
   orchestrationVersionMajor: number;
   orchestrationVersionBuild: number;
+  // Always non-null by the time dispatch is reached — server.ts blocks any
+  // request that didn't resolve to an actively released environment before
+  // calling this.
+  environmentId: string;
   config: HttpApiTriggerConfig;
   correlationId: string;
   authType: string;
@@ -94,6 +98,7 @@ export async function dispatchHttpTrigger(input: {
         type: input.authType,
         principal: input.principal,
       },
+      environmentId: input.environmentId,
     },
     triggeredBy: input.principal || "http-api-trigger",
   });

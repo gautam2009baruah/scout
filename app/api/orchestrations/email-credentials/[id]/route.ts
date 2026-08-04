@@ -153,12 +153,15 @@ export async function DELETE(
       );
     }
 
-    // Check if credential is being used in any active triggers
+    // Check if credential is being used in any active triggers. The synced
+    // orchestration_triggers row (one per environment, fanned out at publish
+    // time) stores this as config->>'credentialId', not 'emailCredentialId'
+    // (that name only exists on the node's own unsynced config).
     const triggerCheck = await pool.query(
       `SELECT COUNT(*) as count
        FROM orchestration_triggers
        WHERE trigger_type = 'email'
-       AND config->>'emailCredentialId' = $1
+       AND config->>'credentialId' = $1
        AND status = 'active'`,
       [credentialId]
     );
