@@ -98,4 +98,25 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "progress") showProgress(message.progress);
 });
 
+// Persist every field as it changes, so nothing is lost when the popup closes
+// (e.g. when you switch tabs to copy the pairing token).
+function persist() {
+  saveConfig(readConfig());
+}
+Object.values(fields).forEach((field) => {
+  field.addEventListener("input", persist);
+  field.addEventListener("change", persist);
+});
+
+// Re-open the same UI as a standalone window that does NOT close when you
+// switch tabs — makes copy/paste of the token painless.
+document.getElementById("popoutBtn")?.addEventListener("click", () => {
+  chrome.windows.create({
+    url: chrome.runtime.getURL("popup.html"),
+    type: "popup",
+    width: 430,
+    height: 700
+  });
+});
+
 loadConfig();

@@ -177,9 +177,16 @@ async function runCrawl(config) {
 }
 
 async function captureActiveTab(config) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || !tab.id) {
-    log("No active tab to capture.", "error");
+  // Prefer the active tab in the last focused window, but never the extension's
+  // own popup window (relevant when the UI is opened as a standalone window).
+  const isSiteTab = (tab) => tab && tab.url && /^https?:/.test(tab.url) && !tab.url.startsWith("chrome-extension://");
+  let [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (!isSiteTab(tab)) {
+    const candidates = await chrome.tabs.query({ active: true });
+    tab = candidates.find(isSiteTab) || tab;
+  }
+  if (!tab || !tab.id || !isSiteTab(tab)) {
+    log("Open the website in a tab first, then capture it.", "error");
     return;
   }
   let result;

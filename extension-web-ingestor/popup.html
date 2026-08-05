@@ -26,10 +26,19 @@
       .log-success { color: #15803d; }
       details { margin-top: 10px; }
       summary { font-size: 12px; font-weight: 600; cursor: pointer; color: #334155; }
+      .app-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .app-header h1 { margin: 0; }
+      .popout { flex: none; height: 26px; padding: 0 8px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 6px; font-size: 11px; font-weight: 600; color: #334155; cursor: pointer; }
+      .popout:hover { background: #eef2ff; border-color: #c7d2fe; color: #4f46e5; }
+      .tip { margin: 6px 0 0; font-size: 11px; color: #64748b; }
     </style>
   </head>
   <body>
-    <h1>Scout Web Ingestor</h1>
+    <div class="app-header">
+      <h1>Scout Web Ingestor</h1>
+      <button id="popoutBtn" class="popout" title="Open in a separate window so it stays open while you copy the token" type="button">⧉ Open in window</button>
+    </div>
+    <p class="tip">Switching tabs closes this popup. Click <strong>Open in window</strong> to keep it open while you copy the token.</p>
 
     <details id="connection">
       <summary>Scout connection</summary>
