@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSchedulerService } from "@/lib/orchestrations/scheduler-service";
 import { calculateNextRunTime, getScheduleDescription } from "@/lib/orchestrations/scheduler/cron-utils";
 import { getPool } from "@/lib/db/pool";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 /**
  * POST /api/orchestrations/triggers/schedule/register
@@ -12,6 +13,15 @@ import { getPool } from "@/lib/db/pool";
  */
 export async function POST(request: NextRequest) {
   try {
+    const session = await getCurrentAdminSession();
+
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
     const { triggerId } = body;
 
@@ -22,9 +32,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const companyId = session.user.tenantId;
     const pool = getPool();
 
-    // Load trigger from database
+    // Load trigger from database (scoped to the caller's company)
     const result = await pool.query(
       `SELECT 
         t.id,
@@ -36,8 +47,9 @@ export async function POST(request: NextRequest) {
        INNER JOIN orchestrations o ON t.orchestration_id = o.id
        WHERE t.id = $1
        AND t.trigger_type = 'schedule'
-       AND o.status = 'published'`,
-      [triggerId]
+       AND o.status = 'published'
+       AND o.company_id = $2`,
+      [triggerId, companyId]
     );
 
     if (result.rowCount === 0) {

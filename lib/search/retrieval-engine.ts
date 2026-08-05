@@ -177,7 +177,7 @@ function toTextChunk(result: VectorSearchResult, score: number): RetrievalChunk 
   };
 }
 
-async function getDocumentSources(documentIds: string[]) {
+async function getDocumentSources(documentIds: string[], companyId: string) {
   if (documentIds.length === 0) {
     return new Map<string, { sourceUrl?: string; downloadAvailable: boolean }>();
   }
@@ -191,8 +191,9 @@ async function getDocumentSources(documentIds: string[]) {
     `SELECT id, external_source_url, storage_path, source_metadata_json
      FROM documents
      WHERE id = ANY($1::uuid[])
+       AND company_id = $2
        AND status <> 'deleted'`,
-    [documentIds]
+    [documentIds, companyId]
   );
 
   return new Map(result.rows.map((row) => {
@@ -344,7 +345,7 @@ export class RetrievalEngine {
       });
 
       if (diverse.length > 0) {
-        const sourceMap = await getDocumentSources(Array.from(new Set(diverse.map((chunk) => chunk.document_id))));
+        const sourceMap = await getDocumentSources(Array.from(new Set(diverse.map((chunk) => chunk.document_id))), company_id);
         const chunks = diverse.map((chunk) => {
           const source = sourceMap.get(chunk.document_id);
           return {

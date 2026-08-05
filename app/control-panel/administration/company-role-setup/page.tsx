@@ -23,7 +23,7 @@ export default async function MasterDataPage() {
 
   requireModuleAccess(session, MODULE_KEYS.administration);
 
-  const [{ companies, roles }, modules] = await Promise.all([getMasterData(), getAllAdminModules()]);
+  const [{ companies, roles }, modules] = await Promise.all([getMasterData(session), getAllAdminModules()]);
 
   return (
     <AdminShell active={MODULE_KEYS.companyRoleSetup} session={session}>

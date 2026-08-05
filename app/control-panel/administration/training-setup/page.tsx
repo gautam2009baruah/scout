@@ -25,7 +25,7 @@ export default async function TrainingSetupPage() {
   requireModuleAccess(session, MODULE_KEYS.guidedWorkflows);
 
   const [{ companies }, companyTargetApplications, recordingSessions] = await Promise.all([
-    getMasterData(),
+    getMasterData(session),
     listCompanyTargetApplications(session),
     listGuidedWorkflowRecordingSessions(session)
   ]);

@@ -1,5 +1,5 @@
 // Companies API
-// Fetch all active companies (no user filtering)
+// Fetch active companies the authenticated user has access to
 
 import { NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
@@ -21,8 +21,14 @@ export async function GET() {
     }
 
     const pool = getPool();
-    
-    // Fetch all active companies
+
+    const availableCompanyIds = session.availableCompanies.map((company) => company.companyId);
+
+    if (availableCompanyIds.length === 0) {
+      return NextResponse.json({ success: true, companies: [] });
+    }
+
+    // Only return companies the current user is a member of
     const result = await pool.query(
       `SELECT 
         id,
@@ -31,7 +37,9 @@ export async function GET() {
         status
        FROM companies
        WHERE deleted_at IS NULL
-       ORDER BY name ASC`
+         AND id = ANY($1::uuid[])
+       ORDER BY name ASC`,
+      [availableCompanyIds]
     );
 
     return NextResponse.json({

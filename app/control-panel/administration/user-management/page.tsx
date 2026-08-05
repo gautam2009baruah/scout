@@ -40,7 +40,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
   const currentCompanyId = session.user.tenantId;
   const accessibleCompanyIds = new Set(session.availableCompanies.map((company) => company.companyId));
   const [{ companies, roles }, userPage, modules, targetApps] = await Promise.all([
-    getMasterData(),
+    getMasterData(session),
     getEmployeePage({
       companyId: currentCompanyId,
       roleId: params.roleId,

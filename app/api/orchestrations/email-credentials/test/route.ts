@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchIMAPEmails, type IMAPConfig } from "@/lib/integrations/email/imap";
 import { getPool } from "@/lib/db/pool";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 
 /**
  * POST /api/orchestrations/email-credentials/test
@@ -11,7 +12,20 @@ import { getPool } from "@/lib/db/pool";
  */
 export async function POST(request: NextRequest) {
   let credentialIdForError: string | null = null;
+  let companyIdForError: string | null = null;
   try {
+    const session = await getCurrentAdminSession();
+
+    if (!session) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const companyId = session.user.tenantId;
+    companyIdForError = companyId;
+
     const body = await request.json();
     const { credentialId, provider, emailAddress, imapHost, imapPort, imapPassword, imapTls } = body;
     credentialIdForError = credentialId || null;
@@ -29,8 +43,8 @@ export async function POST(request: NextRequest) {
           imap_password,
           imap_tls
          FROM email_credentials
-         WHERE id = $1 AND is_active = true`,
-        [credentialId]
+         WHERE id = $1 AND company_id = $2 AND is_active = true`,
+        [credentialId, companyId]
       );
 
       if (result.rowCount === 0) {
@@ -68,8 +82,8 @@ export async function POST(request: NextRequest) {
            SET last_tested_at = NOW(),
                last_test_status = 'success',
                last_test_error = NULL
-           WHERE id = $1`,
-          [credentialId]
+           WHERE id = $1 AND company_id = $2`,
+          [credentialId, companyId]
         );
 
         return NextResponse.json({
@@ -128,7 +142,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Update failed test status if testing existing credential
-    if (credentialIdForError) {
+    if (credentialIdForError && companyIdForError) {
       try {
         const pool = getPool();
         await pool.query(
@@ -136,8 +150,8 @@ export async function POST(request: NextRequest) {
            SET last_tested_at = NOW(),
                last_test_status = 'failed',
                last_test_error = $1
-           WHERE id = $2`,
-          [errorMessage, credentialIdForError]
+           WHERE id = $2 AND company_id = $3`,
+          [errorMessage, credentialIdForError, companyIdForError]
         );
       } catch (updateError) {
         console.error("[API] Error updating test status:", updateError);

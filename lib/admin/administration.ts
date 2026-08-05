@@ -80,8 +80,9 @@ function assertCanAccessCompany(session: AdminSession, companyId: string) {
   }
 }
 
-export async function getMasterData() {
+export async function getMasterData(session: AdminSession) {
   const pool = getPool();
+  const companyIds = session.availableCompanies.map((company) => company.companyId);
   const [companiesResult, rolesResult] = await Promise.all([
     pool.query<{
       id: string;
@@ -110,9 +111,11 @@ export async function getMasterData() {
             AND user_company_roles.deleted_at IS NULL
         ) company_users ON true
         WHERE companies.deleted_at IS NULL
+          AND companies.id = ANY($1::uuid[])
         GROUP BY companies.id, company_users.user_count
         ORDER BY companies.created_at DESC
-      `
+      `,
+      [companyIds]
     ),
     pool.query<{
       id: string;
@@ -153,8 +156,10 @@ export async function getMasterData() {
             AND role_module_permissions.deleted_at IS NULL
         ) module_access ON true
         WHERE roles.deleted_at IS NULL
+          AND (roles.company_id = ANY($1::uuid[]) OR roles.is_system = true)
         ORDER BY roles.is_system DESC, companies.name ASC NULLS FIRST, roles.name ASC
-      `
+      `,
+      [companyIds]
     )
   ]);
 

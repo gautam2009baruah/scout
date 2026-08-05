@@ -408,6 +408,10 @@ async function assertFolderAccess(companyId: string, folderId: string, session: 
     throw new DocumentError("Document company must match the folder company.");
   }
 
+  if (!session.availableCompanies.some((company) => company.companyId === companyId)) {
+    throw new DocumentError("You do not have access to this company.", 403);
+  }
+
   if (session.user.isAdminRole) {
     return;
   }

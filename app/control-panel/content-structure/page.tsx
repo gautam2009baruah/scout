@@ -28,7 +28,7 @@ export default async function TopicsPage() {
   const selectedCompanyName = session.availableCompanies.find((company) => company.companyId === session.user.tenantId)?.companyName ?? "";
 
   const [{ roles }, workspace, accessData, targetApps] = await Promise.all([
-    getMasterData(),
+    getMasterData(session),
     getTopicWorkspace(session),
     getTopicAccessAdminData(session),
     listGuidedWorkflowTargetApps(session)
