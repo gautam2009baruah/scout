@@ -283,6 +283,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [documentStorageMode, setDocumentStorageMode] = useState<DocumentStorageMode>("managed_upload");
   const [ingestionSource, setIngestionSource] = useState<IngestionSourceType>("upload");
   const [sourceAuth, setSourceAuth] = useState<SourceAuth>({ authType: "oauth_client", credentialName: "", tenantId: "", clientId: "", clientSecret: "", accessToken: "", serviceAccountJson: "" });
+  const [credentialTest, setCredentialTest] = useState<{ status: "idle" | "testing" | "ok" | "error"; message: string }>({ status: "idle", message: "" });
   const [crawlSettings, setCrawlSettings] = useState({ maxPages: 200, maxDepth: 4 });
   const [externalRows, setExternalRows] = useState<ExternalReferenceRow[]>([createExternalReferenceRow()]);
   const [documentProgressRows, setDocumentProgressRows] = useState<DocumentProgressRow[]>([]);
@@ -558,6 +559,35 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
   function updateExternalRow(id: string, patch: Partial<ExternalReferenceRow>) {
     setExternalRows((rows) => rows.map((row) => row.id === id ? { ...row, ...patch } : row));
+  }
+
+  async function testConnection() {
+    setCredentialTest({ status: "testing", message: "" });
+    const secret = sourceAuth.authType === "oauth_client"
+      ? { clientSecret: sourceAuth.clientSecret }
+      : sourceAuth.authType === "service_account"
+        ? { serviceAccountJson: sourceAuth.serviceAccountJson }
+        : { accessToken: sourceAuth.accessToken };
+    try {
+      const response = await fetch("/api/admin/ingestion-credentials/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider: ingestionSource,
+          authType: sourceAuth.authType,
+          publicConfig: { tenantId: sourceAuth.tenantId, clientId: sourceAuth.clientId },
+          secret
+        })
+      });
+      const body = await response.json().catch(() => null);
+      if (response.ok && body?.success) {
+        setCredentialTest({ status: "ok", message: body.message || "Connection successful." });
+      } else {
+        setCredentialTest({ status: "error", message: body?.message || "Connection failed." });
+      }
+    } catch {
+      setCredentialTest({ status: "error", message: "Unable to test the connection." });
+    }
   }
 
   function addExternalReferenceRow() {
@@ -1990,6 +2020,13 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                       </> : null}
                       {sourceAuth.authType === "access_token" ? <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Access token<input autoComplete="off" className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal" onChange={(event) => setSourceAuth((value) => ({ ...value, accessToken: event.target.value }))} type="password" value={sourceAuth.accessToken} /></label> : null}
                       {sourceAuth.authType === "service_account" ? <label className="text-xs font-semibold text-slate-600 sm:col-span-2">Service account JSON<textarea className="mt-1 min-h-24 w-full rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs font-normal" onChange={(event) => setSourceAuth((value) => ({ ...value, serviceAccountJson: event.target.value }))} placeholder='{"type":"service_account", ...}' value={sourceAuth.serviceAccountJson} /></label> : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <button className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-700 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60" disabled={credentialTest.status === "testing"} onClick={testConnection} type="button">
+                        {credentialTest.status === "testing" ? "Testing…" : "Test connection"}
+                      </button>
+                      {credentialTest.status === "ok" ? <span className="text-xs font-semibold text-green-600">{credentialTest.message}</span> : null}
+                      {credentialTest.status === "error" ? <span className="text-xs font-semibold text-red-600">{credentialTest.message}</span> : null}
                     </div>
                   </div>
                 ) : null}
