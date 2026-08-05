@@ -423,6 +423,12 @@ async function assertFolderAccess(companyId: string, folderId: string, session: 
   }
 }
 
+// Public wrapper so other admin features (e.g. web-ingestion pairing) can
+// reuse the exact same tenant + folder authorization check.
+export async function ensureFolderAccess(companyId: string, folderId: string, session: AdminSession) {
+  return assertFolderAccess(companyId, folderId, session);
+}
+
 function mapDocument(row: {
   id: string;
   company_id: string;

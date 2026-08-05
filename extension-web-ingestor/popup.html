@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scout Web Ingestor</title>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; width: 360px; margin: 0; padding: 14px; color: #0f172a; }
+      h1 { font-size: 15px; margin: 0 0 10px; }
+      label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 3px; color: #334155; }
+      input[type="text"], input[type="url"], input[type="number"] { width: 100%; box-sizing: border-box; height: 32px; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+      .row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+      .row input[type="checkbox"] { width: 15px; height: 15px; }
+      .row label { margin: 0; }
+      .buttons { display: flex; gap: 8px; margin-top: 12px; }
+      button { flex: 1; height: 34px; border: 0; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+      .primary { background: #4f46e5; color: #fff; }
+      .secondary { background: #e2e8f0; color: #0f172a; }
+      .stop { background: #dc2626; color: #fff; }
+      .hint { font-size: 11px; color: #64748b; margin-top: 4px; }
+      #status { margin-top: 10px; font-size: 12px; font-weight: 600; }
+      #log { margin-top: 8px; max-height: 150px; overflow-y: auto; font-size: 11px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px; }
+      .log-error { color: #dc2626; }
+      .log-warn { color: #b45309; }
+      .log-success { color: #15803d; }
+      details { margin-top: 10px; }
+      summary { font-size: 12px; font-weight: 600; cursor: pointer; color: #334155; }
+    </style>
+  </head>
+  <body>
+    <h1>Scout Web Ingestor</h1>
+
+    <details id="connection">
+      <summary>Scout connection</summary>
+      <label for="scoutBaseUrl">Scout URL</label>
+      <input type="url" id="scoutBaseUrl" placeholder="https://your-scout-instance" />
+      <label for="token">Pairing token</label>
+      <input type="text" id="token" placeholder="Paste the token generated in Scout" />
+      <p class="hint">Generate this in Scout under Web Ingestor for the folder you want to fill.</p>
+    </details>
+
+    <label for="startUrl">Start URL (log into the site first)</label>
+    <input type="url" id="startUrl" placeholder="https://intranet.example.com/handbook" />
+
+    <div class="row">
+      <input type="checkbox" id="entireSite" />
+      <label for="entireSite">Crawl the entire site</label>
+    </div>
+
+    <label for="maxPages">Max pages (ignored when crawling entire site)</label>
+    <input type="number" id="maxPages" min="1" max="5000" value="200" />
+
+    <div class="buttons">
+      <button class="primary" id="crawlBtn">Crawl site</button>
+      <button class="secondary" id="captureBtn">Capture this tab</button>
+    </div>
+    <div class="buttons">
+      <button class="stop" id="stopBtn">Stop</button>
+    </div>
+
+    <div id="status"></div>
+    <div id="log"></div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
