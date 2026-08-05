@@ -1,16 +1,12 @@
-// GET/PUT which environments a folder is released to. Uploading/embedding
-// documents into a folder is not sufficient for it to be searchable on the
-// live chat path — see lib/admin/environment-releases.ts.
-//
-// Unlike orchestrations/guides, a folder can be scoped to multiple target
-// apps (or none, i.e. global) via folder_target_apps, and each target app
-// has its own independent environment list. The caller must specify which
-// target app's environment list it's viewing/editing via targetAppId —
-// releases belonging to a different target app's environments are never
-// touched by an edit scoped to another one (see replaceEnvironmentReleases).
+// GET/PUT which environments a specific document is released to. This is a
+// second, independent gate on top of its folder's own environment release —
+// see lib/admin/content-structure.ts and lib/search/retrieval-engine.ts's
+// getAllowedDocumentIds. A folder being released to an environment does not
+// by itself make a document inside it eligible there; both must be released.
 
 import { NextResponse } from "next/server";
-import { assertCanManageFolderDocumentAccess, assertTargetAppBelongsToFolder, TopicError } from "@/lib/admin/content-structure";
+import { DocumentError, getDocumentById } from "@/lib/admin/documents";
+import { assertTargetAppBelongsToFolder, TopicError } from "@/lib/admin/content-structure";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { getReleasedEnvironmentIds, listEnvironmentsForTargetApp, replaceEnvironmentReleases } from "@/lib/admin/environment-releases";
 
@@ -31,16 +27,19 @@ export async function GET(request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const companyId = await assertCanManageFolderDocumentAccess(id, session);
-    await assertTargetAppBelongsToFolder(id, companyId, targetAppId);
+    const document = await getDocumentById(id, session);
+    await assertTargetAppBelongsToFolder(document.folderId, document.companyId, targetAppId);
 
     const [environments, releasedEnvironmentIds] = await Promise.all([
       listEnvironmentsForTargetApp(targetAppId),
-      getReleasedEnvironmentIds("folder", id),
+      getReleasedEnvironmentIds("document", id),
     ]);
 
     return NextResponse.json({ environments, releasedEnvironmentIds });
   } catch (error) {
+    if (error instanceof DocumentError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     if (error instanceof TopicError) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }
@@ -62,8 +61,8 @@ export async function PUT(request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const companyId = await assertCanManageFolderDocumentAccess(id, session);
-    await assertTargetAppBelongsToFolder(id, companyId, targetAppId);
+    const document = await getDocumentById(id, session);
+    await assertTargetAppBelongsToFolder(document.folderId, document.companyId, targetAppId);
 
     const environmentIds = Array.isArray(body?.environmentIds)
       ? body.environmentIds.filter((value: unknown): value is string => typeof value === "string")
@@ -71,7 +70,7 @@ export async function PUT(request: Request, context: RouteContext) {
 
     const visibleEnvironments = await listEnvironmentsForTargetApp(targetAppId);
     const releasedEnvironmentIds = await replaceEnvironmentReleases(
-      "folder",
+      "document",
       id,
       environmentIds,
       visibleEnvironments.map((environment) => environment.id),
@@ -80,6 +79,9 @@ export async function PUT(request: Request, context: RouteContext) {
 
     return NextResponse.json({ releasedEnvironmentIds });
   } catch (error) {
+    if (error instanceof DocumentError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     if (error instanceof TopicError) {
       return NextResponse.json({ message: error.message }, { status: 400 });
     }

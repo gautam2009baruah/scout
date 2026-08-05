@@ -6098,7 +6098,7 @@ SET row_security = off;
 --
 
 INSERT INTO public.modules (key, name, href, sort_order, created_at, parent_key) VALUES (1, 'Overview', '/control-panel', 10, '2026-07-08 13:10:01.587413+00', NULL);
-INSERT INTO public.modules (key, name, href, sort_order, created_at, parent_key) VALUES (4, 'Content Structure', '/control-panel/content-structure', 50, '2026-07-08 13:10:01.695102+00', NULL);
+INSERT INTO public.modules (key, name, href, sort_order, created_at, parent_key) VALUES (4, 'Content Manager', '/control-panel/content-structure', 50, '2026-07-08 13:10:01.695102+00', NULL);
 INSERT INTO public.modules (key, name, href, sort_order, created_at, parent_key) VALUES (6, 'Guided Workflows', '/control-panel/guided-workflows', 45, '2026-07-08 13:10:02.305656+00', NULL);
 INSERT INTO public.modules (key, name, href, sort_order, created_at, parent_key) VALUES (10, 'Orchestration Designer', '/control-panel/orchestration-designer', 50, '2026-07-08 13:10:03.136451+00', NULL);
 INSERT INTO public.modules (key, name, href, sort_order, created_at, parent_key) VALUES (2, 'Administration', '#', 20, '2026-07-08 13:10:01.587413+00', NULL);

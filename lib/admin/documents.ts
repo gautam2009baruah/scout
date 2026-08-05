@@ -1090,7 +1090,8 @@ export async function listDocuments(filters: DocumentFilters, session: AdminSess
   const requestedPage = Math.max(1, Number(filters.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(filters.pageSize) || 20));
   const conditions = ["documents.status <> 'deleted'"];
-  const params: unknown[] = [];
+  const params: unknown[] = [session.user.tenantId];
+  conditions.push(`documents.company_id = $${params.length}`);
   const accessibleTopicIds = await getAccessibleTopicIds(session);
 
   if (accessibleTopicIds) {

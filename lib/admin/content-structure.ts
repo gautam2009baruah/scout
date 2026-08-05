@@ -31,13 +31,6 @@ export type TopicAccessGrant = {
   type: "role" | "user";
 };
 
-export type FolderDocumentAccess = {
-  folderId: string;
-  isCustom: boolean;
-  roleIds: string[];
-  userIds: string[];
-};
-
 export type TopicUserOption = {
   id: string;
   name: string;
@@ -126,6 +119,40 @@ async function validateTargetAppIds(companyId: string, targetAppIds: string[], s
   return uniqueIds;
 }
 
+// role/user access here is control-panel-only (which internal admin users can
+// browse/manage a folder) — it must never be assignable across companies, so
+// every id a caller supplies must be re-verified against companyId here
+// rather than trusted from the request.
+async function validateCompanyRoleIds(companyId: string, roleIds: string[]) {
+  const uniqueIds = Array.from(new Set(roleIds));
+  if (uniqueIds.length === 0) return uniqueIds;
+  const result = await getPool().query<{ id: string }>(
+    `SELECT id FROM roles WHERE company_id = $1 AND deleted_at IS NULL AND id = ANY($2::uuid[])`,
+    [companyId, uniqueIds]
+  );
+  if (result.rows.length !== uniqueIds.length) throw new TopicError("One or more selected roles are unavailable.");
+  return uniqueIds;
+}
+
+async function validateCompanyUserIds(companyId: string, userIds: string[]) {
+  const uniqueIds = Array.from(new Set(userIds));
+  if (uniqueIds.length === 0) return uniqueIds;
+  const result = await getPool().query<{ id: string }>(
+    `
+      SELECT DISTINCT users.id
+      FROM users
+      INNER JOIN user_company_roles ON user_company_roles.user_id = users.id
+        AND user_company_roles.company_id = $1
+        AND user_company_roles.deleted_at IS NULL
+      WHERE users.id = ANY($2::uuid[])
+        AND users.deleted_at IS NULL
+    `,
+    [companyId, uniqueIds]
+  );
+  if (result.rows.length !== uniqueIds.length) throw new TopicError("One or more selected users are unavailable.");
+  return uniqueIds;
+}
+
 async function replaceFolderTargetApps(folderId: string, companyId: string, targetAppIds: string[], session: AdminSession) {
   const ids = await validateTargetAppIds(companyId, targetAppIds, session);
   const client = await getPool().connect();
@@ -161,6 +188,35 @@ async function assertFolderTargetAppAccess(folderId: string, companyId: string, 
       throw new TopicError("You cannot modify this folder because you do not have access to one or more of its assigned target apps.");
     }
     throw error;
+  }
+}
+
+// Verifies a client-supplied targetAppId is actually valid for this folder —
+// either one of the folder's own folder_target_apps assignments, or (for a
+// folder with none, i.e. global within its company) any target app that
+// belongs to the folder's own company. Used before the folder's
+// environment-release list is read or written, so a caller can't point a
+// folder's releases at a different company's/target app's environments.
+export async function assertTargetAppBelongsToFolder(folderId: string, companyId: string, targetAppId: string) {
+  const assigned = await getPool().query<{ target_app_id: string }>(
+    "SELECT target_app_id FROM folder_target_apps WHERE folder_id = $1 AND deleted_at IS NULL",
+    [folderId]
+  );
+
+  if (assigned.rows.length > 0) {
+    if (!assigned.rows.some((row) => row.target_app_id === targetAppId)) {
+      throw new TopicError("This target app is not assigned to this folder.");
+    }
+    return;
+  }
+
+  const companyApp = await getPool().query<{ id: string }>(
+    "SELECT id FROM company_target_applications WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL",
+    [targetAppId, companyId]
+  );
+
+  if (!companyApp.rows[0]) {
+    throw new TopicError("This target app does not belong to this folder's company.");
   }
 }
 
@@ -229,13 +285,38 @@ export async function getAccessibleTopicIds(session: AdminSession) {
   const result = await getPool().query<{ id: string }>(
     `
       WITH RECURSIVE seed_topics AS (
-        SELECT topic_id
-        FROM role_topic_permissions
-        WHERE role_id = $2 AND deleted_at IS NULL
+        -- A granted role_id/user_id is always scoped to the caller's own
+        -- company (or another company they're explicitly a member of) — a
+        -- grant row pointing at a different company's folder (which should
+        -- never be written in the first place, see grantTopicAccess) must
+        -- still never be honored here even if one somehow exists.
+        SELECT folder_role_permissions.folder_id AS topic_id
+        FROM folder_role_permissions
+        INNER JOIN folders ON folders.id = folder_role_permissions.folder_id AND folders.deleted_at IS NULL
+        WHERE folder_role_permissions.role_id = $2 AND folder_role_permissions.deleted_at IS NULL
+          AND (
+            folders.company_id = $3
+            OR EXISTS (
+              SELECT 1 FROM user_company_roles
+              WHERE user_company_roles.user_id = $1
+                AND user_company_roles.company_id = folders.company_id
+                AND user_company_roles.deleted_at IS NULL
+            )
+          )
         UNION
-        SELECT topic_id
-        FROM user_topic_permissions
-        WHERE user_id = $1 AND deleted_at IS NULL
+        SELECT folder_user_permissions.folder_id AS topic_id
+        FROM folder_user_permissions
+        INNER JOIN folders ON folders.id = folder_user_permissions.folder_id AND folders.deleted_at IS NULL
+        WHERE folder_user_permissions.user_id = $1 AND folder_user_permissions.deleted_at IS NULL
+          AND (
+            folders.company_id = $3
+            OR EXISTS (
+              SELECT 1 FROM user_company_roles
+              WHERE user_company_roles.user_id = $1
+                AND user_company_roles.company_id = folders.company_id
+                AND user_company_roles.deleted_at IS NULL
+            )
+          )
         UNION
         SELECT folders.id AS topic_id
         FROM folders
@@ -428,31 +509,31 @@ export async function getTopicAccessAdminData(session: AdminSession) {
     }>(
       `
         SELECT
-          role_topic_permissions.id,
+          folder_role_permissions.id,
           folders.id AS topic_id,
           folders.name AS topic_name,
           roles.id AS assignee_id,
           roles.name AS assignee_name,
           'role'::text AS type
-        FROM role_topic_permissions
-        INNER JOIN folders ON folders.id = role_topic_permissions.topic_id
-        INNER JOIN roles ON roles.id = role_topic_permissions.role_id
-        WHERE role_topic_permissions.deleted_at IS NULL
+        FROM folder_role_permissions
+        INNER JOIN folders ON folders.id = folder_role_permissions.folder_id
+        INNER JOIN roles ON roles.id = folder_role_permissions.role_id
+        WHERE folder_role_permissions.deleted_at IS NULL
           AND folders.deleted_at IS NULL
           AND roles.deleted_at IS NULL
           ${grantFilter}
         UNION ALL
         SELECT
-          user_topic_permissions.id,
+          folder_user_permissions.id,
           folders.id AS topic_id,
           folders.name AS topic_name,
           users.id AS assignee_id,
           users.name AS assignee_name,
           'user'::text AS type
-        FROM user_topic_permissions
-        INNER JOIN folders ON folders.id = user_topic_permissions.topic_id
-        INNER JOIN users ON users.id = user_topic_permissions.user_id
-        WHERE user_topic_permissions.deleted_at IS NULL
+        FROM folder_user_permissions
+        INNER JOIN folders ON folders.id = folder_user_permissions.folder_id
+        INNER JOIN users ON users.id = folder_user_permissions.user_id
+        WHERE folder_user_permissions.deleted_at IS NULL
           AND folders.deleted_at IS NULL
           AND users.deleted_at IS NULL
           ${grantFilter}
@@ -707,103 +788,15 @@ export async function replaceTopicAccess(input: GrantTopicAccessInput, session: 
   }
 
   await getPool().query(
-    "UPDATE role_topic_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE topic_id = $1 AND deleted_at IS NULL",
+    "UPDATE folder_role_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE folder_id = $1 AND deleted_at IS NULL",
     [input.topicId, session.user.id]
   );
   await getPool().query(
-    "UPDATE user_topic_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE topic_id = $1 AND deleted_at IS NULL",
+    "UPDATE folder_user_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE folder_id = $1 AND deleted_at IS NULL",
     [input.topicId, session.user.id]
   );
 
   await grantTopicAccess(input, session);
-}
-
-export async function getFolderDocumentAccess(folderId: string, session: AdminSession): Promise<FolderDocumentAccess> {
-  if (!folderId) {
-    throw new TopicError("Folder is required.");
-  }
-
-  await assertCanManageFolderDocumentAccess(folderId, session);
-
-  const [roles, users] = await Promise.all([
-    getPool().query<{ role_id: string }>(
-      "SELECT role_id FROM folder_document_role_permissions WHERE folder_id = $1 AND deleted_at IS NULL",
-      [folderId]
-    ),
-    getPool().query<{ user_id: string }>(
-      "SELECT user_id FROM folder_document_user_permissions WHERE folder_id = $1 AND deleted_at IS NULL",
-      [folderId]
-    )
-  ]);
-
-  return {
-    folderId,
-    isCustom: roles.rows.length > 0 || users.rows.length > 0,
-    roleIds: roles.rows.map((row) => row.role_id),
-    userIds: users.rows.map((row) => row.user_id)
-  };
-}
-
-export async function replaceFolderDocumentAccess(
-  folderId: string,
-  input: { roleIds?: string[]; userIds?: string[] },
-  session: AdminSession
-) {
-  if (!folderId) {
-    throw new TopicError("Folder is required.");
-  }
-
-  const companyId = await assertCanManageFolderDocumentAccess(folderId, session);
-  const roleIds = Array.from(new Set(input.roleIds ?? []));
-  const userIds = Array.from(new Set(input.userIds ?? []));
-  const client = await getPool().connect();
-
-  try {
-    await client.query("BEGIN");
-    await client.query(
-      "UPDATE folder_document_role_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE folder_id = $1 AND deleted_at IS NULL",
-      [folderId, session.user.id]
-    );
-    await client.query(
-      "UPDATE folder_document_user_permissions SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE folder_id = $1 AND deleted_at IS NULL",
-      [folderId, session.user.id]
-    );
-
-    if (roleIds.length > 0) {
-      await client.query(
-        `
-          INSERT INTO folder_document_role_permissions (company_id, folder_id, role_id, created_by, updated_by)
-          SELECT $1, $2, role_id, $3, $3
-          FROM unnest($4::uuid[]) AS role_id
-          ON CONFLICT (folder_id, role_id)
-          DO UPDATE SET deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
-        `,
-        [companyId, folderId, session.user.id, roleIds]
-      );
-    }
-
-    if (userIds.length > 0) {
-      await client.query(
-        `
-          INSERT INTO folder_document_user_permissions (company_id, folder_id, user_id, created_by, updated_by)
-          SELECT $1, $2, user_id, $3, $3
-          FROM unnest($4::uuid[]) AS user_id
-          ON CONFLICT (folder_id, user_id)
-          DO UPDATE SET deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
-        `,
-        [companyId, folderId, session.user.id, userIds]
-      );
-    }
-
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-
-  return getFolderDocumentAccess(folderId, session);
 }
 
 export async function deleteTopic(topicId: string, session: AdminSession) {
@@ -863,10 +856,8 @@ export async function deleteTopic(topicId: string, session: AdminSession) {
 
     // Only topic rows survive for audit. All auxiliary access data is disposable.
     await client.query("UPDATE folder_target_apps SET deleted_at = now(), updated_by = $2, updated_at = now() WHERE folder_id = ANY($1::uuid[]) AND deleted_at IS NULL", [topicIds, session.user.id]);
-    await client.query("DELETE FROM folder_document_role_permissions WHERE folder_id = ANY($1::uuid[])", [topicIds]);
-    await client.query("DELETE FROM folder_document_user_permissions WHERE folder_id = ANY($1::uuid[])", [topicIds]);
-    await client.query("DELETE FROM role_topic_permissions WHERE topic_id = ANY($1::uuid[])", [topicIds]);
-    await client.query("DELETE FROM user_topic_permissions WHERE topic_id = ANY($1::uuid[])", [topicIds]);
+    await client.query("DELETE FROM folder_role_permissions WHERE folder_id = ANY($1::uuid[])", [topicIds]);
+    await client.query("DELETE FROM folder_user_permissions WHERE folder_id = ANY($1::uuid[])", [topicIds]);
     await client.query(`
       UPDATE folders
       SET deleted_at = now(), updated_by = $2, updated_at = now()
@@ -899,16 +890,21 @@ export async function grantTopicAccess(input: GrantTopicAccessInput, session: Ad
     throw new TopicError("Folder is required.");
   }
 
-  const roleIds = Array.from(new Set(input.roleIds ?? []));
-  const userIds = Array.from(new Set(input.userIds ?? []));
+  const companyId = await getTopicCompanyId(input.topicId);
+  if (!session.availableCompanies.some((company) => company.companyId === companyId)) {
+    throw new TopicError("You do not have access to this company.");
+  }
+
+  const roleIds = await validateCompanyRoleIds(companyId, input.roleIds ?? []);
+  const userIds = await validateCompanyUserIds(companyId, input.userIds ?? []);
 
   if (roleIds.length > 0) {
     await getPool().query(
       `
-        INSERT INTO role_topic_permissions (topic_id, role_id, created_by, updated_by)
+        INSERT INTO folder_role_permissions (folder_id, role_id, created_by, updated_by)
         SELECT $1, role_id, $2, $2
         FROM unnest($3::uuid[]) AS role_id
-        ON CONFLICT (role_id, topic_id) WHERE deleted_at IS NULL
+        ON CONFLICT (role_id, folder_id) WHERE deleted_at IS NULL
         DO UPDATE SET deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
       `,
       [input.topicId, session.user.id, roleIds]
@@ -918,10 +914,10 @@ export async function grantTopicAccess(input: GrantTopicAccessInput, session: Ad
   if (userIds.length > 0) {
     await getPool().query(
       `
-        INSERT INTO user_topic_permissions (topic_id, user_id, created_by, updated_by)
+        INSERT INTO folder_user_permissions (folder_id, user_id, created_by, updated_by)
         SELECT $1, user_id, $2, $2
         FROM unnest($3::uuid[]) AS user_id
-        ON CONFLICT (user_id, topic_id) WHERE deleted_at IS NULL
+        ON CONFLICT (user_id, folder_id) WHERE deleted_at IS NULL
         DO UPDATE SET deleted_at = NULL, updated_by = EXCLUDED.updated_by, updated_at = now()
       `,
       [input.topicId, session.user.id, userIds]

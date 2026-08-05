@@ -155,6 +155,34 @@ async function getAllowedFolderIds(companyId: string, targetAppId?: string, envi
   return new Set(allowed.rows.map((row) => row.id));
 }
 
+// A document's own release is a second, independent gate on top of its
+// folder's — a folder being released to an environment does not by itself
+// make a newly added document inside it eligible there (see
+// lib/admin/environment-releases.ts and the "document" release kind).
+// Unlike getAllowedFolderIds this only depends on environmentId — target-app
+// eligibility is already fully handled by the folder-level check.
+async function getAllowedDocumentIds(companyId: string, environmentId?: string) {
+  if (!environmentId) {
+    return null;
+  }
+
+  const allowed = await getPool().query<{ id: string }>(
+    `
+      SELECT documents.id
+      FROM documents
+      WHERE documents.company_id = $1
+        AND EXISTS (
+          SELECT 1 FROM document_environment_releases der
+          WHERE der.document_id = documents.id AND der.environment_id = $2
+            AND der.deleted_at IS NULL
+        )
+    `,
+    [companyId, environmentId]
+  );
+
+  return new Set(allowed.rows.map((row) => row.id));
+}
+
 function toTextChunk(result: VectorSearchResult, score: number): RetrievalChunk {
   return {
     chunk_id: result.chunk_id,
@@ -226,12 +254,21 @@ async function countAccessibleIndexedDocuments(companyId: string) {
   return Number(result.rows[0]?.count ?? 0);
 }
 
-function scopedByTargetApp(results: VectorSearchResult[], allowedFolderIds: Set<string> | null, relaxTargetScope: boolean) {
-  if (relaxTargetScope || !allowedFolderIds) {
+function scopedByTargetApp(
+  results: VectorSearchResult[],
+  allowedFolderIds: Set<string> | null,
+  allowedDocumentIds: Set<string> | null,
+  relaxTargetScope: boolean
+) {
+  if (relaxTargetScope) {
     return results;
   }
 
-  return results.filter((item) => allowedFolderIds.has(item.folder_id));
+  return results.filter(
+    (item) =>
+      (!allowedFolderIds || allowedFolderIds.has(item.folder_id)) &&
+      (!allowedDocumentIds || allowedDocumentIds.has(item.document_id))
+  );
 }
 
 function scopedByMetadata(results: VectorSearchResult[], hints: SearchMetadataHints, relaxMetadataFilters: boolean) {
@@ -265,6 +302,7 @@ export class RetrievalEngine {
     const normalized = normalizeAndExpandProcurementQuery(normalizedQuery);
     const metadataHints = parseMetadataHints(normalizedQuery);
     const allowedFolderIds = await getAllowedFolderIds(company_id, target_app_id?.trim() || undefined, environment_id?.trim() || undefined);
+    const allowedDocumentIds = await getAllowedDocumentIds(company_id, environment_id?.trim() || undefined);
 
     const attempts: RetrievalAttempt[] = [];
 
@@ -286,18 +324,22 @@ export class RetrievalEngine {
       ]);
 
       const vectorScoped = scopedByMetadata(
-        scopedByTargetApp(vectorRaw, allowedFolderIds, plan.relaxTargetScope),
+        scopedByTargetApp(vectorRaw, allowedFolderIds, allowedDocumentIds, plan.relaxTargetScope),
         metadataHints,
         plan.relaxMetadataFilters
       );
       const bm25Scoped = scopedByMetadata(
-        scopedByTargetApp(bm25Raw, allowedFolderIds, plan.relaxTargetScope),
+        scopedByTargetApp(bm25Raw, allowedFolderIds, allowedDocumentIds, plan.relaxTargetScope),
         metadataHints,
         plan.relaxMetadataFilters
       );
-      const visualScoped = plan.relaxTargetScope || !allowedFolderIds
+      const visualScoped = plan.relaxTargetScope || (!allowedFolderIds && !allowedDocumentIds)
         ? visualRaw
-        : visualRaw.filter((item) => allowedFolderIds.has(item.folder_id));
+        : visualRaw.filter(
+            (item) =>
+              (!allowedFolderIds || allowedFolderIds.has(item.folder_id)) &&
+              (!allowedDocumentIds || allowedDocumentIds.has(item.document_id))
+          );
 
       const fused = reciprocalRankFusion({
         vectorResults: vectorScoped,

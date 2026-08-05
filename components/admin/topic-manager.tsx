@@ -263,6 +263,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [uploadTarget, setUploadTarget] = useState<TopicActionTarget | null>(null);
   const [documentsTarget, setDocumentsTarget] = useState<TopicActionTarget | null>(null);
   const [accessDocument, setAccessDocument] = useState<DocumentGridRow | null>(null);
+  const [environmentDocument, setEnvironmentDocument] = useState<DocumentGridRow | null>(null);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(new Set());
+  const [bulkEnvironmentModalOpen, setBulkEnvironmentModalOpen] = useState(false);
   const [versionDocument, setVersionDocument] = useState<DocumentGridRow | null>(null);
   const [versionRows, setVersionRows] = useState<DocumentVersionRow[]>([]);
   const [versionLoading, setVersionLoading] = useState(false);
@@ -272,7 +275,6 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [versionSummary, setVersionSummary] = useState<DocumentVersionSummary | null>(null);
   const [versionSummaryLoading, setVersionSummaryLoading] = useState(false);
   const [versionCompareLoading, setVersionCompareLoading] = useState(false);
-  const [folderAccessTarget, setFolderAccessTarget] = useState<TopicActionTarget | null>(null);
   const [folderEnvironmentTarget, setFolderEnvironmentTarget] = useState<TopicActionTarget | null>(null);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -287,8 +289,6 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [documentFilters, setDocumentFilters] = useState({ fileType: "", search: "", status: "" });
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
   const [accessUserIds, setAccessUserIds] = useState<string[]>([]);
-  const [folderAccessRoleIds, setFolderAccessRoleIds] = useState<string[]>([]);
-  const [folderAccessUserIds, setFolderAccessUserIds] = useState<string[]>([]);
   const [actionTarget, setActionTarget] = useState<TopicActionTarget | null>(null);
   const [createAllRoles, setCreateAllRoles] = useState(true);
   const [createAllUsers, setCreateAllUsers] = useState(true);
@@ -591,6 +591,27 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     }
 
     setDocumentGrid(body);
+    setSelectedDocumentIds(new Set());
+  }
+
+  function toggleDocumentSelection(id: string) {
+    setSelectedDocumentIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectAllDocuments() {
+    setSelectedDocumentIds((current) =>
+      current.size === documentGrid.documents.length
+        ? new Set()
+        : new Set(documentGrid.documents.map((document) => document.id))
+    );
   }
 
   async function openDocumentsModal(target: TopicActionTarget) {
@@ -604,6 +625,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   function closeDocumentsModal() {
     setDocumentsTarget(null);
     setAccessDocument(null);
+    setEnvironmentDocument(null);
+    setSelectedDocumentIds(new Set());
+    setBulkEnvironmentModalOpen(false);
     setVersionDocument(null);
     setVersionRows([]);
     setVersionComparison(null);
@@ -670,6 +694,35 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setAccessDocument(row);
     setAccessRoleIds(body.access.roleIds ?? []);
     setAccessUserIds(body.access.userIds ?? []);
+  }
+
+  function openEnvironmentModal(row: DocumentGridRow) {
+    if (!documentsTarget) {
+      return;
+    }
+
+    // Same fallback as the folder's own Environments action: a document's
+    // eligible target apps come from its folder, so a global folder falls
+    // back to every target app the company has.
+    if (!documentsTarget.targetAppIds?.length && !targetApps.some((app) => app.companyId === documentsTarget.companyId)) {
+      showToast("This company has no target apps yet. Add one under Chatbot Settings first.", "error");
+      return;
+    }
+
+    setEnvironmentDocument(row);
+  }
+
+  function openBulkEnvironmentModal() {
+    if (!documentsTarget || selectedDocumentIds.size === 0) {
+      return;
+    }
+
+    if (!documentsTarget.targetAppIds?.length && !targetApps.some((app) => app.companyId === documentsTarget.companyId)) {
+      showToast("This company has no target apps yet. Add one under Chatbot Settings first.", "error");
+      return;
+    }
+
+    setBulkEnvironmentModalOpen(true);
   }
 
   async function openVersionModal(row: DocumentGridRow) {
@@ -764,25 +817,6 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setVersionSummary(body?.summary as DocumentVersionSummary);
   }
 
-  async function openFolderAccessModal(target: TopicActionTarget) {
-    if (!target.topicId) {
-      return;
-    }
-
-    setActionTarget(null);
-    const response = await fetch(`/api/admin/content-structure/${target.topicId}/chat-access`);
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setTopicState({ message: typeof body?.message === "string" ? body.message : "Unable to load folder chat access.", status: "error" });
-      return;
-    }
-
-    setFolderAccessTarget(target);
-    setFolderAccessRoleIds(body.access.roleIds ?? []);
-    setFolderAccessUserIds(body.access.userIds ?? []);
-  }
-
   function openFolderEnvironmentModal(target: TopicActionTarget) {
     if (!target.topicId) {
       return;
@@ -790,8 +824,12 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
     setActionTarget(null);
 
-    if (!target.targetAppIds?.length) {
-      showToast("Assign a target app to this folder before releasing it to an environment.", "error");
+    // A global folder (no target app assignments) has no target apps of its
+    // own to pick from — fall back to every target app the folder's company
+    // has, since a global folder can be released per any of them. Only
+    // genuinely block when the company has none at all to pick from.
+    if (!target.targetAppIds?.length && !targetApps.some((app) => app.companyId === target.companyId)) {
+      showToast("This company has no target apps yet. Add one under Chatbot Settings first.", "error");
       return;
     }
 
@@ -820,29 +858,6 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setAccessDocument(null);
     setTopicState({ message: "Document access updated.", status: "success" });
     await loadDocuments(documentsTarget, documentGrid.page);
-  }
-
-  async function saveFolderAccess(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    if (!folderAccessTarget?.topicId) {
-      return;
-    }
-
-    const response = await fetch(`/api/admin/content-structure/${folderAccessTarget.topicId}/chat-access`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ roleIds: folderAccessRoleIds, userIds: folderAccessUserIds })
-    });
-    const body = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setTopicState({ message: typeof body?.message === "string" ? body.message : "Unable to save folder chat access.", status: "error" });
-      return;
-    }
-
-    setFolderAccessTarget(null);
-    setTopicState({ message: "Folder chat access updated.", status: "success" });
   }
 
   function setCustomEditRoles(values: string[]) {
@@ -1348,14 +1363,6 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   View Documents
                 </button>
                 <button
-                  className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold text-teal-700 hover:bg-teal-50"
-                  onClick={() => openFolderAccessModal(actionTarget)}
-                  type="button"
-                >
-                  <ShieldCheck className="h-4 w-4 text-teal-600" />
-                  Chatbot Access
-                </button>
-                <button
                   className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
                   onClick={() => openFolderEnvironmentModal(actionTarget)}
                   title="Uploading documents alone does not make this folder searchable to chat users — release it to an environment too"
@@ -1414,6 +1421,21 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               <button className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" type="submit">Filter</button>
             </form>
 
+            {selectedDocumentIds.size > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-indigo-100 bg-indigo-50 px-3 py-2 sm:px-5">
+                <span className="text-sm font-semibold text-indigo-900">{selectedDocumentIds.size} selected</span>
+                <div className="flex items-center gap-2">
+                  <button className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700" onClick={openBulkEnvironmentModal} type="button">
+                    <Globe2 className="h-4 w-4" />
+                    Release to environment...
+                  </button>
+                  <button className="rounded-lg border border-indigo-200 px-3 py-1.5 text-sm font-semibold text-indigo-700 hover:bg-indigo-100" onClick={() => setSelectedDocumentIds(new Set())} type="button">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {topicState.message ? (
               <p className={`mx-5 mt-3 rounded-lg px-3 py-2 text-sm ${topicState.status === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
                 {topicState.message}
@@ -1424,6 +1446,15 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               <table className="w-full min-w-[920px] border-collapse text-left text-sm">
                 <thead className="sticky top-0 bg-slate-950 text-white">
                   <tr>
+                    <th className="px-3 py-3 font-medium">
+                      <input
+                        aria-label="Select all documents"
+                        checked={documentGrid.documents.length > 0 && selectedDocumentIds.size === documentGrid.documents.length}
+                        className="h-4 w-4"
+                        onChange={toggleSelectAllDocuments}
+                        type="checkbox"
+                      />
+                    </th>
                     <th className="px-3 py-3 font-medium">No.</th>
                     <th className="px-3 py-3 font-medium">Document</th>
                     <th className="px-3 py-3 font-medium">Type</th>
@@ -1437,6 +1468,15 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 <tbody className="divide-y divide-slate-200">
                   {documentGrid.documents.map((document, index) => (
                     <tr className="align-top" key={document.id}>
+                      <td className="px-3 py-3">
+                        <input
+                          aria-label={`Select ${document.name}`}
+                          checked={selectedDocumentIds.has(document.id)}
+                          className="h-4 w-4"
+                          onChange={() => toggleDocumentSelection(document.id)}
+                          type="checkbox"
+                        />
+                      </td>
                       <td className="px-3 py-3 font-semibold text-slate-500">{(documentGrid.page - 1) * documentGrid.pageSize + index + 1}</td>
                       <td className="px-3 py-3">
                         <div className="flex max-w-72 items-center gap-2">
@@ -1482,6 +1522,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                           <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-200 text-sky-700 hover:bg-sky-50" onClick={() => openAccessModal(document)} title="Access" type="button">
                             <ShieldCheck className="h-4 w-4" />
                           </button>
+                          <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-indigo-200 text-indigo-700 hover:bg-indigo-50" onClick={() => openEnvironmentModal(document)} title="Environments" type="button">
+                            <Globe2 className="h-4 w-4" />
+                          </button>
                           {document.canDelete ? (
                             <button className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50" onClick={() => deleteDocument(document)} title="Delete" type="button">
                               <Trash2 className="h-4 w-4" />
@@ -1493,7 +1536,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   ))}
                   {documentGrid.documents.length === 0 ? (
                     <tr>
-                      <td className="px-3 py-8 text-center text-slate-500" colSpan={8}>No documents found.</td>
+                      <td className="px-3 py-8 text-center text-slate-500" colSpan={9}>No documents found.</td>
                     </tr>
                   ) : null}
                 </tbody>
@@ -1734,59 +1777,70 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
         </div>
       ) : null}
 
-      {folderAccessTarget ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={() => setFolderAccessTarget(null)}>
-          <form className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={saveFolderAccess}>
-            <div className="flex items-center gap-3">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-teal-600 text-white">
-                <ShieldCheck className="h-5 w-5" />
-              </span>
-              <div>
-                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Chat Access</h2>
-                <p className="text-sm text-slate-500">{folderAccessTarget.topicName}</p>
-              </div>
-            </div>
-            <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              Leave both lists empty to allow chatbot retrieval from this folder for all users with folder access. Selecting roles or users restricts retrieval for this folder. Document access still overrides this.
-            </p>
-            <div className="mt-4 space-y-4">
-              <MultiSelectDropdown
-                emptyLabel="All roles"
-                label="Restrict to roles"
-                onChange={setFolderAccessRoleIds}
-                options={roles.filter((role) => role.companyId === folderAccessTarget.companyId).map((role) => ({ label: role.name, value: role.id }))}
-                selectedValues={folderAccessRoleIds}
-              />
-              <MultiSelectDropdown
-                emptyLabel="All users"
-                label="Restrict to users"
-                onChange={setFolderAccessUserIds}
-                options={users.filter((user) => user.companyIds.includes(folderAccessTarget.companyId)).map((user) => ({ label: user.name, value: user.id }))}
-                selectedValues={folderAccessUserIds}
-              />
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={() => setFolderAccessTarget(null)} type="button">Cancel</button>
-              <button className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700" type="submit">Save access</button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+      {folderEnvironmentTarget ? (() => {
+        const environmentTargetAppOptions = folderEnvironmentTarget.targetAppIds?.length
+          ? folderEnvironmentTarget.targetAppIds.map((id, index) => ({
+              id,
+              name: folderEnvironmentTarget.targetAppNames?.[index] || "Target app"
+            }))
+          : targetApps.filter((app) => app.companyId === folderEnvironmentTarget.companyId);
 
-      {folderEnvironmentTarget && folderEnvironmentTarget.targetAppIds?.length ? (
-        <EnvironmentReleaseModal
-          apiUrl={`/api/admin/content-structure/${folderEnvironmentTarget.topicId}/environments`}
-          onClose={() => setFolderEnvironmentTarget(null)}
-          onError={(message) => showToast(message, "error")}
-          onSaved={() => showToast("Environment releases updated.", "success")}
-          targetAppId={folderEnvironmentTarget.targetAppIds[0]}
-          title={
-            folderEnvironmentTarget.targetAppIds.length > 1
-              ? `${folderEnvironmentTarget.topicName} (${folderEnvironmentTarget.targetAppNames?.[0] || "first assigned target app"})`
-              : folderEnvironmentTarget.topicName
-          }
-        />
-      ) : null}
+        return (
+          <EnvironmentReleaseModal
+            apiUrl={`/api/admin/content-structure/${folderEnvironmentTarget.topicId}/environments`}
+            onClose={() => setFolderEnvironmentTarget(null)}
+            onError={(message) => showToast(message, "error")}
+            onSaved={() => showToast("Environment releases updated.", "success")}
+            targetAppOptions={environmentTargetAppOptions}
+            title={folderEnvironmentTarget.topicName}
+          />
+        );
+      })() : null}
+
+      {environmentDocument && documentsTarget ? (() => {
+        const documentTargetAppOptions = documentsTarget.targetAppIds?.length
+          ? documentsTarget.targetAppIds.map((id, index) => ({
+              id,
+              name: documentsTarget.targetAppNames?.[index] || "Target app"
+            }))
+          : targetApps.filter((app) => app.companyId === documentsTarget.companyId);
+
+        return (
+          <EnvironmentReleaseModal
+            apiUrl={`/api/admin/documents/${environmentDocument.id}/environments`}
+            onClose={() => setEnvironmentDocument(null)}
+            onError={(message) => showToast(message, "error")}
+            onSaved={() => showToast("Environment releases updated.", "success")}
+            targetAppOptions={documentTargetAppOptions}
+            title={environmentDocument.name}
+          />
+        );
+      })() : null}
+
+      {bulkEnvironmentModalOpen && documentsTarget && selectedDocumentIds.size > 0 ? (() => {
+        const bulkTargetAppOptions = documentsTarget.targetAppIds?.length
+          ? documentsTarget.targetAppIds.map((id, index) => ({
+              id,
+              name: documentsTarget.targetAppNames?.[index] || "Target app"
+            }))
+          : targetApps.filter((app) => app.companyId === documentsTarget.companyId);
+        const selectedIds = Array.from(selectedDocumentIds);
+
+        return (
+          <EnvironmentReleaseModal
+            apiUrl={`/api/admin/content-structure/${documentsTarget.topicId}/environments`}
+            bulkSaveUrls={selectedIds.map((id) => `/api/admin/documents/${id}/environments`)}
+            onClose={() => setBulkEnvironmentModalOpen(false)}
+            onError={(message) => showToast(message, "error")}
+            onSaved={() => {
+              showToast(`Environment releases updated for ${selectedIds.length} documents.`, "success");
+              setSelectedDocumentIds(new Set());
+            }}
+            targetAppOptions={bulkTargetAppOptions}
+            title={`${selectedIds.length} documents`}
+          />
+        );
+      })() : null}
 
       {uploadTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={closeUploadModal}>

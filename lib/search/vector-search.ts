@@ -168,32 +168,6 @@ export function documentPermissionClause(userIdParam: number, roleIdsParam: numb
           WHERE document_user_permissions.document_id = documents.id
             AND document_user_permissions.deleted_at IS NULL
         )
-        AND (
-          (
-            NOT EXISTS (
-              SELECT 1 FROM folder_document_role_permissions
-              WHERE folder_document_role_permissions.folder_id = documents.folder_id
-                AND folder_document_role_permissions.deleted_at IS NULL
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM folder_document_user_permissions
-              WHERE folder_document_user_permissions.folder_id = documents.folder_id
-                AND folder_document_user_permissions.deleted_at IS NULL
-            )
-          )
-          OR EXISTS (
-            SELECT 1 FROM folder_document_role_permissions
-            WHERE folder_document_role_permissions.folder_id = documents.folder_id
-              AND folder_document_role_permissions.role_id = ANY($${roleIdsParam}::uuid[])
-              AND folder_document_role_permissions.deleted_at IS NULL
-          )
-          OR EXISTS (
-            SELECT 1 FROM folder_document_user_permissions
-            WHERE folder_document_user_permissions.folder_id = documents.folder_id
-              AND folder_document_user_permissions.user_id = $${userIdParam}
-              AND folder_document_user_permissions.deleted_at IS NULL
-          )
-        )
       )
     )
   `;

@@ -9,12 +9,13 @@
 
 import { getPool } from "@/lib/db/pool";
 
-export type ContentEnvironmentReleaseKind = "orchestration" | "guided_workflow" | "folder";
+export type ContentEnvironmentReleaseKind = "orchestration" | "guided_workflow" | "folder" | "document";
 
 const RELEASE_TABLE: Record<ContentEnvironmentReleaseKind, { table: string; column: string }> = {
   orchestration: { table: "orchestration_environment_releases", column: "orchestration_id" },
   guided_workflow: { table: "guided_workflow_environment_releases", column: "guide_id" },
   folder: { table: "folder_environment_releases", column: "folder_id" },
+  document: { table: "document_environment_releases", column: "document_id" },
 };
 
 export type EnvironmentOption = {
