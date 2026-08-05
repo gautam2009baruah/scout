@@ -1891,7 +1891,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
             <div className="mt-5">
               <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Choose a source</div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
                 {ingestionSources.map((source) => {
                   const active = source.value === ingestionSource;
                   return (
