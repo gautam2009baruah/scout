@@ -11,6 +11,7 @@ import type { RoleSummary } from "@/lib/admin/administration";
 import type { TopicAccessGrant, TopicRow, TopicTreeNode, TopicUserOption } from "@/lib/admin/content-structure";
 import { useToast } from "./toast";
 import { ModalCloseButton } from "./modal-close-button";
+import { WebIngestorPanel } from "./web-ingestor-panel";
 
 type TopicManagerProps = {
   canManageAccess: boolean;
@@ -58,7 +59,7 @@ type DocumentGridState = {
 };
 
 type DocumentStorageMode = "managed_upload" | "external_reference" | "strict_external_reference";
-type IngestionSourceType = "upload" | "web_url" | "crawler" | "sitemap" | "rss" | "google_drive" | "sharepoint";
+type IngestionSourceType = "upload" | "web_url" | "crawler" | "sitemap" | "rss" | "google_drive" | "sharepoint" | "web_login";
 type SourceAuth = { authType: string; credentialName: string; tenantId: string; clientId: string; clientSecret: string; accessToken: string; serviceAccountJson: string };
 
 type ExternalReferenceRow = {
@@ -129,7 +130,8 @@ const ingestionSources = [
   { value: "sitemap", label: "Sitemap", description: "Import sitemap URLs", icon: Network },
   { value: "rss", label: "RSS feed", description: "Sync new articles", icon: Rss },
   { value: "google_drive", label: "Google Drive", description: "Files and folders", icon: Cloud },
-  { value: "sharepoint", label: "SharePoint", description: "Sites and libraries", icon: Cloud }
+  { value: "sharepoint", label: "SharePoint", description: "Sites and libraries", icon: Cloud },
+  { value: "web_login", label: "Login site", description: "Pages behind a login", icon: ShieldCheck }
 ] as const;
 const GLOBAL_TARGET_APP = "__global__";
 
@@ -1915,6 +1917,23 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               </div>
             </div>
 
+            {ingestionSource === "web_login" ? (
+              <>
+                <WebIngestorPanel folderId={uploadTarget.topicId ?? ""} folderName={uploadTarget.topicName} />
+                <div className="mt-5 flex justify-end">
+                  <button className="inline-flex h-10 items-center rounded-lg border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={closeUploadModal} type="button">
+                    Done
+                  </button>
+                </div>
+              </>
+            ) : (
+            <>
+            {["web_url", "crawler", "sitemap", "rss", "google_drive", "sharepoint"].includes(ingestionSource) ? (
+              <details className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
+                <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-amber-800"><ShieldCheck className="h-4 w-4" /> Pages behind a login?</summary>
+                <p className="mt-2 text-xs leading-5 text-amber-800">If the site needs a sign-in, this server can&apos;t reach it. Pick the <span className="font-semibold">Login site</span> source instead — you sign in normally in your browser and a small extension captures the pages for you.</p>
+              </details>
+            ) : null}
             <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-700">
                 <span className="inline-flex items-center gap-2"><Settings2 className="h-4 w-4" /> Storage & retention</span>
@@ -2002,7 +2021,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-800"><KeyRound className="h-4 w-4 text-violet-600" /> Connection credentials</div>
                     <p className="mt-1 text-xs text-slate-500">Secrets are encrypted and are never stored in document metadata.</p>
-                    <p className="mt-1 text-xs text-slate-500">Prefer no IT setup? You can instead capture {ingestionSource === "google_drive" ? "Google Drive" : "SharePoint"} pages while logged in, using the <a className="font-semibold text-violet-700 underline" href="/control-panel/web-ingestor">Web Ingestor browser extension</a>.</p>
+                    <p className="mt-1 text-xs text-slate-500">Prefer no IT setup? Choose the <span className="font-semibold">Login site</span> source instead to capture {ingestionSource === "google_drive" ? "Google Drive" : "SharePoint"} pages while logged in.</p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <label className="text-xs font-semibold text-slate-600">Connection name
                         <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal outline-none focus:border-violet-400" onChange={(event) => setSourceAuth((value) => ({ ...value, credentialName: event.target.value }))} placeholder="Company knowledge drive" value={sourceAuth.credentialName} />
@@ -2130,6 +2149,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 {ingestionSource === "upload" ? "Upload & process" : "Connect & import"}
               </button>
             </div>
+            </>
+            )}
           </form>
         </div>
       ) : null}
