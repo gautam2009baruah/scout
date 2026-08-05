@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, ListChecks, LoaderCircle, Mail, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, Globe, LayoutDashboard, ListChecks, LoaderCircle, Mail, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -611,7 +611,26 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
         })}
       </nav>
 
-      <div className={`mt-auto shrink-0 border-t border-slate-300 ${collapsed ? "flex justify-center" : "px-1"}`}>
+      <div className={`mt-auto shrink-0 border-t border-slate-300 ${collapsed ? "flex flex-col items-center gap-1" : "px-1"}`}>
+        {session.modules.some((m) => m.key === MODULE_KEYS.contentStructure) ? (
+          <Link
+            className={`flex min-h-11 items-center rounded-md font-mono text-sm font-medium text-slate-600 transition hover:bg-slate-200/70 hover:text-blue-700 ${
+              collapsed ? "w-10 justify-center" : "gap-3 px-3"
+            }`}
+            href="/control-panel/web-ingestor"
+            onClick={() => {
+              if (window.location.pathname !== "/control-panel/web-ingestor") {
+                setNavigatingHref("/control-panel/web-ingestor");
+              }
+              closeMobileMenu?.();
+            }}
+            title="Web Ingestor"
+          >
+            <Globe className="h-4 w-4 shrink-0" />
+            {collapsed ? <span className="sr-only">Web Ingestor</span> : <span>Web Ingestor</span>}
+            {navigatingHref === "/control-panel/web-ingestor" ? <LoaderCircle className="ml-auto h-4 w-4 animate-spin" /> : null}
+          </Link>
+        ) : null}
         <Link
           className={`flex min-h-11 items-center rounded-md font-mono text-sm font-medium text-slate-600 transition hover:bg-slate-200/70 hover:text-blue-700 ${
             collapsed ? "w-10 justify-center" : "gap-3 px-3"
