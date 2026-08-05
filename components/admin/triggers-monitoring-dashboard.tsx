@@ -743,7 +743,7 @@ export function TriggersMonitoringDashboard({
       {/* Detail Modal */}
       {detailOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+          <div className="scrollbar-autohide bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 sticky top-0 bg-white">
               <h3 className="font-semibold text-slate-900">Execution Detail</h3>
               <button
@@ -852,7 +852,7 @@ export function TriggersMonitoringDashboard({
                                             {view === "readable" ? "View JSON" : "View readable"}
                                           </button>
                                         </div>
-                                        <div className="bg-slate-50 border border-slate-200 rounded p-2 max-h-64 overflow-auto text-xs">
+                                        <div className="scrollbar-autohide bg-slate-50 border border-slate-200 rounded p-2 max-h-64 overflow-auto text-xs">
                                           {view === "json" ? (
                                             <pre className="text-slate-700 whitespace-pre-wrap">
                                               {JSON.stringify(step.output, null, 2)}

@@ -9,6 +9,7 @@ import HealingSuggestionReviewer from "./healing-suggestion-reviewer-panel";
 import { useToast } from "./toast";
 import { VersionedEnvironmentReleaseModal } from "./versioned-environment-release-modal";
 import { VersionHistoryModal, formatVersion } from "./version-history-modal";
+import { ModalCloseButton } from "./modal-close-button";
 
 type GuidedWorkflowManagerProps = {
   appBaseUrl: string;
@@ -720,7 +721,8 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
 
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+            <ModalCloseButton onClick={() => setConfirmDialog(null)} />
             <p className="mb-6 text-sm text-slate-900">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">
               <button
@@ -1320,13 +1322,14 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
       </div>
       {introEditorOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4" onClick={() => setIntroEditorOpen(false)}>
-          <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+          <div className="relative w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton onClick={() => setIntroEditorOpen(false)} />
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <p className="text-base font-semibold text-slate-950">Workflow start confirmation</p>
                 <p className="mt-1 text-sm text-slate-500">This message appears once before the guided workflow starts. The user must click Next before any guided step begins.</p>
               </div>
-              <button className="rounded-md px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100" onClick={() => setIntroEditorOpen(false)} type="button">Close</button>
+              <span className="h-8 w-8" aria-hidden="true" />
             </div>
             <RichTextEditor
               label="Confirmation content"
@@ -1371,7 +1374,8 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
       ) : null}
       {healingReviewStepId && sessionGuide ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onClick={() => setHealingReviewStepId(null)}>
-          <div className="max-h-[88vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+          <div className="scrollbar-autohide relative max-h-[88vh] w-full max-w-5xl overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton onClick={() => setHealingReviewStepId(null)} />
             <HealingSuggestionReviewer embedded onClose={() => setHealingReviewStepId(null)} stepId={healingReviewStepId} workflowId={sessionGuide.id} />
           </div>
         </div>
@@ -1694,10 +1698,11 @@ function RichTextEditor({ label, onChange, placeholder = "Write the step descrip
       </div>
       {previewOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4" onClick={() => setPreviewOpen(false)}>
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-4 shadow-xl" onClick={(event) => event.stopPropagation()}>
+          <div className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-4 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton onClick={() => setPreviewOpen(false)} />
             <div className="mb-3 flex items-center justify-between gap-3">
               <p className="text-sm font-semibold text-slate-950">Step description preview</p>
-              <button className="rounded-md px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100" onClick={() => setPreviewOpen(false)} type="button">Close</button>
+              <span className="h-8 w-8" aria-hidden="true" />
             </div>
             <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: sanitizeGuideHtml(value) || "<p>No description.</p>" }} />
           </div>

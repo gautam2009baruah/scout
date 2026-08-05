@@ -994,7 +994,7 @@ export function ApiCallConfig({ config, updateConfig }: any) {
           {testState.payload && (
             <div className="mt-3 rounded border border-slate-200 bg-white p-2">
               <p className="text-xs font-semibold text-slate-700 mb-1">Response preview</p>
-              <pre className="max-h-64 overflow-auto text-[11px] text-slate-700 whitespace-pre-wrap">{JSON.stringify(testState.payload, null, 2)}</pre>
+              <pre className="scrollbar-autohide max-h-64 overflow-auto text-[11px] text-slate-700 whitespace-pre-wrap">{JSON.stringify(testState.payload, null, 2)}</pre>
             </div>
           )}
         </div>

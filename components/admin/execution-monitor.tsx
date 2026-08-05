@@ -180,7 +180,7 @@ export function ExecutionMonitor({ executionId, orchestrationName, onClose }: Ex
         </div>
 
         {/* Node Executions */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="scrollbar-autohide flex-1 overflow-y-auto p-6">
           <h3 className="text-sm font-bold text-slate-900 mb-4">Node Execution Log</h3>
           
           {nodeExecutions.length === 0 ? (

@@ -60,6 +60,7 @@ import { VersionHistoryModal, formatVersion } from "./version-history-modal";
 import { ManualTriggerDialog } from "./manual-trigger-dialog";
 import { ExecutionMonitor } from "./execution-monitor";
 import { OrchestrationList } from "./orchestration-list";
+import { ModalCloseButton } from "./modal-close-button";
 import { isNodeCompatibleWithTrigger, getIncompatibilityReason } from "@/lib/orchestrations/node-compatibility";
 import { findUnreachableNodes } from "@/lib/orchestrations/graph-reachability";
 import { useToast } from "./toast";
@@ -1677,7 +1678,7 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="scrollbar-hairline space-y-1 overflow-y-auto p-2">
+            <div className="scrollbar-autohide space-y-1 overflow-y-auto p-2">
               {NODE_CONFIGS.map((nodeConfig) => {
                 const NodeIcon = nodeConfig.icon;
                 return (
@@ -1703,7 +1704,8 @@ export function OrchestrationDesigner({ selectedCompanyId, targetApps }: { selec
       {/* Confirmation Dialog */}
       {confirmDialog && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <ModalCloseButton onClick={() => setConfirmDialog(null)} />
             <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">
               <button
@@ -1804,7 +1806,8 @@ function CreateOrchestrationDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+      <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <ModalCloseButton disabled={creating} onClick={onClose} />
         <h2 className="text-xl font-bold text-slate-900">Create Orchestration</h2>
         <div className="mt-4 space-y-4">
           <div>

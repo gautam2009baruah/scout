@@ -84,7 +84,7 @@ export function MultiSelectDropdown({
               Unselect all
             </button>
           </div>
-          <div className="max-h-56 space-y-2 overflow-auto pr-1">
+          <div className="scrollbar-autohide max-h-56 space-y-2 overflow-auto pr-1">
             {options.map((option) => (
               <label className={`flex items-center gap-2 text-sm font-medium ${option.disabled ? "text-slate-400" : "text-slate-700"}`} key={option.value}>
                 <input

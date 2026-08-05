@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { ChatbotLifecycleSettings, ChatbotLifecycleSettingsRecord } from "@/lib/chat/lifecycle-settings";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 
 type TargetAppOption = {
   id: string;
@@ -1261,7 +1262,8 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
       {rotatedApiKey ? (
         <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4">
-          <div className="w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+          <div className="relative w-full max-w-xl rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+            <ModalCloseButton onClick={() => { setRotatedApiKey(null); setRotatedApiKeyCopied(false); }} />
             <h3 className="text-lg font-semibold text-slate-900">API Key Ready</h3>
             <p className="mt-2 text-sm text-slate-600">Copy this key now. It will not be shown again.</p>
             <textarea className="mt-3 min-h-[92px] w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-xs text-slate-800" readOnly value={rotatedApiKey} />
@@ -1278,7 +1280,8 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+          <div className="relative mx-4 w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+            <ModalCloseButton onClick={() => setConfirmDialog(null)} />
             <h4 className="text-base font-semibold text-slate-900">{confirmDialog.title}</h4>
             <p className="mt-2 mb-6 text-sm text-slate-700">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">

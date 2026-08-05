@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BarChart3, CalendarRange, CircleHelp, Clock3, Download, Filter, MessageSquareText, ThumbsUp, Timer } from "lucide-react";
 import { formatDateTimeForDisplay } from "@/lib/datetime";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 
 type TargetAppOption = {
   id: string;
@@ -915,15 +916,16 @@ export function SearchAnalyticsDashboard({
 
       {selectedQuery ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-2xl">
+          <div className="relative w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-2xl">
+            <ModalCloseButton onClick={closeExplainabilityDrillDown} />
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">Answer explainability drill-down</h2>
               </div>
-              <button type="button" onClick={closeExplainabilityDrillDown} className="inline-flex h-8 items-center rounded-md border border-slate-300 px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">Close</button>
+              <span className="h-8 w-8" aria-hidden="true" />
             </div>
 
-            <div className="max-h-[75vh] space-y-4 overflow-y-auto p-4">
+            <div className="scrollbar-autohide max-h-[75vh] space-y-4 overflow-y-auto p-4">
               {queryDetailLoading ? (
                 <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-500">Loading explainability detail...</p>
               ) : queryDetailError ? (

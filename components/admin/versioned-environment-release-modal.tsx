@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Globe2 } from "lucide-react";
+import { ModalCloseButton } from "./modal-close-button";
 import { formatVersion } from "./version-history-modal";
 
 type EnvironmentRow = {
@@ -138,7 +139,8 @@ export function VersionedEnvironmentReleaseModal({ title, apiUrl, onClose, onSav
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+      <div className="relative w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <ModalCloseButton onClick={onClose} />
         <div className="flex items-center gap-3">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white">
             <Globe2 className="h-5 w-5" />

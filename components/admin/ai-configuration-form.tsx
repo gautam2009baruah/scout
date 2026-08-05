@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { Bot, HelpCircle, KeyRound, Pencil, Plus, RefreshCw, Star, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 
 type AIConfig = {
   active: {
@@ -854,7 +855,8 @@ export function AIConfigurationForm({ companyName, config, embeddingProviders, l
 
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+            <ModalCloseButton onClick={() => setConfirmDialog(null)} />
             <p className="mb-6 text-sm text-slate-900">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">
               <button

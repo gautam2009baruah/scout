@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Pencil, Trash2, UserCog } from "lucide-react";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 import type { RoleSummary } from "@/lib/admin/administration";
 import type { AdminModule } from "@/lib/admin/permissions";
 
@@ -64,7 +65,8 @@ export function MasterDataSummary({ roles, onEditRole }: MasterDataSummaryProps)
 
       {confirmDialog && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <ModalCloseButton onClick={() => setConfirmDialog(null)} />
             <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">
               <button

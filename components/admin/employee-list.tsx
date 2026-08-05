@@ -7,6 +7,7 @@ import { KeyRound, Pencil, Search, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 import type { EmployeeMembership, EmployeeRow, EmployeeStatus } from "@/lib/admin/user-management";
 import type { AdminModule } from "@/lib/admin/permissions";
 import type { CompanySummary, RoleSummary } from "@/lib/admin/administration";
@@ -240,7 +241,8 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
 
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4">
+          <div className="relative bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4">
+            <ModalCloseButton onClick={() => setConfirmDialog(null)} />
             <h3 className="text-base font-semibold text-slate-950">Delete user</h3>
             <p className="mt-2 text-sm text-slate-600">Delete "{confirmDialog.employee.name}" globally from all companies. This user will no longer appear in registered users.</p>
             <label className="mt-4 block">
@@ -257,7 +259,8 @@ export function UserList({ companies, currentCompanyId, currentUserId, employees
 
       {resetPasswordDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4">
+          <div className="relative bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4">
+            <ModalCloseButton onClick={() => setResetPasswordDialog(null)} />
             <h3 className="text-base font-semibold text-slate-950">Reset password</h3>
             <p className="mt-2 text-sm text-slate-600">Send a password reset email to <strong>{resetPasswordDialog.email}</strong>? They'll receive a link to set a new password.</p>
             <div className="mt-6 flex justify-end gap-3">
@@ -371,7 +374,7 @@ function EditUserModal({ companies, dialog, modules, onChange, onClose, onCompan
 
   return (
     <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
+      <div className="scrollbar-autohide max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
         <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-5 py-4">
           <div>
             <h3 className="text-lg font-semibold text-slate-950">Edit user</h3>

@@ -7,6 +7,7 @@ import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
 import { ToastProvider } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 
 type AdminModuleKey = number;
 
@@ -721,7 +722,8 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
 
       {showSessionWarning ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <ModalCloseButton disabled={isExtendingSession} label="Stay signed in and close dialog" onClick={() => void stayOnPage()} />
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.24em] text-teal-700">Session timeout</p>

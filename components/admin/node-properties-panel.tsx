@@ -12,6 +12,7 @@ import type { NodeType } from "@/shared/orchestrationTypes";
 import { TRIGGER_TYPES, TRIGGER_TYPE_LABELS, UPCOMING_TRIGGER_TYPES } from "@/shared/orchestrationTypes";
 import { createPortal } from "react-dom";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
+import { ModalCloseButton } from "./modal-close-button";
 import { ApiCallConfig } from "./api-call-config";
 import { DatabaseNodeConfigPanel as DatabaseConfig } from "./database-node-config";
 import {
@@ -676,7 +677,7 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
           </div>
 
           {/* Body only scrolls when the viewport or a complex node requires it. */}
-          <div className="admin-sidebar-scroll min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className="scrollbar-autohide min-h-0 flex-1 overflow-y-auto px-5 py-4">
             <div className="space-y-4">
         <section className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 p-4 md:grid-cols-[2fr_3fr]">
         <div className="min-w-0">
@@ -785,7 +786,8 @@ export function NodePropertiesPanel({ node, nodes = [], edges = [], orchestratio
     {/* Confirmation Dialog */}
     {confirmDialog && (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-        <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+        <div className="relative bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+          <ModalCloseButton onClick={() => setConfirmDialog(null)} />
           <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
           <div className="flex justify-end gap-3">
             <button
@@ -2500,7 +2502,8 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
 
       {generatedCredential && (
         <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-4 shadow-xl">
+          <div className="relative w-full max-w-lg rounded-lg border border-slate-200 bg-white p-4 shadow-xl">
+            <ModalCloseButton onClick={() => setGeneratedCredential(null)} />
             <h5 className="text-sm font-semibold text-slate-900">{generatedCredential.title}</h5>
             <p className="mt-1 text-xs text-slate-600">Copy and share this secret now over a secure channel. It will not be shown again in this screen.</p>
             <textarea
@@ -5844,7 +5847,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                                 {openSenderPickerKey === pickerKey && options.length > 0 && (
                                   <div
                                     role="listbox"
-                                    className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
+                                    className="scrollbar-autohide absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
                                   >
                                     <button
                                       type="button"
@@ -5917,7 +5920,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                             {openSenderPickerKey === "default" && (
                               <div
                                 role="listbox"
-                                className="absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
+                                className="scrollbar-autohide absolute z-20 mt-1 max-h-60 w-full min-w-0 overflow-y-auto rounded border border-slate-300 bg-white py-1 shadow-lg"
                               >
                                 {senderProviders.map((provider) => (
                                   <button

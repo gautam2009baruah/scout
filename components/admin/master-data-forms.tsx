@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Building2, HelpCircle, Loader2, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { HierarchicalModuleSelector } from "./hierarchical-module-selector";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 import type { AdminModule } from "@/lib/admin/permissions";
 import type { CompanySummary, RoleSummary } from "@/lib/admin/administration";
 
@@ -635,7 +636,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                 </div>
               </form>
 
-              <div className="max-h-80 overflow-auto rounded-lg border border-slate-200">
+              <div className="scrollbar-autohide max-h-80 overflow-auto rounded-lg border border-slate-200">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr>
@@ -781,7 +782,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                 </div>
               </form>
 
-              <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
+              <div className="scrollbar-autohide max-h-64 overflow-auto rounded-lg border border-slate-200">
                 {loadingEnvironments ? (
                   <p className="p-4 text-sm text-slate-500">Loading environments...</p>
                 ) : modalEnvironments.length === 0 ? (
@@ -826,7 +827,8 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
 
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative bg-white rounded-lg shadow-xl border border-slate-200 p-6 max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <ModalCloseButton onClick={() => setConfirmDialog(null)} />
             <p className="text-sm text-slate-900 mb-6">{confirmDialog.message}</p>
             <div className="flex justify-end gap-3">
               <button

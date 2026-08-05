@@ -177,7 +177,7 @@ export function HierarchicalModuleSelector({
               Unselect all
             </button>
           </div>
-          <div className="space-y-1 overflow-auto flex-1 pr-1" style={{scrollbarWidth: 'thin', scrollbarColor: '#cbd5e1 transparent'}}>
+          <div className="scrollbar-autohide space-y-1 overflow-auto flex-1 pr-1">
             {topLevelModules.map((parentModule) => {
               const children = modulesByParent.get(parentModule.key) || [];
               const isSelectable = isSelectableModule(parentModule);

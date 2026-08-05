@@ -10,6 +10,7 @@ import { EnvironmentReleaseModal } from "./environment-release-modal";
 import type { RoleSummary } from "@/lib/admin/administration";
 import type { TopicAccessGrant, TopicRow, TopicTreeNode, TopicUserOption } from "@/lib/admin/content-structure";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 
 type TopicManagerProps = {
   canManageAccess: boolean;
@@ -1302,7 +1303,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
       {deleteConfirmation ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm" onClick={() => setDeleteConfirmation(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true">
+          <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()} role="alertdialog" aria-modal="true">
+            <ModalCloseButton onClick={() => setDeleteConfirmation(null)} />
             <span className="grid h-11 w-11 place-items-center rounded-xl bg-red-50 text-red-600"><Trash2 className="h-5 w-5" /></span>
             <h2 className="mt-4 text-lg font-semibold text-slate-950">{deleteConfirmation.kind === "folder" ? "Delete folder and contents?" : "Delete document?"}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -1392,7 +1394,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
       {documentsTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-2 sm:px-4 sm:py-6" onClick={closeDocumentsModal}>
-          <div className="flex max-h-[calc(100vh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl sm:max-h-[86vh]" onClick={(event) => event.stopPropagation()}>
+          <div className="relative flex max-h-[calc(100vh-1rem)] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl sm:max-h-[86vh]" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton onClick={closeDocumentsModal} />
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-3 py-3 sm:px-5 sm:py-4">
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
@@ -1403,9 +1406,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   <p className="text-sm text-slate-500">{documentsTarget.topicName} | {documentGrid.total} files</p>
                 </div>
               </div>
-              <button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={closeDocumentsModal} type="button">
-                Close
-              </button>
+              <span className="h-8 w-8" aria-hidden="true" />
             </div>
 
             <form className="grid gap-2 border-b border-slate-200 px-3 py-3 sm:px-5 md:grid-cols-[minmax(180px,1fr)_130px_150px_auto]" onSubmit={applyDocumentFilters}>
@@ -1442,7 +1443,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               </p>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-auto px-2 py-3 sm:px-5 sm:py-4">
+            <div className="scrollbar-autohide min-h-0 flex-1 overflow-auto px-2 py-3 sm:px-5 sm:py-4">
               <table className="w-full min-w-[920px] border-collapse text-left text-sm">
                 <thead className="sticky top-0 bg-slate-950 text-white">
                   <tr>
@@ -1578,21 +1579,20 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
       {versionDocument ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={closeVersionModal}>
-          <div className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+          <div className="relative flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton onClick={closeVersionModal} />
             <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="text-lg font-semibold tracking-normal text-slate-950">Version History</h2>
                 <p className="text-sm text-slate-500">{versionDocument.name}</p>
               </div>
-              <button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={closeVersionModal} type="button">
-                Close
-              </button>
+              <span className="h-8 w-8" aria-hidden="true" />
             </div>
 
-            <div className="grid min-h-0 flex-1 gap-3 overflow-auto p-5 lg:grid-cols-[minmax(320px,1fr)_minmax(420px,1.2fr)]">
+            <div className="scrollbar-autohide grid min-h-0 flex-1 gap-3 overflow-auto p-5 lg:grid-cols-[minmax(320px,1fr)_minmax(420px,1.2fr)]">
               <section className="rounded-lg border border-slate-200 bg-white p-3">
                 <h3 className="text-sm font-semibold text-slate-900">Versions</h3>
-                <div className="mt-3 max-h-[38vh] overflow-auto rounded-lg border border-slate-200">
+                <div className="scrollbar-autohide mt-3 max-h-[38vh] overflow-auto rounded-lg border border-slate-200">
                   <table className="w-full border-collapse text-left text-sm">
                     <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                       <tr>
@@ -1693,13 +1693,13 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                     <div className="grid gap-2 lg:grid-cols-2">
                       <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
                         <p className="text-xs font-semibold uppercase text-emerald-700">Added preview</p>
-                        <ul className="mt-2 max-h-36 space-y-1 overflow-auto text-xs text-emerald-900">
+                        <ul className="scrollbar-autohide mt-2 max-h-36 space-y-1 overflow-auto text-xs text-emerald-900">
                           {versionComparison.addedPreview.length === 0 ? <li>No added lines.</li> : versionComparison.addedPreview.map((line, index) => <li key={`add-${index}`}>{line}</li>)}
                         </ul>
                       </div>
                       <div className="rounded-lg border border-red-200 bg-red-50/60 p-3">
                         <p className="text-xs font-semibold uppercase text-red-700">Removed preview</p>
-                        <ul className="mt-2 max-h-36 space-y-1 overflow-auto text-xs text-red-900">
+                        <ul className="scrollbar-autohide mt-2 max-h-36 space-y-1 overflow-auto text-xs text-red-900">
                           {versionComparison.removedPreview.length === 0 ? <li>No removed lines.</li> : versionComparison.removedPreview.map((line, index) => <li key={`remove-${index}`}>{line}</li>)}
                         </ul>
                       </div>
@@ -1710,7 +1710,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                       <div className="mt-2 grid gap-2 lg:grid-cols-2">
                         <div className="rounded-lg border border-red-200 bg-red-50/60 p-2">
                           <p className="text-xs font-semibold uppercase text-red-700">From v{versionComparison.fromVersion} (removed)</p>
-                          <ul className="mt-2 max-h-36 space-y-1 overflow-auto text-xs text-red-900">
+                          <ul className="scrollbar-autohide mt-2 max-h-36 space-y-1 overflow-auto text-xs text-red-900">
                             {versionComparison.removedPreview.length === 0
                               ? <li>No removed lines.</li>
                               : versionComparison.removedPreview.map((line, index) => <li key={`side-from-${index}`}>{line}</li>)}
@@ -1718,7 +1718,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                         </div>
                         <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
                           <p className="text-xs font-semibold uppercase text-emerald-700">To v{versionComparison.toVersion} (added)</p>
-                          <ul className="mt-2 max-h-36 space-y-1 overflow-auto text-xs text-emerald-900">
+                          <ul className="scrollbar-autohide mt-2 max-h-36 space-y-1 overflow-auto text-xs text-emerald-900">
                             {versionComparison.addedPreview.length === 0
                               ? <li>No added lines.</li>
                               : versionComparison.addedPreview.map((line, index) => <li key={`side-to-${index}`}>{line}</li>)}
@@ -1740,7 +1740,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
       {accessDocument && documentsTarget ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={() => setAccessDocument(null)}>
-          <form className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={saveDocumentAccess}>
+          <form className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={saveDocumentAccess}>
+            <ModalCloseButton onClick={() => setAccessDocument(null)} />
             <div className="flex items-center gap-3">
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-sky-600 text-white">
                 <ShieldCheck className="h-5 w-5" />
@@ -1844,7 +1845,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
       {uploadTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={closeUploadModal}>
-          <form className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={registerUpload}>
+          <form className="scrollbar-autohide relative max-h-[92vh] w-full max-w-3xl overflow-auto rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={registerUpload}>
+            <ModalCloseButton onClick={closeUploadModal} />
             <div className="flex items-center gap-3">
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600 text-white">
                 <FileUp className="h-5 w-5" />
@@ -1943,7 +1945,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 </label>
 
                 {uploadFiles.length ? (
-                  <div className="mt-3 max-h-32 overflow-auto rounded-lg border border-slate-200">
+                  <div className="scrollbar-autohide mt-3 max-h-32 overflow-auto rounded-lg border border-slate-200">
                     {uploadFiles.map((file) => (
                       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 last:border-b-0" key={`${file.name}-${file.lastModified}`}>
                         <span className="truncate text-sm font-medium text-slate-700">{file.name}</span>
@@ -2058,7 +2060,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
-                <div className="mt-3 max-h-36 space-y-2 overflow-auto">
+                <div className="scrollbar-autohide mt-3 max-h-36 space-y-2 overflow-auto">
                   {documentProgressRows.map((row) => (
                     <div className="rounded-md bg-white/80 px-2.5 py-2" key={row.id}>
                       <div className="flex items-center justify-between gap-3 text-xs">
@@ -2096,7 +2098,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
       {createTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={closeCreateModal}>
-          <form className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={createTopic}>
+          <form className="relative w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={createTopic}>
+            <ModalCloseButton onClick={closeCreateModal} />
             <div className="flex items-center gap-3">
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-slate-950 text-white">
                 <FolderPlus className="h-5 w-5" />
@@ -2218,7 +2221,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
       {editTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={closeEditModal}>
-          <form className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={updateTopic}>
+          <form className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={updateTopic}>
+            <ModalCloseButton onClick={closeEditModal} />
             <div className="flex items-center gap-3">
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-sky-600 text-white">
                 <Pencil className="h-5 w-5" />

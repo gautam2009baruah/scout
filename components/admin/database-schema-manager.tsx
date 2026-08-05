@@ -9,6 +9,7 @@ import type {
 } from "@/lib/admin/database-schemas";
 import { DatabaseSchemaSyncDialog } from "./database-schema-sync-dialog";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 
 type TargetAppOption = {
   id: string;
@@ -432,7 +433,8 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
     <div className="space-y-6">
       {confirmDialog ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm">
-          <div className="mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+          <div className="relative mx-4 max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl">
+            <ModalCloseButton onClick={() => setConfirmDialog(null)} />
             <h3 className="text-base font-semibold text-slate-950">Please confirm</h3>
             <p className="mt-2 text-sm text-slate-600">{confirmDialog.message}</p>
             <div className="mt-6 flex justify-end gap-3">
@@ -480,7 +482,7 @@ export function DatabaseSchemaManager({ companyName, targetApps, schemas }: Prop
             </button>
           </div>
           {downloadHelpOpen ? (
-            <div className="absolute right-6 top-16 z-50 max-h-[calc(100vh-6rem)] w-[min(46rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
+            <div className="scrollbar-autohide absolute right-6 top-16 z-50 max-h-[calc(100vh-6rem)] w-[min(46rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-950">How to host the downloaded project</h3>
@@ -869,19 +871,11 @@ PRAGMA table_info('your_table_name');`}</pre>
 
       {jsonEditorSchemaId ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-xl">
+          <div className="relative w-full max-w-4xl rounded-lg border border-slate-200 bg-white shadow-xl">
+            <ModalCloseButton onClick={() => { setJsonEditorSchemaId(null); setJsonEditorValue(null); }} />
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <h4 className="text-sm font-semibold text-slate-900">Schema JSON Editor</h4>
-              <button
-                className="text-sm text-slate-600"
-                type="button"
-                onClick={() => {
-                  setJsonEditorSchemaId(null);
-                  setJsonEditorValue(null);
-                }}
-              >
-                Close
-              </button>
+              <span className="h-8 w-8" aria-hidden="true" />
             </div>
             <div className="p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -901,7 +895,7 @@ PRAGMA table_info('your_table_name');`}</pre>
                 </button>
               </div>
 
-              <div className="max-h-[420px] overflow-auto rounded border border-slate-300 bg-white p-2">
+              <div className="scrollbar-autohide max-h-[420px] overflow-auto rounded border border-slate-300 bg-white p-2">
                 <JsonTreeNode
                   label="root"
                   value={jsonEditorValue}

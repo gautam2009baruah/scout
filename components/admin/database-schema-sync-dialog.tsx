@@ -170,7 +170,7 @@ export function DatabaseSchemaSyncDialog({ schema, onClose, onSynced }: Props) {
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 px-4 py-6">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-xl border border-slate-200 bg-white shadow-2xl">
+      <div className="scrollbar-autohide max-h-[90vh] w-full max-w-4xl overflow-auto rounded-xl border border-slate-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <div>
             <h3 className="text-lg font-semibold text-slate-950">Sync Schema</h3>
@@ -384,7 +384,7 @@ export function DatabaseSchemaSyncDialog({ schema, onClose, onSynced }: Props) {
             {result?.latestSchema ? (
               <div className="rounded-lg border border-slate-200 bg-slate-950 p-4 text-slate-100">
                 <div className="text-xs font-semibold uppercase tracking-wider text-slate-300">Remote schema preview</div>
-                <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-slate-100">
+                <pre className="scrollbar-autohide mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-slate-100">
                   {JSON.stringify(result.latestSchema, null, 2)}
                 </pre>
               </div>

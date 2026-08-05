@@ -342,15 +342,17 @@ textarea {
   border-radius: 999px;
 }
 
-/* Control Panel navigation: quiet at rest, discoverable on interaction. */
-.admin-sidebar-scroll {
+/* Shared quiet scrollbar for the Control Panel sidebar and modal scroll regions. */
+.admin-sidebar-scroll,
+.scrollbar-autohide {
   overscroll-behavior: contain;
   scrollbar-color: transparent transparent;
   scrollbar-width: thin;
 }
 
 @supports (overflow-y: overlay) {
-  .admin-sidebar-scroll {
+  .admin-sidebar-scroll,
+  .scrollbar-autohide {
     overflow-y: overlay;
   }
 }
@@ -358,20 +360,26 @@ textarea {
 .admin-sidebar-scroll:hover,
 .admin-sidebar-scroll:focus-visible,
 .admin-sidebar-scroll:focus-within,
-.admin-sidebar-scroll.is-scrolling {
+.admin-sidebar-scroll.is-scrolling,
+.scrollbar-autohide:hover,
+.scrollbar-autohide:focus-visible,
+.scrollbar-autohide:focus-within {
   scrollbar-color: rgb(100 116 139 / 42%) transparent;
 }
 
-.admin-sidebar-scroll::-webkit-scrollbar {
+.admin-sidebar-scroll::-webkit-scrollbar,
+.scrollbar-autohide::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 
-.admin-sidebar-scroll::-webkit-scrollbar-track {
+.admin-sidebar-scroll::-webkit-scrollbar-track,
+.scrollbar-autohide::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.admin-sidebar-scroll::-webkit-scrollbar-thumb {
+.admin-sidebar-scroll::-webkit-scrollbar-thumb,
+.scrollbar-autohide::-webkit-scrollbar-thumb {
   min-height: 36px;
   border: 1px solid transparent;
   border-radius: 999px;
@@ -383,16 +391,21 @@ textarea {
 .admin-sidebar-scroll:hover::-webkit-scrollbar-thumb,
 .admin-sidebar-scroll:focus-visible::-webkit-scrollbar-thumb,
 .admin-sidebar-scroll:focus-within::-webkit-scrollbar-thumb,
-.admin-sidebar-scroll.is-scrolling::-webkit-scrollbar-thumb {
+.admin-sidebar-scroll.is-scrolling::-webkit-scrollbar-thumb,
+.scrollbar-autohide:hover::-webkit-scrollbar-thumb,
+.scrollbar-autohide:focus-visible::-webkit-scrollbar-thumb,
+.scrollbar-autohide:focus-within::-webkit-scrollbar-thumb {
   background-color: rgb(100 116 139 / 42%);
 }
 
-.admin-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+.admin-sidebar-scroll::-webkit-scrollbar-thumb:hover,
+.scrollbar-autohide::-webkit-scrollbar-thumb:hover {
   background-color: rgb(71 85 105 / 62%);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .admin-sidebar-scroll::-webkit-scrollbar-thumb {
+  .admin-sidebar-scroll::-webkit-scrollbar-thumb,
+  .scrollbar-autohide::-webkit-scrollbar-thumb {
     transition: none;
   }
 }
@@ -401,7 +414,10 @@ textarea {
   .admin-sidebar-scroll:hover,
   .admin-sidebar-scroll:focus-visible,
   .admin-sidebar-scroll:focus-within,
-  .admin-sidebar-scroll.is-scrolling {
+  .admin-sidebar-scroll.is-scrolling,
+  .scrollbar-autohide:hover,
+  .scrollbar-autohide:focus-visible,
+  .scrollbar-autohide:focus-within {
     scrollbar-color: CanvasText Canvas;
   }
 }

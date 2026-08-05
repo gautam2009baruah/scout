@@ -5,6 +5,7 @@ import { AlertTriangle, Check, ChevronDown, ChevronRight, ListFilter, Pencil, Tr
 import type { SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTargetAppRow } from "@/lib/admin/guided-workflows";
 import { useToast } from "./toast";
+import { ModalCloseButton } from "./modal-close-button";
 
 type ElementIdentity = {
   tagName?: string;
@@ -335,7 +336,8 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
           onClick={() => processingId ? undefined : setDeleteConfirmation(null)}
           role="dialog"
         >
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+          <div className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton disabled={processingId === deleteConfirmation.id} onClick={() => setDeleteConfirmation(null)} />
             <div className="flex items-start gap-3 p-5">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
                 <AlertTriangle className="h-5 w-5" />
@@ -378,7 +380,8 @@ export function HealingSuggestionReviewerPanel({ displayMode = "cards", embedded
           onClick={() => processingId ? undefined : setRejectConfirmation(null)}
           role="dialog"
         >
-          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+          <div className="relative w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <ModalCloseButton disabled={processingId === rejectConfirmation.id} onClick={() => setRejectConfirmation(null)} />
             <div className="flex items-start gap-3 p-5">
               <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-700">
                 <X className="h-5 w-5" />
@@ -769,13 +772,14 @@ function EditModal({ data, onClose, onSave, processing }: {
 
   return (
     <div className="fixed inset-0 z-[60] grid place-items-center bg-slate-950/35 p-4" onClick={onClose}>
-      <div className="max-h-[86vh] w-full max-w-4xl overflow-auto rounded-lg border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+      <div className="scrollbar-autohide relative max-h-[86vh] w-full max-w-4xl overflow-auto rounded-lg border border-slate-200 bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <ModalCloseButton disabled={processing} onClick={onClose} />
         <div className="flex items-start justify-between gap-3 border-b border-slate-200 p-4">
           <div>
             <h3 className="text-base font-semibold text-slate-950">Edit Healing Suggestion</h3>
             <p className="mt-1 text-sm text-slate-500">{data.suggestion.workflow_title} - Step {data.suggestion.step_order}</p>
           </div>
-          <button className="rounded-md px-2 py-1 text-sm font-semibold text-slate-500 hover:bg-slate-100" onClick={onClose} type="button">Close</button>
+          <span className="h-8 w-8" aria-hidden="true" />
         </div>
         <div className="grid gap-4 p-4">
           <EditableControlDetails disabled={processing} onChange={setTarget} target={target} />

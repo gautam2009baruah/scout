@@ -544,7 +544,7 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
                   Copy
                 </button>
               </div>
-              <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-slate-100">
+              <pre className="scrollbar-autohide mt-3 max-h-72 overflow-auto whitespace-pre-wrap break-words text-xs leading-6 text-slate-100">
                 {previewResult?.generatedQuery || "Run the preview to see the SQL query here."}
               </pre>
             </div>

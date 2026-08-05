@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Globe2 } from "lucide-react";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
+import { ModalCloseButton } from "./modal-close-button";
 
 type EnvironmentReleaseModalProps = {
   // Human-readable name of the item being released (orchestration name,
@@ -107,7 +108,8 @@ export function EnvironmentReleaseModal({ title, apiUrl, targetAppId, targetAppO
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 px-4 py-6" onClick={onClose}>
-      <form className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={handleSave}>
+      <form className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={handleSave}>
+        <ModalCloseButton onClick={onClose} />
         <div className="flex items-center gap-3">
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600 text-white">
             <Globe2 className="h-5 w-5" />

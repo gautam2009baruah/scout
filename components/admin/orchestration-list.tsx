@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { Edit, Trash2, RefreshCw, Clock, X, Search, Filter, Link2 } from "lucide-react";
 import type { Orchestration } from "@/shared/orchestrationTypes";
 import { formatVersion } from "./version-history-modal";
+import { ModalCloseButton } from "./modal-close-button";
 
 interface OrchestrationListProps {
   onLoad: (orchestration: Orchestration) => void;
@@ -210,7 +211,7 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="scrollbar-autohide flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <RefreshCw className="h-8 w-8 text-blue-500 animate-spin" />
@@ -314,7 +315,8 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
       </div>
       {deleteTarget ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
-          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-2xl">
+            <ModalCloseButton onClick={() => setDeleteTarget(null)} />
             <h3 className="text-lg font-semibold text-slate-950">Delete orchestration</h3>
             <p className="mt-2 text-sm text-slate-600">Delete “{deleteTarget.name}”? This action cannot be undone.</p>
             <div className="mt-6 flex justify-end gap-3">
@@ -326,7 +328,8 @@ export function OrchestrationList({ onLoad, onClose, currentOrchestrationId, sel
       ) : null}
       {editTarget ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4">
-          <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="relative w-full max-w-lg rounded-lg border border-slate-200 bg-white p-6 shadow-2xl">
+            <ModalCloseButton onClick={() => setEditTarget(null)} />
             <h3 className="text-lg font-semibold text-slate-950">Edit orchestration metadata</h3>
             <p className="mt-1 text-sm text-slate-600">Update name, description, and target app without opening the canvas.</p>
 
