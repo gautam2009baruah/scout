@@ -8,7 +8,7 @@ type TokenResult = { token: string; scoutBaseUrl: string; expiresAt: string };
 // Rendered inside the Add Documents modal when the "Login site" source is
 // chosen. Lets the admin download the browser extension and mint a pairing
 // token scoped to the folder they're adding documents to.
-export function WebIngestorPanel({ folderId, folderName }: { folderId: string; folderName?: string }) {
+export function WebIngestorPanel({ folderId, folderName, onDone }: { folderId: string; folderName?: string; onDone?: () => void }) {
   const [ttlHours, setTtlHours] = useState<number>(24);
   const [result, setResult] = useState<TokenResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -138,6 +138,13 @@ export function WebIngestorPanel({ folderId, folderName }: { folderId: string; f
           </p>
         </li>
       </ol>
+      {onDone ? (
+        <div className="flex justify-end border-t border-slate-200 pt-4">
+          <button className="inline-flex h-10 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={onDone} type="button">
+            Done
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

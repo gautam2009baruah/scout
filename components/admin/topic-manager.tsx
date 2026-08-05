@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, ListTree, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Sparkles, Trash2, Workflow, X } from "lucide-react";
+import { ChevronDown, Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, ListTree, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./topic-tree";
 import { TopicTreeList } from "./topic-tree-list";
@@ -59,7 +59,7 @@ type DocumentGridState = {
 };
 
 type DocumentStorageMode = "managed_upload" | "external_reference" | "strict_external_reference";
-type IngestionSourceType = "upload" | "web_url" | "crawler" | "sitemap" | "rss" | "google_drive" | "sharepoint" | "web_login";
+type IngestionSourceType = "upload" | "web_url" | "crawler" | "sitemap" | "rss" | "google_drive" | "sharepoint";
 type SourceAuth = { authType: string; credentialName: string; tenantId: string; clientId: string; clientSecret: string; accessToken: string; serviceAccountJson: string };
 
 type ExternalReferenceRow = {
@@ -130,8 +130,7 @@ const ingestionSources = [
   { value: "sitemap", label: "Sitemap", description: "Import sitemap URLs", icon: Network },
   { value: "rss", label: "RSS feed", description: "Sync new articles", icon: Rss },
   { value: "google_drive", label: "Google Drive", description: "Files and folders", icon: Cloud },
-  { value: "sharepoint", label: "SharePoint", description: "Sites and libraries", icon: Cloud },
-  { value: "web_login", label: "Login site", description: "Pages behind a login", icon: ShieldCheck }
+  { value: "sharepoint", label: "SharePoint", description: "Sites and libraries", icon: Cloud }
 ] as const;
 const GLOBAL_TARGET_APP = "__global__";
 
@@ -284,6 +283,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [uploadProgressLabel, setUploadProgressLabel] = useState("");
   const [documentStorageMode, setDocumentStorageMode] = useState<DocumentStorageMode>("managed_upload");
   const [ingestionSource, setIngestionSource] = useState<IngestionSourceType>("upload");
+  const [showLoginSitePanel, setShowLoginSitePanel] = useState(false);
+  const [cloudConnectionMethod, setCloudConnectionMethod] = useState<"api" | "browser">("api");
   const [sourceAuth, setSourceAuth] = useState<SourceAuth>({ authType: "oauth_client", credentialName: "", tenantId: "", clientId: "", clientSecret: "", accessToken: "", serviceAccountJson: "" });
   const [credentialTest, setCredentialTest] = useState<{ status: "idle" | "testing" | "ok" | "error"; message: string }>({ status: "idle", message: "" });
   const [crawlSettings, setCrawlSettings] = useState({ maxPages: 200, maxDepth: 4 });
@@ -306,6 +307,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [editTargetAppIds, setEditTargetAppIds] = useState<string[]>([]);
   const [handledDeepLinkKey, setHandledDeepLinkKey] = useState<string | null>(null);
   const [treeView, setTreeView] = useState<"diagram" | "list">("diagram");
+  const isCloudIngestionSource = ingestionSource === "google_drive" || ingestionSource === "sharepoint";
+  const usesCloudBrowserLogin = isCloudIngestionSource && cloudConnectionMethod === "browser";
 
   useEffect(() => {
     const stored = window.localStorage.getItem("scout-content-structure-view");
@@ -541,6 +544,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setUploadProgressLabel("");
     setDocumentStorageMode("managed_upload");
     setIngestionSource("upload");
+    setShowLoginSitePanel(false);
+    setCloudConnectionMethod("api");
     setSourceAuth({ authType: "oauth_client", credentialName: "", tenantId: "", clientId: "", clientSecret: "", accessToken: "", serviceAccountJson: "" });
     setExternalRows([createExternalReferenceRow()]);
     setDocumentProgressRows([]);
@@ -553,6 +558,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setUploadProgressLabel("");
     setDocumentStorageMode("managed_upload");
     setIngestionSource("upload");
+    setShowLoginSitePanel(false);
+    setCloudConnectionMethod("api");
     setSourceAuth({ authType: "oauth_client", credentialName: "", tenantId: "", clientId: "", clientSecret: "", accessToken: "", serviceAccountJson: "" });
     setExternalRows([createExternalReferenceRow()]);
     setDocumentProgressRows([]);
@@ -1891,7 +1898,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
 
             <div className="mt-5">
               <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Choose a source</div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
                 {ingestionSources.map((source) => {
                   const active = source.value === ingestionSource;
                   return (
@@ -1901,6 +1908,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                       key={source.value}
                       onClick={() => {
                         setIngestionSource(source.value);
+                        if (source.value === "upload") setShowLoginSitePanel(false);
                         setDocumentStorageMode(source.value === "upload" ? "managed_upload" : "external_reference");
                         setExternalRows([{ ...createExternalReferenceRow(), sourceKind: source.value === "web_url" ? "file" : "folder", fileType: ["web_url", "crawler", "sitemap", "rss"].includes(source.value) ? "html" : "pdf" }]);
                         setDocumentProgressRows([]);
@@ -1915,38 +1923,72 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   );
                 })}
               </div>
+              {isCloudIngestionSource ? (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Choose one connection method</div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      className={`rounded-lg border px-3 py-2 text-left transition ${cloudConnectionMethod === "api" ? "border-violet-400 bg-white ring-2 ring-violet-100" : "border-slate-200 bg-white hover:border-slate-300"}`}
+                      onClick={() => { setCloudConnectionMethod("api"); setShowLoginSitePanel(false); }}
+                      type="button"
+                    >
+                      <span className="flex items-center gap-2 text-sm font-semibold text-slate-800"><KeyRound className="h-4 w-4 text-violet-600" /> API credentials</span>
+                      <span className="mt-1 block text-xs text-slate-500">Connect Scout directly using OAuth, a service account, or an access token.</span>
+                    </button>
+                    <button
+                      aria-expanded={cloudConnectionMethod === "browser" && showLoginSitePanel}
+                      className={`rounded-lg border px-3 py-2 text-left transition ${cloudConnectionMethod === "browser" ? "border-violet-400 bg-violet-50 ring-2 ring-violet-100" : "border-slate-200 bg-white hover:border-violet-300"}`}
+                      onClick={() => {
+                        setCloudConnectionMethod("browser");
+                        setShowLoginSitePanel(cloudConnectionMethod === "browser" ? !showLoginSitePanel : true);
+                      }}
+                      type="button"
+                    >
+                      <span className="flex items-center justify-between gap-2 text-sm font-semibold text-violet-900">
+                        <span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> Login site</span>
+                        <ChevronDown className={`h-4 w-4 transition-transform ${cloudConnectionMethod === "browser" && showLoginSitePanel ? "rotate-180" : ""}`} />
+                      </span>
+                      <span className="mt-1 block text-xs text-violet-700">Use your existing signed-in browser session; no API credentials required.</span>
+                    </button>
+                  </div>
+                </div>
+              ) : ingestionSource !== "upload" ? (
+                <button
+                  aria-expanded={showLoginSitePanel}
+                  className={`mt-3 flex w-full items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left transition ${showLoginSitePanel ? "border-violet-400 bg-violet-50 ring-2 ring-violet-100" : "border-dashed border-violet-300 bg-violet-50/50 hover:border-violet-500 hover:bg-violet-50"}`}
+                  disabled={topicState.status === "submitting"}
+                  onClick={() => setShowLoginSitePanel((open) => !open)}
+                  type="button"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 shrink-0 text-violet-700" />
+                    <span className="flex min-w-0 items-baseline gap-2 whitespace-nowrap">
+                      <span className="text-sm font-semibold text-violet-900">Login site</span>
+                      <span className="truncate text-xs text-violet-700">Capture pages that require you to sign in</span>
+                    </span>
+                  </span>
+                  <ChevronDown className={`h-4 w-4 shrink-0 text-violet-700 transition-transform ${showLoginSitePanel ? "rotate-180" : ""}`} />
+                </button>
+              ) : null}
             </div>
 
-            {ingestionSource === "web_login" ? (
-              <>
-                <WebIngestorPanel folderId={uploadTarget.topicId ?? ""} folderName={uploadTarget.topicName} />
-                <div className="mt-5 flex justify-end">
-                  <button className="inline-flex h-10 items-center rounded-lg border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={closeUploadModal} type="button">
-                    Done
-                  </button>
-                </div>
-              </>
-            ) : (
-            <>
-            {["web_url", "crawler", "sitemap", "rss", "google_drive", "sharepoint"].includes(ingestionSource) ? (
-              <details className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3">
-                <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-amber-800"><ShieldCheck className="h-4 w-4" /> Pages behind a login?</summary>
-                <p className="mt-2 text-xs leading-5 text-amber-800">If the site needs a sign-in, this server can&apos;t reach it. Pick the <span className="font-semibold">Login site</span> source instead — you sign in normally in your browser and a small extension captures the pages for you.</p>
-              </details>
+            {showLoginSitePanel && ingestionSource !== "upload" && (!isCloudIngestionSource || cloudConnectionMethod === "browser") ? (
+              <WebIngestorPanel folderId={uploadTarget.topicId ?? ""} folderName={uploadTarget.topicName} onDone={() => setShowLoginSitePanel(false)} />
             ) : null}
-            <details className="mt-4 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+            {!usesCloudBrowserLogin ? <>
+            <details className="group mt-4 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-slate-700">
                 <span className="inline-flex items-center gap-2"><Settings2 className="h-4 w-4" /> Storage & retention</span>
-                <span className="text-xs font-medium text-slate-500">{selectedStorageMode.label}</span>
+                <span className="inline-flex items-center gap-2 text-xs font-medium text-slate-500">{selectedStorageMode.label}<ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" /></span>
               </summary>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className={`mt-4 grid gap-3 ${ingestionSource === "upload" ? "grid-cols-1" : "md:grid-cols-3"}`}>
               {documentStorageModeOptions.filter((option) => ingestionSource === "upload" ? option.value === "managed_upload" : option.value !== "managed_upload").map((option) => {
                 const active = option.value === documentStorageMode;
 
                 return (
                   <button
-                    className={`rounded-lg border px-3 py-3 text-left transition ${active ? "border-violet-300 bg-violet-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}
-                    disabled={topicState.status === "submitting"}
+                    className={`rounded-lg border px-3 py-3 text-left transition ${ingestionSource === "upload" ? "cursor-default border-violet-300 bg-violet-50 shadow-sm" : active ? "border-violet-300 bg-violet-50 shadow-sm" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"}`}
+                    disabled={topicState.status === "submitting" || ingestionSource === "upload"}
                     key={option.value}
                     onClick={() => {
                       setDocumentStorageMode(option.value);
@@ -1957,12 +1999,22 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   >
                     <span className={`text-sm font-semibold ${active ? "text-violet-800" : "text-slate-800"}`}>{option.label}</span>
                     <span className="mt-1 block text-xs leading-5 text-slate-500">{option.description}</span>
+                    {ingestionSource === "upload" ? (
+                      <span className="mt-3 grid gap-1.5 border-t border-violet-200 pt-3 md:grid-cols-2">
+                        {option.details.map((detail) => (
+                          <span className="flex items-start gap-2 text-xs leading-5 text-slate-600" key={detail}>
+                            <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />
+                            <span>{detail}</span>
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
                   </button>
                 );
               })}
             </div>
 
-            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+            {ingestionSource !== "upload" ? <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="text-sm font-semibold text-slate-800">{selectedStorageMode.label}</div>
               <div className="mt-2 grid gap-1.5 md:grid-cols-2">
                 {selectedStorageMode.details.map((detail) => (
@@ -1972,12 +2024,12 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   </div>
                 ))}
               </div>
-            </div>
+            </div> : null}
             </details>
 
             {ingestionSource === "upload" ? (
               <>
-                <label className="mt-5 block rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-violet-300 hover:bg-violet-50/50">
+                <label className="mt-5 block cursor-pointer rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-center transition hover:border-violet-300 hover:bg-violet-50/50">
                   <input
                     accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,.md,.html,.json,.xml,.epub,.png,.jpg,.jpeg,.webp,.tiff,.zip"
                     className="sr-only"
@@ -2021,7 +2073,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-800"><KeyRound className="h-4 w-4 text-violet-600" /> Connection credentials</div>
                     <p className="mt-1 text-xs text-slate-500">Secrets are encrypted and are never stored in document metadata.</p>
-                    <p className="mt-1 text-xs text-slate-500">Prefer no IT setup? Choose the <span className="font-semibold">Login site</span> source instead to capture {ingestionSource === "google_drive" ? "Google Drive" : "SharePoint"} pages while logged in.</p>
+                    <p className="mt-1 text-xs text-slate-500">Prefer no IT setup? Click <span className="font-semibold">Login site</span> below the source choices to capture {ingestionSource === "google_drive" ? "Google Drive" : "SharePoint"} pages while logged in.</p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <label className="text-xs font-semibold text-slate-600">Connection name
                         <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal outline-none focus:border-violet-400" onChange={(event) => setSourceAuth((value) => ({ ...value, credentialName: event.target.value }))} placeholder="Company knowledge drive" value={sourceAuth.credentialName} />
@@ -2149,8 +2201,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 {ingestionSource === "upload" ? "Upload & process" : "Connect & import"}
               </button>
             </div>
-            </>
-            )}
+            </> : null}
           </form>
         </div>
       ) : null}
