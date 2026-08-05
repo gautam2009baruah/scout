@@ -262,7 +262,7 @@ async function assertCompanyAccess(companyId: string, session: AdminSession) {
   }
 }
 
-function accessCondition(session: AdminSession, params: unknown[]) {
+function accessCondition(session: AdminSession, params: unknown[], companyColumn = "target_app_source.company_id") {
   // isAdminRole means "this user's current role is admin-tier within their
   // own company" — never a platform-wide bypass (there is no such concept
   // in this app; roles.company_id is NOT NULL). Always scope to the
@@ -274,12 +274,12 @@ function accessCondition(session: AdminSession, params: unknown[]) {
 
   return `
     AND (
-      target_app_source.company_id = $${tenantParam}
+      ${companyColumn} = $${tenantParam}
       OR EXISTS (
         SELECT 1
         FROM user_company_roles
         WHERE user_company_roles.user_id = $${userParam}
-          AND user_company_roles.company_id = target_app_source.company_id
+          AND user_company_roles.company_id = ${companyColumn}
           AND user_company_roles.deleted_at IS NULL
       )
     )
@@ -451,22 +451,7 @@ export async function listGuidedWorkflows(session: AdminSession) {
 
 export async function listGuidedWorkflowTargetApps(session: AdminSession) {
   const params: unknown[] = [];
-  const access = session.user.isAdminRole ? "" : `
-    AND (
-      company_target_applications.company_id = $1
-      OR EXISTS (
-        SELECT 1
-        FROM user_company_roles
-        WHERE user_company_roles.user_id = $2
-          AND user_company_roles.company_id = company_target_applications.company_id
-          AND user_company_roles.deleted_at IS NULL
-      )
-    )
-  `;
-
-  if (!session.user.isAdminRole) {
-    params.push(session.user.tenantId, session.user.id);
-  }
+  const access = accessCondition(session, params, "company_target_applications.company_id");
 
   params.push(session.user.id);
   const userIdParam = params.length;
@@ -543,22 +528,7 @@ export async function createGuidedWorkflowTargetApp(input: {
 
 export async function listGuidedWorkflowRecordingSessions(session: AdminSession) {
   const params: unknown[] = [];
-  const access = session.user.isAdminRole ? "" : `
-    AND (
-      company_target_applications.company_id = $1
-      OR EXISTS (
-        SELECT 1
-        FROM user_company_roles
-        WHERE user_company_roles.user_id = $2
-          AND user_company_roles.company_id = company_target_applications.company_id
-          AND user_company_roles.deleted_at IS NULL
-      )
-    )
-  `;
-
-  if (!session.user.isAdminRole) {
-    params.push(session.user.tenantId, session.user.id);
-  }
+  const access = accessCondition(session, params, "company_target_applications.company_id");
   params.push(session.user.id);
   const targetUserParam = params.length;
 
@@ -602,22 +572,7 @@ export async function listGuidedWorkflowRecordingSessions(session: AdminSession)
 
 export async function listGuidedWorkflowTopics(session: AdminSession) {
   const params: unknown[] = [];
-  const access = session.user.isAdminRole ? "" : `
-    AND (
-      cta.company_id = $1
-      OR EXISTS (
-        SELECT 1
-        FROM user_company_roles
-        WHERE user_company_roles.user_id = $2
-          AND user_company_roles.company_id = cta.company_id
-          AND user_company_roles.deleted_at IS NULL
-      )
-    )
-  `;
-
-  if (!session.user.isAdminRole) {
-    params.push(session.user.tenantId, session.user.id);
-  }
+  const access = accessCondition(session, params, "cta.company_id");
   params.push(session.user.id);
   const targetUserParam = params.length;
 
@@ -786,22 +741,7 @@ export async function deleteGuidedWorkflowRecordingSession(id: string, session: 
 
 export async function getGuidedWorkflowRecordingSessionById(id: string, session: AdminSession) {
   const params: unknown[] = [id];
-  const access = session.user.isAdminRole ? "" : `
-    AND (
-      company_target_applications.company_id = $2
-      OR EXISTS (
-        SELECT 1
-        FROM user_company_roles
-        WHERE user_company_roles.user_id = $3
-          AND user_company_roles.company_id = company_target_applications.company_id
-          AND user_company_roles.deleted_at IS NULL
-      )
-    )
-  `;
-
-  if (!session.user.isAdminRole) {
-    params.push(session.user.tenantId, session.user.id);
-  }
+  const access = accessCondition(session, params, "company_target_applications.company_id");
 
   const result = await getPool().query(
     `

@@ -33,6 +33,13 @@ async function resolveSenderCredential(message: EmailMessage) {
     return null;
   }
 
+  // companyId must be a hard filter in the query itself, not a post-fetch
+  // comparison — a comparison is a no-op (and silently returns another
+  // company's credential) if a future caller ever forgets to pass companyId.
+  if (!message.companyId) {
+    throw new Error("companyId is required to resolve a sender credential");
+  }
+
   const result = await getPool().query<{
     id: string;
     company_id: string;
@@ -61,8 +68,8 @@ async function resolveSenderCredential(message: EmailMessage) {
        smtp_password,
        is_active
      FROM email_sender_credentials
-     WHERE id = $1`,
-    [message.senderCredentialId]
+     WHERE id = $1 AND company_id = $2`,
+    [message.senderCredentialId, message.companyId]
   );
 
   if ((result.rowCount ?? 0) === 0) {
@@ -72,10 +79,6 @@ async function resolveSenderCredential(message: EmailMessage) {
   const credential = result.rows[0];
   if (!credential.is_active) {
     throw new Error("Selected sender provider is inactive");
-  }
-
-  if (message.companyId && credential.company_id !== message.companyId) {
-    throw new Error("Selected sender provider does not belong to this company");
   }
 
   if (message.targetAppId && credential.target_app_id && credential.target_app_id !== message.targetAppId) {

@@ -72,6 +72,10 @@ export async function POST(request: NextRequest) {
         "Content-Type": request.headers.get("content-type") || "application/json",
         "origin": request.headers.get("origin") || "*",
         "x-scout-internal-secret": internalSecret,
+        // Pass the already-verified owning company along so smart-finder-api
+        // can enforce it against workflowId itself, rather than trusting this
+        // proxy's authorization check to always be the only path in.
+        "x-scout-company-id": scope.rows[0].company_id,
       },
       body: rawBody,
       cache: "no-store"

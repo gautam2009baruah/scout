@@ -85,7 +85,7 @@ async function flagStalenessIfNeeded(workflowId: string) {
   );
 }
 
-async function saveSuggestion(body: SaveSuggestionRequest) {
+async function saveSuggestion(body: SaveSuggestionRequest, companyId: string) {
   const {
     workflowId,
     stepId,
@@ -107,9 +107,16 @@ async function saveSuggestion(body: SaveSuggestionRequest) {
     return { status: 400, body: { error: "Missing required fields" } };
   }
 
+  // Enforce tenant scoping in this service's own query, not just in whatever
+  // called it — the internal secret authenticates a caller, not a company,
+  // so every write must independently verify workflowId actually belongs to
+  // the companyId the caller asserts.
   const workflowResult = await getPool().query(
-    `SELECT id FROM guided_workflow_guides WHERE id = $1`,
-    [workflowId]
+    `SELECT w.id
+     FROM guided_workflow_guides w
+     INNER JOIN company_target_applications cta ON cta.id = w.target_app_id
+     WHERE w.id = $1 AND cta.company_id = $2`,
+    [workflowId, companyId]
   );
 
   if (workflowResult.rows.length === 0) {
@@ -235,12 +242,17 @@ const server = http.createServer(async (request, response) => {
       return sendJson(request, response, 401, { message: "Unauthorized." });
     }
 
+    const companyId = request.headers["x-scout-company-id"];
+    if (typeof companyId !== "string" || !companyId.trim()) {
+      return sendJson(request, response, 400, { message: "x-scout-company-id header is required." });
+    }
+
     const body = await readJsonBody(request);
     if (!body || typeof body !== "object") {
       return sendJson(request, response, 400, { error: "Request body is required." });
     }
 
-    const result = await saveSuggestion(body as SaveSuggestionRequest);
+    const result = await saveSuggestion(body as SaveSuggestionRequest, companyId);
     return sendJson(request, response, result.status, result.body);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
