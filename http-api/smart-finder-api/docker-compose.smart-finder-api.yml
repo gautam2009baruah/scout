@@ -11,6 +11,7 @@ services:
       - "4302:4302"
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      SMART_FINDER_INTERNAL_SECRET: ${SMART_FINDER_INTERNAL_SECRET}
       SMART_FINDER_API_HOST: 0.0.0.0
       SMART_FINDER_API_PORT: 4302
     healthcheck:

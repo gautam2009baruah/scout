@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
+import { getCurrentAdminSession } from "@/lib/admin/session";
+import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 import type { ElementIdentity, SelectorCandidate, TargetElement } from "@/shared/guideTypes";
 
 type HealingSuggestionRequest = {
@@ -37,14 +39,41 @@ export async function POST(request: NextRequest) {
   const headers = corsHeaders(request);
 
   try {
+    const rawBody = await request.text();
+    const body = JSON.parse(rawBody) as { workflowId?: string };
+    const workflowId = String(body.workflowId || "").trim();
+    if (!workflowId) {
+      return NextResponse.json({ error: "Workflow is required." }, { status: 400, headers });
+    }
+    const scope = await getPool().query<{ company_id: string; target_app_id: string }>(
+      `SELECT cta.company_id, w.target_app_id
+       FROM guided_workflow_guides w
+       INNER JOIN company_target_applications cta ON cta.id = w.target_app_id
+       WHERE w.id = $1 AND w.deleted_at IS NULL
+       LIMIT 1`,
+      [workflowId],
+    );
+    if (!scope.rows[0]) {
+      return NextResponse.json({ error: "Workflow not found." }, { status: 404, headers });
+    }
+    await assertChatbotApiKeyAccess(request, {
+      companyId: scope.rows[0].company_id,
+      targetAppId: scope.rows[0].target_app_id,
+    });
+
+    const internalSecret = process.env.SMART_FINDER_INTERNAL_SECRET?.trim();
+    if (!internalSecret) {
+      return NextResponse.json({ error: "Smart finder service authentication is not configured." }, { status: 503, headers });
+    }
     const targetBaseUrl = (process.env.SMART_FINDER_API_URL || "http://localhost:4302").replace(/\/$/, "");
     const response = await fetch(`${targetBaseUrl}/v1/healing-suggestions`, {
       method: "POST",
       headers: {
         "Content-Type": request.headers.get("content-type") || "application/json",
-        "origin": request.headers.get("origin") || "*"
+        "origin": request.headers.get("origin") || "*",
+        "x-scout-internal-secret": internalSecret,
       },
-      body: await request.text(),
+      body: rawBody,
       cache: "no-store"
     });
 
@@ -57,6 +86,9 @@ export async function POST(request: NextRequest) {
       }
     });
   } catch (error) {
+    if (error instanceof ChatbotApiKeyAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode, headers });
+    }
     return NextResponse.json(
       {
         error: "Standalone smart finder API is unavailable",
@@ -70,6 +102,10 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const headers = corsHeaders(request);
   try {
+    const session = await getCurrentAdminSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
+    }
     const searchParams = request.nextUrl.searchParams;
     const workflowId = searchParams.get("workflowId");
     const stepId = searchParams.get("stepId");
@@ -104,9 +140,10 @@ export async function GET(request: NextRequest) {
       LEFT JOIN guided_workflow_topics t ON w.topic_id = t.id AND t.deleted_at IS NULL
       LEFT JOIN guided_workflow_recording_sessions rs ON t.recording_session_id = rs.id AND rs.deleted_at IS NULL
       WHERE s.status = $1
+        AND cta.company_id = $2
         AND s.deleted_at IS NULL
     `;
-    const params: unknown[] = [status];
+    const params: unknown[] = [status, session.user.tenantId];
 
     if (workflowId) {
       params.push(workflowId);
@@ -119,6 +156,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (companyId) {
+      if (companyId !== session.user.tenantId) {
+        return NextResponse.json({ error: "Company scope is not available in this session." }, { status: 403, headers });
+      }
       params.push(companyId);
       fromWhereClause += ` AND cta.company_id = $${params.length}`;
     }

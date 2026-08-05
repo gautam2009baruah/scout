@@ -146,61 +146,33 @@ export async function getAIProviderConfig(companyId?: string, targetAppId?: stri
       const companyEmbedding = companyEmbeddingResult.rows[0];
       const companyLlm = companyLlmResult.rows[0];
 
-      if (companyEmbedding && companyLlm) {
-        const env = envConfig();
-        return {
-          embedding_provider: companyEmbedding.provider,
-          embedding_model: normalizeEmbeddingModel(companyEmbedding.provider, companyEmbedding.model || env.embedding_model),
-          embedding_dimension: Number(companyEmbedding.dimension || env.embedding_dimension),
-          embedding_endpoint: companyEmbedding.endpoint || (companyEmbedding.provider === env.embedding_provider ? env.embedding_endpoint : ""),
-          embedding_api_key: companyEmbedding.api_key || env.embedding_api_key,
-          llm_provider: companyLlm.provider,
-          llm_model: companyLlm.model || env.llm_model,
-          llm_endpoint: companyLlm.endpoint || (companyLlm.provider === env.llm_provider ? env.llm_endpoint : ""),
-          llm_api_key: companyLlm.api_key || env.llm_api_key
-        };
-      }
-    }
-
-    const [embeddingResult, llmResult] = await Promise.all([
-      getPool().query<EmbeddingProviderConfigRow>(
-        `
-          SELECT id, company_id, provider, model, dimension, endpoint, api_key, is_active, is_primary, target_app_id, environment_id
-          FROM ai_embedding_provider_configs
-          WHERE is_active = true
-            AND deleted_at IS NULL
-          LIMIT 1
-        `
-      ),
-      getPool().query<LLMProviderConfigRow>(
-        `
-          SELECT id, company_id, provider, model, endpoint, api_key, is_active, is_primary, target_app_id, environment_id
-          FROM ai_llm_provider_configs
-          WHERE is_active = true
-            AND deleted_at IS NULL
-          LIMIT 1
-        `
-      )
-    ]);
-    const activeEmbedding = embeddingResult.rows[0];
-    const activeLLM = llmResult.rows[0];
-
-    if (activeEmbedding && activeLLM) {
+      // Resolve each provider family independently. If this company has not
+      // configured one side, fall back only to deployment configuration —
+      // never to an arbitrary active row owned by another company.
       const env = envConfig();
-
       return {
-        embedding_provider: activeEmbedding.provider,
-        embedding_model: normalizeEmbeddingModel(activeEmbedding.provider, activeEmbedding.model || env.embedding_model),
-        embedding_dimension: Number(activeEmbedding.dimension || env.embedding_dimension),
-        embedding_endpoint: activeEmbedding.endpoint || (activeEmbedding.provider === env.embedding_provider ? env.embedding_endpoint : ""),
-        embedding_api_key: activeEmbedding.api_key || env.embedding_api_key,
-        llm_provider: activeLLM.provider,
-        llm_model: activeLLM.model || env.llm_model,
-        llm_endpoint: activeLLM.endpoint || (activeLLM.provider === env.llm_provider ? env.llm_endpoint : ""),
-        llm_api_key: activeLLM.api_key || env.llm_api_key
+        embedding_provider: companyEmbedding?.provider || env.embedding_provider,
+        embedding_model: companyEmbedding
+          ? normalizeEmbeddingModel(companyEmbedding.provider, companyEmbedding.model || env.embedding_model)
+          : env.embedding_model,
+        embedding_dimension: companyEmbedding
+          ? Number(companyEmbedding.dimension || env.embedding_dimension)
+          : env.embedding_dimension,
+        embedding_endpoint: companyEmbedding
+          ? companyEmbedding.endpoint || (companyEmbedding.provider === env.embedding_provider ? env.embedding_endpoint : "")
+          : env.embedding_endpoint,
+        embedding_api_key: companyEmbedding?.api_key || env.embedding_api_key,
+        llm_provider: companyLlm?.provider || env.llm_provider,
+        llm_model: companyLlm?.model || env.llm_model,
+        llm_endpoint: companyLlm
+          ? companyLlm.endpoint || (companyLlm.provider === env.llm_provider ? env.llm_endpoint : "")
+          : env.llm_endpoint,
+        llm_api_key: companyLlm?.api_key || env.llm_api_key
       };
     }
-
+    // Calls without an explicit tenant are allowed only to use deployment
+    // defaults. Selecting a database row without company identity would cross
+    // the tenant boundary.
     return envConfig();
   } catch {
     return envConfig();

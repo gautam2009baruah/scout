@@ -29,14 +29,19 @@ export async function GET(request: NextRequest) {
 
     const pool = getPool();
 
+    if (companyId && companyId !== session.user.tenantId) {
+      return NextResponse.json({ success: false, error: "Company scope is not available in this session." }, { status: 403 });
+    }
+
     // $1/$2 are the (optional) email received_at date range used by the email
     // stat subqueries so the counts match the executions panel exactly.
     // $3 is the (optional) environment filter, applied only to
     // trigger_execution_logs (chatbot-type triggers) — email/other trigger
     // types have no environment_id, so they're unaffected by this filter.
-    // The dynamic trigger filters start at $4.
-    const params: any[] = [from, to, environmentId || null];
-    let paramIndex = 4;
+    // $4 is always the authenticated current company. Dynamic filters start
+    // at $5; no request can omit or replace the tenant boundary.
+    const params: any[] = [from, to, environmentId || null, session.user.tenantId];
+    let paramIndex = 5;
 
     // Build query with filters.
     // Note: orchestration_triggers uses a `status` text column ('active' |
@@ -121,7 +126,7 @@ export async function GET(request: NextRequest) {
       FROM orchestration_triggers ot
       INNER JOIN orchestrations o ON ot.orchestration_id = o.id
       LEFT JOIN company_target_applications cta ON cta.id = o.target_app_id
-      WHERE 1 = 1
+      WHERE o.company_id = $4
         AND (
           $3::uuid IS NULL
           OR EXISTS (
@@ -131,12 +136,6 @@ export async function GET(request: NextRequest) {
           )
         )
     `;
-
-    if (companyId) {
-      query += ` AND o.company_id = $${paramIndex}`;
-      params.push(companyId);
-      paramIndex++;
-    }
 
     if (targetAppId) {
       query += ` AND o.target_app_id = $${paramIndex}`;

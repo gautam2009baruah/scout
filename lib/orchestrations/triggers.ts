@@ -343,6 +343,7 @@ export async function createTriggerLog(data: {
 }
 
 export async function getTriggerLogs(filters: {
+  companyId: string;
   triggerId?: string;
   orchestrationId?: string;
   executionId?: string;
@@ -350,30 +351,33 @@ export async function getTriggerLogs(filters: {
   limit?: number;
 }): Promise<TriggerExecutionLog[]> {
   const pool = getPool();
-  let query = "SELECT * FROM trigger_execution_logs WHERE 1=1";
-  const params: any[] = [];
+  let query = `SELECT tel.*
+    FROM trigger_execution_logs tel
+    INNER JOIN orchestrations o ON o.id = tel.orchestration_id
+    WHERE o.company_id = $1`;
+  const params: any[] = [filters.companyId];
 
   if (filters.triggerId) {
     params.push(filters.triggerId);
-    query += ` AND trigger_id = $${params.length}`;
+    query += ` AND tel.trigger_id = $${params.length}`;
   }
 
   if (filters.orchestrationId) {
     params.push(filters.orchestrationId);
-    query += ` AND orchestration_id = $${params.length}`;
+    query += ` AND tel.orchestration_id = $${params.length}`;
   }
 
   if (filters.executionId) {
     params.push(filters.executionId);
-    query += ` AND execution_id = $${params.length}`;
+    query += ` AND tel.execution_id = $${params.length}`;
   }
 
   if (filters.status) {
     params.push(filters.status);
-    query += ` AND status = $${params.length}`;
+    query += ` AND tel.status = $${params.length}`;
   }
 
-  query += " ORDER BY triggered_at DESC";
+  query += " ORDER BY tel.triggered_at DESC";
 
   if (filters.limit) {
     params.push(filters.limit);

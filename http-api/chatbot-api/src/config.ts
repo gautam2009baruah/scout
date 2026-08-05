@@ -1,7 +1,6 @@
 export type ApiConfig = {
   port: number;
   host: string;
-  legacyApiKey: string;
   allowedOrigins: string[];
   requestBodyLimitBytes: number;
   companyCacheTtlMs: number;
@@ -24,12 +23,10 @@ function parseOrigins(value: string | undefined) {
 }
 
 export function getApiConfig(): ApiConfig {
-  const legacyApiKey = process.env.CHATBOT_API_KEY?.trim() || "";
 
   return {
     port: parseNumber(process.env.CHATBOT_API_PORT, 4200),
     host: process.env.CHATBOT_API_HOST?.trim() || "0.0.0.0",
-    legacyApiKey,
     allowedOrigins: parseOrigins(process.env.CHATBOT_API_ALLOWED_ORIGINS),
     requestBodyLimitBytes: parseNumber(process.env.CHATBOT_API_BODY_LIMIT_BYTES, 262144),
     companyCacheTtlMs: parseNumber(process.env.CHATBOT_API_COMPANY_CACHE_TTL_MS, 300000),

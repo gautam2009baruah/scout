@@ -20,7 +20,7 @@ import { clearTriggerCache } from "@/lib/orchestrations/chatbot-trigger-matcher"
 // A trigger's email-related credential reference(s) must belong to the same
 // company as the orchestration itself — otherwise a trigger could be wired
 // up to poll/send using another company's mailbox credential.
-async function assertEmailCredentialsBelongToCompany(config: any, companyId: string) {
+async function assertEmailCredentialsBelongToCompany(config: any, companyId: string, targetAppId: string | null) {
   const credentialIds = new Set<string>();
   if (typeof config?.emailCredentialId === "string" && config.emailCredentialId) {
     credentialIds.add(config.emailCredentialId);
@@ -37,14 +37,37 @@ async function assertEmailCredentialsBelongToCompany(config: any, companyId: str
 
   if (credentialIds.size === 0) return;
 
-  const result = await getPool().query<{ id: string }>(
-    `SELECT id FROM email_credentials WHERE id = ANY($1::uuid[]) AND company_id = $2`,
+  const result = await getPool().query<{ id: string; target_app_id: string | null; environment_ids: string[] }>(
+    `SELECT ec.id, ec.target_app_id,
+       COALESCE(array_agg(ece.environment_id) FILTER (WHERE ece.environment_id IS NOT NULL), ARRAY[]::uuid[]) AS environment_ids
+     FROM email_credentials ec
+     LEFT JOIN email_credential_environments ece ON ece.email_credential_id = ec.id
+     WHERE ec.id = ANY($1::uuid[]) AND ec.company_id = $2
+     GROUP BY ec.id, ec.target_app_id`,
     [Array.from(credentialIds), companyId]
   );
   const validIds = new Set(result.rows.map((row) => row.id));
   const invalid = Array.from(credentialIds).filter((id) => !validIds.has(id));
   if (invalid.length > 0) {
     throw new Error("One or more selected email credentials do not belong to this company");
+  }
+
+  const byId = new Map(result.rows.map((row) => [row.id, row]));
+  for (const [environmentId, ids] of Object.entries(config?.emailCredentialIdsByEnvironment || {})) {
+    if (!Array.isArray(ids) || !targetAppId) continue;
+    const environment = await getPool().query<{ id: string }>(
+      `SELECT id FROM target_app_environments WHERE id = $1 AND target_app_id = $2`,
+      [environmentId, targetAppId],
+    );
+    if (!environment.rows[0]) {
+      throw new Error("One or more selected environments do not belong to this orchestration's target application");
+    }
+    for (const id of ids) {
+      const credential = byId.get(String(id));
+      if (!credential || credential.target_app_id !== targetAppId || !credential.environment_ids.includes(environmentId)) {
+        throw new Error("Each email credential must be linked to its selected target application and environment");
+      }
+    }
   }
 }
 
@@ -123,7 +146,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await assertEmailCredentialsBelongToCompany(finalConfig, orchestration.companyId);
+    await assertEmailCredentialsBelongToCompany(finalConfig, orchestration.companyId, orchestration.targetAppId ?? null);
 
     const trigger = await createTrigger({
       orchestrationId,
@@ -197,7 +220,7 @@ export async function PUT(request: NextRequest) {
           { status: 400 }
         );
       }
-      await assertEmailCredentialsBelongToCompany(config, orchestration.companyId);
+      await assertEmailCredentialsBelongToCompany(config, orchestration.companyId, orchestration.targetAppId ?? null);
       updates.config = config;
     }
     if (status !== undefined) updates.status = status;

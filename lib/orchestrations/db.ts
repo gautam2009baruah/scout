@@ -19,6 +19,7 @@ import type {
   SwitchNodeConfig,
 } from "@/shared/orchestrationTypes";
 import type { AdminSession } from "@/lib/admin/auth";
+import { assertTargetAppScope } from "@/lib/orchestrations/request-scope";
 import { createTrigger } from "./triggers";
 import { clearTriggerCache } from "./chatbot-trigger-matcher";
 import { indexOrchestration } from "./planner/orchestration-index";
@@ -298,6 +299,11 @@ export async function assertOrchestrationOwnership(session: AdminSession, orches
   const orchestration = await getOrchestrationById(orchestrationId);
   if (!orchestration || orchestration.companyId !== session.user.tenantId) {
     throw new OrchestrationAccessError();
+  }
+  if (orchestration.targetAppId) {
+    await assertTargetAppScope(session, orchestration.targetAppId).catch(() => {
+      throw new OrchestrationAccessError();
+    });
   }
   return orchestration;
 }
@@ -579,10 +585,15 @@ export async function publishOrchestration(
         id: string;
         provider: "gmail" | "outlook" | "imap";
         email_address: string;
+        target_app_id: string | null;
+        environment_ids: string[];
       }>(
-        `SELECT id, provider, email_address
-         FROM email_credentials
-         WHERE id = ANY($1::uuid[]) AND company_id = $2 AND is_active = true`,
+        `SELECT ec.id, ec.provider, ec.email_address, ec.target_app_id,
+                COALESCE(array_agg(ece.environment_id) FILTER (WHERE ece.environment_id IS NOT NULL), ARRAY[]::uuid[]) AS environment_ids
+         FROM email_credentials ec
+         LEFT JOIN email_credential_environments ece ON ece.email_credential_id = ec.id
+         WHERE ec.id = ANY($1::uuid[]) AND ec.company_id = $2 AND ec.is_active = true
+         GROUP BY ec.id, ec.provider, ec.email_address, ec.target_app_id`,
         [credentialIds, orchestration.companyId]
       );
       const credentialsById = new Map(credentialsResult.rows.map((row) => [row.id, row]));
@@ -592,8 +603,8 @@ export async function publishOrchestration(
       );
       const environmentsResult = environmentIds.length
         ? await pool.query<{ id: string; name: string }>(
-            `SELECT id, name FROM target_app_environments WHERE id = ANY($1::uuid[])`,
-            [environmentIds]
+            `SELECT id, name FROM target_app_environments WHERE id = ANY($1::uuid[]) AND target_app_id = $2`,
+            [environmentIds, orchestration.targetAppId]
           )
         : { rows: [] as Array<{ id: string; name: string }> };
       const environmentNamesById = new Map(environmentsResult.rows.map((row) => [row.id, row.name]));
@@ -613,8 +624,8 @@ export async function publishOrchestration(
 
       for (const pair of desiredPairs) {
         const credential = credentialsById.get(pair.credentialId);
-        if (!credential) {
-          throw new Error("Selected email credential was not found or is inactive");
+        if (!credential || credential.target_app_id !== orchestration.targetAppId || !credential.environment_ids.includes(pair.environmentId)) {
+          throw new Error("Selected email credential is not active and linked to this target application and environment");
         }
 
         const emailTriggerConfig: EmailTriggerConfig = {

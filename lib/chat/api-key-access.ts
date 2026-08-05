@@ -130,6 +130,7 @@ async function loadKeyRecord(hashedKey: string): Promise<CachedKeyRecord | null>
         k.environment_id
       FROM chatbot_api_keys k
       INNER JOIN company_target_applications cta ON cta.id = k.target_app_id
+      INNER JOIN target_app_environments env ON env.id = k.environment_id AND env.target_app_id = k.target_app_id
       WHERE k.key_hash = $1
         AND k.status = 'active'
         AND k.is_active = true

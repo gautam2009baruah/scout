@@ -6,11 +6,11 @@ import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import {
   getOrchestrationPage,
-  getOrchestrationById,
   assertOrchestrationOwnership,
   OrchestrationAccessError,
 } from "@/lib/orchestrations/db";
 import type { OrchestrationStatus } from "@/shared/orchestrationTypes";
+import { assertTargetAppScope, RequestScopeError } from "@/lib/orchestrations/request-scope";
 
 function resolveScopedCompanyId(session: Awaited<ReturnType<typeof getCurrentAdminSession>>, requested: string | null): string {
   if (!session) return "";
@@ -38,10 +38,7 @@ export async function GET(request: NextRequest) {
 
     // Get single orchestration by ID
     if (orchestrationId) {
-      const orchestration = await getOrchestrationById(orchestrationId);
-      if (!orchestration || orchestration.companyId !== session.user.tenantId) {
-        return NextResponse.json({ message: "Orchestration not found" }, { status: 404 });
-      }
+      const orchestration = await assertOrchestrationOwnership(session, orchestrationId);
       return NextResponse.json({ orchestration });
     }
 
@@ -89,6 +86,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (targetAppId) {
+      const scope = await assertTargetAppScope(session, String(targetAppId));
+      if (scope.companyId !== companyId) {
+        throw new RequestScopeError("Target application does not belong to the selected company.");
+      }
+    }
+
     // Create orchestration in database
     const { createOrchestration } = await import("@/lib/orchestrations/db");
     const orchestration = await createOrchestration({
@@ -102,6 +106,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ orchestration }, { status: 201 });
   } catch (error) {
+    if (error instanceof RequestScopeError || error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error creating orchestration:", error);
     return NextResponse.json(
       { message: "Failed to create orchestration" },
@@ -130,6 +137,10 @@ export async function PUT(request: NextRequest) {
     }
 
     await assertOrchestrationOwnership(session, id);
+
+    if (targetAppId !== undefined && targetAppId !== null && String(targetAppId).trim()) {
+      await assertTargetAppScope(session, String(targetAppId).trim());
+    }
 
     const { updateOrchestration, publishOrchestration } = await import("@/lib/orchestrations/db");
 

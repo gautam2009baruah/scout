@@ -8,11 +8,19 @@ function targetBaseUrl() {
 
 async function proxyRequest(request: Request) {
   const origin = request.headers.get("origin") || "*";
+  const internalSecret = process.env.RECORDER_SYNC_INTERNAL_SECRET?.trim();
+  if (!internalSecret) {
+    return new Response(JSON.stringify({ message: "Recorder service authentication is not configured." }), {
+      status: 503,
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    });
+  }
   const response = await fetch(`${targetBaseUrl()}/v1/recorder/actions`, {
     method: request.method,
     headers: {
       "Content-Type": request.headers.get("content-type") || "application/json",
-      "origin": origin
+      "origin": origin,
+      "x-scout-internal-secret": internalSecret,
     },
     body: request.method === "OPTIONS" ? undefined : await request.text(),
     cache: "no-store"

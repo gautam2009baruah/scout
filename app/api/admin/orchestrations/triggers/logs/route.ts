@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const limit = searchParams.get("limit");
 
-    const filters: any = {};
+    const filters: any = { companyId: session.user.tenantId };
     if (triggerId) filters.triggerId = triggerId;
     if (orchestrationId) filters.orchestrationId = orchestrationId;
     if (executionId) filters.executionId = executionId;

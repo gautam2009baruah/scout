@@ -8,6 +8,7 @@ const host = process.env.RECORDER_SYNC_API_HOST || "0.0.0.0";
 const port = Number(process.env.RECORDER_SYNC_API_PORT || 4301);
 const recordedActionTypes = new Set<RecordedActionType>(["click", "input", "navigation", "submit", "change", "manual-select"]);
 const MAX_BODY_BYTES = 256 * 1024;
+const internalSecret = process.env.RECORDER_SYNC_INTERNAL_SECRET?.trim() || "";
 
 class PayloadTooLargeError extends Error {}
 
@@ -97,6 +98,13 @@ const server = http.createServer(async (request, response) => {
 
     if (method !== "POST") {
       return sendJson(request, response, 405, { message: "Method not allowed." });
+    }
+
+    if (!internalSecret) {
+      return sendJson(request, response, 503, { message: "Service authentication is not configured." });
+    }
+    if (request.headers["x-scout-internal-secret"] !== internalSecret) {
+      return sendJson(request, response, 401, { message: "Unauthorized." });
     }
 
     let body: unknown;

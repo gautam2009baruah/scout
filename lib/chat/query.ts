@@ -249,6 +249,8 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   if (requestedConversationId && canPersistConversation) {
     const lifecycleState = await getConversationLifecycleState({
       companyId,
+      targetAppId: input.target_app_id?.trim() || undefined,
+      environmentId: input.environment_id?.trim() || undefined,
       userId,
       conversationId: requestedConversationId,
       skipUserValidation: true,
@@ -266,6 +268,8 @@ export async function answerChatQuery(input: ChatQueryInput): Promise<ChatQueryR
   const conversationId = canPersistConversation
     ? await getOrCreateConversation({
       companyId,
+      targetAppId: input.target_app_id?.trim() || undefined,
+      environmentId: input.environment_id?.trim() || undefined,
       userId,
       conversationId: requestedConversationId,
       firstQuestion: question,

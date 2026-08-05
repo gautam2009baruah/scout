@@ -120,6 +120,8 @@ async function assertCompanyAndUser(companyId: string, userId: string, options?:
 
 export async function getOrCreateConversation(input: {
   companyId: string;
+  targetAppId?: string;
+  environmentId?: string;
   userId: string;
   conversationId?: string;
   firstQuestion: string;
@@ -129,16 +131,14 @@ export async function getOrCreateConversation(input: {
   const normalizedUserId = input.userId.trim();
 
   if (input.conversationId) {
-    const existing = await getPool().query<{ id: string; status: ConversationStatus }>(
+    const existing = await getPool().query<{ id: string; status: ConversationStatus; company_id: string; external_user_id: string; target_app_id: string | null; environment_id: string | null }>(
       `
-        SELECT id, status
+        SELECT id, status, company_id, external_user_id, target_app_id, environment_id
         FROM conversations
         WHERE id = $1
-          AND company_id = $2
-          AND external_user_id = $3
         LIMIT 1
       `,
-      [input.conversationId, input.companyId, normalizedUserId]
+      [input.conversationId]
     );
 
     const conversation = existing.rows[0];
@@ -146,14 +146,23 @@ export async function getOrCreateConversation(input: {
     if (!conversation) {
       const created = await getPool().query<{ id: string }>(
         `
-          INSERT INTO conversations (id, company_id, external_user_id, title)
-          VALUES ($1, $2, $3, $4)
+          INSERT INTO conversations (id, company_id, target_app_id, environment_id, external_user_id, title)
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING id
         `,
-        [input.conversationId, input.companyId, normalizedUserId, truncateTitle(input.firstQuestion)]
+        [input.conversationId, input.companyId, input.targetAppId || null, input.environmentId || null, normalizedUserId, truncateTitle(input.firstQuestion)]
       );
 
       return created.rows[0].id;
+    }
+
+    if (
+      conversation.company_id !== input.companyId
+      || conversation.external_user_id !== normalizedUserId
+      || conversation.target_app_id !== (input.targetAppId || null)
+      || conversation.environment_id !== (input.environmentId || null)
+    ) {
+      throw new ConversationError("Conversation was not found.", 404);
     }
 
     if (conversation.status === "deleted") {
@@ -172,11 +181,11 @@ export async function getOrCreateConversation(input: {
 
   const result = await getPool().query<{ id: string }>(
     `
-      INSERT INTO conversations (company_id, external_user_id, title)
-      VALUES ($1, $2, $3)
+      INSERT INTO conversations (company_id, target_app_id, environment_id, external_user_id, title)
+      VALUES ($1, $2, $3, $4, $5)
       RETURNING id
     `,
-    [input.companyId, normalizedUserId, truncateTitle(input.firstQuestion)]
+    [input.companyId, input.targetAppId || null, input.environmentId || null, normalizedUserId, truncateTitle(input.firstQuestion)]
   );
 
   return result.rows[0].id;
@@ -184,6 +193,8 @@ export async function getOrCreateConversation(input: {
 
 export async function getConversationLifecycleState(input: {
   companyId: string;
+  targetAppId?: string;
+  environmentId?: string;
   userId: string;
   conversationId: string;
   skipUserValidation?: boolean;
@@ -198,10 +209,12 @@ export async function getConversationLifecycleState(input: {
       WHERE id = $1
         AND company_id = $2
         AND external_user_id = $3
+        AND target_app_id IS NOT DISTINCT FROM $4::uuid
+        AND environment_id IS NOT DISTINCT FROM $5::uuid
         AND status <> 'deleted'
       LIMIT 1
     `,
-    [input.conversationId, input.companyId, normalizedUserId]
+    [input.conversationId, input.companyId, normalizedUserId, input.targetAppId || null, input.environmentId || null]
   );
 
   return result.rows[0] ?? null;

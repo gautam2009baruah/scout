@@ -20,7 +20,7 @@ test("synonym-based query expansion includes procurement aliases", () => {
   assert.match(expanded.expanded, /accounts payable/);
 });
 
-test("fallback plan includes synonym retry, keyword-only retry, metadata relaxation, and broader scope", () => {
+test("fallback plan broadens relevance without relaxing target-app scope", () => {
   const plan = buildRetrievalFallbackPlan({
     normalized: "vendor questionnaire",
     expanded: "vendor supplier questionnaire",
@@ -30,7 +30,7 @@ test("fallback plan includes synonym retry, keyword-only retry, metadata relaxat
   assert.equal(plan[1]?.stage, "fallback_synonym_expansion");
   assert.equal(plan[2]?.keywordOnly, true);
   assert.equal(plan[3]?.relaxMetadataFilters, true);
-  assert.equal(plan[4]?.relaxTargetScope, true);
+  assert.equal(plan.every((step) => step.relaxTargetScope === false), true);
 });
 
 test("duplicate and near-duplicate chunks are removed while preserving diversity", () => {

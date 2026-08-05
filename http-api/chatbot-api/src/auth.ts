@@ -6,6 +6,7 @@ type AuthResult = {
   ok: boolean;
   error?: string;
   apiKeyId?: string;
+  environmentId?: string;
   source?: "database" | "legacy";
 };
 
@@ -13,6 +14,7 @@ type CacheValue = {
   id: string;
   companyId: string;
   targetAppId: string | null;
+  environmentId: string;
   allowedOrigins: string[];
   expiresAt: number;
 };
@@ -92,10 +94,7 @@ function isOriginAllowed(hostname: string, rules: string[]) {
 export class CompanyApiKeyAuthorizer {
   private readonly cache = new Map<string, CacheValue>();
 
-  constructor(
-    private readonly cacheTtlMs: number,
-    private readonly legacyApiKey: string
-  ) {}
+  constructor(private readonly cacheTtlMs: number) {}
 
   private getCached(hash: string): CacheValue | null {
     const found = this.cache.get(hash);
@@ -113,6 +112,7 @@ export class CompanyApiKeyAuthorizer {
       id: string;
       companyId: string;
       targetAppId: string | null;
+      environmentId: string;
       allowedOrigins: string[];
     }
   ) {
@@ -179,13 +179,14 @@ export class CompanyApiKeyAuthorizer {
         return { ok: false, error: "API key is not allowed for this origin." };
       }
 
-      return { ok: true, apiKeyId: cached.id, source: "database" };
+      return { ok: true, apiKeyId: cached.id, environmentId: cached.environmentId, source: "database" };
     }
 
     const result = await getPool().query<{
       id: string;
       company_id: string;
       target_app_id: string | null;
+      environment_id: string;
       allowed_origins_json: string[] | null;
     }>(
       `
@@ -193,9 +194,11 @@ export class CompanyApiKeyAuthorizer {
           k.id,
           cta.company_id,
           k.target_app_id,
+          k.environment_id,
           COALESCE(k.allowed_origins_json, '[]'::jsonb) AS allowed_origins_json
         FROM chatbot_api_keys k
         INNER JOIN company_target_applications cta ON cta.id = k.target_app_id
+        INNER JOIN target_app_environments env ON env.id = k.environment_id AND env.target_app_id = k.target_app_id
         WHERE key_hash = $1
           AND status = 'active'
           AND is_active = true
@@ -213,6 +216,7 @@ export class CompanyApiKeyAuthorizer {
         id: row.id,
         companyId: row.company_id,
         targetAppId: row.target_app_id,
+        environmentId: row.environment_id,
         allowedOrigins
       });
       if (row.company_id !== companyId) {
@@ -234,13 +238,11 @@ export class CompanyApiKeyAuthorizer {
         return { ok: false, error: "API key is not allowed for this origin." };
       }
 
-      return { ok: true, apiKeyId: row.id, source: "database" };
+      return { ok: true, apiKeyId: row.id, environmentId: row.environment_id, source: "database" };
     }
 
-    if (this.legacyApiKey && token === this.legacyApiKey) {
-      return { ok: true, source: "legacy" };
-    }
-
+    // A shared legacy key has no company/target-app binding and therefore
+    // cannot safely authorize a multi-tenant request.
     return { ok: false, error: "Invalid API key." };
   }
 }

@@ -11,6 +11,7 @@ services:
       - "4301:4301"
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      RECORDER_SYNC_INTERNAL_SECRET: ${RECORDER_SYNC_INTERNAL_SECRET}
       RECORDER_SYNC_API_HOST: 0.0.0.0
       RECORDER_SYNC_API_PORT: 4301
     healthcheck:

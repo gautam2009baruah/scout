@@ -22,6 +22,7 @@ type SaveSuggestionRequest = {
 
 const host = process.env.SMART_FINDER_API_HOST || "0.0.0.0";
 const port = Number(process.env.SMART_FINDER_API_PORT || 4302);
+const internalSecret = process.env.SMART_FINDER_INTERNAL_SECRET?.trim() || "";
 
 function setCorsHeaders(request: http.IncomingMessage, response: http.ServerResponse) {
   const origin = request.headers.origin || "*";
@@ -225,6 +226,13 @@ const server = http.createServer(async (request, response) => {
 
     if (method !== "POST") {
       return sendJson(request, response, 405, { message: "Method not allowed." });
+    }
+
+    if (!internalSecret) {
+      return sendJson(request, response, 503, { message: "Service authentication is not configured." });
+    }
+    if (request.headers["x-scout-internal-secret"] !== internalSecret) {
+      return sendJson(request, response, 401, { message: "Unauthorized." });
     }
 
     const body = await readJsonBody(request);

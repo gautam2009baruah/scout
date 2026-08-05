@@ -55,18 +55,28 @@ function getPollingInterval(config) {
  * that hasn't been republished yet) fails closed rather than falling back
  * to "any overlapping environment" — there is no unscoped polling anymore.
  */
-async function isEnvironmentAllowedForTrigger(orchestrationId, environmentId) {
-  if (!environmentId) {
+async function isEnvironmentAllowedForTrigger(orchestrationId, environmentId, credentialId) {
+  if (!environmentId || !credentialId) {
     return false;
   }
 
   const releasedResult = await pool.query(
-    `SELECT environment_id FROM orchestration_environment_releases WHERE orchestration_id = $1 AND deleted_at IS NULL`,
-    [orchestrationId]
+    `SELECT oer.environment_id
+     FROM orchestration_environment_releases oer
+     INNER JOIN orchestrations o ON o.id = oer.orchestration_id
+     INNER JOIN target_app_environments env
+       ON env.id = oer.environment_id AND env.target_app_id = o.target_app_id
+     INNER JOIN email_credentials ec
+       ON ec.id = $3 AND ec.company_id = o.company_id AND ec.target_app_id = o.target_app_id
+     INNER JOIN email_credential_environments ece
+       ON ece.email_credential_id = ec.id AND ece.environment_id = env.id
+     WHERE oer.orchestration_id = $1
+       AND oer.environment_id = $2
+       AND oer.deleted_at IS NULL
+       AND ec.is_active = true`,
+    [orchestrationId, environmentId, credentialId]
   );
-  const releasedEnvironmentIds = releasedResult.rows.map((row) => row.environment_id);
-
-  return releasedEnvironmentIds.includes(environmentId);
+  return releasedResult.rowCount > 0;
 }
 
 /**
@@ -75,7 +85,7 @@ async function isEnvironmentAllowedForTrigger(orchestrationId, environmentId) {
 async function fetchEmailsForProvider(trigger, config, since) {
   const { provider, credentialId } = config;
 
-  if (credentialId && !(await isEnvironmentAllowedForTrigger(trigger.orchestrationId, trigger.environmentId))) {
+  if (credentialId && !(await isEnvironmentAllowedForTrigger(trigger.orchestrationId, trigger.environmentId, credentialId))) {
     console.warn(`Trigger ${trigger.id}: Environment ${trigger.environmentId || "(none)"} is not released for this orchestration`);
     return [];
   }

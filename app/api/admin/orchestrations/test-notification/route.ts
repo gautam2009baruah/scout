@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import { executeNotificationNode } from "@/lib/orchestrations/nodes/notification-node";
+import { assertEnvironmentScope, assertTargetAppScope, RequestScopeError } from "@/lib/orchestrations/request-scope";
+import { getPool } from "@/lib/db/pool";
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,14 +29,73 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Execute notification
-    const result = await executeNotificationNode(config, context || {});
+    const supplied = context && typeof context === "object" ? context as Record<string, unknown> : {};
+    const suppliedTrigger = supplied.trigger && typeof supplied.trigger === "object" ? supplied.trigger as Record<string, unknown> : {};
+    const suppliedInput = suppliedTrigger.input && typeof suppliedTrigger.input === "object" ? suppliedTrigger.input as Record<string, unknown> : {};
+    const targetAppId = String(supplied.targetAppId || suppliedInput.targetAppId || "").trim();
+    const environmentId = String(supplied.environmentId || suppliedInput.environmentId || "").trim();
+    if (environmentId && !targetAppId) {
+      throw new RequestScopeError("An environment requires a target application.", 400);
+    }
+    if (environmentId) await assertEnvironmentScope(session, targetAppId, environmentId);
+    else if (targetAppId) await assertTargetAppScope(session, targetAppId);
+
+    const emailConfig = config?.channels?.email;
+    if (emailConfig?.enabled) {
+      if (!targetAppId) {
+        throw new RequestScopeError("A target application is required to test an email notification.", 400);
+      }
+      const selectedId = environmentId
+        ? String(emailConfig.senderCredentialIdByEnvironment?.[environmentId] || emailConfig.senderCredentialId || "")
+        : String(emailConfig.senderCredentialId || "");
+      if (!selectedId) {
+        throw new RequestScopeError("An email sender credential is required.", 400);
+      }
+      const sender = await getPool().query<{ id: string }>(
+        `SELECT esc.id
+         FROM email_sender_credentials esc
+         WHERE esc.id = $1
+           AND esc.company_id = $2
+           AND esc.target_app_id = $3
+           AND esc.is_active = true
+           AND ($4::uuid IS NULL OR EXISTS (
+             SELECT 1 FROM email_sender_credential_environments esce
+             WHERE esce.email_sender_credential_id = esc.id AND esce.environment_id = $4
+           ))`,
+        [selectedId, session.user.tenantId, targetAppId, environmentId || null],
+      );
+      if (!sender.rows[0]) {
+        throw new RequestScopeError("Email sender credential was not found in this scope.");
+      }
+    }
+
+    // Tenant identity is authoritative from the session. Never allow a test
+    // payload to select another company's SMTP credential via context.
+    const scopedContext = {
+      ...supplied,
+      companyId: session.user.tenantId,
+      ...(targetAppId ? { targetAppId } : {}),
+      ...(environmentId ? { environmentId } : {}),
+      trigger: {
+        ...suppliedTrigger,
+        input: {
+          ...suppliedInput,
+          companyId: session.user.tenantId,
+          ...(targetAppId ? { targetAppId } : {}),
+          ...(environmentId ? { environmentId } : {}),
+        },
+      },
+    };
+    const result = await executeNotificationNode(config, scopedContext);
 
     return NextResponse.json({
       success: true,
       result,
     });
   } catch (error) {
+    if (error instanceof RequestScopeError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error testing notification:", error);
     return NextResponse.json(
       {

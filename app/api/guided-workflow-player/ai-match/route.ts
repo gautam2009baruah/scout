@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { getAIProviderConfig } from "@/lib/ai/config";
 import type { ElementIdentity } from "@/shared/guideTypes";
+import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
+import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
 
 type AIMatchRequest = {
+  targetAppId: string;
   recordedControl: ElementIdentity;
   candidateControls: Array<{
     index: number;
@@ -46,8 +49,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const llmProvider = await getLLMProvider();
-    const config = await getAIProviderConfig();
+    let targetAppId = "";
+    try {
+      targetAppId = resolveGuidIdentifier(String(body.targetAppId || "").trim(), "target_app");
+    } catch {
+      return NextResponse.json({ error: "A valid target application is required." }, { status: 400 });
+    }
+    const keyRecord = await assertChatbotApiKeyAccess(request, { targetAppId });
+    const llmProvider = await getLLMProvider(keyRecord.companyId, keyRecord.targetAppId, keyRecord.environmentId);
+    const config = await getAIProviderConfig(keyRecord.companyId, keyRecord.targetAppId, keyRecord.environmentId);
 
     const systemPrompt = `You are an expert at matching UI controls in web applications for workflow automation.
 Your task is to identify which candidate control best matches the originally recorded control.
@@ -148,6 +158,9 @@ Which candidate best matches the recorded control? Return JSON only.`;
 
     return NextResponse.json(result);
   } catch (error) {
+    if (error instanceof ChatbotApiKeyAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     console.error("[AI Matcher API] Error:", error);
     return NextResponse.json(
       {

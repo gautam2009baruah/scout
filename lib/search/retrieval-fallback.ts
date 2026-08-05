@@ -45,7 +45,9 @@ export function buildRetrievalFallbackPlan(input: {
       searchQuery: input.aggressiveExpanded,
       keywordOnly: false,
       relaxMetadataFilters: true,
-      relaxTargetScope: true
+      // Metadata may be broadened, but tenant/application scope is a security
+      // boundary and must never be relaxed as a relevance fallback.
+      relaxTargetScope: false
     }
   ];
 }

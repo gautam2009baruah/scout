@@ -7,13 +7,17 @@ import type { ExecuteSqlRequest } from "./types.js";
 const config = loadConfig();
 validateConfig(config);
 const adapter = createDatabaseAdapter(config);
+// Optional convenience protection for this reference implementation. The
+// client owns this value and may instead enforce authentication at its API
+// gateway, reverse proxy, VPN, or with its own implementation.
+const clientAccessToken = process.env.EXECUTOR_ACCESS_TOKEN?.trim() || "";
 
 function sendJson(response: import("node:http").ServerResponse, statusCode: number, payload: unknown) {
   response.writeHead(statusCode, {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, X-Api-Key, Authorization",
   });
   response.end(JSON.stringify(payload));
 }
@@ -90,6 +94,16 @@ const server = createServer(async (request, response) => {
       sendJson(response, 503, { ok: false, message: error instanceof Error ? error.message : "Database unavailable." });
     }
     return;
+  }
+
+  if (clientAccessToken && url.pathname.startsWith("/v1/")) {
+    const headerKey = typeof request.headers["x-api-key"] === "string" ? request.headers["x-api-key"].trim() : "";
+    const authorization = typeof request.headers.authorization === "string" ? request.headers.authorization : "";
+    const bearerKey = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+    if ((headerKey || bearerKey) !== clientAccessToken) {
+      sendJson(response, 401, { message: "Unauthorized." });
+      return;
+    }
   }
 
   if (request.method === "GET" && url.pathname === "/v1/database/metadata") {

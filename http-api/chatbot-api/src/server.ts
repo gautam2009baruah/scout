@@ -23,7 +23,7 @@ type ChatQueryBody = {
 
 const config = getApiConfig();
 const tenantResolver = new TenantResolver(config.companyCacheTtlMs, config.targetAppCacheTtlMs);
-const authorizer = new CompanyApiKeyAuthorizer(config.authCacheTtlMs, config.legacyApiKey);
+const authorizer = new CompanyApiKeyAuthorizer(config.authCacheTtlMs);
 const rateLimiter = new InMemoryRateLimiter(config.rateLimitWindowMs, config.rateLimitMaxRequests);
 
 function corsHeaders(origin: string | undefined) {
@@ -116,6 +116,7 @@ async function handleChatQuery(
   context: {
     company: { id: string; name: string };
     targetApp: { id: string; name: string } | null;
+    environmentId: string;
   },
   extraHeaders: Record<string, string>
 ) {
@@ -152,6 +153,7 @@ async function handleChatQuery(
       user_id: userId,
       external_user_trace_id: clientTraceId || undefined,
       target_app_id: context.targetApp?.id,
+      environment_id: context.environmentId,
       question,
       conversation_id: conversationId || undefined,
       top_k: typeof body.topK === "number" ? body.topK : undefined
@@ -267,6 +269,7 @@ const server = createServer(async (request, response) => {
     let companyContext: { id: string; name: string } | null = null;
     let targetAppContext: { id: string; name: string } | null = null;
     let authHeaders: Record<string, string> = {};
+    let authenticatedEnvironmentId = "";
 
     if (isProtectedRoute) {
       parsedBody = await parseBody(request);
@@ -302,6 +305,11 @@ const server = createServer(async (request, response) => {
       );
       if (!auth.ok) {
         sendJson(response, 401, { message: auth.error || "Unauthorized." }, requestId, origin);
+        return;
+      }
+      authenticatedEnvironmentId = auth.environmentId || "";
+      if (!authenticatedEnvironmentId) {
+        sendJson(response, 403, { message: "API key is not bound to an environment." }, requestId, origin);
         return;
       }
 
@@ -354,7 +362,7 @@ const server = createServer(async (request, response) => {
         origin,
         {
           company: companyContext,
-          targetApp: targetAppContext
+          targetApp: targetAppContext,
         },
         authHeaders
       );
@@ -374,7 +382,8 @@ const server = createServer(async (request, response) => {
         parsedBody,
         {
           company: companyContext,
-          targetApp: targetAppContext
+          targetApp: targetAppContext,
+          environmentId: authenticatedEnvironmentId,
         },
         authHeaders
       );

@@ -4,6 +4,16 @@ This standalone service connects Scout to a client-hosted PostgreSQL, MySQL, or
 SQL Server database. Keep this service inside the client's network and expose
 its URL to Scout through the client's normal firewall or reverse-proxy rules.
 
+Scout does not issue or manage authentication credentials for this service.
+The client controls the URL and security mechanism. In Scout, configure those
+details directly on the API Call node, including any client-provided headers.
+
+This reference implementation supports an optional client-owned
+`EXECUTOR_ACCESS_TOKEN`. When set, `/v1/*` requests must send that value through
+`X-Api-Key` or `Authorization: Bearer`. A client may leave it blank only when
+access is protected by another layer such as an API gateway, VPN, mTLS, or a
+private network. Health and readiness endpoints remain unauthenticated.
+
 ## Requirements
 
 - Node.js 20.6 or newer, or Docker Desktop / Docker Engine

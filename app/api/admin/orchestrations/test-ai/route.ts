@@ -8,6 +8,37 @@ import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import { executeAIExtractionNode } from "@/lib/orchestrations/nodes/ai-extraction-node";
 import { executeAITaskNode } from "@/lib/orchestrations/nodes/ai-task-node";
+import { assertEnvironmentScope, assertTargetAppScope, RequestScopeError } from "@/lib/orchestrations/request-scope";
+
+async function buildTestContext(session: NonNullable<Awaited<ReturnType<typeof getCurrentAdminSession>>>, value: unknown) {
+  const supplied = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const suppliedTrigger = supplied.trigger && typeof supplied.trigger === "object" ? supplied.trigger as Record<string, unknown> : {};
+  const suppliedInput = suppliedTrigger.input && typeof suppliedTrigger.input === "object" ? suppliedTrigger.input as Record<string, unknown> : {};
+  const targetAppId = String(supplied.targetAppId || suppliedInput.targetAppId || "").trim();
+  const environmentId = String(supplied.environmentId || suppliedInput.environmentId || "").trim();
+
+  if (environmentId && !targetAppId) {
+    throw new RequestScopeError("An environment requires a target application.", 400);
+  }
+  if (environmentId) await assertEnvironmentScope(session, targetAppId, environmentId);
+  else if (targetAppId) await assertTargetAppScope(session, targetAppId);
+
+  return {
+    ...supplied,
+    companyId: session.user.tenantId,
+    ...(targetAppId ? { targetAppId } : {}),
+    ...(environmentId ? { environmentId } : {}),
+    trigger: {
+      ...suppliedTrigger,
+      input: {
+        ...suppliedInput,
+        companyId: session.user.tenantId,
+        ...(targetAppId ? { targetAppId } : {}),
+        ...(environmentId ? { environmentId } : {}),
+      },
+    },
+  };
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,12 +59,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const scopedContext = await buildTestContext(session, context);
     let result;
 
     if (nodeType === "ai_extraction") {
-      result = await executeAIExtractionNode(config, context || {});
+      result = await executeAIExtractionNode(config, scopedContext);
     } else if (nodeType === "ai_task") {
-      result = await executeAITaskNode(config, context || {});
+      result = await executeAITaskNode(config, scopedContext);
     } else {
       return NextResponse.json(
         { message: `Unsupported node type: ${nodeType}` },
@@ -46,6 +78,9 @@ export async function POST(request: NextRequest) {
       result,
     });
   } catch (error) {
+    if (error instanceof RequestScopeError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error testing AI node:", error);
     return NextResponse.json(
       {

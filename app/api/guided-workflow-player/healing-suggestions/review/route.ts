@@ -83,8 +83,8 @@ async function handleApprove(request: NextRequest) {
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
        LEFT JOIN company_target_applications cta ON cta.id = w.target_app_id
-       WHERE s.id = $1 AND s.status = 'pending' AND s.deleted_at IS NULL`,
-      [suggestionId]
+       WHERE s.id = $1 AND cta.company_id = $2 AND s.status = 'pending' AND s.deleted_at IS NULL`,
+      [suggestionId, session.user.tenantId]
     );
 
     if (suggestionResult.rows.length === 0) {
@@ -232,8 +232,9 @@ async function handleReject(request: NextRequest) {
       `SELECT s.*
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
-       WHERE s.id = $1 AND s.status = 'pending' AND s.deleted_at IS NULL`,
-      [suggestionId]
+       JOIN company_target_applications cta ON cta.id = w.target_app_id
+       WHERE s.id = $1 AND cta.company_id = $2 AND s.status = 'pending' AND s.deleted_at IS NULL`,
+      [suggestionId, session.user.tenantId]
     );
 
     if (suggestionResult.rows.length === 0) {
@@ -308,8 +309,9 @@ async function handleDelete(request: NextRequest) {
       `SELECT s.*
        FROM guided_workflow_healing_suggestions s
        JOIN guided_workflow_guides w ON s.workflow_id = w.id
-       WHERE s.id = $1 AND s.deleted_at IS NULL`,
-      [suggestionId]
+       JOIN company_target_applications cta ON cta.id = w.target_app_id
+       WHERE s.id = $1 AND cta.company_id = $2 AND s.deleted_at IS NULL`,
+      [suggestionId, session.user.tenantId]
     );
 
     if (suggestionResult.rows.length === 0) {
