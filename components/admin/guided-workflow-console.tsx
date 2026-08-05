@@ -757,7 +757,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   moveStep(index: number, direction: -1 | 1): void;
   onRefresh(): void;
   publishTopicGuide(topic: GuidedWorkflowTopicRow): void;
-  recorderConfig: { scoutBaseUrl: string; recorderToken: string; sessionTitle: string; recordingSessionId: string; topicId: string; ingestPath: string } | null;
+  recorderConfig: { scoutBaseUrl: string; recorderToken: string; sessionTitle: string } | null;
   setTopicRecording(topic: GuidedWorkflowTopicRow, action: "halt" | "restart"): void;
   selectedSession: GuidedWorkflowRecordingSessionRow | null;
   selectedTopic: GuidedWorkflowTopicRow | null;
@@ -1484,10 +1484,7 @@ function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWo
   return {
     scoutBaseUrl: appBaseUrl,
     recorderToken,
-    sessionTitle: `${session.title} / ${topic.title}`,
-    recordingSessionId: session.id,
-    topicId: topic.id,
-    ingestPath: "/api/guided-workflow-recorder/actions"
+    sessionTitle: `${session.title} / ${topic.title}`
   };
 }
 

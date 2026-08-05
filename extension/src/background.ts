@@ -52,13 +52,12 @@ async function postAction(action: RecordedAction, configOverride?: RecorderConfi
   }
 
   try {
-    const endpoint = new URL(config.ingestPath || "/api/guided-workflow-recorder/actions", config.scoutBaseUrl);
+    const endpoint = new URL("/api/guided-workflow-recorder/actions", config.scoutBaseUrl);
     const response = await fetch(endpoint.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         recorderToken: config.recorderToken,
-        topicId: config.topicId,
         action
       })
     });

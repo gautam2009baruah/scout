@@ -115,13 +115,15 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
     if (!response.ok) {
       setLoadingTargetApps(false);
       showToast(await readMessage(response, "Unable to load target applications."), "error");
-      return;
+      return [] as CompanyTargetApplication[];
     }
 
     const body = await response.json().catch(() => null);
     const apps = Array.isArray(body?.apps) ? body.apps : [];
-    setTargetApps(apps.filter((app: CompanyTargetApplication) => app.companyId === currentCompanyId));
+    const companyApps = apps.filter((app: CompanyTargetApplication) => app.companyId === currentCompanyId);
+    setTargetApps(companyApps);
     setLoadingTargetApps(false);
+    return companyApps;
   }
 
   async function openTargetAppsModal() {
@@ -240,8 +242,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
 
     let apps = targetApps;
     if (apps.length === 0) {
-      await loadTargetApps();
-      apps = targetApps;
+      apps = await loadTargetApps();
     }
 
     const firstTargetAppId = apps[0]?.id ?? null;

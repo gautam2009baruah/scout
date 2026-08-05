@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, BarChart3, CalendarRange, CircleHelp, Clock3, Download, ExternalLink, Filter, MessageSquareText, ThumbsUp, Timer } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarRange, CircleHelp, Clock3, Download, Filter, MessageSquareText, ThumbsUp, Timer } from "lucide-react";
 import { formatDateTimeForDisplay } from "@/lib/datetime";
 import { useToast } from "./toast";
 
@@ -943,7 +943,7 @@ export function SearchAnalyticsDashboard({
                   </section>
 
                   <section className="rounded-lg border border-slate-200 bg-white p-3">
-                    <h3 className="text-sm font-semibold text-slate-900">Retrieval path</h3>
+                    <h3 className="text-sm font-semibold text-slate-900">Retrieved candidates — not necessarily used</h3>
                     <div className="mt-2 space-y-2">
                       {queryDetail.queryDetail.path_items.length === 0 ? (
                         <p className="text-sm text-slate-500">No path data available for this query.</p>
@@ -955,10 +955,9 @@ export function SearchAnalyticsDashboard({
                             <p className="text-xs text-slate-500">{item.citation_type || "text"}{item.visual_asset_type ? ` / ${item.visual_asset_type}` : ""}{typeof item.score === "number" ? ` • score ${item.score.toFixed(4)}` : ""}</p>
                             {item.document_id ? (
                               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                                <a className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=versions`}>Open versions</a>
-                                <a aria-label="Open versions in new tab" className="inline-flex h-6 w-6 items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50" href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=versions`} rel="noopener noreferrer" target="_blank"><ExternalLink className="h-3 w-3" /></a>
-                                <a className="inline-flex items-center rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=compare`}>Open compare</a>
-                                <a aria-label="Open compare in new tab" className="inline-flex h-6 w-6 items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50" href={`/control-panel/content-structure?documentId=${encodeURIComponent(item.document_id)}&docAction=compare`} rel="noopener noreferrer" target="_blank"><ExternalLink className="h-3 w-3" /></a>
+                                <a className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50" download href={`/api/admin/documents/${encodeURIComponent(item.document_id)}/download`}>
+                                  <Download className="h-3 w-3" /> Download original
+                                </a>
                               </div>
                             ) : null}
                           </div>

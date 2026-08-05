@@ -34,9 +34,6 @@ export type RecorderConfig = {
   scoutBaseUrl: string;
   recorderToken: string;
   sessionTitle?: string;
-  recordingSessionId?: string;
-  topicId?: string;
-  ingestPath?: string;
 };
 
 export type RecorderStatus = {

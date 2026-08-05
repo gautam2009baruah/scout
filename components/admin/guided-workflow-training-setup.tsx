@@ -698,10 +698,7 @@ function recorderConfigForTopic(topic: GuidedWorkflowTopicRow, session: GuidedWo
   return {
     scoutBaseUrl: appBaseUrl,
     recorderToken,
-    sessionTitle: `${session.title} / ${topic.title}`,
-    recordingSessionId: session.id,
-    topicId: topic.id,
-    ingestPath: "/api/guided-workflow-recorder/actions"
+    sessionTitle: `${session.title} / ${topic.title}`
   };
 }
 
