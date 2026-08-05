@@ -25,14 +25,14 @@ function decryptToken(encryptedToken: string): string {
 /**
  * Fetch Gmail credentials from database
  */
-export async function getGmailCredentials(credentialId: string): Promise<GmailConfig | null> {
+export async function getGmailCredentials(credentialId: string, companyId: string): Promise<GmailConfig | null> {
   const pool = await getPool();
-  
+
   const result = await pool.query(
     `SELECT email_address, oauth_access_token, oauth_refresh_token, oauth_token_expires_at
      FROM email_credentials
-     WHERE id = $1 AND provider = 'gmail' AND is_active = true`,
-    [credentialId]
+     WHERE id = $1 AND provider = 'gmail' AND is_active = true AND company_id = $2`,
+    [credentialId, companyId]
   );
   
   if ((result.rowCount ?? 0) === 0) {

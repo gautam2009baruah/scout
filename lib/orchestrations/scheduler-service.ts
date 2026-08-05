@@ -285,8 +285,8 @@ export class OrchestrationSchedulerService {
         return { success: true, triggeredAt };
       }
 
-      const orchResult = await pool.query<{ id: string; name: string }>(
-        `SELECT id, name FROM orchestrations WHERE id = $1 AND status = 'published'`,
+      const orchResult = await pool.query<{ id: string; name: string; company_id: string }>(
+        `SELECT id, name, company_id FROM orchestrations WHERE id = $1 AND status = 'published'`,
         [trigger.orchestrationId]
       );
       if (orchResult.rowCount === 0) {
@@ -307,6 +307,7 @@ export class OrchestrationSchedulerService {
           scheduledTime: triggeredAt,
           scheduleType: trigger.config.scheduleType,
           environmentId: release.id,
+          companyId: orchestration.company_id,
         };
 
         try {

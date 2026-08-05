@@ -2,7 +2,7 @@
 // Called automatically after an approval is processed
 
 import { NextRequest, NextResponse } from "next/server";
-import { getExecutionById, getOrchestrationById, getNodes, getConnections } from "@/lib/orchestrations/db";
+import { getNodes, getConnections, assertExecutionOwnership, OrchestrationAccessError } from "@/lib/orchestrations/db";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
@@ -24,29 +24,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the execution
-    const execution = await getExecutionById(executionId);
-    if (!execution) {
-      return NextResponse.json(
-        { error: "Execution not found" },
-        { status: 404 }
-      );
-    }
+    // Get the execution and orchestration, scoped to the caller's company
+    const { execution, orchestration } = await assertExecutionOwnership(session, executionId);
 
     // Verify execution is paused
     if (execution.status !== "paused") {
       return NextResponse.json(
         { error: `Execution is ${execution.status}, not paused` },
         { status: 400 }
-      );
-    }
-
-    // Get orchestration, nodes, and connections
-    const orchestration = await getOrchestrationById(execution.orchestrationId);
-    if (!orchestration) {
-      return NextResponse.json(
-        { error: "Orchestration not found" },
-        { status: 404 }
       );
     }
 
@@ -65,6 +50,9 @@ export async function POST(request: NextRequest) {
       orchestrationId: orchestration.id,
     });
   } catch (error) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ error: error.message }, { status: error.statusCode });
+    }
     console.error("Error resuming orchestration:", error);
     return NextResponse.json(
       { error: "Failed to resume orchestration" },

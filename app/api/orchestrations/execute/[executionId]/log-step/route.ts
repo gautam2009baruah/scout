@@ -51,12 +51,21 @@ export async function POST(
       return NextResponse.json({ error: "Execution not found" }, { status: 404, headers });
     }
 
+    const orchestration = await getOrchestrationById(execution.orchestrationId);
+    if (!orchestration) {
+      return NextResponse.json({ error: "Execution not found" }, { status: 404, headers });
+    }
+
     const session = await getCurrentAdminSession();
-    if (!session) {
-      const orchestration = await getOrchestrationById(execution.orchestrationId);
+    if (session) {
+      if (session.user.tenantId !== orchestration.companyId) {
+        return NextResponse.json({ error: "Execution not found" }, { status: 404, headers });
+      }
+    } else {
       const triggerData = execution.triggerData as Record<string, unknown> | null;
+      let apiKeyRecord;
       try {
-        await assertChatbotApiKeyAccess(request, {
+        apiKeyRecord = await assertChatbotApiKeyAccess(request, {
           companyId: typeof triggerData?.companyId === "string" ? triggerData.companyId : undefined,
           targetAppId: typeof triggerData?.targetAppId === "string" ? triggerData.targetAppId : undefined,
         });
@@ -67,8 +76,8 @@ export async function POST(
         throw error;
       }
 
-      if (!orchestration || (triggerData?.companyId && orchestration.companyId !== triggerData.companyId)) {
-        return NextResponse.json({ error: "Execution was not found for this company." }, { status: 404, headers });
+      if (orchestration.companyId !== apiKeyRecord.companyId) {
+        return NextResponse.json({ error: "Execution not found" }, { status: 404, headers });
       }
     }
 

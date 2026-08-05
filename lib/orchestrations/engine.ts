@@ -94,6 +94,21 @@ export class OrchestrationEngine {
     };
   }> {
     try {
+      // Authoritatively (re-)establish which company/target app this
+      // execution belongs to, sourced fresh from the orchestration row —
+      // never trusted from whatever the triggering caller put in
+      // execution.context (which, depending on trigger type, may be
+      // client-influenced). Node processors that resolve companyId from
+      // context (e.g. lib/orchestrations/nodes/notification-node.ts's
+      // resolveSenderCredential tenant check) previously only saw a
+      // companyId when the trigger type happened to set one — this closes
+      // that gap for every trigger type, present and future, in one place.
+      const owningOrchestration = await getOrchestrationById(this.execution.orchestrationId);
+      if (owningOrchestration) {
+        this.context.companyId = owningOrchestration.companyId;
+        this.context.targetAppId = owningOrchestration.targetAppId ?? undefined;
+      }
+
       // Find the starting node (trigger node or current node for resumption)
       const startNodeId = this.execution.currentNodeId || this.findTriggerNode();
 

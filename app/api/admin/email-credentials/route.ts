@@ -33,12 +33,14 @@ export async function GET() {
     const pool = await getPool();
     
     const result = await pool.query(
-      `SELECT 
+      `SELECT
         ec.id, ec.name, ec.description, ec.provider, ec.email_address, ec.is_active,
         ec.last_used_at, ec.last_error, ec.created_at, created_user.email AS created_by_email
        FROM email_credentials ec
        LEFT JOIN users created_user ON created_user.id = ec.created_by
-       ORDER BY ec.created_at DESC`
+       WHERE ec.company_id = $1
+       ORDER BY ec.created_at DESC`,
+      [session.user.tenantId]
     );
     
     return NextResponse.json({
@@ -180,10 +182,10 @@ export async function DELETE(request: Request) {
     }
     
     const pool = await getPool();
-    
+
     const result = await pool.query(
-      `DELETE FROM email_credentials WHERE id = $1`,
-      [id]
+      `DELETE FROM email_credentials WHERE id = $1 AND company_id = $2`,
+      [id, session.user.tenantId]
     );
     
     if ((result.rowCount ?? 0) === 0) {

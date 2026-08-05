@@ -41,7 +41,17 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getCurrentAdminSession();
+    if (!session) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     const { id } = await params;
+    const orchestration = await getOrchestrationById(id);
+
+    if (!orchestration || orchestration.companyId !== session.user.tenantId) {
+      return NextResponse.json({ message: "Orchestration not found" }, { status: 404 });
+    }
 
     await deleteOrchestration(id);
 

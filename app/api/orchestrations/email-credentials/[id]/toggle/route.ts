@@ -27,11 +27,11 @@ export async function PATCH(
 
     const pool = getPool();
 
-    // Check if credential exists
+    // Check if credential exists and belongs to the caller's company
     const checkResult = await pool.query(
       `SELECT is_active FROM email_credentials
-       WHERE id = $1`,
-      [credentialId]
+       WHERE id = $1 AND company_id = $2`,
+      [credentialId, session.user.tenantId]
     );
 
     if (checkResult.rowCount === 0) {
@@ -47,9 +47,9 @@ export async function PATCH(
     const result = await pool.query(
       `UPDATE email_credentials
        SET is_active = $1, updated_at = NOW(), updated_by = $2
-       WHERE id = $3
+       WHERE id = $3 AND company_id = $4
        RETURNING id, is_active`,
-      [!currentStatus, session.user.id, credentialId]
+      [!currentStatus, session.user.id, credentialId, session.user.tenantId]
     );
 
     return NextResponse.json({

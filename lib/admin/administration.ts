@@ -249,6 +249,7 @@ export async function createCompany(input: CreateCompanyInput, session: AdminSes
 
 export async function updateCompany(companyId: string, input: UpdateCompanyInput, session: AdminSession) {
   assertCanManageMasterData(session);
+  assertCanAccessCompany(session, companyId);
 
   const name = input.name.trim();
   const slug = normalizeKey(input.slug || input.name);
@@ -284,6 +285,7 @@ export async function updateCompany(companyId: string, input: UpdateCompanyInput
 
 export async function deleteCompany(companyId: string, session: AdminSession) {
   assertCanManageMasterData(session);
+  assertCanAccessCompany(session, companyId);
 
   if (!companyId) {
     throw new MasterDataError("Company is required.");
@@ -337,6 +339,10 @@ export async function createRole(input: CreateRoleInput, session: AdminSession) 
 
   if (companyIds.length === 0 || !name) {
     throw new MasterDataError("Company and role name are required.");
+  }
+
+  for (const targetCompanyId of companyIds) {
+    assertCanAccessCompany(session, targetCompanyId);
   }
 
   if (name.toLowerCase() === "super admin") {
@@ -394,6 +400,15 @@ export async function updateRole(roleId: string, input: UpdateRoleInput, session
     throw new MasterDataError("Role name is required.");
   }
 
+  const existingRole = await getPool().query<{ company_id: string }>(
+    "SELECT company_id FROM roles WHERE id = $1 AND is_system = false AND deleted_at IS NULL",
+    [roleId]
+  );
+  if (existingRole.rowCount === 0) {
+    throw new MasterDataError("Role was not found or cannot be edited.");
+  }
+  assertCanAccessCompany(session, existingRole.rows[0].company_id);
+
   if (name.toLowerCase() === "super admin") {
     throw new MasterDataError("Super Admin is a protected system role and must be managed by database scripts.");
   }
@@ -448,11 +463,13 @@ export async function deleteRole(roleId: string, session: AdminSession) {
 
   const usageResult = await getPool().query<{
     is_system: boolean;
+    company_id: string;
     user_count: string;
   }>(
     `
       SELECT
         roles.is_system,
+        roles.company_id,
         COALESCE((
           SELECT COUNT(DISTINCT user_company_roles.user_id)
           FROM user_company_roles
@@ -470,6 +487,8 @@ export async function deleteRole(roleId: string, session: AdminSession) {
   if (!usage) {
     throw new MasterDataError("Role was not found.");
   }
+
+  assertCanAccessCompany(session, usage.company_id);
 
   if (usage.is_system) {
     throw new MasterDataError("System roles cannot be deleted.");

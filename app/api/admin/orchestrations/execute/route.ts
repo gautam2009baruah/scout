@@ -7,8 +7,9 @@ import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import {
   createExecution,
   getExecutions,
-  getExecutionById,
-  getOrchestrationById,
+  assertOrchestrationOwnership,
+  assertExecutionOwnership,
+  OrchestrationAccessError,
 } from "@/lib/orchestrations/db";
 
 export async function POST(request: NextRequest) {
@@ -30,14 +31,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get orchestration to verify it exists and get version
-    const orchestration = await getOrchestrationById(orchestrationId);
-    if (!orchestration) {
-      return NextResponse.json(
-        { message: "Orchestration not found" },
-        { status: 404 }
-      );
-    }
+    // Verify the orchestration exists and belongs to the caller's company
+    const orchestration = await assertOrchestrationOwnership(session, orchestrationId);
 
     // Create execution record
     const execution = await createExecution({
@@ -55,6 +50,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ execution }, { status: 201 });
   } catch (error) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error starting execution:", error);
     return NextResponse.json(
       { message: "Failed to start execution" },
@@ -77,19 +75,14 @@ export async function GET(request: NextRequest) {
     const orchestrationId = searchParams.get("orchestrationId");
 
     if (executionId) {
-      // Get specific execution
-      const execution = await getExecutionById(executionId);
-      if (!execution) {
-        return NextResponse.json(
-          { message: "Execution not found" },
-          { status: 404 }
-        );
-      }
+      // Get specific execution, scoped to the caller's company
+      const { execution } = await assertExecutionOwnership(session, executionId);
       return NextResponse.json({ execution });
     }
 
     if (orchestrationId) {
-      // Get executions for orchestration
+      // Get executions for orchestration, scoped to the caller's company
+      await assertOrchestrationOwnership(session, orchestrationId);
       const executions = await getExecutions({ orchestrationId });
       return NextResponse.json({ executions });
     }
@@ -99,6 +92,9 @@ export async function GET(request: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error fetching execution:", error);
     return NextResponse.json(
       { message: "Failed to fetch execution" },

@@ -29,22 +29,29 @@ export async function OPTIONS(request: Request) {
 
 // Used only for the chatbot-facing (non-admin) auth path below, to satisfy
 // getGuidedWorkflowById's session param the same way lib/guided-workflows/executor.ts does.
-const chatbotFallbackSession: AdminSession = {
-  user: {
-    id: "system",
-    tenantId: "system",
-    name: "System",
-    email: "system@example.com",
-    roleId: "system",
-    isAdminRole: true,
-    isActive: true,
-    mustChangePassword: false,
-  },
-  tenant: { tenantId: "system", slug: "system", name: "System" },
-  modules: [],
-  availableCompanies: [],
-  expiresAt: new Date(Date.now() + 60_000),
-};
+// Built per-request from the orchestration's real, already-verified
+// companyId — NOT a static "system"/isAdminRole bypass. isAdminRole no
+// longer skips company scoping (see lib/admin/guided-workflows.ts's
+// accessCondition), so this must present the correct tenant id to pass the
+// scoping check honestly, rather than relying on a bypass flag.
+function buildFallbackSession(companyId: string): AdminSession {
+  return {
+    user: {
+      id: "system",
+      tenantId: companyId,
+      name: "System",
+      email: "system@example.com",
+      roleId: "system",
+      isAdminRole: false,
+      isActive: true,
+      mustChangePassword: false,
+    },
+    tenant: { tenantId: companyId, slug: "system", name: "System" },
+    modules: [],
+    availableCompanies: [{ companyId, companyName: "", companySlug: "", roleId: "system", roleName: "", isPrimary: true }],
+    expiresAt: new Date(Date.now() + 60_000),
+  };
+}
 
 export async function POST(
   request: NextRequest,
@@ -71,9 +78,14 @@ export async function POST(
     // Admin-triggered executions (in-context testing from the control panel) keep
     // using the admin session, since that's what layout.tsx's global script serves.
     let session: AdminSession | null = await getCurrentAdminSession();
-    if (!session) {
+    if (session) {
+      if (session.user.tenantId !== orchestration.companyId) {
+        return NextResponse.json({ error: "Orchestration not found" }, { status: 404, headers });
+      }
+    } else {
+      let apiKeyRecord;
       try {
-        await assertChatbotApiKeyAccess(request, {
+        apiKeyRecord = await assertChatbotApiKeyAccess(request, {
           companyId: typeof triggerData?.companyId === "string" ? triggerData.companyId : undefined,
           targetAppId: typeof triggerData?.targetAppId === "string" ? triggerData.targetAppId : undefined,
         });
@@ -84,11 +96,13 @@ export async function POST(
         throw error;
       }
 
-      if (triggerData?.companyId && orchestration.companyId !== triggerData.companyId) {
-        return NextResponse.json({ error: "Orchestration was not found for this company." }, { status: 404, headers });
+      // Always compare against the *authenticated* key's own companyId —
+      // never a value the caller's own request body happened to include.
+      if (orchestration.companyId !== apiKeyRecord.companyId) {
+        return NextResponse.json({ error: "Orchestration not found" }, { status: 404, headers });
       }
 
-      session = chatbotFallbackSession;
+      session = buildFallbackSession(orchestration.companyId);
     }
 
     // Fetch nodes and connections

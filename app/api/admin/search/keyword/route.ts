@@ -18,7 +18,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: "Search query is required." }, { status: 400 });
   }
 
-  const companyId = typeof body.company_id === "string" && body.company_id ? body.company_id : session.user.tenantId;
+  const requestedCompanyId = typeof body.company_id === "string" && body.company_id ? body.company_id : session.user.tenantId;
+  if (!session.availableCompanies.some((company) => company.companyId === requestedCompanyId)) {
+    return NextResponse.json({ message: "You do not have access to this company." }, { status: 403 });
+  }
+  const companyId = requestedCompanyId;
   const topK = Number(body.top_k ?? 10);
 
   try {

@@ -4,7 +4,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { requireModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
-import { getConnections, createConnection, deleteConnection } from "@/lib/orchestrations/db";
+import {
+  getConnections,
+  createConnection,
+  deleteConnection,
+  getConnectionById,
+  assertOrchestrationOwnership,
+  OrchestrationAccessError,
+} from "@/lib/orchestrations/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,11 +32,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    await assertOrchestrationOwnership(session, orchestrationId);
+
     // Get connections for orchestration
     const connections = await getConnections(orchestrationId);
 
     return NextResponse.json({ connections });
   } catch (error) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error fetching connections:", error);
     return NextResponse.json({ message: "Failed to fetch connections" }, { status: 500 });
   }
@@ -52,6 +64,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
     }
 
+    await assertOrchestrationOwnership(session, orchestrationId);
+
     // Create connection
     const connection = await createConnection({
       orchestrationId,
@@ -64,6 +78,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ connection }, { status: 201 });
   } catch (error) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error creating connection:", error);
     return NextResponse.json({ message: "Failed to create connection" }, { status: 500 });
   }
@@ -85,11 +102,20 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ message: "Missing required parameter: id" }, { status: 400 });
     }
 
+    const existingConnection = await getConnectionById(connectionId);
+    if (!existingConnection) {
+      return NextResponse.json({ message: "Connection not found" }, { status: 404 });
+    }
+    await assertOrchestrationOwnership(session, existingConnection.orchestrationId);
+
     // Delete connection
     await deleteConnection(connectionId);
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error deleting connection:", error);
     return NextResponse.json({ message: "Failed to delete connection" }, { status: 500 });
   }

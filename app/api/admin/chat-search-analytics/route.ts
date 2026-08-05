@@ -52,18 +52,18 @@ export async function GET(request: Request) {
     filter += ` AND t.created_at >= now() - ($${sqlParams.length}::int || ' days')::interval`;
   }
 
-  if (!auth.session.user.isAdminRole) {
-    sqlParams.push(auth.session.user.tenantId, auth.session.user.id);
-    filter += ` AND (
-      cta.company_id = $${sqlParams.length - 1}
-      OR EXISTS (
-        SELECT 1 FROM user_company_roles
-        WHERE user_company_roles.user_id = $${sqlParams.length}
-          AND user_company_roles.company_id = cta.company_id
-          AND user_company_roles.deleted_at IS NULL
-      )
-    )`;
-  }
+  // isAdminRole is a per-company role tier, not a platform-wide flag — this
+  // scoping must always apply, regardless of it.
+  sqlParams.push(auth.session.user.tenantId, auth.session.user.id);
+  filter += ` AND (
+    cta.company_id = $${sqlParams.length - 1}
+    OR EXISTS (
+      SELECT 1 FROM user_company_roles
+      WHERE user_company_roles.user_id = $${sqlParams.length}
+        AND user_company_roles.company_id = cta.company_id
+        AND user_company_roles.deleted_at IS NULL
+    )
+  )`;
 
   if (companyId) {
     sqlParams.push(companyId);

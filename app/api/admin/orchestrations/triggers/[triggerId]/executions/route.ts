@@ -11,6 +11,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import { assertTriggerOwnership } from "@/lib/orchestrations/triggers";
+import { OrchestrationAccessError } from "@/lib/orchestrations/db";
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
@@ -44,20 +46,10 @@ export async function GET(
 
     const pool = getPool();
 
-    // Determine trigger type so we can source the right table
-    const triggerResult = await pool.query<{ trigger_type: string }>(
-      `SELECT trigger_type FROM orchestration_triggers WHERE id = $1`,
-      [triggerId]
-    );
-
-    if (triggerResult.rowCount === 0) {
-      return NextResponse.json(
-        { success: false, error: "Trigger not found" },
-        { status: 404 }
-      );
-    }
-
-    const triggerType = triggerResult.rows[0].trigger_type;
+    // Verifies the trigger belongs to the caller's company and gives us its
+    // type so we can source the right table.
+    const trigger = await assertTriggerOwnership(session, triggerId);
+    const triggerType = trigger.triggerType;
 
     if (triggerType === "email") {
       return await getEmailExecutions(pool, triggerId, page, pageSize, offset, from, to);
@@ -65,6 +57,9 @@ export async function GET(
 
     return await getLogExecutions(pool, triggerId, page, pageSize, offset, from, to, environmentId);
   } catch (error: any) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     console.error("[TriggerExecutionsAPI] Error:", error);
 
     return NextResponse.json(

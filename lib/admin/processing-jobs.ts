@@ -218,19 +218,27 @@ export async function enqueueDocumentReembeddingJobs(companyId: string) {
 }
 
 async function accessibleJobCondition(session: AdminSession, params: unknown[]) {
+  // isAdminRole (session.user.isAdminRole) is a per-company role tier, not a
+  // platform-wide flag — jobSelect has no company_id filter of its own, so
+  // this condition is the only thing scoping the query to a company. It
+  // must always include the company boundary; isAdminRole only ever skips
+  // the additional per-folder ACL restriction below it.
+  params.push(session.user.tenantId);
+  const companyClause = `AND processing_jobs.company_id = $${params.length}`;
+
   if (session.user.isAdminRole) {
-    return "";
+    return companyClause;
   }
 
   const accessibleTopicIds = await getAccessibleTopicIds(session);
 
   if (!accessibleTopicIds || accessibleTopicIds.size === 0) {
     params.push([]);
-    return `AND documents.folder_id = ANY($${params.length}::uuid[])`;
+    return `${companyClause} AND documents.folder_id = ANY($${params.length}::uuid[])`;
   }
 
   params.push(Array.from(accessibleTopicIds));
-  return `AND documents.folder_id = ANY($${params.length}::uuid[])`;
+  return `${companyClause} AND documents.folder_id = ANY($${params.length}::uuid[])`;
 }
 
 export async function listProcessingJobs(filters: ProcessingJobFilters, session: AdminSession) {

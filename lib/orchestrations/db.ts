@@ -18,6 +18,7 @@ import type {
   ApprovalStatus,
   SwitchNodeConfig,
 } from "@/shared/orchestrationTypes";
+import type { AdminSession } from "@/lib/admin/auth";
 import { createTrigger } from "./triggers";
 import { clearTriggerCache } from "./chatbot-trigger-matcher";
 import { indexOrchestration } from "./planner/orchestration-index";
@@ -275,6 +276,41 @@ export async function getOrchestrationPage(filters: {
 export async function getOrchestrationById(id: string): Promise<Orchestration | null> {
   const orchestrations = await getOrchestrations({ id });
   return orchestrations[0] || null;
+}
+
+// Thrown by the assert*Ownership helpers below — a 404 (not 403) on
+// purpose, so a foreign-company id doesn't confirm it exists.
+export class OrchestrationAccessError extends Error {
+  statusCode: number;
+  constructor(message = "Orchestration not found", statusCode = 404) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+}
+
+// getOrchestrationById/getExecutionById/trigger lookups have no company
+// filter of their own by design (many trusted internal call sites look up
+// by an id already sourced from a company-scoped query). Any route handler
+// receiving an id from the client (URL param, query string, or request
+// body) MUST go through one of these instead of calling the bare getter
+// directly.
+export async function assertOrchestrationOwnership(session: AdminSession, orchestrationId: string): Promise<Orchestration> {
+  const orchestration = await getOrchestrationById(orchestrationId);
+  if (!orchestration || orchestration.companyId !== session.user.tenantId) {
+    throw new OrchestrationAccessError();
+  }
+  return orchestration;
+}
+
+export async function assertExecutionOwnership(session: AdminSession, executionId: string): Promise<{ execution: OrchestrationExecution; orchestration: Orchestration }> {
+  const execution = await getExecutionById(executionId);
+  if (!execution) {
+    throw new OrchestrationAccessError("Execution not found");
+  }
+  const orchestration = await assertOrchestrationOwnership(session, execution.orchestrationId).catch(() => {
+    throw new OrchestrationAccessError("Execution not found");
+  });
+  return { execution, orchestration };
 }
 
 export async function updateOrchestration(
@@ -1090,6 +1126,16 @@ export async function getConnections(orchestrationId: string): Promise<Orchestra
   return result.rows.map(mapConnectionRow);
 }
 
+export async function getConnectionById(id: string): Promise<OrchestrationConnection | null> {
+  const pool = getPool();
+  const result = await pool.query<ConnectionRow>(
+    "SELECT * FROM orchestration_connections WHERE id = $1",
+    [id]
+  );
+
+  return result.rows[0] ? mapConnectionRow(result.rows[0]) : null;
+}
+
 export async function deleteConnection(id: string): Promise<void> {
   const pool = getPool();
   await pool.query("DELETE FROM orchestration_connections WHERE id = $1", [id]);
@@ -1162,27 +1208,45 @@ export async function getExecutions(filters: {
   orchestrationId?: string;
   id?: string;
   status?: OrchestrationExecutionStatus;
+  // Scopes the result to executions whose owning orchestration belongs to
+  // this company. Callers that already resolved a single orchestration's
+  // ownership (e.g. via assertOrchestrationOwnership) don't strictly need
+  // this, but any route listing executions without a known-safe
+  // orchestrationId must pass it — orchestration_executions has no
+  // company_id column of its own, only via this join.
+  companyId?: string;
 }): Promise<OrchestrationExecution[]> {
   const pool = getPool();
-  let query = "SELECT * FROM orchestration_executions WHERE 1=1";
+  let query = "SELECT oe.* FROM orchestration_executions oe";
   const params: any[] = [];
+
+  if (filters.companyId) {
+    query += " INNER JOIN orchestrations o ON o.id = oe.orchestration_id";
+  }
+
+  query += " WHERE 1=1";
 
   if (filters.id) {
     params.push(filters.id);
-    query += ` AND id = $${params.length}`;
+    query += ` AND oe.id = $${params.length}`;
   }
 
   if (filters.orchestrationId) {
     params.push(filters.orchestrationId);
-    query += ` AND orchestration_id = $${params.length}`;
+    query += ` AND oe.orchestration_id = $${params.length}`;
   }
 
   if (filters.status) {
     params.push(filters.status);
-    query += ` AND status = $${params.length}`;
+    query += ` AND oe.status = $${params.length}`;
   }
 
-  query += " ORDER BY started_at DESC";
+  if (filters.companyId) {
+    params.push(filters.companyId);
+    query += ` AND o.company_id = $${params.length}`;
+  }
+
+  query += " ORDER BY oe.started_at DESC";
 
   const result = await pool.query<ExecutionRow>(query, params);
   return result.rows.map(mapExecutionRow);

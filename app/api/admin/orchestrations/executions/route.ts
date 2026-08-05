@@ -5,10 +5,16 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getExecutions } from "@/lib/orchestrations/db";
+import { getCurrentAdminSession } from "@/lib/admin/session";
 import type { OrchestrationExecutionStatus } from "@/shared/orchestrationTypes";
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getCurrentAdminSession();
+    if (!session) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const orchestrationId = searchParams.get("orchestrationId");
     const status = searchParams.get("status");
@@ -16,7 +22,8 @@ export async function GET(request: NextRequest) {
     const filters: {
       orchestrationId?: string;
       status?: OrchestrationExecutionStatus;
-    } = {};
+      companyId?: string;
+    } = { companyId: session.user.tenantId };
 
     if (orchestrationId) filters.orchestrationId = orchestrationId;
     if (status) filters.status = status as OrchestrationExecutionStatus;

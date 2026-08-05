@@ -228,10 +228,11 @@ async function assertCompanyAccess(companyId: string, session: AdminSession) {
     throw new GuidedWorkflowError("Company is required.");
   }
 
-  if (session.user.isAdminRole) {
-    return;
-  }
-
+  // isAdminRole means "this user's current role is admin-tier within their
+  // own company" (roles.company_id is per-company — there is no platform
+  // superadmin concept in this app), so it must never bypass the company
+  // boundary itself. Legitimate multi-company access is already handled by
+  // the user_company_roles EXISTS check below.
   const result = await withPoolRetry(() =>
     getPool().query<{ allowed: boolean }>(
       `
@@ -262,10 +263,11 @@ async function assertCompanyAccess(companyId: string, session: AdminSession) {
 }
 
 function accessCondition(session: AdminSession, params: unknown[]) {
-  if (session.user.isAdminRole) {
-    return "";
-  }
-
+  // isAdminRole means "this user's current role is admin-tier within their
+  // own company" — never a platform-wide bypass (there is no such concept
+  // in this app; roles.company_id is NOT NULL). Always scope to the
+  // company boundary; legitimate multi-company access is handled by the
+  // user_company_roles EXISTS clause below, not by this flag.
   params.push(session.user.tenantId, session.user.id);
   const tenantParam = params.length - 1;
   const userParam = params.length;
@@ -1239,6 +1241,31 @@ export async function getGuidedWorkflowById(id: string, session: AdminSession) {
         ${access}
     `,
     params
+  );
+  const row = result.rows[0];
+
+  if (!row) {
+    throw new GuidedWorkflowError("Guided workflow was not found.", 404);
+  }
+
+  return mapGuide(row);
+}
+
+// No session/company ACL — intentionally, unlike getGuidedWorkflowById. For
+// trusted, non-user-driven server-side lookups only (e.g. an orchestration
+// node fetching the guide it's configured to launch), the same "no filter,
+// caller responsibility" contract as lib/orchestrations/db.ts's
+// getOrchestrationById: authorization already happened one level up (the
+// orchestration itself was resolved for the correct company before this
+// runs), so there's no real "acting user" or company left to check here.
+export async function getGuidedWorkflowByIdUnscoped(id: string) {
+  const result = await getPool().query(
+    `
+      ${guideSelect}
+      WHERE guided_workflow_guides.id = $1
+        AND (guided_workflow_topics.id IS NULL OR guided_workflow_topics.deleted_at IS NULL)
+    `,
+    [id]
   );
   const row = result.rows[0];
 

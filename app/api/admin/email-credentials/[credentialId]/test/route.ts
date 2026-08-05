@@ -21,9 +21,10 @@ export async function POST(
   
   try {
     const { credentialId } = await params;
-    
+    const companyId = session.user.tenantId;
+
     // Try each provider type
-    const gmailCreds = await getGmailCredentials(credentialId);
+    const gmailCreds = await getGmailCredentials(credentialId, companyId);
     if (gmailCreds) {
       const result = await testGmailConnection(credentialId, gmailCreds);
       return NextResponse.json({
@@ -33,8 +34,8 @@ export async function POST(
         error: result.error,
       });
     }
-    
-    const outlookCreds = await getOutlookCredentials(credentialId);
+
+    const outlookCreds = await getOutlookCredentials(credentialId, companyId);
     if (outlookCreds) {
       const result = await testOutlookConnection(credentialId, outlookCreds);
       return NextResponse.json({
@@ -44,8 +45,8 @@ export async function POST(
         error: result.error,
       });
     }
-    
-    const imapCreds = await getIMAPCredentials(credentialId);
+
+    const imapCreds = await getIMAPCredentials(credentialId, companyId);
     if (imapCreds) {
       const result = await testIMAPConnection(imapCreds);
       return NextResponse.json({

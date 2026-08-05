@@ -10,6 +10,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import { assertTriggerOwnership } from "@/lib/orchestrations/triggers";
+import { OrchestrationAccessError } from "@/lib/orchestrations/db";
 
 export async function GET(
   request: NextRequest,
@@ -28,26 +30,17 @@ export async function GET(
     const { triggerId, logId } = await context.params;
     const pool = getPool();
 
-    const triggerResult = await pool.query<{ trigger_type: string }>(
-      `SELECT trigger_type FROM orchestration_triggers WHERE id = $1`,
-      [triggerId]
-    );
+    const trigger = await assertTriggerOwnership(session, triggerId);
 
-    if (triggerResult.rowCount === 0) {
-      return NextResponse.json(
-        { success: false, error: "Trigger not found" },
-        { status: 404 }
-      );
-    }
-
-    const triggerType = triggerResult.rows[0].trigger_type;
-
-    if (triggerType === "email") {
+    if (trigger.triggerType === "email") {
       return await getEmailDetail(pool, triggerId, logId);
     }
 
     return await getLogDetail(pool, triggerId, logId);
   } catch (error: any) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: error.statusCode });
+    }
     console.error("[TriggerExecutionDetailAPI] Error:", error);
 
     return NextResponse.json(

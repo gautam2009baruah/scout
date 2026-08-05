@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { getExecutionById, getNodeExecutions } from "@/lib/orchestrations/db";
+import { getNodeExecutions, assertExecutionOwnership, OrchestrationAccessError } from "@/lib/orchestrations/db";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 function removeInternalSchemaIds(value: unknown): unknown {
@@ -208,18 +208,18 @@ export async function GET(
 
     const { id } = await params;
 
-    const execution = await getExecutionById(id);
-    if (!execution) {
-      return NextResponse.json({ message: "Execution not found" }, { status: 404 });
-    }
+    const { execution } = await assertExecutionOwnership(session, id);
 
     const nodeExecutions = (await getNodeExecutions(id)).map(sanitizeNodeExecutionForMonitoring);
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       execution,
       nodeExecutions
     });
   } catch (error) {
+    if (error instanceof OrchestrationAccessError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     console.error("Error fetching execution details:", error);
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Failed to fetch execution details" },

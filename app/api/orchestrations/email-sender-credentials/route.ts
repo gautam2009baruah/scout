@@ -57,7 +57,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Authentication required" }, { status: 401 });
     }
 
-    const companyId = request.nextUrl.searchParams.get("companyId") || session.user.tenantId;
+    const companyId = session.user.tenantId;
     const targetAppId = request.nextUrl.searchParams.get("targetAppId");
     const activeOnly = request.nextUrl.searchParams.get("activeOnly") === "true";
 
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const companyId = String(body.companyId || session.user.tenantId);
+    const companyId = session.user.tenantId;
     const targetAppId = body.targetAppId ? String(body.targetAppId).trim() : "";
     const provider = String(body.provider || "smtp") as "smtp" | "gmail" | "outlook";
     const name = String(body.name || "").trim();

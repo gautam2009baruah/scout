@@ -11,6 +11,8 @@ import type {
   TriggerContext,
 } from "@/shared/orchestrationTypes";
 import { validateShortNameFormat } from "@/lib/orchestrations/http-trigger/endpoint-resolution";
+import type { AdminSession } from "@/lib/admin/auth";
+import { assertOrchestrationOwnership, OrchestrationAccessError } from "@/lib/orchestrations/db";
 
 // ============================================================================
 // Database Row Mappers
@@ -183,6 +185,21 @@ export async function getTriggerById(id: string): Promise<OrchestrationTrigger |
   );
 
   return result.rows[0] ? mapTriggerRow(result.rows[0]) : null;
+}
+
+// getTriggerById has no company filter of its own, by design (see
+// lib/orchestrations/db.ts's assertOrchestrationOwnership). Any route
+// handler receiving a triggerId from the client must go through this
+// instead of calling getTriggerById directly.
+export async function assertTriggerOwnership(session: AdminSession, triggerId: string): Promise<OrchestrationTrigger> {
+  const trigger = await getTriggerById(triggerId);
+  if (!trigger) {
+    throw new OrchestrationAccessError("Trigger not found");
+  }
+  await assertOrchestrationOwnership(session, trigger.orchestrationId).catch(() => {
+    throw new OrchestrationAccessError("Trigger not found");
+  });
+  return trigger;
 }
 
 export async function updateTrigger(

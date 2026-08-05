@@ -45,14 +45,14 @@ function decryptPassword(encryptedPassword: string): string {
 /**
  * Fetch credentials from database
  */
-export async function getIMAPCredentials(credentialId: string): Promise<IMAPConfig | null> {
+export async function getIMAPCredentials(credentialId: string, companyId: string): Promise<IMAPConfig | null> {
   const pool = await getPool();
-  
+
   const result = await pool.query(
     `SELECT imap_host, imap_port, email_address, imap_password, imap_tls
      FROM email_credentials
-     WHERE id = $1 AND provider = 'imap' AND is_active = true`,
-    [credentialId]
+     WHERE id = $1 AND provider = 'imap' AND is_active = true AND company_id = $2`,
+    [credentialId, companyId]
   );
   
   if ((result.rowCount ?? 0) === 0) {

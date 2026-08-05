@@ -86,7 +86,7 @@ async function fetchEmailsForProvider(trigger, config, since) {
       return [];
     }
     
-    const credentials = await getGmailCredentials(credentialId);
+    const credentials = await getGmailCredentials(credentialId, trigger.companyId);
     if (!credentials) {
       console.warn(`Trigger ${trigger.id}: Gmail credentials not found`);
       return [];
@@ -109,7 +109,7 @@ async function fetchEmailsForProvider(trigger, config, since) {
       return [];
     }
     
-    const credentials = await getOutlookCredentials(credentialId);
+    const credentials = await getOutlookCredentials(credentialId, trigger.companyId);
     if (!credentials) {
       console.warn(`Trigger ${trigger.id}: Outlook credentials not found`);
       return [];
@@ -132,7 +132,7 @@ async function fetchEmailsForProvider(trigger, config, since) {
       return [];
     }
     
-    const credentials = await getIMAPCredentials(credentialId);
+    const credentials = await getIMAPCredentials(credentialId, trigger.companyId);
     if (!credentials) {
       console.warn(`Trigger ${trigger.id}: IMAP credentials not found`);
       return [];
@@ -159,17 +159,17 @@ async function markEmailAsProcessed(trigger, config, messageId) {
   
   try {
     if (provider === "gmail") {
-      const credentials = await getGmailCredentials(credentialId);
+      const credentials = await getGmailCredentials(credentialId, trigger.companyId);
       if (credentials) {
         await markGmailEmailAsRead(credentials, messageId);
       }
     } else if (provider === "outlook") {
-      const credentials = await getOutlookCredentials(credentialId);
+      const credentials = await getOutlookCredentials(credentialId, trigger.companyId);
       if (credentials) {
         await markOutlookEmailAsRead(credentials, messageId);
       }
     } else if (provider === "imap") {
-      const credentials = await getIMAPCredentials(credentialId);
+      const credentials = await getIMAPCredentials(credentialId, trigger.companyId);
       if (credentials) {
         const folder = config.folder || "INBOX";
         await markIMAPEmailAsRead(credentials, messageId, folder);

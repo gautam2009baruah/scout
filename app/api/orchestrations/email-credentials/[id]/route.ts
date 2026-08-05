@@ -139,11 +139,11 @@ export async function DELETE(
 
     const pool = getPool();
 
-    // Check if credential exists
+    // Check if credential exists and belongs to the caller's company
     const checkResult = await pool.query(
       `SELECT id FROM email_credentials
-       WHERE id = $1`,
-      [credentialId]
+       WHERE id = $1 AND company_id = $2`,
+      [credentialId, session.user.tenantId]
     );
 
     if (checkResult.rowCount === 0) {
@@ -179,8 +179,8 @@ export async function DELETE(
     // Delete the credential
     await pool.query(
       `DELETE FROM email_credentials
-       WHERE id = $1`,
-      [credentialId]
+       WHERE id = $1 AND company_id = $2`,
+      [credentialId, session.user.tenantId]
     );
 
     return NextResponse.json({

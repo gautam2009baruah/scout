@@ -25,14 +25,14 @@ function decryptToken(encryptedToken: string): string {
 /**
  * Fetch Outlook credentials from database
  */
-export async function getOutlookCredentials(credentialId: string): Promise<OutlookConfig | null> {
+export async function getOutlookCredentials(credentialId: string, companyId: string): Promise<OutlookConfig | null> {
   const pool = await getPool();
-  
+
   const result = await pool.query(
     `SELECT email_address, oauth_access_token, oauth_refresh_token, oauth_token_expires_at
      FROM email_credentials
-     WHERE id = $1 AND provider = 'outlook' AND is_active = true`,
-    [credentialId]
+     WHERE id = $1 AND provider = 'outlook' AND is_active = true AND company_id = $2`,
+    [credentialId, companyId]
   );
   
   if ((result.rowCount ?? 0) === 0) {

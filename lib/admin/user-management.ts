@@ -87,6 +87,25 @@ function assertCanAccessCompany(companyId: string, session: AdminSession) {
   }
 }
 
+// assertCanAccessCompany only validates a *requested* companyId — it never
+// checks whether the target user already belongs to some other company
+// entirely, which would otherwise let an admin view/edit/delete/reset an
+// arbitrary user from a company they have no relationship to at all. Any
+// mutating action on an existing user must go through this first.
+async function assertUserBelongsToAccessibleCompany(employeeId: string, session: AdminSession) {
+  const existingMemberships = await getPool().query<{ company_id: string }>(
+    `SELECT company_id FROM user_company_roles WHERE user_id = $1 AND deleted_at IS NULL`,
+    [employeeId]
+  );
+
+  if (
+    existingMemberships.rowCount! > 0 &&
+    !existingMemberships.rows.some((row) => session.availableCompanies.some((company) => company.companyId === row.company_id))
+  ) {
+    throw new EmployeeError("User was not found.");
+  }
+}
+
 function requireReason(reason: string | undefined, action: string) {
   const trimmed = reason?.trim() ?? "";
 
@@ -605,6 +624,18 @@ export async function updateEmployee(employeeId: string, input: UpdateEmployeeIn
   }
 
   assertCanAccessCompany(companyId, session);
+  // If the user already belongs to a company, it must be this one —
+  // cross-company reassignment isn't a supported operation here.
+  const existingMembershipsForThisUser = await getPool().query<{ company_id: string }>(
+    `SELECT company_id FROM user_company_roles WHERE user_id = $1 AND deleted_at IS NULL`,
+    [employeeId]
+  );
+  if (
+    existingMembershipsForThisUser.rowCount! > 0 &&
+    !existingMembershipsForThisUser.rows.some((row) => row.company_id === companyId)
+  ) {
+    throw new EmployeeError("This user belongs to a different company and cannot be edited here.");
+  }
 
   const roleTemplate = await getRoleTemplate(input.roleId);
   if (roleTemplate?.is_system) {
@@ -795,6 +826,8 @@ export async function resetEmployeePassword(employeeId: string, session: AdminSe
     throw new EmployeeError("You cannot reset your own password from here. Use the forgot password page instead.");
   }
 
+  await assertUserBelongsToAccessibleCompany(employeeId, session);
+
   try {
     await adminRequestPasswordReset(employeeId);
   } catch (error) {
@@ -817,6 +850,8 @@ export async function deleteEmployee(employeeId: string, reason: string | undefi
   if (employeeId === session.user.id) {
     throw new EmployeeError("You cannot delete your own account.");
   }
+
+  await assertUserBelongsToAccessibleCompany(employeeId, session);
 
   const deletionReason = requireReason(reason, "deleting a user");
   const client = await getPool().connect();

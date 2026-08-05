@@ -163,6 +163,7 @@ export async function processEmailTrigger(
         // in this same execution auto-resolve its own per-environment
         // sender instead of always falling back to its default.
         environmentId: environmentId || undefined,
+        companyId: orchestration.company_id,
       },
       triggeredBy: `email:${email.from}`,
     });
@@ -300,6 +301,7 @@ export async function processEmailTrigger(
 export async function getActiveEmailTriggers(): Promise<Array<{
   id: string;
   orchestrationId: string;
+  companyId: string;
   name: string;
   config: EmailTriggerConfig;
   lastPolledAt: Date | null;
@@ -310,12 +312,13 @@ export async function getActiveEmailTriggers(): Promise<Array<{
   const result = await pool.query<{
     id: string;
     orchestration_id: string;
+    company_id: string;
     name: string;
     config: EmailTriggerConfig;
     last_polled_at: Date | null;
     environment_id: string | null;
   }>(
-    `SELECT t.id, t.orchestration_id, t.name, t.config, t.last_polled_at, t.environment_id
+    `SELECT t.id, t.orchestration_id, o.company_id, t.name, t.config, t.last_polled_at, t.environment_id
      FROM orchestration_triggers t
      INNER JOIN orchestrations o ON o.id = t.orchestration_id
      WHERE t.trigger_type = 'email'
@@ -328,6 +331,7 @@ export async function getActiveEmailTriggers(): Promise<Array<{
   return result.rows.map(row => ({
     id: row.id,
     orchestrationId: row.orchestration_id,
+    companyId: row.company_id,
     name: row.name,
     config: row.config,
     lastPolledAt: row.last_polled_at,

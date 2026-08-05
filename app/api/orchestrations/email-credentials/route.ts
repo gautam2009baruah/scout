@@ -62,12 +62,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const { searchParams } = request.nextUrl;
-    const companyId = searchParams.get("companyId");
-
     const pool = getPool();
-    
-    // Fetch credentials with their assigned target app
+
+    // Fetch credentials with their assigned target app — always scoped to
+    // the caller's own company, never a client-supplied companyId.
     const result = await pool.query(
       `SELECT
         ec.id,
@@ -90,9 +88,9 @@ export async function GET(request: NextRequest) {
         ), '[]'::json) AS environments
        FROM email_credentials ec
        LEFT JOIN company_target_applications cta ON cta.id = ec.target_app_id
-       WHERE ($1::uuid IS NULL OR ec.company_id = $1::uuid)
+       WHERE ec.company_id = $1
        ORDER BY ec.created_at DESC`,
-      [companyId]
+      [session.user.tenantId]
     );
 
     return NextResponse.json({
@@ -125,7 +123,6 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const {
-      companyId,
       provider,
       name,
       emailAddress,
@@ -135,6 +132,7 @@ export async function POST(request: NextRequest) {
       imapTls,
       targetAppId,
     } = body;
+    const companyId = session.user.tenantId;
 
     if (!companyId || !provider || !name || !emailAddress) {
       return NextResponse.json(

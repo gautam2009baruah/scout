@@ -388,19 +388,10 @@ export async function getTopicWorkspace(session: AdminSession) {
 }
 
 export async function getTopicCompanyOptions(session: AdminSession): Promise<TopicCompanyOption[]> {
-  if (isAdmin(session)) {
-    const result = await getPool().query<{ id: string; name: string }>(
-      `
-        SELECT id, name
-        FROM companies
-        WHERE deleted_at IS NULL
-        ORDER BY name ASC
-      `
-    );
-
-    return result.rows;
-  }
-
+  // isAdmin (session.user.isAdminRole) is a per-company role tier, not a
+  // platform-wide flag — it must never widen this beyond companies the
+  // session actually has access to (own tenant + any granted via
+  // user_company_roles), so both branches use the same scoped query.
   const result = await getPool().query<{ id: string; name: string }>(
     `
       SELECT DISTINCT companies.id, companies.name
@@ -525,6 +516,10 @@ export async function createTopic(input: CreateTopicInput, session: AdminSession
 
   if (!input.companyId || !name || !slug) {
     throw new TopicError("Company and folder name are required.");
+  }
+
+  if (!session.availableCompanies.some((company) => company.companyId === input.companyId)) {
+    throw new TopicError("You do not have access to this company.");
   }
 
   await assertCanCreateUnder(parentId, session);

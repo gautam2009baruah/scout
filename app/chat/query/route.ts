@@ -59,7 +59,13 @@ export async function POST(request: Request) {
     const response = await answerChatQuery({
       company_id: resolvedCompanyId,
       user_id: body.user_id,
-      target_app_id: resolvedTargetAppId,
+      // Always the authenticated key's own target app — never a
+      // client-omittable value. The key is always bound to exactly one
+      // target app (chatbot_api_keys.target_app_id is NOT NULL), so this
+      // can never legitimately differ from what the caller sent anyway,
+      // and prevents retrieval falling back to "no target-app restriction"
+      // (searches every folder in the company) when the field is omitted.
+      target_app_id: apiKeyRecord.targetAppId,
       environment_id: apiKeyRecord.environmentId,
       question: body.question,
       conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,
@@ -90,7 +96,7 @@ export async function POST(request: Request) {
     ) {
       try {
         await recordChatQueryTelemetry({
-          target_app_id: resolvedTargetAppId,
+          target_app_id: apiKeyRecord.targetAppId,
           environment_id: apiKeyRecord.environmentId,
           user_id: body.user_id,
           conversation_id: typeof body.conversation_id === "string" ? body.conversation_id : undefined,
