@@ -20,6 +20,43 @@ export type ConnectorCredential = {
 
 export type ConnectorTestResult = { success: boolean; message: string };
 
+// A file discovered inside a Drive folder / SharePoint library.
+export type ConnectorListItem = {
+  itemId: string;
+  driveId?: string;
+  name: string;
+  fileType: string;
+  mimeType?: string;
+  size?: number;
+  webUrl?: string;
+  downloadMime?: string; // set when a Google-native doc must be exported
+};
+
+// Stored on each registered document so the background worker can fetch its
+// bytes later without re-resolving the source URL.
+export type ConnectorFileRef = {
+  provider: ConnectorProvider;
+  credential_reference: string;
+  item_id: string;
+  drive_id?: string;
+  download_mime?: string;
+};
+
+// File extensions the document pipeline can actually parse.
+export const CONNECTOR_SUPPORTED_TYPES = [
+  "pdf",
+  "docx",
+  "pptx",
+  "xlsx",
+  "csv",
+  "txt",
+  "md",
+  "html",
+  "json",
+  "xml",
+  "epub"
+];
+
 export class ConnectorError extends Error {
   constructor(message: string, public readonly statusCode = 400) {
     super(message);

@@ -66,7 +66,44 @@ async function deleteStoredFile(storagePath) {
   await rm(resolveStoragePath(storagePath), { force: true });
 }
 
+async function fetchConnectorFile(companyId, connector) {
+  const baseUrl = process.env.APP_BASE_URL || process.env.SCOUT_BASE_URL;
+  const secret = process.env.CONNECTOR_INTERNAL_SECRET;
+
+  if (!baseUrl) {
+    throw new Error("APP_BASE_URL must be set for the worker to download connector files.");
+  }
+  if (!secret) {
+    throw new Error("CONNECTOR_INTERNAL_SECRET is not configured.");
+  }
+
+  const endpoint = new URL("/api/internal/connector-file", baseUrl).toString();
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-scout-internal-secret": secret
+    },
+    body: JSON.stringify({ companyId, connector })
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Connector download failed (HTTP ${response.status}). ${detail}`.trim());
+  }
+
+  return Buffer.from(await response.arrayBuffer());
+}
+
 async function fetchExternalFile(document) {
+  // Google Drive / SharePoint files carry a connector reference instead of a
+  // directly-fetchable URL — download their bytes through the app's internal
+  // endpoint, which owns the provider credentials.
+  const connector = document.source_metadata_json?.connector;
+  if (connector && connector.provider && connector.credential_reference && connector.item_id) {
+    return fetchConnectorFile(document.company_id, connector);
+  }
+
   const sourceUrl = document.external_source_url || document.external_source_reference;
 
   if (!sourceUrl) {

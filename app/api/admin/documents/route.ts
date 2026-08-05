@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createDocument, discoverExternalFolder, discoverFeedPages, discoverSitemapPages, discoverWebsitePages, DocumentError, listDocuments, registerExternalDocument, uploadDocuments } from "@/lib/admin/documents";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import { listConnectorItems } from "@/lib/document-processing/connectors";
 
 export const runtime = "nodejs";
 
@@ -59,11 +60,46 @@ export async function POST(request: Request) {
   try {
     const expandedDocuments = (await Promise.all(documents.map(async (document: Record<string, unknown>) => {
       const sourceKind = document.externalSourceKind ?? document.external_source_kind;
-      if (sourceKind !== "folder") return [document];
-
       const folderUrl = String(document.externalSourceUrl ?? document.external_source_url ?? "");
       const metadata = typeof document.sourceMetadata === "object" && document.sourceMetadata ? document.sourceMetadata as Record<string, unknown> : {};
       const sourceType = String(metadata.ingestion_source_type ?? "");
+
+      // Drive/SharePoint connectors resolve a pasted link (folder OR single file)
+      // to a list of ingestable files, regardless of the row's file/folder kind.
+      if (sourceType === "google_drive" || sourceType === "sharepoint") {
+        const items = await listConnectorItems({
+          provider: sourceType,
+          companyId: String(document.companyId ?? document.company_id ?? ""),
+          credentialId: String(metadata.credential_reference ?? ""),
+          url: folderUrl,
+          maxFiles: Number(metadata.max_files ?? metadata.max_pages ?? 200)
+        });
+        return items.map((item) => ({
+          ...document,
+          storageMode: "external_reference",
+          externalSourceUrl: item.webUrl || `${sourceType}:${item.driveId ? `${item.driveId}:` : ""}${item.itemId}`,
+          externalSourceReference: item.webUrl || `${sourceType}:${item.driveId ? `${item.driveId}:` : ""}${item.itemId}`,
+          originalFilename: item.name,
+          fileType: item.fileType,
+          fileSize: item.size ?? 0,
+          name: item.name,
+          sourceMetadata: {
+            ...metadata,
+            source_folder_url: folderUrl,
+            source_url: item.webUrl,
+            connector: {
+              provider: sourceType,
+              credential_reference: String(metadata.credential_reference ?? ""),
+              item_id: item.itemId,
+              drive_id: item.driveId,
+              download_mime: item.downloadMime
+            }
+          }
+        }));
+      }
+
+      if (sourceKind !== "folder") return [document];
+
       const entries = sourceType === "crawler"
         ? await discoverWebsitePages(folderUrl, { maxPages: Number(metadata.max_pages || 200), maxDepth: Number(metadata.max_depth || 4) })
         : sourceType === "sitemap"

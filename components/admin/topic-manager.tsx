@@ -2002,6 +2002,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-800"><KeyRound className="h-4 w-4 text-violet-600" /> Connection credentials</div>
                     <p className="mt-1 text-xs text-slate-500">Secrets are encrypted and are never stored in document metadata.</p>
+                    <p className="mt-1 text-xs text-slate-500">Prefer no IT setup? You can instead capture {ingestionSource === "google_drive" ? "Google Drive" : "SharePoint"} pages while logged in, using the <a className="font-semibold text-violet-700 underline" href="/control-panel/web-ingestor">Web Ingestor browser extension</a>.</p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <label className="text-xs font-semibold text-slate-600">Connection name
                         <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-normal outline-none focus:border-violet-400" onChange={(event) => setSourceAuth((value) => ({ ...value, credentialName: event.target.value }))} placeholder="Company knowledge drive" value={sourceAuth.credentialName} />

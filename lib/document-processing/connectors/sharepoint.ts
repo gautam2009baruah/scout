@@ -1,4 +1,12 @@
-import { ConnectorError, readError, type ConnectorCredential, type ConnectorTestResult } from "./types";
+import {
+  CONNECTOR_SUPPORTED_TYPES,
+  ConnectorError,
+  readError,
+  type ConnectorCredential,
+  type ConnectorFileRef,
+  type ConnectorListItem,
+  type ConnectorTestResult
+} from "./types";
 
 const GRAPH_SCOPE = "https://graph.microsoft.com/.default";
 
@@ -56,4 +64,107 @@ export async function testSharePointConnection(credential: ConnectorCredential):
   const json = (await response.json()) as { displayName?: string; webUrl?: string };
   const label = json.displayName || json.webUrl || "your tenant";
   return { success: true, message: `Connected to SharePoint (${label}).` };
+}
+
+type GraphItem = {
+  id: string;
+  name: string;
+  size?: number;
+  webUrl?: string;
+  file?: unknown;
+  folder?: unknown;
+  parentReference?: { driveId?: string };
+};
+
+// Graph resolves any SharePoint/OneDrive URL (site library, subfolder, or a
+// single file) into a driveItem via the Shares API, so admins can simply paste
+// the link from their browser.
+function encodeShareUrl(url: string): string {
+  const base64 = Buffer.from(url, "utf8").toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  return `u!${base64}`;
+}
+
+async function graph<T>(token: string, path: string): Promise<T> {
+  const response = await fetch(`https://graph.microsoft.com/v1.0/${path}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) {
+    throw new ConnectorError(`Microsoft Graph error: ${await readError(response)}`, response.status);
+  }
+  return (await response.json()) as T;
+}
+
+function toGraphListItem(item: GraphItem, driveId: string): ConnectorListItem | null {
+  const ext = (item.name.split(".").pop() || "").toLowerCase();
+  if (!CONNECTOR_SUPPORTED_TYPES.includes(ext)) return null;
+  return { itemId: item.id, driveId, name: item.name, fileType: ext, size: Number(item.size || 0), webUrl: item.webUrl };
+}
+
+export async function listSharePointItems(
+  credential: ConnectorCredential,
+  url: string,
+  maxFiles: number
+): Promise<ConnectorListItem[]> {
+  const token = await getSharePointAccessToken(credential);
+  const shareId = encodeShareUrl(url.trim());
+  const root = await graph<GraphItem>(
+    token,
+    `shares/${shareId}/driveItem?$select=id,name,size,file,folder,webUrl,parentReference`
+  );
+
+  const driveId = root.parentReference?.driveId;
+  if (!driveId) {
+    throw new ConnectorError("Could not resolve the SharePoint drive for that link.");
+  }
+
+  const items: ConnectorListItem[] = [];
+
+  if (!root.folder) {
+    const single = toGraphListItem(root, driveId);
+    if (!single) throw new ConnectorError("That file type is not supported for ingestion.");
+    return [single];
+  }
+
+  const queue = [root.id];
+  const seen = new Set([root.id]);
+
+  while (queue.length && items.length < maxFiles) {
+    const itemId = queue.shift()!;
+    let nextPath: string | null =
+      `drives/${driveId}/items/${itemId}/children?$select=id,name,size,file,folder,webUrl&$top=200`;
+    while (nextPath && items.length < maxFiles) {
+      const data: { value?: GraphItem[]; "@odata.nextLink"?: string } = await graph(token, nextPath);
+      for (const child of data.value || []) {
+        if (items.length >= maxFiles) break;
+        if (child.folder) {
+          if (!seen.has(child.id)) {
+            seen.add(child.id);
+            queue.push(child.id);
+          }
+          continue;
+        }
+        const item = toGraphListItem(child, driveId);
+        if (item) items.push(item);
+      }
+      const next = data["@odata.nextLink"];
+      nextPath = next ? next.replace("https://graph.microsoft.com/v1.0/", "") : null;
+    }
+  }
+
+  return items;
+}
+
+export async function downloadSharePointItem(
+  credential: ConnectorCredential,
+  ref: ConnectorFileRef
+): Promise<Buffer> {
+  const token = await getSharePointAccessToken(credential);
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/drives/${ref.drive_id}/items/${ref.item_id}/content`,
+    { headers: { Authorization: `Bearer ${token}` }, redirect: "follow" }
+  );
+  if (!response.ok) {
+    throw new ConnectorError(`SharePoint download failed: ${await readError(response)}`, response.status);
+  }
+  return Buffer.from(await response.arrayBuffer());
 }

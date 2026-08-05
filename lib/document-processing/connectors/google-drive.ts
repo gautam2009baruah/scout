@@ -1,5 +1,13 @@
 import crypto from "node:crypto";
-import { ConnectorError, readError, type ConnectorCredential, type ConnectorTestResult } from "./types";
+import {
+  CONNECTOR_SUPPORTED_TYPES,
+  ConnectorError,
+  readError,
+  type ConnectorCredential,
+  type ConnectorFileRef,
+  type ConnectorListItem,
+  type ConnectorTestResult
+} from "./types";
 
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
@@ -88,4 +96,135 @@ export async function testGoogleDriveConnection(credential: ConnectorCredential)
   const json = (await response.json()) as { user?: { emailAddress?: string; displayName?: string } };
   const who = json.user?.emailAddress || json.user?.displayName || "the service account";
   return { success: true, message: `Connected to Google Drive as ${who}.` };
+}
+
+const GOOGLE_NATIVE_EXPORT: Record<string, { mime: string; ext: string }> = {
+  "application/vnd.google-apps.document": {
+    mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ext: "docx"
+  },
+  "application/vnd.google-apps.spreadsheet": {
+    mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ext: "xlsx"
+  },
+  "application/vnd.google-apps.presentation": {
+    mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ext: "pptx"
+  }
+};
+
+type DriveFile = { id: string; name: string; mimeType: string; size?: string; webViewLink?: string };
+
+function extractDriveId(rawUrl: string): string {
+  const value = rawUrl.trim();
+  const patterns = [/\/folders\/([a-zA-Z0-9_-]+)/, /\/file\/d\/([a-zA-Z0-9_-]+)/, /\/d\/([a-zA-Z0-9_-]+)/, /[?&]id=([a-zA-Z0-9_-]+)/];
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (match) return match[1];
+  }
+  if (/^[a-zA-Z0-9_-]{16,}$/.test(value)) return value;
+  throw new ConnectorError("Could not find a Google Drive file or folder ID in that link.");
+}
+
+async function driveApi<T>(token: string, path: string): Promise<T> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/${path}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) {
+    throw new ConnectorError(`Google Drive API error: ${await readError(response)}`, response.status);
+  }
+  return (await response.json()) as T;
+}
+
+function toDriveListItem(file: DriveFile): ConnectorListItem | null {
+  const native = GOOGLE_NATIVE_EXPORT[file.mimeType];
+  if (native) {
+    const name = file.name.toLowerCase().endsWith(`.${native.ext}`) ? file.name : `${file.name}.${native.ext}`;
+    return {
+      itemId: file.id,
+      name,
+      fileType: native.ext,
+      mimeType: file.mimeType,
+      size: Number(file.size || 0),
+      webUrl: file.webViewLink,
+      downloadMime: native.mime
+    };
+  }
+
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  if (!CONNECTOR_SUPPORTED_TYPES.includes(ext)) return null;
+  return {
+    itemId: file.id,
+    name: file.name,
+    fileType: ext,
+    mimeType: file.mimeType,
+    size: Number(file.size || 0),
+    webUrl: file.webViewLink
+  };
+}
+
+export async function listGoogleDriveItems(
+  credential: ConnectorCredential,
+  url: string,
+  maxFiles: number
+): Promise<ConnectorListItem[]> {
+  const token = await getGoogleDriveAccessToken(credential);
+  const rootId = extractDriveId(url);
+  const meta = await driveApi<DriveFile>(
+    token,
+    `files/${rootId}?fields=id,name,mimeType,size,webViewLink&supportsAllDrives=true`
+  );
+
+  const items: ConnectorListItem[] = [];
+
+  if (meta.mimeType !== "application/vnd.google-apps.folder") {
+    const single = toDriveListItem(meta);
+    if (!single) throw new ConnectorError("That file type is not supported for ingestion.");
+    return [single];
+  }
+
+  const queue = [rootId];
+  const seen = new Set([rootId]);
+
+  while (queue.length && items.length < maxFiles) {
+    const folderId = queue.shift()!;
+    let pageToken: string | undefined;
+    do {
+      const query = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+      const data = await driveApi<{ files?: DriveFile[]; nextPageToken?: string }>(
+        token,
+        `files?q=${query}&fields=nextPageToken,files(id,name,mimeType,size,webViewLink)&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true${pageToken ? `&pageToken=${pageToken}` : ""}`
+      );
+      for (const file of data.files || []) {
+        if (items.length >= maxFiles) break;
+        if (file.mimeType === "application/vnd.google-apps.folder") {
+          if (!seen.has(file.id)) {
+            seen.add(file.id);
+            queue.push(file.id);
+          }
+          continue;
+        }
+        const item = toDriveListItem(file);
+        if (item) items.push(item);
+      }
+      pageToken = data.nextPageToken;
+    } while (pageToken && items.length < maxFiles);
+  }
+
+  return items;
+}
+
+export async function downloadGoogleDriveFile(
+  credential: ConnectorCredential,
+  ref: ConnectorFileRef
+): Promise<Buffer> {
+  const token = await getGoogleDriveAccessToken(credential);
+  const endpoint = ref.download_mime
+    ? `https://www.googleapis.com/drive/v3/files/${ref.item_id}/export?mimeType=${encodeURIComponent(ref.download_mime)}`
+    : `https://www.googleapis.com/drive/v3/files/${ref.item_id}?alt=media&supportsAllDrives=true`;
+  const response = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}` } });
+  if (!response.ok) {
+    throw new ConnectorError(`Google Drive download failed: ${await readError(response)}`, response.status);
+  }
+  return Buffer.from(await response.arrayBuffer());
 }
