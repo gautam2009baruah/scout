@@ -153,6 +153,23 @@ export async function getAIProviderConfig(companyId?: string, targetAppId?: stri
   };
 }
 
+// Whether a company has at least one active LLM and one active embedding
+// provider configured (at any scope). Used to warn admins when nothing is set,
+// since there is no deployment fallback.
+export async function getCompanyAiConfigStatus(companyId: string): Promise<{ hasLlm: boolean; hasEmbedding: boolean }> {
+  if (!companyId) {
+    return { hasLlm: false, hasEmbedding: false };
+  }
+  const result = await getPool().query<{ has_llm: boolean; has_embedding: boolean }>(
+    `SELECT
+       EXISTS (SELECT 1 FROM ai_llm_provider_configs WHERE company_id = $1 AND is_active = true AND deleted_at IS NULL) AS has_llm,
+       EXISTS (SELECT 1 FROM ai_embedding_provider_configs WHERE company_id = $1 AND is_active = true AND deleted_at IS NULL) AS has_embedding`,
+    [companyId]
+  );
+  const row = result.rows[0];
+  return { hasLlm: Boolean(row?.has_llm), hasEmbedding: Boolean(row?.has_embedding) };
+}
+
 export async function getAdminAIProviderConfig(companyId?: string, targetAppId?: string, environmentId?: string): Promise<AdminAIProviderConfig> {
   const active = await getAIProviderConfig(companyId, targetAppId, environmentId);
 

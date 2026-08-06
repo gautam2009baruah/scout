@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
+  AlertTriangle,
   Bot,
   CheckCircle2,
   FileText,
@@ -12,6 +14,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { AdminShell } from "@/components/admin";
+import { getCompanyAiConfigStatus } from "@/lib/ai/config";
 import { getUserDashboardSummary } from "@/lib/admin/dashboard";
 import { MODULE_KEYS, hasModuleAccess } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
@@ -37,6 +40,14 @@ export default async function AdminDashboardPage() {
   }
 
   const summary = await getUserDashboardSummary(session);
+  const aiStatus = await getCompanyAiConfigStatus(session.user.tenantId);
+  const aiMissing: string[] = [
+    ...(aiStatus.hasLlm ? [] : ["an LLM provider"]),
+    ...(aiStatus.hasEmbedding ? [] : ["an embedding provider"])
+  ];
+  const canConfigureAi = hasModuleAccess(session, MODULE_KEYS.aiConfiguration);
+  const aiConfigHref = session.modules.find((module) => module.key === MODULE_KEYS.aiConfiguration)?.href
+    ?? "/control-panel/administration/ai-configuration";
   const cards = [
     summary.userManagement ? {
       detail: `${summary.userManagement.activeUsers} active users`,
@@ -76,6 +87,26 @@ export default async function AdminDashboardPage() {
 
   return (
     <AdminShell active={MODULE_KEYS.overview} session={session}>
+      {aiMissing.length > 0 ? (
+        <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <div className="text-sm">
+            <div className="font-semibold text-amber-900">AI providers are not configured</div>
+            <p className="mt-1 text-amber-800">
+              This company has not set {aiMissing.join(" and ")}. Chatbot answers and document embedding will fail until{" "}
+              {canConfigureAi ? "you configure" : "an administrator configures"} a provider under AI Configuration.
+            </p>
+            {canConfigureAi ? (
+              <Link
+                className="mt-2 inline-flex h-8 items-center rounded-lg bg-amber-600 px-3 text-xs font-semibold text-white transition hover:bg-amber-700"
+                href={aiConfigHref}
+              >
+                Configure AI providers
+              </Link>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" key={card.label}>
