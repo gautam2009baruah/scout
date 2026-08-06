@@ -27,7 +27,7 @@ type WebIngestionTokenPayload = {
 };
 
 function signingKey(): Buffer {
-  const raw = process.env.APP_SECRET || process.env.HTTP_TRIGGER_SECRET_KEY || "scout-web-ingestion-default-key";
+  const raw = process.env.WEB_INGESTION_TOKEN_SECRET || "scout-web-ingestion-default-key";
   return crypto.createHash("sha256").update(raw).digest();
 }
 

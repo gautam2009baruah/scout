@@ -97,7 +97,7 @@ export function newCorrelationId(existing?: string | null): string {
 }
 
 function getSecretEncryptionKey(): Buffer {
-  const raw = process.env.HTTP_TRIGGER_SECRET_KEY || process.env.APP_SECRET || "scout-http-trigger-default-key";
+  const raw = process.env.HTTP_TRIGGER_SECRET_KEY || "scout-http-trigger-default-key";
   return createHash("sha256").update(raw).digest();
 }
 

@@ -12,7 +12,7 @@ export const runtime = "nodejs";
  * and the worker never handles provider secrets directly.
  */
 export async function POST(request: Request) {
-  const secret = process.env.CONNECTOR_INTERNAL_SECRET || "";
+  const secret = process.env.DOCUMENT_WORKER_INTERNAL_SECRET || "";
   const provided = request.headers.get("x-scout-internal-secret") || "";
   if (!secret || provided !== secret) {
     return NextResponse.json({ message: "Unauthorized." }, { status: 401 });

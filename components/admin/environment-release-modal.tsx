@@ -76,6 +76,12 @@ export function EnvironmentReleaseModal({ title, apiUrl, targetAppId, targetAppO
 
   async function handleSave(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (loading || environments.length === 0) {
+      onError?.("No environments are configured for this target app. Create an environment before saving releases.");
+      return;
+    }
+
     setSaving(true);
 
     const targets = bulkSaveUrls ?? [apiUrl];
@@ -124,7 +130,7 @@ export function EnvironmentReleaseModal({ title, apiUrl, targetAppId, targetAppO
         </p>
         {bulkSaveUrls && bulkSaveUrls.length > 1 ? (
           <p className="mt-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
-            Applies to all {bulkSaveUrls.length} selected documents — each one's release state for this target app is set to exactly what you choose below, replacing its own current selection.
+            Applies to all {bulkSaveUrls.length} selected documents — each document&apos;s release state for this target app is set to exactly what you choose below, replacing its own current selection.
           </p>
         ) : null}
         {targetAppOptions && targetAppOptions.length > 1 ? (
@@ -163,7 +169,7 @@ export function EnvironmentReleaseModal({ title, apiUrl, targetAppId, targetAppO
         )}
         <div className="mt-5 flex justify-end gap-2">
           <button className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" onClick={onClose} type="button">Cancel</button>
-          <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50" disabled={loading || saving} type="submit">
+          <button className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50" disabled={loading || saving || environments.length === 0} type="submit">
             {saving ? "Saving..." : "Save"}
           </button>
         </div>

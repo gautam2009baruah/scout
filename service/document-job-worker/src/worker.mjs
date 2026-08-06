@@ -64,13 +64,13 @@ async function deleteStoredFile(storagePath) {
 
 async function fetchConnectorFile(companyId, connector) {
   const baseUrl = process.env.APP_BASE_URL || process.env.SCOUT_BASE_URL;
-  const secret = process.env.CONNECTOR_INTERNAL_SECRET;
+  const secret = process.env.DOCUMENT_WORKER_INTERNAL_SECRET;
 
   if (!baseUrl) {
     throw new Error("APP_BASE_URL must be set for the worker to download connector files.");
   }
   if (!secret) {
-    throw new Error("CONNECTOR_INTERNAL_SECRET is not configured.");
+    throw new Error("DOCUMENT_WORKER_INTERNAL_SECRET is not configured.");
   }
 
   const endpoint = new URL("/api/internal/connector-file", baseUrl).toString();

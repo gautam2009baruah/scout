@@ -40,7 +40,9 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 | `CHATBOT_EMBED_ID_SECRET` | Signs the embed widget's short-lived guide-identifier tokens |
 | `RECORDER_SYNC_INTERNAL_SECRET` | Shared secret for the recorder-sync service |
 | `SMART_FINDER_INTERNAL_SECRET` | Shared secret for the smart-finder service |
-| `CONNECTOR_INTERNAL_SECRET` | **Must be identical** in the app and the document worker |
+| `DOCUMENT_WORKER_INTERNAL_SECRET` | Authenticates document-worker file downloads; **must be identical** in the app and document worker |
+| `WEB_INGESTION_TOKEN_SECRET` | Signs short-lived Scout Web Ingestor pairing tokens |
+| `HTTP_TRIGGER_SECRET_KEY` | Encrypts stored HTTP-trigger credentials; keep stable and separate from `WEB_INGESTION_TOKEN_SECRET` |
 
 ## 4. Apply the changes
 
