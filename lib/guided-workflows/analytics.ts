@@ -52,13 +52,11 @@ export async function recordWorkflowAnalyticsEvents(events: WorkflowAnalyticsEve
       const guideResult = await client.query<{
         company_id: string;
         topic_id: string | null;
-        version: number;
         analytics_logging_enabled: boolean | null;
       }>(
         `
           SELECT company_target_applications.company_id,
                  guided_workflow_guides.topic_id,
-                 guided_workflow_guides.version,
                  guided_workflow_topics.analytics_logging_enabled
           FROM guided_workflow_guides
           LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
