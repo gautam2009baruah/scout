@@ -57,8 +57,8 @@ pm2 restart scout-triggers-schedule --update-env
 pm2 restart scout-triggers-email --update-env
 ```
 
-> Include any HTTP API services you run the same way, e.g.
-> `pm2 restart scout-chatbot-api --update-env`.
+> Include any standalone HTTP API services you run the same way, e.g.
+> `pm2 restart scout-http-trigger-api --update-env`.
 
 Confirm they're online:
 

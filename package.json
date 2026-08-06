@@ -6,8 +6,6 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "chatbot-api:dev": "node --import ./scripts/db/load-env.mjs --import tsx http-api/chatbot-api/src/server.ts",
-    "chatbot-api:start": "node --import ./scripts/db/load-env.mjs --import tsx http-api/chatbot-api/src/server.ts",
     "recorder-sync-api:dev": "node --import ./scripts/db/load-env.mjs --import tsx http-api/recorder-sync-api/src/server.ts",
     "recorder-sync-api:start": "node --import ./scripts/db/load-env.mjs --import tsx http-api/recorder-sync-api/src/server.ts",
     "smart-finder-api:dev": "node --import ./scripts/db/load-env.mjs --import tsx http-api/smart-finder-api/src/server.ts",

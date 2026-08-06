@@ -24,7 +24,6 @@ The app (Next.js) and the workers both read `.env.local` (then `.env`).
 | `LOG_LEVEL` | `info` |
 | `LOG_FORMAT` | `json` |
 | `SMTP_HOST` / `SMTP_*` | Real SMTP for user activation & password-reset emails (leave blank to keep them queued, unsent) |
-| `CHATBOT_API_ALLOWED_ORIGINS` | Your real embed origins (not `*`) |
 | `POSTGRES_PASSWORD` (+ user/db) | Strong values, if using the bundled Docker Postgres |
 | `*_API_URL` / hosts / ports | Only if standalone services run on other hosts (localhost defaults are fine on one box) |
 
@@ -38,7 +37,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 
 | Secret | Notes |
 |--------|-------|
-| `CHATBOT_API_KEY` | Long random key for the standalone Chatbot API |
+| `CHATBOT_EMBED_ID_SECRET` | Signs the embed widget's short-lived guide-identifier tokens |
 | `RECORDER_SYNC_INTERNAL_SECRET` | Shared secret for the recorder-sync service |
 | `SMART_FINDER_INTERNAL_SECRET` | Shared secret for the smart-finder service |
 | `CONNECTOR_INTERNAL_SECRET` | **Must be identical** in the app and the document worker |
