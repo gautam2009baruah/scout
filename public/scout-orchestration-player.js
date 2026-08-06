@@ -20,6 +20,71 @@
   let currentExecution = null;
   let scoutPlayerLoaded = false;
 
+  // Same-origin iframes get their own Document/Window, so a plain
+  // document.querySelector or document.activeElement on the top page never
+  // sees into one. These small helpers mirror the ones added to
+  // scout-smart-adoption-player.js so output-capture selectors and the
+  // focus-tracking monitor below also work when a workflow's fields live
+  // inside a same-origin iframe. Cross-origin iframes stay unreachable (a
+  // real browser security boundary), not a gap in this helper.
+  function collectIframeDocuments(root, depth, seen) {
+    const results = [];
+    if (depth > 4) return results;
+    let iframes;
+    try {
+      iframes = root.querySelectorAll('iframe');
+    } catch {
+      return results;
+    }
+    iframes.forEach((iframe) => {
+      let doc = null;
+      try {
+        doc = iframe.contentDocument;
+      } catch {
+        doc = null;
+      }
+      if (!doc || seen.has(doc)) return;
+      seen.add(doc);
+      results.push(doc);
+      results.push(...collectIframeDocuments(doc, depth + 1, seen));
+    });
+    return results;
+  }
+
+  function accessibleRoots() {
+    return [document, ...collectIframeDocuments(document, 0, new Set([document]))];
+  }
+
+  function queryAcrossFrames(selector) {
+    for (const root of accessibleRoots()) {
+      try {
+        const element = root.querySelector(selector);
+        if (element) return element;
+      } catch {
+        // Invalid selector for this root — try the next one.
+      }
+    }
+    return null;
+  }
+
+  // The top document's activeElement is the <iframe> itself when focus is
+  // actually inside a same-origin iframe — walk down to the real focused
+  // control instead of stopping at the frame boundary.
+  function deepActiveElement(doc) {
+    let active = (doc || document).activeElement;
+    while (active && active.tagName === 'IFRAME') {
+      let inner = null;
+      try {
+        inner = active.contentDocument ? active.contentDocument.activeElement : null;
+      } catch {
+        inner = null;
+      }
+      if (!inner || inner === active) break;
+      active = inner;
+    }
+    return active;
+  }
+
   // Configuration (can be overridden via window.ScoutOrchestrationConfig)
   const config = window.ScoutOrchestrationConfig || {
     apiBaseUrl: window.location.origin,
@@ -239,27 +304,28 @@
   function queryElement(selector) {
     // Check if it's an XPath selector (starts with / or //)
     if (selector.startsWith('/') || selector.startsWith('//')) {
-      try {
-        const result = document.evaluate(
-          selector,
-          document,
-          null,
-          XPathResult.FIRST_ORDERED_NODE_TYPE,
-          null
-        );
-        return result.singleNodeValue;
-      } catch (xpathError) {
-        console.warn(`⚠️ XPath evaluation failed for: ${selector}`, xpathError);
-        return null;
+      for (const root of accessibleRoots()) {
+        try {
+          const result = root.evaluate(
+            selector,
+            root,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+          );
+          if (result.singleNodeValue) return result.singleNodeValue;
+        } catch (xpathError) {
+          console.warn(`⚠️ XPath evaluation failed for: ${selector}`, xpathError);
+        }
       }
-    } else {
-      // CSS selector
-      try {
-        return document.querySelector(selector);
-      } catch (cssError) {
-        console.warn(`⚠️ CSS selector failed for: ${selector}`, cssError);
-        return null;
-      }
+      return null;
+    }
+    // CSS selector
+    try {
+      return queryAcrossFrames(selector);
+    } catch (cssError) {
+      console.warn(`⚠️ CSS selector failed for: ${selector}`, cssError);
+      return null;
     }
   }
 
@@ -956,11 +1022,15 @@
               // scout-adoption-highlight by scout-smart-adoption-player.js) — otherwise
               // tabbing past the highlighted control to the next field on the page gets
               // tracked as if it were this step's field, capturing an extra empty entry.
-              if (document.activeElement &&
-                  ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName) &&
-                  document.activeElement.classList.contains('scout-adoption-highlight')) {
+              // deepActiveElement walks past the <iframe> boundary the top
+              // document's own activeElement would otherwise stop at, so a
+              // field focused inside a same-origin iframe still gets tracked.
+              const focused = deepActiveElement(document);
+              if (focused &&
+                  ['INPUT', 'SELECT', 'TEXTAREA'].includes(focused.tagName) &&
+                  focused.classList.contains('scout-adoption-highlight')) {
 
-                const element = document.activeElement;
+                const element = focused;
                 const elementKey = element.id || element.name || `${element.tagName}_${element.type}_${attempts}`;
 
                 console.log(`   ✅ Element focused after ${attempts * 50}ms`);
@@ -1133,22 +1203,24 @@
     function getAccessibleName(el) {
       const ariaLabel = el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') || '';
       if (ariaLabel) return ariaLabel;
-      
+
       if (el.id) {
-        const label = document.querySelector(`label[for="${el.id}"]`);
+        const ownerDoc = el.ownerDocument || document;
+        const label = ownerDoc.querySelector(`label[for="${el.id}"]`);
         if (label) return label.textContent?.trim() || '';
       }
-      
+
       const parentLabel = el.closest('label');
       if (parentLabel) return parentLabel.textContent?.trim() || '';
-      
+
       return '';
     }
-    
+
     // Get nearby heading
     function getNearbyHeading(el) {
+      const ownerBody = (el.ownerDocument || document).body;
       let current = el;
-      while (current && current !== document.body) {
+      while (current && current !== ownerBody) {
         const heading = current.querySelector('h1, h2, h3, h4, h5, h6');
         if (heading) return heading.textContent?.trim() || '';
         current = current.parentElement;
@@ -1230,8 +1302,11 @@
       formTitle: getFormTitle(element),
       dialogTitle: getDialogTitle(element),
       cardTitle: getCardTitle(element),
-      url: window.location.href,
-      path: window.location.pathname
+      // Use the element's own frame — if it was focused inside a same-origin
+      // iframe (see deepActiveElement above), that iframe's URL is the
+      // correct one to report, not the top page's.
+      url: (element.ownerDocument?.defaultView || window).location.href,
+      path: (element.ownerDocument?.defaultView || window).location.pathname
     };
   }
 
@@ -1451,7 +1526,7 @@
     console.log(`🔍 Polling for element: ${selector} (timeout: ${timeoutMs}ms)`);
     
     while (Date.now() - startTime < timeoutMs) {
-      const element = document.querySelector(selector);
+      const element = queryAcrossFrames(selector);
       // Check if element exists and is visible
       if (element && element.offsetParent !== null) {
         console.log(`✅ Element found: ${selector}`);

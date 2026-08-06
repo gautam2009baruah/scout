@@ -29,5 +29,13 @@ export const browserApi = {
     return new Promise<void>((resolve) => {
       storage?.local?.set?.(value, () => resolve());
     });
+  },
+
+  onStorageChanged(handler: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void) {
+    storage?.onChanged?.addListener?.(handler);
+  },
+
+  offStorageChanged(handler: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void) {
+    storage?.onChanged?.removeListener?.(handler);
   }
 };

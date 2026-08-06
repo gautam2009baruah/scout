@@ -1,5 +1,39 @@
 import type { ElementIdentity, SelectorCandidate } from "./types";
 
+// Same-origin iframes get their own Document, so a plain document.querySelector
+// from the top frame never sees into one. findElement() below searches the top
+// document and same-origin iframes recursively so the "preview created steps"
+// overlay can still locate (and highlight) a control that was captured inside
+// an iframe. Cross-origin iframes stay unreachable — a real browser security
+// boundary, not a gap here.
+function collectIframeDocuments(root: Document, depth: number, seen: Set<Document>): Document[] {
+  const results: Document[] = [];
+  if (depth > 4) return results;
+  let iframes: NodeListOf<HTMLIFrameElement>;
+  try {
+    iframes = root.querySelectorAll("iframe");
+  } catch {
+    return results;
+  }
+  iframes.forEach((iframe) => {
+    let doc: Document | null = null;
+    try {
+      doc = iframe.contentDocument;
+    } catch {
+      doc = null;
+    }
+    if (!doc || seen.has(doc)) return;
+    seen.add(doc);
+    results.push(doc);
+    results.push(...collectIframeDocuments(doc, depth + 1, seen));
+  });
+  return results;
+}
+
+export function accessibleRoots(): Document[] {
+  return [document, ...collectIframeDocuments(document, 0, new Set([document]))];
+}
+
 /**
  * Get visible text from an element
  */
@@ -57,7 +91,8 @@ function getAssociatedLabelText(element: HTMLElement): string | undefined {
   if (nativeControlLabel) return nativeControlLabel;
 
   if (element.id) {
-    const label = document.querySelector<HTMLLabelElement>(
+    const ownerDoc = element.ownerDocument || document;
+    const label = ownerDoc.querySelector<HTMLLabelElement>(
       `label[for="${CSS.escape(element.id)}"]`
     );
     if (label) return getWrappedLabelCaption(label, element);
@@ -103,9 +138,10 @@ function calculateBoundingBoxSimilarity(
  */
 function getBoundingBox(element: Element): ElementIdentity["boundingBox"] {
   const rect = element.getBoundingClientRect();
+  const view = element.ownerDocument?.defaultView || window;
   return {
-    x: rect.x + window.scrollX,
-    y: rect.y + window.scrollY,
+    x: rect.x + view.scrollX,
+    y: rect.y + view.scrollY,
     width: rect.width,
     height: rect.height,
   };
@@ -116,7 +152,8 @@ function getBoundingBox(element: Element): ElementIdentity["boundingBox"] {
  */
 function tryFindByCandidate(
   candidate: SelectorCandidate,
-  identity: ElementIdentity
+  identity: ElementIdentity,
+  root: Document
 ): Element | null {
   try {
     let elements: Element[] = [];
@@ -132,13 +169,13 @@ function tryFindByCandidate(
       case "placeholder":
       case "css":
         // Direct CSS selectors
-        elements = Array.from(document.querySelectorAll(candidate.value));
+        elements = Array.from(root.querySelectorAll(candidate.value));
         break;
 
       case "role-text": {
         // Format: "role::text"
         const [role, expectedText] = candidate.value.split("::");
-        const roleElements = document.querySelectorAll(`[role="${role}"]`);
+        const roleElements = root.querySelectorAll(`[role="${role}"]`);
         elements = Array.from(roleElements).filter(
           (el) =>
             getVisibleText(el).toLowerCase() ===
@@ -149,11 +186,11 @@ function tryFindByCandidate(
 
       case "label-text": {
         // Find inputs by their associated label text
-        const labels = Array.from(document.querySelectorAll("label"));
+        const labels = Array.from(root.querySelectorAll("label"));
         for (const label of labels) {
           const controls = [
             ...Array.from(label.querySelectorAll<HTMLElement>("input, select, textarea")),
-            ...Array.from(label.getAttribute("for") ? [document.getElementById(label.getAttribute("for") || "")].filter(Boolean) as HTMLElement[] : [])
+            ...Array.from(label.getAttribute("for") ? [root.getElementById(label.getAttribute("for") || "")].filter(Boolean) as HTMLElement[] : [])
           ];
 
           controls.forEach((control) => {
@@ -168,7 +205,7 @@ function tryFindByCandidate(
 
       case "text-context": {
         // Find by visible text content
-        const allElements = document.querySelectorAll("button, a, span, div");
+        const allElements = root.querySelectorAll("button, a, span, div");
         elements = Array.from(allElements).filter(
           (el) =>
             getVisibleText(el).toLowerCase() ===
@@ -179,9 +216,9 @@ function tryFindByCandidate(
 
       case "xpath": {
         // XPath evaluation
-        const result = document.evaluate(
+        const result = root.evaluate(
           candidate.value,
-          document,
+          root,
           null,
           XPathResult.FIRST_ORDERED_NODE_TYPE,
           null
@@ -297,16 +334,20 @@ function disambiguateElements(
  * @returns The located element, or null if not found
  */
 export function findElement(identity: ElementIdentity): Element | null {
-  // Try each selector candidate in order of confidence
+  // Try each selector candidate in order of confidence, across the top
+  // document and every same-origin iframe, before moving to the next
+  // (lower-confidence) candidate type.
   for (const candidate of identity.selectorCandidates) {
-    const element = tryFindByCandidate(candidate, identity);
+    for (const root of accessibleRoots()) {
+      const element = tryFindByCandidate(candidate, identity, root);
 
-    if (element) {
-      console.log(
-        `Element found using ${candidate.type} (confidence: ${candidate.confidence})`,
-        element
-      );
-      return element;
+      if (element) {
+        console.log(
+          `Element found using ${candidate.type} (confidence: ${candidate.confidence})`,
+          element
+        );
+        return element;
+      }
     }
   }
 

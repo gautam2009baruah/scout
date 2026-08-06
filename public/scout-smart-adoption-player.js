@@ -134,8 +134,84 @@
   function isVisible(element) {
     if (!(element instanceof HTMLElement)) return false;
     const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
+    const view = element.ownerDocument?.defaultView || window;
+    const style = view.getComputedStyle(element);
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  // Same-origin iframes get their own Document/Window; a client's page can be a
+  // single shell URL that never changes while the real content (and the controls
+  // a guide targets) lives inside a nested iframe. Rather than requiring the
+  // client to do anything special, every matcher below searches the top document
+  // first and then walks same-origin iframes recursively. Cross-origin iframes
+  // stay unreachable (a real browser security boundary, not a config gap) and are
+  // silently skipped.
+  function collectIframeDocuments(root, depth, seen) {
+    const results = [];
+    if (depth > 4) return results;
+    let iframes;
+    try {
+      iframes = root.querySelectorAll("iframe");
+    } catch {
+      return results;
+    }
+    iframes.forEach((iframe) => {
+      let doc = null;
+      try {
+        doc = iframe.contentDocument;
+      } catch {
+        doc = null;
+      }
+      if (!doc || seen.has(doc)) return;
+      seen.add(doc);
+      results.push(doc);
+      results.push(...collectIframeDocuments(doc, depth + 1, seen));
+    });
+    return results;
+  }
+
+  function accessibleRoots() {
+    return [document, ...collectIframeDocuments(document, 0, new Set([document]))];
+  }
+
+  // Translate an element's viewport-relative rect into the TOP document's
+  // viewport space, so overlays we render in the top document (tooltip, arrow)
+  // line up correctly even when the real target lives inside a nested iframe.
+  function frameOffset(win) {
+    let offsetX = 0;
+    let offsetY = 0;
+    let current = win;
+    try {
+      while (current && current !== window.top) {
+        const frameElement = current.frameElement;
+        if (!frameElement) return null;
+        const rect = frameElement.getBoundingClientRect();
+        offsetX += rect.left;
+        offsetY += rect.top;
+        current = current.parent;
+      }
+    } catch {
+      return null;
+    }
+    return { x: offsetX, y: offsetY };
+  }
+
+  function rectRelativeToTop(element) {
+    const rect = element.getBoundingClientRect();
+    const win = element.ownerDocument ? element.ownerDocument.defaultView : null;
+    if (!win || win === window) return rect;
+    const offset = frameOffset(win);
+    if (!offset) return rect;
+    return {
+      x: rect.x + offset.x,
+      y: rect.y + offset.y,
+      left: rect.left + offset.x,
+      right: rect.right + offset.x,
+      top: rect.top + offset.y,
+      bottom: rect.bottom + offset.y,
+      width: rect.width,
+      height: rect.height
+    };
   }
 
   function readableText(value) {
@@ -150,45 +226,49 @@
     console.debug(`[ScoutElementFinder] ${message}`, detail || "");
   }
 
-  function byXPath(xpath) {
+  function byXPath(xpath, root) {
+    const doc = root || document;
     try {
-      const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      const result = doc.evaluate(xpath, doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       return result.singleNodeValue instanceof HTMLElement ? result.singleNodeValue : null;
     } catch {
       return null;
     }
   }
 
-  function byRoleText(value) {
+  function byRoleText(value, root) {
+    const doc = root || document;
     const parts = String(value || "").split("::");
     const role = parts[0];
     const text = compactText(parts.slice(1).join("::") || "");
-    return Array.from(document.querySelectorAll(`[role="${escapeCss(role)}"]`))
+    return Array.from(doc.querySelectorAll(`[role="${escapeCss(role)}"]`))
       .find((element) => element instanceof HTMLElement && compactText(element.innerText) === text) || null;
   }
 
-  function controlsForLabel(label) {
+  function controlsForLabel(label, root) {
+    const doc = root || label.ownerDocument || document;
     const controls = Array.from(label.querySelectorAll("input, select, textarea, button, [role='combobox'], [role='textbox'], [tabindex]:not([tabindex='-1'])"));
     const controlId = label.getAttribute("for");
-    const forControl = controlId ? document.getElementById(controlId) : null;
+    const forControl = controlId ? doc.getElementById(controlId) : null;
     if (forControl instanceof HTMLElement) controls.push(forControl);
     return Array.from(new Set(controls));
   }
 
-  function byLabelText(value, target) {
-    const matches = labelTextMatches(value);
+  function byLabelText(value, target, root) {
+    const matches = labelTextMatches(value, root);
     const preferred = preferByTarget(matches, target);
     debugFinder(preferred ? "label-text matched control" : "label-text found no control", { value, targetTagName: target?.tagName, matchCount: matches.length });
     return preferred;
   }
 
-  function labelTextMatches(value) {
+  function labelTextMatches(value, root) {
+    const doc = root || document;
     const normalizedText = compactText(value);
     const exactMatches = [];
     const startsWithMatches = [];
 
-    for (const label of Array.from(document.querySelectorAll("label"))) {
-      for (const control of controlsForLabel(label)) {
+    for (const label of Array.from(doc.querySelectorAll("label"))) {
+      for (const control of controlsForLabel(label, doc)) {
         const clean = compactText(cleanLabelText(label, control));
         if (!clean) continue;
         if (clean === normalizedText) exactMatches.push(control);
@@ -213,7 +293,7 @@
     if (caption) return stripTrailingSelectedValue(caption, excludedDescendant);
 
     const pieces = [];
-    const walker = document.createTreeWalker(label, NodeFilter.SHOW_TEXT, {
+    const walker = (label.ownerDocument || document).createTreeWalker(label, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         const parent = node.parentElement;
         if (!parent) return NodeFilter.FILTER_REJECT;
@@ -275,9 +355,10 @@
     if (nativeControlLabel) return nativeControlLabel;
 
     const labels = [];
+    const ownerDoc = element.ownerDocument || document;
 
     if (element.id) {
-      document.querySelectorAll(`label[for="${escapeCss(element.id)}"]`).forEach((label) => labels.push(cleanLabelText(label, element)));
+      ownerDoc.querySelectorAll(`label[for="${escapeCss(element.id)}"]`).forEach((label) => labels.push(cleanLabelText(label, element)));
     }
 
     const wrappingLabel = element.closest("label");
@@ -286,7 +367,7 @@
     const labelledBy = element.getAttribute("aria-labelledby");
     if (labelledBy) {
       labelledBy.split(/\s+/).forEach((id) => {
-        const label = document.getElementById(id);
+        const label = ownerDoc.getElementById(id);
         if (label) labels.push(label.textContent || "");
       });
     }
@@ -356,7 +437,8 @@
   function accessibleName(element) {
     const labelledBy = element.getAttribute("aria-labelledby");
     if (labelledBy) {
-      const text = labelledBy.split(/\s+/).map((id) => document.getElementById(id)?.textContent || "").join(" ");
+      const ownerDoc = element.ownerDocument || document;
+      const text = labelledBy.split(/\s+/).map((id) => ownerDoc.getElementById(id)?.textContent || "").join(" ");
       if (readableText(text)) return readableText(text);
     }
     return readableText(element.getAttribute("aria-label") || associatedLabelText(element) || element.getAttribute("placeholder") || visibleControlText(element));
@@ -404,8 +486,9 @@
 
   function positionMatchScore(element, target) {
     if (!target?.boundingBox) return 0;
+    const view = element.ownerDocument?.defaultView || window;
     const rect = element.getBoundingClientRect();
-    const box = { x: rect.x + window.scrollX, y: rect.y + window.scrollY, width: rect.width, height: rect.height };
+    const box = { x: rect.x + view.scrollX, y: rect.y + view.scrollY, width: rect.width, height: rect.height };
     const xOverlap = Math.max(0, Math.min(target.boundingBox.x + target.boundingBox.width, box.x + box.width) - Math.max(target.boundingBox.x, box.x));
     const yOverlap = Math.max(0, Math.min(target.boundingBox.y + target.boundingBox.height, box.y + box.height) - Math.max(target.boundingBox.y, box.y));
     const overlapArea = xOverlap * yOverlap;
@@ -429,14 +512,15 @@
     return Math.max(overlapScore, centerScore * 0.85 + sizeScore * 0.15);
   }
 
-  function findByCandidate(candidate, target) {
+  function findByCandidate(candidate, target, root) {
+    const doc = root || document;
     try {
       if (!candidate || !candidate.value) return null;
       debugFinder("trying selector candidate", { type: candidate.type, value: candidate.value });
-      if (candidate.type === "xpath") return byXPath(candidate.value);
-      if (candidate.type === "role-text") return byRoleText(candidate.value);
-      if (candidate.type === "label-text") return byLabelText(candidate.value, target);
-      return document.querySelector(candidate.value);
+      if (candidate.type === "xpath") return byXPath(candidate.value, doc);
+      if (candidate.type === "role-text") return byRoleText(candidate.value, doc);
+      if (candidate.type === "label-text") return byLabelText(candidate.value, target, doc);
+      return doc.querySelector(candidate.value);
     } catch (error) {
       debugFinder("selector candidate failed", { type: candidate?.type, value: candidate?.value, error });
       return null;
@@ -532,8 +616,9 @@
     return score + boundingBoxScore(element, target);
   }
 
-  function collectInteractiveElements() {
-    return Array.from(new Set(document.querySelectorAll("button, a[href], input, select, textarea, [role], [tabindex]:not([tabindex='-1'])")))
+  function collectInteractiveElements(root) {
+    const doc = root || document;
+    return Array.from(new Set(doc.querySelectorAll("button, a[href], input, select, textarea, [role], [tabindex]:not([tabindex='-1'])")))
       .filter(isVisible);
   }
 
@@ -553,8 +638,8 @@
     return best;
   }
 
-  function findControl(target) {
-    const selectorMatches = collectSelectorMatches(target);
+  function findControl(target, root) {
+    const selectorMatches = collectSelectorMatches(target, root);
     if (selectorMatches.length === 1) {
       const score = scoreElement(selectorMatches[0], target);
       if (score >= MIN_MATCH_SCORE) {
@@ -568,7 +653,7 @@
       }
     }
 
-    const candidates = Array.from(new Set([...selectorMatches, ...collectInteractiveElements()]))
+    const candidates = Array.from(new Set([...selectorMatches, ...collectInteractiveElements(root)]))
       .map((element) => ({ element, score: scoreElement(element, target), positionScore: positionMatchScore(element, target) }))
       .sort((first, second) => second.score - first.score);
     const best = candidates[0];
@@ -586,7 +671,8 @@
     };
   }
 
-  function collectSelectorMatches(target) {
+  function collectSelectorMatches(target, root) {
+    const doc = root || document;
     const candidates = [...((target && target.selectorCandidates) || [])].sort((a, b) => {
       const priority = (SELECTOR_PRIORITY[a.type] || 99) - (SELECTOR_PRIORITY[b.type] || 99);
       return priority || Number(b.confidence || 0) - Number(a.confidence || 0);
@@ -596,7 +682,7 @@
     for (const candidate of candidates) {
       try {
         if (candidate.type === "xpath" || candidate.type === "role-text" || candidate.type === "label-text") {
-          const element = findByCandidate(candidate, target);
+          const element = findByCandidate(candidate, target, doc);
           if (isVisible(element)) {
             debugFinder("selector candidate matched visible element", { type: candidate.type, tagName: element.tagName.toLowerCase() });
             matches.push(element);
@@ -605,7 +691,7 @@
           }
         } else {
           let count = 0;
-          document.querySelectorAll(candidate.value).forEach((element) => {
+          doc.querySelectorAll(candidate.value).forEach((element) => {
             if (isVisible(element)) {
               count += 1;
               matches.push(element);
@@ -621,18 +707,35 @@
     return Array.from(new Set(matches));
   }
 
+  // The recorded urlMatch is treated as a hint, not a gate: a control found with a
+  // confident score in ANY accessible frame (top document or same-origin iframe)
+  // is enough to run the step, regardless of whether that frame's URL happens to
+  // match what was recorded. This is what makes iframe-heavy apps (whose top-level
+  // URL often never changes) work without any extra setup from the client.
   function findTarget(target) {
-    const result = findControl(target || {});
-    if (result.element) return result.element;
-    if (!result.ambiguous && target?.fallbackText) {
-      return findVisibleControlByTerms([target.fallbackText]);
+    let best = null;
+    let bestAmbiguous = false;
+    for (const root of accessibleRoots()) {
+      const result = findControl(target || {}, root);
+      if (result.element && (!best || result.score > best.score)) {
+        best = { element: result.element, score: result.score, root };
+      }
+      if (result.ambiguous) bestAmbiguous = true;
+    }
+    if (best) return best.element;
+    if (!bestAmbiguous && target?.fallbackText) {
+      for (const root of accessibleRoots()) {
+        const control = findVisibleControlByTerms([target.fallbackText], root);
+        if (control) return control;
+      }
     }
     return null;
   }
 
-  function findVisibleControlByTerms(terms) {
+  function findVisibleControlByTerms(terms, root) {
+    const doc = root || document;
     const normalized = terms.map(compactText).filter((term) => term.length > 3);
-    const controls = Array.from(document.querySelectorAll("a, button, [role='button'], [role='link'], [role='menuitem'], input, select, textarea"));
+    const controls = Array.from(doc.querySelectorAll("a, button, [role='button'], [role='link'], [role='menuitem'], input, select, textarea"));
     const matches = controls.map((control) => {
       if (!isVisible(control)) return false;
       const text = compactText(directElementText(control));
@@ -895,6 +998,15 @@
 
     window.addEventListener("scroll", schedule, true);
     window.addEventListener("resize", schedule);
+    // If the target lives inside a same-origin iframe, that iframe's own scroll
+    // doesn't bubble up to the top window, so listen there too or the tooltip
+    // would stop tracking the moment the user scrolls inside the embedded panel.
+    const targetView = target.ownerDocument?.defaultView;
+    const isCrossFrameTarget = Boolean(targetView && targetView !== window);
+    if (isCrossFrameTarget) {
+      targetView.addEventListener("scroll", schedule, true);
+      targetView.addEventListener("resize", schedule);
+    }
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(schedule) : null;
     observer?.observe(target);
     observer?.observe(tooltip);
@@ -905,6 +1017,10 @@
       if (previousCleanup) previousCleanup();
       window.removeEventListener("scroll", schedule, true);
       window.removeEventListener("resize", schedule);
+      if (isCrossFrameTarget) {
+        targetView.removeEventListener("scroll", schedule, true);
+        targetView.removeEventListener("resize", schedule);
+      }
       observer?.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
     };
@@ -921,7 +1037,7 @@
     }
     const gap = 14;
     const margin = 12;
-    const rect = target.getBoundingClientRect();
+    const rect = rectRelativeToTop(target);
     const width = tooltip.offsetWidth;
     const height = tooltip.offsetHeight;
     const spaces = {
@@ -1010,11 +1126,21 @@
 
   function detectContext(goalContext) {
     if (!goalContext) return { isOnGoalContext: true };
-    const expectedUrl = goalContext.url || "";
-    const urlMatches = !expectedUrl || normalizeUrl(window.location.href).includes(normalizeUrl(expectedUrl));
     const target = contextTarget(goalContext);
-    const element = target ? findTarget(target) : null;
-    return { isOnGoalContext: Boolean(urlMatches && (!target || isVisible(element))), element };
+    if (target) {
+      // A confidently-matched, visible control is the real signal here — it already
+      // searched every accessible frame. Requiring the top-level URL to also match
+      // would break iframe-shell apps whose top URL never changes; the recorded
+      // URL is informational only, not a gate.
+      const element = findTarget(target);
+      return { isOnGoalContext: Boolean(element && isVisible(element)), element };
+    }
+    const expectedUrl = goalContext.url || "";
+    const urlMatches = !expectedUrl || accessibleRoots().some((root) => {
+      const win = root.defaultView || window;
+      return normalizeUrl(win.location.href).includes(normalizeUrl(expectedUrl));
+    });
+    return { isOnGoalContext: Boolean(urlMatches) };
   }
 
   function guideSteps(guide, main) {
@@ -1196,8 +1322,12 @@
       parentText: readableText(parent?.innerText).slice(0, 180) || undefined,
       formTitle: readableText(form?.querySelector("legend, h1, h2, h3, h4, h5, h6")?.textContent) || undefined,
       dialogTitle: readableText(dialog?.querySelector('[role="heading"], h1, h2, h3, .modal-title, .dialog-title')?.textContent) || undefined,
-      url: window.location.href,
-      path: window.location.pathname,
+      // Use the element's own frame, not the top window — a control recovered
+      // from inside a same-origin iframe must report that iframe's URL, not
+      // the shell page's, or the healing suggestion sent to the backend would
+      // record the wrong page for this control.
+      url: (element.ownerDocument?.defaultView || window).location.href,
+      path: (element.ownerDocument?.defaultView || window).location.pathname,
       cssFallback: buildCssSelector(element),
       selectorCandidates: buildSelectorCandidates(element),
       confidenceScore: 75,
@@ -1552,7 +1682,12 @@
         aiUsed: true,
         metadata: { provider: "scout-runtime", mode: "auto-heal" }
       });
-      const control = findVisibleControlByTerms(identityTerms(step.target, this.guide.title, step));
+      const terms = identityTerms(step.target, this.guide.title, step);
+      let control = null;
+      for (const root of accessibleRoots()) {
+        control = findVisibleControlByTerms(terms, root);
+        if (control) break;
+      }
       if (!control) {
         this.showManualSelectionPrompt(step, onComplete);
         return;
@@ -1647,11 +1782,17 @@
         </div>
         <div class="scout-adoption-recovery-body">Click the control that should be used for this step. The selection will be sent for trainer approval.</div>
       `);
+      // Same-origin iframes get their own document, so a click inside one never
+      // reaches a listener attached only to the top document — attach to every
+      // accessible frame so picking a replacement control works there too.
+      const pickRoots = accessibleRoots();
       let hovered = null;
       const cleanup = () => {
         hovered?.classList.remove("scout-adoption-pick-candidate");
-        document.removeEventListener("pointerover", onPointerOver, true);
-        document.removeEventListener("click", onClick, true);
+        pickRoots.forEach((root) => {
+          root.removeEventListener("pointerover", onPointerOver, true);
+          root.removeEventListener("click", onClick, true);
+        });
       };
       const onPointerOver = (event) => {
         const target = event.target instanceof HTMLElement ? event.target.closest("button, a[href], input, select, textarea, [role='button'], [role='link'], [role='checkbox'], [role='radio'], [role='switch'], [tabindex]:not([tabindex='-1'])") : null;
@@ -1675,8 +1816,10 @@
         cleanup();
         this.showManualSelectionPrompt(step, onComplete);
       });
-      document.addEventListener("pointerover", onPointerOver, true);
-      document.addEventListener("click", onClick, true);
+      pickRoots.forEach((root) => {
+        root.addEventListener("pointerover", onPointerOver, true);
+        root.addEventListener("click", onClick, true);
+      });
     }
 
     async acceptSmartRecovery(step, control, onComplete) {
@@ -1794,7 +1937,7 @@
       document.body.appendChild(arrow);
       const position = () => {
         if (!arrow.isConnected) return;
-        const rect = control.getBoundingClientRect();
+        const rect = rectRelativeToTop(control);
         const left = Math.min(window.innerWidth - arrow.offsetWidth - 8, Math.max(8, rect.left + rect.width / 2 - arrow.offsetWidth / 2));
         const top = Math.max(8, rect.top - arrow.offsetHeight - 12);
         arrow.style.left = `${left}px`;

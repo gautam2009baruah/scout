@@ -132,7 +132,12 @@ export function createManualSelectAction(
   return {
     id: createId(),
     type: "manual-select",
-    url: location.href,
+    // elementIdentity.url was captured by the picker in whichever frame the
+    // control actually lives in (buildElementIdentity runs there, not here) —
+    // this function itself always runs from the top frame's toolbar, so
+    // location.href here would silently record the wrong (top) URL for any
+    // control picked inside a same-origin iframe.
+    url: elementIdentity.url || location.href,
     timestamp: Date.now(),
     stepOrder,
     stepPurpose,

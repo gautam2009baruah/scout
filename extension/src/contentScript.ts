@@ -8,6 +8,38 @@ import type { GuidePageContext, GuideStepPurpose, GuideStepTrigger, NavigationSt
 import { enterPickerMode, isPickerActive } from "./elementPicker";
 import { findElement } from "./elementFinder";
 
+// Translates an element's viewport-relative rect into the TOP document's
+// viewport space, so the preview overlay (drawn in the top document) lines up
+// correctly over a control that findElement() located inside a same-origin
+// iframe.
+function frameOffset(win: Window): { x: number; y: number } | null {
+  let offsetX = 0;
+  let offsetY = 0;
+  let current: Window | null = win;
+  try {
+    while (current && current !== window.top) {
+      const frameElement = current.frameElement;
+      if (!frameElement) return null;
+      const rect = frameElement.getBoundingClientRect();
+      offsetX += rect.left;
+      offsetY += rect.top;
+      current = current.parent;
+    }
+  } catch {
+    return null;
+  }
+  return { x: offsetX, y: offsetY };
+}
+
+function rectRelativeToTop(element: Element): DOMRect {
+  const rect = element.getBoundingClientRect();
+  const win = element.ownerDocument ? element.ownerDocument.defaultView : null;
+  if (!win || win === window) return rect;
+  const offset = frameOffset(win);
+  if (!offset) return rect;
+  return new DOMRect(rect.x + offset.x, rect.y + offset.y, rect.width, rect.height);
+}
+
 const toolbarId = "scout-guided-workflow-recorder";
 const confirmationDialogId = "scout-confirmation-dialog";
 const pickerReviewDialogId = "scout-picker-review-dialog";
@@ -33,6 +65,17 @@ declare global {
 }
 
 const emptyRecordingState: RecordingState = { isRecording: false, isPaused: false, actions: [] };
+
+// The content script now injects into every same-origin frame (manifest
+// all_frames: true) so recording/picking works inside iframes without the
+// client having to do anything. Only the top frame owns the floating toolbar
+// and the picker-result round trip; every frame (including the top one)
+// still records real clicks/inputs locally so captured URLs are always the
+// frame the control actually lives in.
+const isTopFrame = window.top === window.self;
+
+type PickerBroadcast = { requestId: string; active: boolean };
+type PickerCaptured = { requestId: string; identity: ReturnType<typeof createManualSelectAction>["elementIdentity"] | null };
 
 let isInPickerMode = false;
 let pendingConfirmationAction: ReturnType<typeof createRecordedAction> | null =
@@ -544,6 +587,63 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
 /**
  * Start element picker mode
  */
+function createPickerRequestId() {
+  return `pick_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`;
+}
+
+/**
+ * Ask every frame on the page (this one included) to enter picker mode, and
+ * wait for whichever frame the admin actually clicks in to report back. This
+ * is how a control living inside a same-origin iframe gets picked without any
+ * extra step for the client — every frame is listening, only the one that
+ * receives the real click resolves.
+ */
+function requestPickFromAnyFrame(): Promise<ReturnType<typeof createManualSelectAction>["elementIdentity"] | null> {
+  const requestId = createPickerRequestId();
+  return new Promise((resolve) => {
+    const listener = (changes: Record<string, { newValue?: unknown }>) => {
+      const captured = changes.pickerCapturedIdentity?.newValue as PickerCaptured | undefined;
+      if (!captured || captured.requestId !== requestId) return;
+      browserApi.offStorageChanged(listener);
+      resolve(captured.identity ?? null);
+    };
+    browserApi.onStorageChanged(listener);
+    void browserApi.setStorage({ pickerBroadcast: { requestId, active: true } satisfies PickerBroadcast });
+  });
+}
+
+// Runs in every frame (top and same-origin iframes alike) so whichever one
+// the admin actually clicks in can capture the control. Frames that don't get
+// the click are force-cancelled once the winning frame reports its result.
+let localPickerRunning = false;
+let localPickerForceCancelled = false;
+
+browserApi.onStorageChanged((changes) => {
+  const broadcast = changes.pickerBroadcast?.newValue as PickerBroadcast | undefined;
+  if (!broadcast) return;
+  if (broadcast.active) {
+    if (localPickerRunning) return;
+    localPickerRunning = true;
+    localPickerForceCancelled = false;
+    void (async () => {
+      const identity = await enterPickerMode();
+      const wasForceCancelled = localPickerForceCancelled;
+      localPickerRunning = false;
+      localPickerForceCancelled = false;
+      // If someone else's frame already reported a result for this request,
+      // don't overwrite it with our own force-cancelled (null) outcome.
+      if (wasForceCancelled) return;
+      await browserApi.setStorage({
+        pickerCapturedIdentity: { requestId: broadcast.requestId, identity } satisfies PickerCaptured,
+        pickerBroadcast: { requestId: broadcast.requestId, active: false } satisfies PickerBroadcast
+      });
+    })();
+  } else if (localPickerRunning) {
+    localPickerForceCancelled = true;
+    cancelPickerMode();
+  }
+});
+
 async function startPickerMode() {
   if (isInPickerMode) return;
 
@@ -557,7 +657,7 @@ async function startPickerMode() {
   isInPickerMode = true;
   await renderToolbar(); // Update toolbar to show picker mode
 
-  const identity = await enterPickerMode();
+  const identity = await requestPickFromAnyFrame();
 
   isInPickerMode = false;
   await renderToolbar(); // Update toolbar after exiting picker mode
@@ -685,7 +785,7 @@ async function previewCreatedSteps() {
     const element = findElement(identity);
     if (!element) continue;
 
-    const rect = element.getBoundingClientRect();
+    const rect = rectRelativeToTop(element);
     const highlight = document.createElement("div");
     highlight.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${rect.top + window.scrollY}px;width:${rect.width}px;height:${rect.height}px;border:2px solid #2563eb;background:rgba(37,99,235,.12);border-radius:8px;box-shadow:0 0 0 3px rgba(37,99,235,.16);pointer-events:none`;
     root.appendChild(highlight);
@@ -883,6 +983,7 @@ async function exportJson() {
 }
 
 async function renderToolbar() {
+  if (!isTopFrame) return;
   document.getElementById(toolbarId)?.remove();
   const state = await getState();
   const meta = await getRecorderMeta();
