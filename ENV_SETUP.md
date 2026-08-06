@@ -24,6 +24,7 @@ The app (Next.js) and the workers both read `.env.local` (then `.env`).
 | `LOG_LEVEL` | `info` |
 | `LOG_FORMAT` | `json` |
 | `SMTP_HOST` / `SMTP_*` | Real SMTP for user activation & password-reset emails (leave blank to keep them queued, unsent) |
+| `CHATBOT_API_ALLOWED_ORIGINS` | Your real embed origins (not `*`) |
 | `POSTGRES_PASSWORD` (+ user/db) | Strong values, if using the bundled Docker Postgres |
 | `*_API_URL` / hosts / ports | Only if standalone services run on other hosts (localhost defaults are fine on one box) |
 
