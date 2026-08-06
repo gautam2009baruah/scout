@@ -5,6 +5,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getSchedulerService } from "../../../lib/orchestrations/scheduler-service";
+import { createLogger } from "../../../lib/logging/logger";
+
+const log = createLogger("schedule-trigger");
 
 let shuttingDown = false;
 
@@ -45,27 +48,23 @@ async function start() {
 
   const scheduler = getSchedulerService();
 
-  console.log("\n" + "=".repeat(80));
-  console.log("Orchestration Scheduler Worker Starting");
-  console.log("=".repeat(80));
-  console.log(`Started at: ${new Date().toISOString()}`);
+  log.info("scheduler worker starting", { startedAt: new Date().toISOString() });
 
   await scheduler.initialize();
 
-  console.log(`[SchedulerWorker] Engine: ${scheduler.getEngineName()}`);
-  console.log("[SchedulerWorker] Running. Press Ctrl+C to stop.\n");
+  log.info("scheduler running", { engine: scheduler.getEngineName() });
 
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
 
-    console.log(`\n[SchedulerWorker] Received ${signal}, shutting down...`);
+    log.info("shutting down", { signal });
     try {
       await scheduler.shutdown();
-      console.log("[SchedulerWorker] Shutdown complete");
+      log.info("shutdown complete");
       process.exit(0);
     } catch (error) {
-      console.error("[SchedulerWorker] Shutdown failed:", error);
+      log.error("shutdown failed", { err: error });
       process.exit(1);
     }
   };
@@ -79,6 +78,6 @@ async function start() {
 }
 
 void start().catch((error) => {
-  console.error("[SchedulerWorker] Fatal error:", error);
+  log.error("fatal error", { err: error });
   process.exit(1);
 });

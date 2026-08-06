@@ -11,6 +11,9 @@ import { authenticateHttpTriggerRequest } from "@/lib/orchestrations/http-trigge
 import { dispatchHttpTrigger } from "@/lib/orchestrations/http-trigger/dispatch";
 import { newCorrelationId } from "@/lib/orchestrations/http-trigger/security";
 import { redactHeaders, writeHttpTriggerAuditLog } from "@/lib/orchestrations/http-trigger/audit";
+import { createLogger } from "@/lib/logging/logger";
+
+const log = createLogger("http-trigger-api");
 
 const host = process.env.HTTP_TRIGGER_API_HOST || "0.0.0.0";
 const port = Number(process.env.HTTP_TRIGGER_API_PORT || 4303);
@@ -418,5 +421,5 @@ const server = http.createServer(async (incoming, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`[http-trigger-api] listening on http://${host}:${port}`);
+  log.info("listening", { url: `http://${host}:${port}` });
 });

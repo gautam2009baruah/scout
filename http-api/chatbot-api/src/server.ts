@@ -9,6 +9,9 @@ import { CompanyApiKeyAuthorizer } from "./auth";
 import { getApiConfig } from "./config";
 import { InMemoryRateLimiter } from "./rate-limit";
 import { TenantResolver } from "./tenant-resolution";
+import { createLogger } from "@/lib/logging/logger";
+
+const log = createLogger("chatbot-api");
 
 type ChatQueryBody = {
   targetAppId?: string;
@@ -138,7 +141,7 @@ async function handleChatQuery(
   }
 
   const startedAt = Date.now();
-  console.info("[chatbot-api] /v1/chat/query received", {
+  log.info("chat query received", {
     requestId,
     companyId: context.company.id,
     targetAppId: context.targetApp?.id ?? null,
@@ -174,15 +177,14 @@ async function handleChatQuery(
       extraHeaders
     );
   } catch (error) {
-    console.error("[chatbot-api] /v1/chat/query failed", {
+    log.error("chat query failed", {
       requestId,
       companyId: context.company.id,
       targetAppId: context.targetApp?.id ?? null,
       userId,
       conversationId: conversationId || null,
       questionPreview: question.slice(0, 140),
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
+      err: error,
     });
 
     if (error instanceof ChatQueryError) {
@@ -392,12 +394,11 @@ const server = createServer(async (request, response) => {
 
     sendJson(response, 404, { message: "Route not found." }, requestId, origin);
   } catch (error) {
-    console.error("[chatbot-api] unhandled server error", {
+    log.error("unhandled server error", {
       requestId,
       path: request.url,
       method: request.method,
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
+      err: error,
     });
 
     if (error instanceof ChatQueryError) {
@@ -416,5 +417,5 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(config.port, config.host, () => {
-  console.log(`[chatbot-api] listening on http://${config.host}:${config.port}`);
+  log.info("listening", { url: `http://${config.host}:${config.port}` });
 });

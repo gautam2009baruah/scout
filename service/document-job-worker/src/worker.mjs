@@ -7,6 +7,9 @@ import crypto from "node:crypto";
 import { availableParallelism } from "node:os";
 import { Worker, isMainThread, parentPort, threadId } from "node:worker_threads";
 import "../../../scripts/db/load-env.mjs";
+import { createLogger } from "../../../lib/logging/logger.mjs";
+
+const log = createLogger("document-job-worker");
 
 const { Client } = pg;
 
@@ -1140,7 +1143,7 @@ async function reconcileCompletedIndexJobs() {
   );
 
   if (result.rowCount > 0) {
-    console.log(`Reconciled ${result.rowCount} previously completed index job(s).`);
+    log.info("reconciled completed index jobs", { count: result.rowCount });
   }
 }
 
@@ -1173,10 +1176,10 @@ async function processOneJob() {
   try {
     await executeJob(job);
     await markCompleted(job.id);
-    console.log(`Completed ${job.job_type} job ${job.id}.`);
+    log.info("job completed", { jobType: job.job_type, jobId: job.id });
   } catch (error) {
     await markFailed(job, error);
-    console.error(`Failed ${job.job_type} job ${job.id}:`, error);
+    log.error("job failed", { jobType: job.job_type, jobId: job.id, err: error });
   }
 
   return true;
@@ -1192,7 +1195,7 @@ async function runJobThread() {
 
   await client.connect();
   await reconcileCompletedIndexJobs();
-  console.log(`Processing worker thread ${threadId} started. Poll interval: ${pollMs}ms.`);
+  log.info("worker thread started", { threadId, pollMs });
 
   try {
     while (!stopRequested) {
@@ -1221,14 +1224,14 @@ async function runThreadSupervisor() {
     workers.add(worker);
 
     worker.on("error", (error) => {
-      console.error(`Document worker thread failed:`, error);
+      log.error("worker thread failed", { err: error });
     });
 
     worker.on("exit", (code) => {
       workers.delete(worker);
 
       if (!shuttingDown) {
-        console.error(`Document worker thread exited with code ${code}; restarting it.`);
+        log.error("worker thread exited; restarting", { code });
         startThread();
       }
     });
@@ -1240,7 +1243,7 @@ async function runThreadSupervisor() {
     }
 
     shuttingDown = true;
-    console.log(`Received ${signal}; stopping ${workers.size} document worker threads.`);
+    log.info("shutting down", { signal, threads: workers.size });
     const activeWorkers = [...workers];
     const exits = activeWorkers.map((worker) => new Promise((resolve) => worker.once("exit", resolve)));
     activeWorkers.forEach((worker) => worker.postMessage("shutdown"));
@@ -1250,7 +1253,7 @@ async function runThreadSupervisor() {
   process.once("SIGINT", () => void shutdown("SIGINT"));
   process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
-  console.log(`Document job worker supervisor started with ${threadCount} threads.`);
+  log.info("supervisor started", { threadCount });
   for (let index = 0; index < threadCount; index += 1) {
     startThread();
   }

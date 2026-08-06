@@ -2,6 +2,9 @@ import http from "node:http";
 import { URL } from "node:url";
 import { appendRecordedActionByToken, GuidedWorkflowError } from "@/lib/admin/guided-workflows";
 import { getPool, resetPool } from "@/lib/db/pool";
+import { createLogger } from "@/lib/logging/logger";
+
+const log = createLogger("recorder-sync-api");
 import type { RecordedAction, RecordedActionType } from "@/shared/guideTypes";
 
 const host = process.env.RECORDER_SYNC_API_HOST || "0.0.0.0";
@@ -70,7 +73,7 @@ async function isDatabaseHealthy() {
     await getPool().query("SELECT 1");
     return true;
   } catch (error) {
-    console.error("[recorder-sync-api] Database health check failed", error);
+    log.error("database health check failed", { err: error });
     return false;
   }
 }
@@ -139,7 +142,7 @@ const server = http.createServer(async (request, response) => {
       return sendJson(request, response, error.statusCode, { message: error.message });
     }
 
-    console.error("[recorder-sync-api] Unhandled request error", error);
+    log.error("unhandled request error", { err: error });
     const message = error instanceof Error ? error.message : "Internal server error.";
     return sendJson(request, response, 500, { message });
   }
@@ -151,12 +154,12 @@ server.requestTimeout = 20_000;
 server.keepAliveTimeout = 5_000;
 
 server.on("error", (error) => {
-  console.error("[recorder-sync-api] Server failed to start", error);
+  log.error("server failed to start", { err: error });
   process.exit(1);
 });
 
 server.listen(port, host, () => {
-  console.log(`[recorder-sync-api] listening on http://${host}:${port}`);
+  log.info("listening", { url: `http://${host}:${port}` });
 });
 
 let shuttingDown = false;
@@ -164,23 +167,23 @@ let shuttingDown = false;
 function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[recorder-sync-api] Received ${signal}, shutting down gracefully...`);
+  log.info("shutting down", { signal });
 
   const forceExitTimer = setTimeout(() => {
-    console.error("[recorder-sync-api] Graceful shutdown timed out, forcing exit.");
+    log.error("graceful shutdown timed out, forcing exit");
     process.exit(1);
   }, 10_000);
   forceExitTimer.unref();
 
   server.close(async (closeError) => {
     if (closeError) {
-      console.error("[recorder-sync-api] Error closing server", closeError);
+      log.error("error closing server", { err: closeError });
     }
 
     try {
       await resetPool();
     } catch (poolError) {
-      console.error("[recorder-sync-api] Error closing database pool", poolError);
+      log.error("error closing database pool", { err: poolError });
     }
 
     clearTimeout(forceExitTimer);
@@ -192,10 +195,10 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
 process.on("unhandledRejection", (reason) => {
-  console.error("[recorder-sync-api] Unhandled promise rejection", reason);
+  log.error("unhandled promise rejection", { err: reason });
 });
 
 process.on("uncaughtException", (error) => {
-  console.error("[recorder-sync-api] Uncaught exception", error);
+  log.error("uncaught exception", { err: error });
   process.exit(1);
 });

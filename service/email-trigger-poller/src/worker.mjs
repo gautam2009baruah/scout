@@ -13,8 +13,11 @@ import {
 import { fetchIMAPEmails, getIMAPCredentials, markIMAPEmailAsRead } from "../../../lib/integrations/email/imap.ts";
 import { fetchGmailEmails, getGmailCredentials, buildGmailQuery, markGmailEmailAsRead } from "../../../lib/integrations/email/gmail.ts";
 import { fetchOutlookEmails, getOutlookCredentials, buildOutlookFilter, markOutlookEmailAsRead } from "../../../lib/integrations/email/outlook.ts";
+import { createLogger } from "../../../lib/logging/logger.mjs";
 
 const { Pool } = pg;
+
+const log = createLogger("email-trigger-poller");
 
 // Parse DATABASE_URL or use individual env vars
 let poolConfig;
@@ -86,19 +89,19 @@ async function fetchEmailsForProvider(trigger, config, since) {
   const { provider, credentialId } = config;
 
   if (credentialId && !(await isEnvironmentAllowedForTrigger(trigger.orchestrationId, trigger.environmentId, credentialId))) {
-    console.warn(`Trigger ${trigger.id}: Environment ${trigger.environmentId || "(none)"} is not released for this orchestration`);
+    log.warn("environment not released for orchestration", { triggerId: trigger.id, environmentId: trigger.environmentId || null });
     return [];
   }
 
   if (provider === "gmail") {
     if (!credentialId) {
-      console.warn(`Trigger ${trigger.id}: No credential ID configured for Gmail`);
+      log.warn("no credential configured", { triggerId: trigger.id, provider: "gmail" });
       return [];
     }
     
     const credentials = await getGmailCredentials(credentialId, trigger.companyId);
     if (!credentials) {
-      console.warn(`Trigger ${trigger.id}: Gmail credentials not found`);
+      log.warn("credentials not found", { triggerId: trigger.id, provider: "gmail" });
       return [];
     }
     
@@ -115,13 +118,13 @@ async function fetchEmailsForProvider(trigger, config, since) {
     
   } else if (provider === "outlook") {
     if (!credentialId) {
-      console.warn(`Trigger ${trigger.id}: No credential ID configured for Outlook`);
+      log.warn("no credential configured", { triggerId: trigger.id, provider: "outlook" });
       return [];
     }
     
     const credentials = await getOutlookCredentials(credentialId, trigger.companyId);
     if (!credentials) {
-      console.warn(`Trigger ${trigger.id}: Outlook credentials not found`);
+      log.warn("credentials not found", { triggerId: trigger.id, provider: "outlook" });
       return [];
     }
     
@@ -138,13 +141,13 @@ async function fetchEmailsForProvider(trigger, config, since) {
     
   } else if (provider === "imap") {
     if (!credentialId) {
-      console.warn(`Trigger ${trigger.id}: No credential ID configured for IMAP`);
+      log.warn("no credential configured", { triggerId: trigger.id, provider: "imap" });
       return [];
     }
     
     const credentials = await getIMAPCredentials(credentialId, trigger.companyId);
     if (!credentials) {
-      console.warn(`Trigger ${trigger.id}: IMAP credentials not found`);
+      log.warn("credentials not found", { triggerId: trigger.id, provider: "imap" });
       return [];
     }
     
@@ -152,7 +155,7 @@ async function fetchEmailsForProvider(trigger, config, since) {
     return await fetchIMAPEmails(credentials, folder, config.unreadOnly, undefined, since);
     
   } else {
-    console.warn(`Trigger ${trigger.id}: Unknown provider ${provider}`);
+    log.warn("unknown provider", { triggerId: trigger.id, provider });
     return [];
   }
 }
@@ -186,9 +189,9 @@ async function markEmailAsProcessed(trigger, config, messageId) {
       }
     }
     
-    console.log(`  Marked email ${messageId} as processed`);
+    log.debug("marked email as processed", { messageId });
   } catch (error) {
-    console.error(`  Failed to mark email as processed: ${error.message}`);
+    log.error("failed to mark email as processed", { err: error });
   }
 }
 
@@ -227,10 +230,7 @@ async function processEmailTriggerPolling(trigger, since) {
   // fetch are not skipped on the next cycle. This becomes the next watermark.
   const pollStart = new Date();
   
-  console.log(`\nPolling trigger: ${trigger.name} (${triggerId})`);
-  console.log(`  Provider: ${config.provider}`);
-  console.log(`  Mailbox: ${config.mailbox}`);
-  console.log(`  Since: ${since ? since.toISOString() : 'beginning'}`);
+  log.info("polling trigger", { trigger: trigger.name, triggerId, provider: config.provider, mailbox: config.mailbox, since: since ? since.toISOString() : "beginning" });
   
   try {
     // Fetch emails from provider (provider-side filtering by since where supported)
@@ -247,7 +247,7 @@ async function processEmailTriggerPolling(trigger, since) {
         })
       : fetched;
     
-    console.log(`  Fetched ${fetched.length} emails, ${emails.length} within window`);
+    log.info("fetched emails", { fetched: fetched.length, withinWindow: emails.length });
     
     if (emails.length === 0) {
       // Advance the watermark even if no emails matched the window
@@ -264,12 +264,12 @@ async function processEmailTriggerPolling(trigger, since) {
         const matches = emailMatchesTrigger(email, config);
         
         if (!matches) {
-          console.log(`  Email "${email.subject}" does not match filters`);
+          log.debug("email does not match filters", { subject: email.subject });
           continue;
         }
         
         matchedCount++;
-        console.log(`  Email "${email.subject}" matches! Processing...`);
+        log.debug("email matches; processing", { subject: email.subject });
         
         // Process the email and create orchestration execution
         const result = await processEmailTrigger(
@@ -282,20 +282,20 @@ async function processEmailTriggerPolling(trigger, since) {
         
         if (result.success) {
           processedCount++;
-          console.log(`  Created execution: ${result.executionId}`);
+          log.info("created execution", { executionId: result.executionId });
           
           // Mark as processed on provider
           await markEmailAsProcessed(trigger, config, email.messageId);
         } else {
-          console.log(`  Failed to process: ${result.error}`);
+          log.warn("failed to process email", { reason: result.error });
         }
         
       } catch (error) {
-        console.error(`  Error processing email "${email.subject}": ${error.message}`);
+        log.error("error processing email", { subject: email.subject, err: error });
       }
     }
     
-    console.log(`  Summary: ${matchedCount} matched, ${processedCount} processed`);
+    log.info("poll summary", { matched: matchedCount, processed: processedCount });
     
     // Advance the watermark to the poll start
     await updateTriggerLastPolled(triggerId, pollStart);
@@ -303,7 +303,7 @@ async function processEmailTriggerPolling(trigger, since) {
     return pollStart;
     
   } catch (error) {
-    console.error(`  Error polling trigger: ${error.message}`);
+    log.error("error polling trigger", { err: error });
     
     // Log error to database
     await pool.query(
@@ -324,7 +324,7 @@ async function processEmailTriggerPolling(trigger, since) {
 function startTriggerPolling(trigger) {
   const interval = getPollingInterval(trigger.config);
   
-  console.log(`Starting polling for trigger ${trigger.name} (every ${interval / 1000}s)`);
+  log.info("starting polling", { trigger: trigger.name, intervalSeconds: interval / 1000 });
   
   const entry = {
     trigger,
@@ -360,7 +360,7 @@ function stopTriggerPolling(triggerId) {
   if (active) {
     clearInterval(active.intervalId);
     activeTriggers.delete(triggerId);
-    console.log(`Stopped polling for trigger ${triggerId}`);
+    log.info("stopped polling", { triggerId });
   }
 }
 
@@ -391,7 +391,7 @@ async function refreshActiveTriggers() {
     }
     
   } catch (error) {
-    console.error("Error refreshing active triggers:", error);
+    log.error("error refreshing active triggers", { err: error });
   }
 }
 
@@ -399,20 +399,19 @@ async function refreshActiveTriggers() {
  * Start the email poller
  */
 async function start() {
-  console.log("Email Trigger Poller starting...");
-  console.log(`Refresh interval: ${DEFAULT_POLL_INTERVAL_MS}ms`);
+  log.info("starting", { refreshIntervalMs: DEFAULT_POLL_INTERVAL_MS });
   
   // Initial load of active triggers
   await refreshActiveTriggers();
   
-  console.log(`\nActive email triggers: ${activeTriggers.size}`);
+  log.info("active email triggers", { count: activeTriggers.size });
   
   // Periodically refresh the list of active triggers (every minute)
   const refreshInterval = setInterval(refreshActiveTriggers, DEFAULT_POLL_INTERVAL_MS);
   
   // Graceful shutdown
   const shutdown = async () => {
-    console.log("\nShutting down gracefully...");
+    log.info("shutting down");
     isShuttingDown = true;
     
     clearInterval(refreshInterval);
@@ -429,7 +428,7 @@ async function start() {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
   
-  console.log("Email Trigger Poller running. Press Ctrl+C to stop.");
+  log.info("running");
 }
 
-start().catch(console.error);
+start().catch((error) => log.error("fatal error", { err: error }));

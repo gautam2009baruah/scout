@@ -3,6 +3,9 @@ import { loadConfig, validateConfig } from "./config.js";
 import { createDatabaseAdapter } from "./database.js";
 import { ensureRowLimit, validateSafeSelectQuery } from "./sql-safety.js";
 import type { ExecuteSqlRequest } from "./types.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("database-executor");
 
 const config = loadConfig();
 validateConfig(config);
@@ -202,11 +205,11 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(config.port, config.host, () => {
-  console.log(`Scout Database Executor listening on http://${config.host}:${config.port}`);
+  log.info("listening", { url: `http://${config.host}:${config.port}` });
 });
 
 async function shutdown(signal: NodeJS.Signals) {
-  console.log(`Received ${signal}, shutting down database executor...`);
+  log.info("shutting down", { signal });
   server.close(() => process.exit(0));
   await adapter.close().catch(() => undefined);
 }

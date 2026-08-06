@@ -1,6 +1,9 @@
 import http from "node:http";
 import { URL } from "node:url";
 import { getPool } from "@/lib/db/pool";
+import { createLogger } from "@/lib/logging/logger";
+
+const log = createLogger("smart-finder-api");
 import type { ElementIdentity, SelectorCandidate, TargetElement } from "@/shared/guideTypes";
 
 type SaveSuggestionRequest = {
@@ -261,5 +264,5 @@ const server = http.createServer(async (request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`[smart-finder-api] listening on http://${host}:${port}`);
+  log.info("listening", { url: `http://${host}:${port}` });
 });
