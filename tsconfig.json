@@ -38,7 +38,7 @@
   "exclude": [
     "node_modules",
     "http-api/database-executor",
-    "extension",
+    "extension-training",
     "nexusvendor-enterprise-portal"
   ]
 }

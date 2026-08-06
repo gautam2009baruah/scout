@@ -4,7 +4,7 @@ import { deflateSync } from "node:zlib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-const OUT_DIR = path.join(process.cwd(), "extension-web-ingestor", "icons");
+const OUT_DIR = path.join(process.cwd(), "extension-web-ingestor", "src", "icons");
 const SIZES = [16, 32, 48, 128];
 const VIOLET = [79, 70, 229];
 const WHITE = [255, 255, 255];

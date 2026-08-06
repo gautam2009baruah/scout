@@ -12,7 +12,13 @@ Scout; only the resulting page HTML is uploaded.
 
 1. Open `chrome://extensions` (or `edge://extensions`).
 2. Turn on **Developer mode** (top-right).
-3. Click **Load unpacked** and select this `extension-web-ingestor/` folder.
+3. Click **Load unpacked** and select this `extension-web-ingestor/src/` folder.
+
+## Build
+
+`node scripts/build-web-ingestor.mjs` (or `npm run web-ingestor:build`) zips
+`src/` into `dist/scout-web-ingestor.zip`. Each run replaces that file outright —
+there's no versioning.
 
 ## Use
 

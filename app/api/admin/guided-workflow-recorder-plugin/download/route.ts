@@ -1,118 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { hasModuleAccess, MODULE_KEYS } from "@/lib/admin/permissions";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 
 export const runtime = "nodejs";
-
-const crcTable = new Uint32Array(256).map((_, index) => {
-  let value = index;
-  for (let bit = 0; bit < 8; bit += 1) {
-    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
-  }
-  return value >>> 0;
-});
-
-function crc32(buffer: Buffer) {
-  let value = 0xffffffff;
-  for (let index = 0; index < buffer.length; index += 1) {
-    const byte = buffer[index];
-    value = crcTable[(value ^ byte) & 0xff] ^ (value >>> 8);
-  }
-  return (value ^ 0xffffffff) >>> 0;
-}
-
-function dosDateTime(date: Date) {
-  const year = Math.max(1980, date.getFullYear());
-  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
-  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
-  return { dosDate, dosTime };
-}
-
-async function collectFiles(root: string, current = root): Promise<Array<{ absolutePath: string; relativePath: string }>> {
-  const entries = await readdir(current, { withFileTypes: true });
-  const files: Array<{ absolutePath: string; relativePath: string }> = [];
-
-  for (const entry of entries) {
-    const absolutePath = path.join(current, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...await collectFiles(root, absolutePath));
-    } else if (entry.isFile()) {
-      files.push({
-        absolutePath,
-        relativePath: path.relative(root, absolutePath).replace(/\\/g, "/")
-      });
-    }
-  }
-
-  return files;
-}
-
-async function createZip(root: string) {
-  const files = await collectFiles(root);
-  const chunks: Buffer[] = [];
-  const centralDirectory: Buffer[] = [];
-  let offset = 0;
-
-  for (const file of files) {
-    const content = await readFile(file.absolutePath);
-    const metadata = await stat(file.absolutePath);
-    const name = Buffer.from(file.relativePath);
-    const checksum = crc32(content);
-    const { dosDate, dosTime } = dosDateTime(metadata.mtime);
-    const localHeader = Buffer.alloc(30);
-    localHeader.writeUInt32LE(0x04034b50, 0);
-    localHeader.writeUInt16LE(20, 4);
-    localHeader.writeUInt16LE(0, 6);
-    localHeader.writeUInt16LE(0, 8);
-    localHeader.writeUInt16LE(dosTime, 10);
-    localHeader.writeUInt16LE(dosDate, 12);
-    localHeader.writeUInt32LE(checksum, 14);
-    localHeader.writeUInt32LE(content.length, 18);
-    localHeader.writeUInt32LE(content.length, 22);
-    localHeader.writeUInt16LE(name.length, 26);
-    localHeader.writeUInt16LE(0, 28);
-
-    chunks.push(localHeader, name, content);
-
-    const centralHeader = Buffer.alloc(46);
-    centralHeader.writeUInt32LE(0x02014b50, 0);
-    centralHeader.writeUInt16LE(20, 4);
-    centralHeader.writeUInt16LE(20, 6);
-    centralHeader.writeUInt16LE(0, 8);
-    centralHeader.writeUInt16LE(0, 10);
-    centralHeader.writeUInt16LE(dosTime, 12);
-    centralHeader.writeUInt16LE(dosDate, 14);
-    centralHeader.writeUInt32LE(checksum, 16);
-    centralHeader.writeUInt32LE(content.length, 20);
-    centralHeader.writeUInt32LE(content.length, 24);
-    centralHeader.writeUInt16LE(name.length, 28);
-    centralHeader.writeUInt16LE(0, 30);
-    centralHeader.writeUInt16LE(0, 32);
-    centralHeader.writeUInt16LE(0, 34);
-    centralHeader.writeUInt16LE(0, 36);
-    centralHeader.writeUInt32LE(0, 38);
-    centralHeader.writeUInt32LE(offset, 42);
-    centralDirectory.push(centralHeader, name);
-
-    offset += localHeader.length + name.length + content.length;
-  }
-
-  const centralStart = offset;
-  const centralSize = centralDirectory.reduce((sum, chunk) => sum + chunk.length, 0);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(0, 4);
-  end.writeUInt16LE(0, 6);
-  end.writeUInt16LE(files.length, 8);
-  end.writeUInt16LE(files.length, 10);
-  end.writeUInt32LE(centralSize, 12);
-  end.writeUInt32LE(centralStart, 16);
-  end.writeUInt16LE(0, 20);
-
-  return Buffer.concat([...chunks, ...centralDirectory, end]);
-}
 
 function parseBrowser(input: string | null) {
   const raw = (input ?? "edge").trim().toLowerCase();
@@ -138,24 +30,21 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "Invalid browser option." }, { status: 400 });
   }
 
-  const distRoot = path.join(process.cwd(), "extension", "dist");
-  const entries = await readdir(distRoot, { withFileTypes: true }).catch(() => []);
-  const latestBuild = entries
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith(`${browser}-`))
-    .map((entry) => entry.name)
-    .sort()
-    .at(-1);
+  // scripts/build-extension.mjs writes each browser's build straight to a zip
+  // (dist/<browser>.zip) — nothing is unpacked to disk, so this just serves
+  // that file as-is instead of re-zipping a folder on every request.
+  const zipPath = path.join(process.cwd(), "extension-training", "dist", `${browser}.zip`);
+  const zip = await readFile(zipPath).catch(() => null);
 
-  if (!latestBuild) {
+  if (!zip) {
     const label = browser.charAt(0).toUpperCase() + browser.slice(1);
     return NextResponse.json({ message: `No ${label} plugin build was found. Please build that browser plugin first.` }, { status: 404 });
   }
 
-  const zip = await createZip(path.join(distRoot, latestBuild));
   return new NextResponse(zip, {
     headers: {
       "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="scout-recorder-plugin-${latestBuild}.zip"`
+      "Content-Disposition": `attachment; filename="scout-recorder-plugin-${browser}.zip"`
     }
   });
 }

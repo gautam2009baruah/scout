@@ -24,7 +24,8 @@
     "db:migrate": "node scripts/db/migrate.mjs",
     "jobs:documents": "node service/document-job-worker/src/worker.mjs",
     "jobs:worker": "npm run jobs:documents",
-    "extension:build": "node scripts/build-extension.mjs",
+    "extension-training:build": "node scripts/build-extension.mjs",
+    "web-ingestor:build": "node scripts/build-web-ingestor.mjs",
     "triggers:schedule": "tsx service/schedule-trigger/src/worker.ts",
     "triggers:email": "tsx service/email-trigger-poller/src/worker.mjs"
   },

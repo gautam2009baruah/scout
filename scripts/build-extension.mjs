@@ -3,13 +3,14 @@ import path from "node:path";
 import ts from "typescript";
 
 const root = process.cwd();
-const extensionRoot = path.join(root, "extension");
+const extensionRoot = path.join(root, "extension-training");
 const src = path.join(extensionRoot, "src");
+const distRoot = path.join(extensionRoot, "dist");
 const joditRoot = path.join(root, "node_modules", "jodit", "es2021");
-const stamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
 // Must match the list the Workflow Training Setup download UI offers
 // (components/admin/guided-workflow-training-setup.tsx `pluginBrowsers`) and the
-// per-browser folder names the download route expects (`<browser>-<stamp>`).
+// per-browser folder name the download route expects (`dist/<browser>`, no
+// versioning — each build wipes and replaces the previous one outright).
 const browsers = ["brave", "chrome", "edge", "firefox", "opera", "safari"];
 
 function stripImports(source) {
@@ -57,7 +58,7 @@ const contentScriptWithEditor = [
   `\nconst SCOUT_JODIT_CSS = ${JSON.stringify(joditCss)};\n`,
   contentScript
 ].join("\n");
-const manifestText = await readFile(path.join(extensionRoot, "manifest.json"), "utf8");
+const manifestText = await readFile(path.join(src, "manifest.json"), "utf8");
 
 // Chromium browsers (Chrome, Edge, Brave, Opera) and Safari use the standard
 // MV3 manifest as-is. Firefox needs an event-page background (it doesn't run a
@@ -140,23 +141,24 @@ function zipStore(files) {
   return Buffer.concat([...chunks, ...central, end]);
 }
 
+// No versioning — wipe everything from previous builds so dist/ only ever
+// holds the current build's zips, never a growing pile of timestamped
+// folders/zips. Only the zip is written; nothing is unpacked to disk — the
+// download route serves this file directly instead of re-zipping a folder.
+await rm(distRoot, { recursive: true, force: true });
+await mkdir(distRoot, { recursive: true });
+
 const outputs = [];
 for (const browser of browsers) {
-  const output = path.join(extensionRoot, "dist", `${browser}-${stamp}`);
-  outputs.push(output);
-  await rm(output, { recursive: true, force: true });
-  await mkdir(output, { recursive: true });
-
   const files = [
     { name: "manifest.json", content: Buffer.from(manifestFor(browser)) },
     { name: "background.js", content: Buffer.from(background) },
     { name: "contentScript.js", content: Buffer.from(contentScriptWithEditor) }
   ];
 
-  for (const file of files) {
-    await writeFile(path.join(output, file.name), file.content);
-  }
-  await writeFile(path.join(extensionRoot, "dist", `${browser}-${stamp}.zip`), zipStore(files));
+  const output = path.join(distRoot, `${browser}.zip`);
+  outputs.push(output);
+  await writeFile(output, zipStore(files));
 }
 
 console.log("Built extension bundles:");
