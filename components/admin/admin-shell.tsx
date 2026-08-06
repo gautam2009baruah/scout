@@ -11,6 +11,15 @@ import { ModalCloseButton } from "./modal-close-button";
 
 type AdminModuleKey = number;
 
+const HEADER_COMPANY_NAME_LIMIT = 15;
+
+function displayHeaderCompanyName(name: string) {
+  const characters = Array.from(name);
+  return characters.length > HEADER_COMPANY_NAME_LIMIT
+    ? `${characters.slice(0, HEADER_COMPANY_NAME_LIMIT).join("")}...`
+    : name;
+}
+
 const MODULE_KEYS = {
   overview: 1,
   administration: 2,
@@ -657,7 +666,9 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                   <Menu className="h-5 w-5" />
                 </button>
                 <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-2 font-mono text-sm">
-                  <span className="truncate text-slate-500">{session.tenant.name}</span>
+                  <span className="truncate text-slate-500" title={session.tenant.name}>
+                    {displayHeaderCompanyName(session.tenant.name)}
+                  </span>
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                   {isUnderAdministration ? (
                     <>

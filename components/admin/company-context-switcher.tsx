@@ -4,6 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCompanyContext } from "@/lib/admin/hooks/use-company-context";
 import { Building2, Check, ChevronDown } from "lucide-react";
 
+const COMPANY_NAME_DISPLAY_LIMIT = 15;
+
+function displayCompanyName(name?: string) {
+  const characters = Array.from(name || "");
+  return characters.length > COMPANY_NAME_DISPLAY_LIMIT
+    ? `${characters.slice(0, COMPANY_NAME_DISPLAY_LIMIT).join("")}...`
+    : name || "";
+}
+
 /**
  * CompanyContextSwitcher
  * Header component for switching between companies
@@ -61,7 +70,9 @@ export function CompanyContextSwitcher() {
         </span>
         <div className="leading-tight">
           <div className="font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500">Organization</div>
-          <div className="font-semibold text-slate-900">{availableCompanies[0]?.name}</div>
+          <div className="font-semibold text-slate-900" title={availableCompanies[0]?.name}>
+            {displayCompanyName(availableCompanies[0]?.name)}
+          </div>
         </div>
       </div>
     );
@@ -81,7 +92,9 @@ export function CompanyContextSwitcher() {
         </span>
         <span className="min-w-0 flex-1 leading-tight">
           <span className="block font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500">Organization</span>
-          <span className="block truncate text-sm font-semibold text-slate-900">{selectedCompany?.name}</span>
+          <span className="block truncate text-sm font-semibold text-slate-900" title={selectedCompany?.name}>
+            {displayCompanyName(selectedCompany?.name)}
+          </span>
         </span>
         <ChevronDown className={`h-4 w-4 text-slate-500 transition ${open ? "rotate-180" : ""}`} />
       </button>
@@ -96,6 +109,7 @@ export function CompanyContextSwitcher() {
               const isActive = company.id === currentCompanyId;
               return (
                 <button
+                  aria-selected={isActive}
                   className={`mb-1 flex w-full items-center gap-2 rounded-md px-2.5 py-2.5 text-left text-sm transition last:mb-0 ${
                     isActive
                       ? "bg-blue-700 text-white"
@@ -114,7 +128,9 @@ export function CompanyContextSwitcher() {
                   <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isActive ? "bg-white/15" : "bg-slate-100"}`}>
                     <Building2 className={`h-4 w-4 ${isActive ? "text-white" : "text-slate-600"}`} />
                   </span>
-                  <span className="min-w-0 flex-1 truncate font-medium">{company.name}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium" title={company.name}>
+                    {displayCompanyName(company.name)}
+                  </span>
                   {isActive ? <Check className="h-4 w-4" /> : null}
                 </button>
               );
