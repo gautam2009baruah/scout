@@ -52,15 +52,20 @@ export type AdminAIProviderConfig = {
   llm_configs: LLMProviderConfigRow[];
 };
 
-export const DEFAULT_AI_CONFIG: AIProviderConfig = {
-  embedding_provider: "local_bge",
-  embedding_model: "nomic-embed-text",
-  embedding_dimension: 768,
-  embedding_endpoint: "http://localhost:11434/api/embed",
+// There is no deployment-level default: LLM and embedding providers are always
+// configured per company (AI Configuration, stored in the database). When a
+// company has not configured a provider family it resolves to these empty
+// markers, and callers fail clearly instead of silently using a shared or
+// fallback provider.
+export const UNSET_AI_CONFIG: AIProviderConfig = {
+  embedding_provider: "" as EmbeddingProviderName,
+  embedding_model: "",
+  embedding_dimension: 0,
+  embedding_endpoint: "",
   embedding_api_key: "",
-  llm_provider: "ollama",
-  llm_model: "qwen3:0.6b",
-  llm_endpoint: "http://localhost:11434",
+  llm_provider: "" as LLMProviderName,
+  llm_model: "",
+  llm_endpoint: "",
   llm_api_key: ""
 };
 
@@ -72,23 +77,6 @@ export function normalizeEmbeddingModel(provider: EmbeddingProviderName, model: 
   }
 
   return cleanModel;
-}
-
-function envConfig(): AIProviderConfig {
-  const embeddingProvider = (process.env.EMBEDDING_PROVIDER || DEFAULT_AI_CONFIG.embedding_provider) as EmbeddingProviderName;
-  const llmProvider = (process.env.LLM_PROVIDER || DEFAULT_AI_CONFIG.llm_provider) as LLMProviderName;
-
-  return {
-    embedding_provider: embeddingProvider,
-    embedding_model: normalizeEmbeddingModel(embeddingProvider, process.env.EMBEDDING_MODEL || DEFAULT_AI_CONFIG.embedding_model),
-    embedding_dimension: Number(process.env.EMBEDDING_DIMENSIONS || DEFAULT_AI_CONFIG.embedding_dimension),
-    embedding_endpoint: process.env.EMBEDDING_ENDPOINT || (embeddingProvider === DEFAULT_AI_CONFIG.embedding_provider ? DEFAULT_AI_CONFIG.embedding_endpoint : ""),
-    embedding_api_key: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || "",
-    llm_provider: llmProvider,
-    llm_model: process.env.LLM_MODEL || DEFAULT_AI_CONFIG.llm_model,
-    llm_endpoint: process.env.LLM_ENDPOINT || (llmProvider === DEFAULT_AI_CONFIG.llm_provider ? DEFAULT_AI_CONFIG.llm_endpoint : ""),
-    llm_api_key: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || ""
-  };
 }
 
 // Resolves the most specific active row for (company, target app, environment):
@@ -136,47 +124,33 @@ const SCOPED_LLM_QUERY = `
 `;
 
 export async function getAIProviderConfig(companyId?: string, targetAppId?: string, environmentId?: string): Promise<AIProviderConfig> {
-  try {
-    if (companyId) {
-      const [companyEmbeddingResult, companyLlmResult] = await Promise.all([
-        getPool().query<EmbeddingProviderConfigRow>(SCOPED_EMBEDDING_QUERY, [companyId, targetAppId || null, environmentId || null]),
-        getPool().query<LLMProviderConfigRow>(SCOPED_LLM_QUERY, [companyId, targetAppId || null, environmentId || null])
-      ]);
-
-      const companyEmbedding = companyEmbeddingResult.rows[0];
-      const companyLlm = companyLlmResult.rows[0];
-
-      // Resolve each provider family independently. If this company has not
-      // configured one side, fall back only to deployment configuration —
-      // never to an arbitrary active row owned by another company.
-      const env = envConfig();
-      return {
-        embedding_provider: companyEmbedding?.provider || env.embedding_provider,
-        embedding_model: companyEmbedding
-          ? normalizeEmbeddingModel(companyEmbedding.provider, companyEmbedding.model || env.embedding_model)
-          : env.embedding_model,
-        embedding_dimension: companyEmbedding
-          ? Number(companyEmbedding.dimension || env.embedding_dimension)
-          : env.embedding_dimension,
-        embedding_endpoint: companyEmbedding
-          ? companyEmbedding.endpoint || (companyEmbedding.provider === env.embedding_provider ? env.embedding_endpoint : "")
-          : env.embedding_endpoint,
-        embedding_api_key: companyEmbedding?.api_key || env.embedding_api_key,
-        llm_provider: companyLlm?.provider || env.llm_provider,
-        llm_model: companyLlm?.model || env.llm_model,
-        llm_endpoint: companyLlm
-          ? companyLlm.endpoint || (companyLlm.provider === env.llm_provider ? env.llm_endpoint : "")
-          : env.llm_endpoint,
-        llm_api_key: companyLlm?.api_key || env.llm_api_key
-      };
-    }
-    // Calls without an explicit tenant are allowed only to use deployment
-    // defaults. Selecting a database row without company identity would cross
-    // the tenant boundary.
-    return envConfig();
-  } catch {
-    return envConfig();
+  // No deployment-level fallback: a company without a configured provider family
+  // resolves to empty markers, and callers (getLLMProvider / getEmbeddingProvider
+  // and the document worker) fail clearly with a "not set" error rather than
+  // silently using a shared provider or another company's row.
+  if (!companyId) {
+    return { ...UNSET_AI_CONFIG };
   }
+
+  const [companyEmbeddingResult, companyLlmResult] = await Promise.all([
+    getPool().query<EmbeddingProviderConfigRow>(SCOPED_EMBEDDING_QUERY, [companyId, targetAppId || null, environmentId || null]),
+    getPool().query<LLMProviderConfigRow>(SCOPED_LLM_QUERY, [companyId, targetAppId || null, environmentId || null])
+  ]);
+
+  const companyEmbedding = companyEmbeddingResult.rows[0];
+  const companyLlm = companyLlmResult.rows[0];
+
+  return {
+    embedding_provider: companyEmbedding?.provider ?? UNSET_AI_CONFIG.embedding_provider,
+    embedding_model: companyEmbedding ? normalizeEmbeddingModel(companyEmbedding.provider, companyEmbedding.model) : "",
+    embedding_dimension: companyEmbedding ? Number(companyEmbedding.dimension || 0) : 0,
+    embedding_endpoint: companyEmbedding?.endpoint ?? "",
+    embedding_api_key: companyEmbedding?.api_key ?? "",
+    llm_provider: companyLlm?.provider ?? UNSET_AI_CONFIG.llm_provider,
+    llm_model: companyLlm?.model ?? "",
+    llm_endpoint: companyLlm?.endpoint ?? "",
+    llm_api_key: companyLlm?.api_key ?? ""
+  };
 }
 
 export async function getAdminAIProviderConfig(companyId?: string, targetAppId?: string, environmentId?: string): Promise<AdminAIProviderConfig> {

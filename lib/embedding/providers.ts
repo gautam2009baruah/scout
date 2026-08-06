@@ -277,6 +277,10 @@ class CustomEmbeddingProvider implements EmbeddingProvider {
 export async function getEmbeddingProvider(companyId?: string, targetAppId?: string, environmentId?: string): Promise<EmbeddingProvider> {
   const config = await getAIProviderConfig(companyId, targetAppId, environmentId);
 
+  if (!config.embedding_provider) {
+    throw new Error("Embedding provider is not set for this company. Configure it under AI Configuration.");
+  }
+
   if (config.embedding_provider === "local_bge") {
     return new LocalBGEProvider(config);
   }

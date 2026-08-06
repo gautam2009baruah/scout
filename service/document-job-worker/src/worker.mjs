@@ -17,13 +17,6 @@ const databaseUrl = process.env.DATABASE_URL;
 const pollMs = Number(process.env.JOB_WORKER_POLL_MS || 2000);
 const runOnce = process.argv.includes("--once");
 const storageRoot = path.resolve(process.cwd(), process.env.STORAGE_ROOT || "./storage");
-const defaultEmbeddingConfig = {
-  provider: process.env.EMBEDDING_PROVIDER || "local_bge",
-  model: normalizeEmbeddingModel(process.env.EMBEDDING_PROVIDER || "local_bge", process.env.EMBEDDING_MODEL || "nomic-embed-text"),
-  dimension: Number(process.env.EMBEDDING_DIMENSIONS || 768),
-  endpoint: process.env.EMBEDDING_ENDPOINT || "http://localhost:11434/api/embed",
-  apiKey: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY || ""
-};
 const embeddingBatchSize = Number(process.env.EMBEDDING_BATCH_SIZE || 64);
 const configuredThreadCount = Number(process.env.DOCUMENT_JOB_WORKER_THREADS || Math.min(4, availableParallelism()));
 const threadCount = Number.isInteger(configuredThreadCount) && configuredThreadCount > 0 ? configuredThreadCount : 1;
@@ -462,61 +455,45 @@ async function embedLocalMockText(text, companyId) {
 }
 
 async function getEmbeddingConfig(companyId) {
-  try {
-    // Company-wide primary only (target_app_id/environment_id IS NULL): document
-    // ingestion isn't tied to a single target app (a folder can map to several via
-    // folder_target_apps), so per-target-app embedding selection is ambiguous here.
-    const result = companyId
-      ? await client.query(
-          `
-            SELECT
-              provider,
-              model,
-              dimension,
-              endpoint,
-              api_key
-            FROM ai_embedding_provider_configs
-            WHERE company_id = $1
-              AND target_app_id IS NULL
-              AND environment_id IS NULL
-              AND is_active = true
-              AND deleted_at IS NULL
-            ORDER BY is_primary DESC, updated_at DESC
-            LIMIT 1
-          `,
-          [companyId]
-        )
-      : await client.query(
-          `
-            SELECT
-              provider,
-              model,
-              dimension,
-              endpoint,
-              api_key
-            FROM ai_embedding_provider_configs
-            WHERE is_active = true
-              AND deleted_at IS NULL
-            ORDER BY is_primary DESC, updated_at DESC
-            LIMIT 1
-          `
-        );
-    const row = result.rows[0];
-
-    if (row) {
-      return {
-        provider: row.provider,
-        model: normalizeEmbeddingModel(row.provider, row.model),
-        dimension: Number(row.dimension),
-        endpoint: row.endpoint || defaultEmbeddingConfig.endpoint,
-        apiKey: row.api_key || defaultEmbeddingConfig.apiKey
-      };
-    }
-  } catch {
-    // Migrations may not have run yet. Fall back to environment config.
+  if (!companyId) {
+    throw new Error("Embedding provider is not set: no company was provided for this document.");
   }
 
-  return defaultEmbeddingConfig;
+  // Company-wide primary only (target_app_id/environment_id IS NULL): document
+  // ingestion isn't tied to a single target app (a folder can map to several via
+  // folder_target_apps), so per-target-app embedding selection is ambiguous here.
+  const result = await client.query(
+    `
+      SELECT
+        provider,
+        model,
+        dimension,
+        endpoint,
+        api_key
+      FROM ai_embedding_provider_configs
+      WHERE company_id = $1
+        AND target_app_id IS NULL
+        AND environment_id IS NULL
+        AND is_active = true
+        AND deleted_at IS NULL
+      ORDER BY is_primary DESC, updated_at DESC
+      LIMIT 1
+    `,
+    [companyId]
+  );
+  const row = result.rows[0];
+
+  if (!row) {
+    throw new Error(`Embedding provider is not set for company ${companyId}. Configure it under AI Configuration.`);
+  }
+
+  return {
+    provider: row.provider,
+    model: normalizeEmbeddingModel(row.provider, row.model),
+    dimension: Number(row.dimension),
+    endpoint: row.endpoint || "",
+    apiKey: row.api_key || ""
+  };
 }
 
 async function embedLocalBGEBatch(texts, config, companyId) {
