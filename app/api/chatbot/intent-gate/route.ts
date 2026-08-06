@@ -3,6 +3,8 @@ import { getPool } from "@/lib/db/pool";
 import { getLLMProvider } from "@/lib/llm/providers";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
+import { INPUT_LIMITS, InputValidationError, assertArrayLimit, exceedsCharacterLimit } from "@/lib/validation/input-limits";
+import { readJsonBody, REQUEST_BODY_LIMITS, RequestValidationError } from "@/lib/validation/request";
 
 export const runtime = "nodejs";
 
@@ -512,7 +514,7 @@ async function assertCompanyAndTargetAppAccess(input: { companyId: string; targe
 
 export async function POST(request: NextRequest) {
   try {
-    const body: IntentGateRequest = await request.json();
+    const body = await readJsonBody<IntentGateRequest>(request, REQUEST_BODY_LIMITS.chatbotJson);
     const companyIdentifier = (body.companyId || "").trim();
     const userId = (body.userId || "").trim();
     const targetAppIdentifier = (body.targetAppId || "").trim();
@@ -523,6 +525,20 @@ export async function POST(request: NextRequest) {
 
     if (!companyId || !userId || !message) {
       return NextResponse.json({ message: "Missing required fields: companyId, userId, message" }, { status: 400 });
+    }
+    if (exceedsCharacterLimit(userId, INPUT_LIMITS.chatbotExternalUserId)) {
+      return NextResponse.json({ message: `userId must be ${INPUT_LIMITS.chatbotExternalUserId} characters or fewer.` }, { status: 400 });
+    }
+    if (exceedsCharacterLimit(message, INPUT_LIMITS.chatbotMessage)) {
+      return NextResponse.json({ message: `message must be ${INPUT_LIMITS.chatbotMessage} characters or fewer.` }, { status: 400 });
+    }
+    if (Array.isArray(body.history)) {
+      assertArrayLimit(body.history, INPUT_LIMITS.chatbotHistoryItems, "history");
+      for (const item of body.history) {
+        if (typeof item?.text === "string" && exceedsCharacterLimit(item.text, INPUT_LIMITS.chatbotMessage)) {
+          throw new InputValidationError(`Each history message must be ${INPUT_LIMITS.chatbotMessage} characters or fewer.`);
+        }
+      }
     }
 
     await assertChatbotApiKeyAccess(request, { companyId, targetAppId: targetAppId || undefined, userId });
@@ -631,6 +647,12 @@ export async function POST(request: NextRequest) {
       reason: aiReason,
     });
   } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
     if (error instanceof ChatbotApiKeyAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }
@@ -647,7 +669,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const body: IntentGateFeedbackRequest = await request.json();
+    const body = await readJsonBody<IntentGateFeedbackRequest>(request, REQUEST_BODY_LIMITS.chatbotJson);
     const decisionId = (body.decisionId || "").trim();
     const companyIdentifier = (body.companyId || "").trim();
     const userId = (body.userId || "").trim();
@@ -660,6 +682,12 @@ export async function PATCH(request: NextRequest) {
         { message: "Missing required fields: decisionId, companyId, userId, feedbackType, userChoice" },
         { status: 400 }
       );
+    }
+    if (exceedsCharacterLimit(userId, INPUT_LIMITS.chatbotExternalUserId)) {
+      return NextResponse.json({ message: `userId must be ${INPUT_LIMITS.chatbotExternalUserId} characters or fewer.` }, { status: 400 });
+    }
+    if (typeof body.notes === "string" && exceedsCharacterLimit(body.notes, INPUT_LIMITS.chatbotFeedbackReason)) {
+      return NextResponse.json({ message: `notes must be ${INPUT_LIMITS.chatbotFeedbackReason} characters or fewer.` }, { status: 400 });
     }
 
     await getPool().query(
@@ -692,6 +720,9 @@ export async function PATCH(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     return NextResponse.json(
       {
         message: "Failed to save intent feedback.",

@@ -20,6 +20,7 @@ import {
 import type { ChatbotLifecycleSettings, ChatbotLifecycleSettingsRecord } from "@/lib/chat/lifecycle-settings";
 import { useToast } from "./toast";
 import { ModalCloseButton } from "./modal-close-button";
+import { INPUT_LIMITS } from "@/lib/validation/input-limits";
 
 type TargetAppOption = {
   id: string;
@@ -1105,7 +1106,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">
                     <span className="inline-flex items-center gap-1.5">Assistant name <HelpHint text="Display name shown in chatbot header and welcome context." /></span>
-                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" onChange={(event) => setEmbedForm((current) => ({ ...current, assistantName: event.target.value }))} value={embedForm.assistantName} />
+                    <input className="h-11 rounded-lg border border-slate-200 px-3 text-sm" maxLength={INPUT_LIMITS.chatbotAssistantName} onChange={(event) => setEmbedForm((current) => ({ ...current, assistantName: event.target.value }))} value={embedForm.assistantName} />
                   </label>
 
                   <label className="grid gap-2 text-sm font-medium text-slate-700">

@@ -4,12 +4,22 @@ import { answerChatQuery, ChatQueryError } from "@/lib/chat/query";
 import { recordChatQueryTelemetry } from "@/lib/chat/telemetry";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
+import { readJsonBody, REQUEST_BODY_LIMITS, RequestValidationError } from "@/lib/validation/request";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const requestId = request.headers.get("x-request-id") || randomUUID();
-  const body = await request.json().catch(() => null);
+  let body: Record<string, unknown> | null = null;
+  try {
+    body = await readJsonBody<Record<string, unknown>>(request, REQUEST_BODY_LIMITS.chatbotJson);
+  } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return NextResponse.json({ message: error.message, requestId }, { status: error.statusCode });
+    }
+    throw error;
+  }
 
   if (
     !body
@@ -18,6 +28,13 @@ export async function POST(request: Request) {
     || typeof body.question !== "string"
   ) {
     return NextResponse.json({ message: "Company, user, and question are required.", requestId }, { status: 400 });
+  }
+
+  if (exceedsCharacterLimit(body.user_id, INPUT_LIMITS.chatbotExternalUserId)) {
+    return NextResponse.json({ message: `User id must be ${INPUT_LIMITS.chatbotExternalUserId} characters or fewer.`, requestId }, { status: 400 });
+  }
+  if (exceedsCharacterLimit(body.question, INPUT_LIMITS.chatbotMessage)) {
+    return NextResponse.json({ message: `Question must be ${INPUT_LIMITS.chatbotMessage} characters or fewer.`, requestId }, { status: 400 });
   }
 
   let resolvedCompanyId = "";

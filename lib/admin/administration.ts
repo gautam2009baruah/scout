@@ -1,6 +1,7 @@
 import { getPool } from "@/lib/db/pool";
 import { MODULE_KEYS, grantDefaultAdminModules, hasModuleAccess, replaceRoleModulePermissions } from "./permissions";
 import type { AdminSession } from "./auth";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
 
 export type CompanySummary = {
   id: string;
@@ -196,6 +197,12 @@ export async function createCompany(input: CreateCompanyInput, session: AdminSes
   if (!name || !slug) {
     throw new MasterDataError("Company name is required.");
   }
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.companyName)) {
+    throw new MasterDataError(`Company name must be ${INPUT_LIMITS.companyName} characters or fewer.`);
+  }
+  if (exceedsCharacterLimit(slug, INPUT_LIMITS.companySlug)) {
+    throw new MasterDataError(`Company slug must be ${INPUT_LIMITS.companySlug} characters or fewer.`);
+  }
 
   const client = await getPool().connect();
 
@@ -261,6 +268,12 @@ export async function updateCompany(companyId: string, input: UpdateCompanyInput
 
   if (!companyId || !name || !slug) {
     throw new MasterDataError("Company name is required.");
+  }
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.companyName)) {
+    throw new MasterDataError(`Company name must be ${INPUT_LIMITS.companyName} characters or fewer.`);
+  }
+  if (exceedsCharacterLimit(slug, INPUT_LIMITS.companySlug)) {
+    throw new MasterDataError(`Company slug must be ${INPUT_LIMITS.companySlug} characters or fewer.`);
   }
 
   try {
@@ -345,6 +358,12 @@ export async function createRole(input: CreateRoleInput, session: AdminSession) 
   if (companyIds.length === 0 || !name) {
     throw new MasterDataError("Company and role name are required.");
   }
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.roleName)) {
+    throw new MasterDataError(`Role name must be ${INPUT_LIMITS.roleName} characters or fewer.`);
+  }
+  if (description && exceedsCharacterLimit(description, INPUT_LIMITS.roleDescription)) {
+    throw new MasterDataError(`Role description must be ${INPUT_LIMITS.roleDescription} characters or fewer.`);
+  }
 
   for (const targetCompanyId of companyIds) {
     assertCanAccessCompany(session, targetCompanyId);
@@ -403,6 +422,12 @@ export async function updateRole(roleId: string, input: UpdateRoleInput, session
 
   if (!roleId || !name) {
     throw new MasterDataError("Role name is required.");
+  }
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.roleName)) {
+    throw new MasterDataError(`Role name must be ${INPUT_LIMITS.roleName} characters or fewer.`);
+  }
+  if (description && exceedsCharacterLimit(description, INPUT_LIMITS.roleDescription)) {
+    throw new MasterDataError(`Role description must be ${INPUT_LIMITS.roleDescription} characters or fewer.`);
   }
 
   const existingRole = await getPool().query<{ company_id: string }>(
@@ -580,6 +605,9 @@ export async function createCompanyTargetApplication(
   if (!name) {
     throw new MasterDataError("Target application name is required.");
   }
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.targetApplicationName)) {
+    throw new MasterDataError(`Target application name must be ${INPUT_LIMITS.targetApplicationName} characters or fewer.`);
+  }
 
   const client = await getPool().connect();
 
@@ -628,6 +656,9 @@ export async function updateCompanyTargetApplication(
 
   if (!id || !name) {
     throw new MasterDataError("Target application id and name are required.");
+  }
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.targetApplicationName)) {
+    throw new MasterDataError(`Target application name must be ${INPUT_LIMITS.targetApplicationName} characters or fewer.`);
   }
 
   const existing = await getPool().query<{ company_id: string }>(

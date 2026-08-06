@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
 
 function encryptSecret(secret: string | null | undefined) {
   if (!secret) return null;
@@ -156,6 +157,17 @@ export async function POST(request: NextRequest) {
     if (!name || !fromEmail) {
       return NextResponse.json({ success: false, error: "Name and From email are required" }, { status: 400 });
     }
+    const lengthChecks: Array<[string | null, number, string]> = [
+      [name, INPUT_LIMITS.resourceName, "Name"],
+      [description, INPUT_LIMITS.shortDescription, "Description"],
+      [fromName, INPUT_LIMITS.personName, "From name"],
+      [fromEmail, INPUT_LIMITS.emailAddress, "From email"],
+      [smtpHost, 255, "SMTP host"],
+    ];
+    const invalidLength = lengthChecks.find(([value, limit]) => value !== null && exceedsCharacterLimit(value, limit));
+    if (invalidLength) {
+      return NextResponse.json({ success: false, error: `${invalidLength[2]} must be ${invalidLength[1]} characters or fewer.` }, { status: 400 });
+    }
 
     if (!targetAppId) {
       return NextResponse.json({ success: false, error: "Target application is required" }, { status: 400 });
@@ -168,6 +180,9 @@ export async function POST(request: NextRequest) {
     await validateTargetAppScope(companyId, targetAppId);
 
     const environmentIds = normalizeEnvironmentIds(body.environmentIds);
+    if (environmentIds.length > 100) {
+      return NextResponse.json({ success: false, error: "At most 100 environments may be assigned." }, { status: 400 });
+    }
     if (!(await validateEnvironmentIds(targetAppId, environmentIds))) {
       return NextResponse.json({ success: false, error: "At least one valid environment is required." }, { status: 400 });
     }

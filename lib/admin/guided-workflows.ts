@@ -3,6 +3,7 @@ import { generateGuideFromRecording } from "@/lib/guided-workflows/guide-generat
 import type { Guide, GuideStatus, GuideStep, GuideStepTrigger, RecordedAction } from "@/shared/guideTypes";
 import type { AdminSession } from "./auth";
 import crypto from "node:crypto";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
 
 export type GuidedWorkflowRow = Guide & {
   companyId: string;
@@ -82,6 +83,12 @@ export class GuidedWorkflowError extends Error {
     super(message);
     this.name = "GuidedWorkflowError";
     this.statusCode = statusCode;
+  }
+}
+
+function assertGuidedText(value: string, limit: number, label: string) {
+  if (exceedsCharacterLimit(value, limit)) {
+    throw new GuidedWorkflowError(`${label} must be ${limit} characters or fewer.`);
   }
 }
 
@@ -637,6 +644,7 @@ export async function createGuidedWorkflowRecordingSession(input: {
   if (!title) {
     throw new GuidedWorkflowError("Recording session title is required.");
   }
+  assertGuidedText(title, INPUT_LIMITS.resourceTitle, "Recording session title");
 
   if (!input.companyTargetApplicationId) {
     throw new GuidedWorkflowError("Target application is required.");
@@ -693,6 +701,7 @@ export async function updateGuidedWorkflowRecordingSession(id: string, input: {
     if (!title) {
       throw new GuidedWorkflowError("Recording session title is required.");
     }
+    assertGuidedText(title, INPUT_LIMITS.resourceTitle, "Recording session title");
 
     params.push(title);
     fields.push(`title = $${params.length}`);
@@ -784,6 +793,8 @@ export async function createGuidedWorkflowTopic(input: {
   if (!title) {
     throw new GuidedWorkflowError("Topic title is required.");
   }
+  assertGuidedText(title, INPUT_LIMITS.resourceTitle, "Topic title");
+  assertGuidedText(description, INPUT_LIMITS.description, "Topic description");
 
   const recorderToken = createRecorderToken();
   const orderResult = await getPool().query<{ next_order: number }>(
@@ -840,6 +851,7 @@ export async function updateGuidedWorkflowTopic(id: string, input: {
   if (typeof input.title === "string") {
     const title = input.title.trim();
     if (!title) throw new GuidedWorkflowError("Topic title is required.");
+    assertGuidedText(title, INPUT_LIMITS.resourceTitle, "Topic title");
     await getPool().query(
       "UPDATE guided_workflow_topics SET title = $2, updated_by = $3, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
       [id, title, session.user.id]
@@ -847,6 +859,7 @@ export async function updateGuidedWorkflowTopic(id: string, input: {
   }
 
   if (typeof input.description === "string") {
+    assertGuidedText(input.description.trim(), INPUT_LIMITS.description, "Topic description");
     await getPool().query(
       "UPDATE guided_workflow_topics SET description = $2, updated_by = $3, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
       [id, input.description.trim(), session.user.id]
@@ -1234,6 +1247,14 @@ export async function createGuidedWorkflow(input: {
     description: input.description
   });
   const steps = input.steps ?? generated.steps;
+  assertGuidedText(generated.title, INPUT_LIMITS.resourceTitle, "Guide title");
+  assertGuidedText(generated.description, INPUT_LIMITS.description, "Guide description");
+  if ((input.recordedActions?.length ?? 0) > INPUT_LIMITS.structuredItems || steps.length > INPUT_LIMITS.structuredItems) {
+    throw new GuidedWorkflowError(`Guides may contain at most ${INPUT_LIMITS.structuredItems} steps or recorded actions.`);
+  }
+  if (input.preWorkflowConfirmationHtml) {
+    assertGuidedText(input.preWorkflowConfirmationHtml, INPUT_LIMITS.richText, "Pre-workflow confirmation content");
+  }
 
   const result = await getPool().query<{ id: string }>(
     `
@@ -1289,12 +1310,14 @@ export async function updateGuidedWorkflow(id: string, input: {
     if (!title) {
       throw new GuidedWorkflowError("Guide title is required.");
     }
+    assertGuidedText(title, INPUT_LIMITS.resourceTitle, "Guide title");
 
     params.push(title);
     fields.push(`title = $${params.length}`);
   }
 
   if (typeof input.description === "string") {
+    assertGuidedText(input.description.trim(), INPUT_LIMITS.description, "Guide description");
     params.push(input.description.trim());
     fields.push(`description = $${params.length}`);
   }
@@ -1311,6 +1334,7 @@ export async function updateGuidedWorkflow(id: string, input: {
 
   if (typeof input.preWorkflowConfirmationHtml === "string") {
     const html = input.preWorkflowConfirmationHtml.trim();
+    assertGuidedText(html, INPUT_LIMITS.richText, "Pre-workflow confirmation content");
     params.push(html);
     fields.push(`pre_workflow_confirmation_html = $${params.length}`);
   }
@@ -1323,6 +1347,10 @@ export async function updateGuidedWorkflow(id: string, input: {
   const recordedActions = input.steps
     ? applyGuideStepDetails(input.recordedActions ?? currentGuide.recordedActions, input.steps)
     : input.recordedActions;
+
+  if ((recordedActions?.length ?? 0) > INPUT_LIMITS.structuredItems || (input.steps?.length ?? 0) > INPUT_LIMITS.structuredItems) {
+    throw new GuidedWorkflowError(`Guides may contain at most ${INPUT_LIMITS.structuredItems} steps or recorded actions.`);
+  }
 
   if (recordedActions) {
     params.push(JSON.stringify(recordedActions));

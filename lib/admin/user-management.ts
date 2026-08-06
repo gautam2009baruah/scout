@@ -5,6 +5,7 @@ import { getPrimarySenderCredentialId, sendEmail } from "./email";
 import { generateTemporaryPassword, hashPassword } from "./password";
 import { MODULE_KEYS, getEffectiveUserModules, hasModuleAccess, replaceUserModuleOverrides } from "./permissions";
 import { adminRequestPasswordReset, PasswordResetError } from "./password-reset";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
 
 export type EmployeeStatus = "active" | "invited" | "inactive" | "disabled" | "deleted";
 
@@ -79,6 +80,22 @@ function assertCanManageUsers(session: AdminSession) {
 
 function normalizeEmployeeStatus(status: EmployeeStatus): Exclude<EmployeeStatus, "disabled"> {
   return status === "disabled" ? "inactive" : status;
+}
+
+function assertEmployeeInputLengths(input: RegisterEmployeeInput | UpdateEmployeeInput) {
+  const checks: Array<[string, number, string]> = [
+    [input.name.trim(), INPUT_LIMITS.personName, "Name"],
+    [input.email.trim(), INPUT_LIMITS.emailAddress, "Email"],
+    [input.employeeCode?.trim() || "", INPUT_LIMITS.employeeCode, "Employee code"],
+  ];
+  if ("statusReason" in input) {
+    checks.push([input.statusReason?.trim() || "", INPUT_LIMITS.shortDescription, "Status reason"]);
+  }
+  for (const [value, limit, label] of checks) {
+    if (exceedsCharacterLimit(value, limit)) {
+      throw new EmployeeError(`${label} must be ${limit} characters or fewer.`);
+    }
+  }
 }
 
 function assertCanAccessCompany(companyId: string, session: AdminSession) {
@@ -451,6 +468,7 @@ export async function getEmployeePage(filters: EmployeeFilters) {
 
 export async function registerEmployee(input: RegisterEmployeeInput, session: AdminSession) {
   assertCanManageUsers(session);
+  assertEmployeeInputLengths(input);
 
   const name = input.name.trim();
   const email = input.email.trim().toLowerCase();
@@ -611,6 +629,7 @@ export async function registerEmployee(input: RegisterEmployeeInput, session: Ad
 
 export async function updateEmployee(employeeId: string, input: UpdateEmployeeInput, session: AdminSession) {
   assertCanManageUsers(session);
+  assertEmployeeInputLengths(input);
   await assertUserIsEditable(employeeId);
 
   const name = input.name.trim();

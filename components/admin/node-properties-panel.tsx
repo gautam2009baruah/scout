@@ -23,6 +23,7 @@ import {
   getCuratedTimeZoneOptions,
   parseTimeZoneInputToUtcIso,
 } from "@/lib/orchestrations/timezone-utils";
+import { INPUT_LIMITS } from "@/lib/validation/input-limits";
 
 // Declare global showScoutNotification function
 declare global {
@@ -6168,6 +6169,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                         type="text"
                         className={`w-full rounded border px-2 py-1.5 text-sm ${channelErrors.internal.title ? "border-red-400" : "border-slate-300"}`}
                         value={channel.title || ""}
+                        maxLength={INPUT_LIMITS.internalNotificationTitle}
                         onChange={(e) => setChannel("internal", { title: e.target.value })}
                         placeholder="Approval required"
                       />
@@ -6220,6 +6222,7 @@ function NotificationConfig({ config, updateConfig, companyId, targetAppId }: an
                           type="text"
                           className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
                           value={channel.actionLabel || ""}
+                          maxLength={INPUT_LIMITS.internalNotificationActionLabel}
                           onChange={(e) => setChannel("internal", { actionLabel: e.target.value })}
                           placeholder="Open request"
                         />

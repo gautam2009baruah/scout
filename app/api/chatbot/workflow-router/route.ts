@@ -9,6 +9,8 @@ import type { ChatbotTriggerConfig } from "@/shared/orchestrationTypes";
 import { OrchestrationEngine } from "@/lib/orchestrations/engine";
 import { appendConversationExchange, getOrCreateConversation } from "@/lib/chat/conversations";
 import { getChatAttachmentById } from "@/lib/chat/attachments";
+import { INPUT_LIMITS, InputValidationError, assertArrayLimit, exceedsCharacterLimit } from "@/lib/validation/input-limits";
+import { readJsonBody, REQUEST_BODY_LIMITS, RequestValidationError } from "@/lib/validation/request";
 
 export const runtime = "nodejs";
 
@@ -1095,7 +1097,7 @@ async function extractRequiredVariablesFromConversation(
 
 export async function POST(request: NextRequest) {
   try {
-    const body: WorkflowRouterRequest = await request.json();
+    const body = await readJsonBody<WorkflowRouterRequest>(request, REQUEST_BODY_LIMITS.chatbotJson);
     const companyIdentifier = body.companyId || "";
     const userId = body.userId || "";
     const targetAppIdentifier = body.targetAppId || "";
@@ -1107,7 +1109,19 @@ export async function POST(request: NextRequest) {
     const continuationOnly = body.continuationOnly === true;
     const rawMessage = typeof body.message === "string" ? body.message.trim() : "";
     const attachmentId = typeof body.attachmentId === "string" ? body.attachmentId.trim() : "";
-    const history = Array.isArray(body.history) ? body.history.slice(-12) : [];
+    const history = Array.isArray(body.history) ? body.history : [];
+    assertArrayLimit(history, INPUT_LIMITS.chatbotHistoryItems, "history");
+    if (exceedsCharacterLimit(userId, INPUT_LIMITS.chatbotExternalUserId)) {
+      throw new InputValidationError(`userId must be ${INPUT_LIMITS.chatbotExternalUserId} characters or fewer.`);
+    }
+    if (exceedsCharacterLimit(rawMessage, INPUT_LIMITS.chatbotMessage)) {
+      throw new InputValidationError(`message must be ${INPUT_LIMITS.chatbotMessage} characters or fewer.`);
+    }
+    for (const item of history) {
+      if (typeof item?.text === "string" && exceedsCharacterLimit(item.text, INPUT_LIMITS.chatbotMessage)) {
+        throw new InputValidationError(`Each history message must be ${INPUT_LIMITS.chatbotMessage} characters or fewer.`);
+      }
+    }
     const contextResolution = await resolveActionRequestFromConversation(rawMessage, history, companyId || undefined, targetAppId || undefined);
     const message = contextResolution.message;
 
@@ -1721,6 +1735,12 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
     if (error instanceof ChatbotApiKeyAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }

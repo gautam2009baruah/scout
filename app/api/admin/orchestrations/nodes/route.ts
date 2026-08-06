@@ -14,6 +14,8 @@ import {
   OrchestrationAccessError,
 } from "@/lib/orchestrations/db";
 import type { NodeType } from "@/shared/orchestrationTypes";
+import { InputValidationError } from "@/lib/validation/input-limits";
+import { mapDatabaseInputError } from "@/lib/db/errors";
 
 export async function GET(request: NextRequest) {
   try {
@@ -83,6 +85,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ node }, { status: 201 });
   } catch (error) {
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
+    const databaseError = mapDatabaseInputError(error);
+    if (databaseError) return NextResponse.json({ message: databaseError.message }, { status: databaseError.statusCode });
     if (error instanceof OrchestrationAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }
@@ -125,6 +132,11 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ node });
   } catch (error) {
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
+    const databaseError = mapDatabaseInputError(error);
+    if (databaseError) return NextResponse.json({ message: databaseError.message }, { status: databaseError.statusCode });
     if (error instanceof OrchestrationAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }

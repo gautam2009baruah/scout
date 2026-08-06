@@ -11,6 +11,8 @@ import {
 } from "@/lib/orchestrations/db";
 import type { OrchestrationStatus } from "@/shared/orchestrationTypes";
 import { assertTargetAppScope, RequestScopeError } from "@/lib/orchestrations/request-scope";
+import { InputValidationError } from "@/lib/validation/input-limits";
+import { mapDatabaseInputError } from "@/lib/db/errors";
 
 function resolveScopedCompanyId(session: Awaited<ReturnType<typeof getCurrentAdminSession>>, requested: string | null): string {
   if (!session) return "";
@@ -106,9 +108,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ orchestration }, { status: 201 });
   } catch (error) {
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
     if (error instanceof RequestScopeError || error instanceof OrchestrationAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }
+    const databaseError = mapDatabaseInputError(error);
+    if (databaseError) return NextResponse.json({ message: databaseError.message }, { status: databaseError.statusCode });
     console.error("Error creating orchestration:", error);
     return NextResponse.json(
       { message: "Failed to create orchestration" },
@@ -161,9 +168,14 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ orchestration });
   } catch (error) {
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
     if (error instanceof OrchestrationAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }
+    const databaseError = mapDatabaseInputError(error);
+    if (databaseError) return NextResponse.json({ message: databaseError.message }, { status: databaseError.statusCode });
     console.error("Error updating orchestration:", error);
     const errorMessage = error instanceof Error ? error.message : "Failed to update orchestration";
     return NextResponse.json(

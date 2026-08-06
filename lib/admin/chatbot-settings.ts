@@ -4,6 +4,7 @@ import type { AdminSession } from "./auth";
 import { listGuidedWorkflowTargetApps } from "./guided-workflows";
 import { ChatbotLifecycleSettingsRecord, DEFAULT_CHATBOT_LIFECYCLE_SETTINGS, listChatbotLifecycleSettings, mergeLifecycleSettings } from "@/lib/chat/lifecycle-settings";
 import { obfuscateGuid } from "@/lib/chat/embed-id-token";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
 
 export type ChatbotLifecycleSettingsInput = {
   targetAppId?: string | null;
@@ -281,13 +282,17 @@ function normalizeOrigins(origins?: string[]) {
 function normalizeEnvironment(value: string) {
   const normalized = String(value || "").trim().toLowerCase();
   if (!normalized) return "";
-  return normalized.slice(0, 32);
+  return normalized;
 }
 
 function normalizeAndValidateUrl(value: string) {
   const trimmed = String(value || "").trim();
   if (!trimmed) {
     throw new ChatbotSettingsError("A valid environment URL is required.", 400);
+  }
+
+  if (exceedsCharacterLimit(trimmed, INPUT_LIMITS.environmentUrl)) {
+    throw new ChatbotSettingsError(`Environment URL must be ${INPUT_LIMITS.environmentUrl} characters or fewer.`, 400);
   }
 
   let parsed: URL;
@@ -1053,6 +1058,9 @@ export async function createChatbotKeyEnvironment(session: AdminSession, targetA
   await assertTargetAppAccess(session, companyId, targetAppId);
 
   const name = String(nameInput || "").trim();
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.environmentName)) {
+    throw new ChatbotSettingsError(`Environment name must be ${INPUT_LIMITS.environmentName} characters or fewer.`, 400);
+  }
   const normalized = normalizeEnvironment(name);
   if (!normalized) {
     throw new ChatbotSettingsError("Environment name is required.", 400);
@@ -1088,7 +1096,11 @@ export async function updateChatbotKeyEnvironment(session: AdminSession, id: str
   const companyId = session.user.tenantId;
   await assertCompanyAccess(session, companyId);
 
-  const normalized = normalizeEnvironment(nameInput);
+  const name = String(nameInput || "").trim();
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.environmentName)) {
+    throw new ChatbotSettingsError(`Environment name must be ${INPUT_LIMITS.environmentName} characters or fewer.`, 400);
+  }
+  const normalized = normalizeEnvironment(name);
   if (!normalized) {
     throw new ChatbotSettingsError("Environment name is required.", 400);
   }
@@ -1399,6 +1411,13 @@ export async function upsertChatbotEmbedPackage(session: AdminSession, input: Up
   const scoutUrl = normalizeUrl(input.scoutUrl, "http://localhost:3000");
   const apiUrl = normalizeUrl(input.apiUrl, "http://localhost:4200");
   const assistantName = String(input.assistantName || "Scout Assistant").trim() || "Scout Assistant";
+
+  if (exceedsCharacterLimit(userId, INPUT_LIMITS.chatbotEmbedUserId)) {
+    throw new ChatbotSettingsError(`User id placeholder must be ${INPUT_LIMITS.chatbotEmbedUserId} characters or fewer.`, 400);
+  }
+  if (exceedsCharacterLimit(assistantName, INPUT_LIMITS.chatbotAssistantName)) {
+    throw new ChatbotSettingsError(`Assistant name must be ${INPUT_LIMITS.chatbotAssistantName} characters or fewer.`, 400);
+  }
 
   if (!targetAppId) {
     throw new ChatbotSettingsError("Target app is required.", 400);

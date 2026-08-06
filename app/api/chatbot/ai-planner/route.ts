@@ -19,6 +19,8 @@ import { handleTurn, type PlannerTurnResult } from "@/lib/orchestrations/planner
 import { getPlannerSessionState, setPlannerSessionState } from "@/lib/orchestrations/planner/sessions";
 import { createPendingPlanRequest, PendingPlanRequestConflictError } from "@/lib/orchestrations/planner/pending-requests";
 import { buildPlanSummary } from "@/lib/orchestrations/planner/plan-summary";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
+import { readJsonBody, REQUEST_BODY_LIMITS, RequestValidationError } from "@/lib/validation/request";
 
 export const runtime = "nodejs";
 
@@ -64,9 +66,12 @@ function toRouterIntent(kind: PlannerTurnResult["kind"]): string {
 export async function POST(request: NextRequest) {
   let body: AiPlannerRequestBody;
   try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ message: "Invalid JSON body." }, { status: 400 });
+    body = await readJsonBody<AiPlannerRequestBody>(request, REQUEST_BODY_LIMITS.chatbotJson);
+  } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
+    throw error;
   }
 
   // "userId" here is the chatbot's external_user_id — an opaque,
@@ -74,6 +79,13 @@ export async function POST(request: NextRequest) {
   // lib/chat/access-validator.ts).
   const externalUserId = String(body.userId || "").trim();
   const message = String(body.message || "").trim();
+
+  if (exceedsCharacterLimit(externalUserId, INPUT_LIMITS.chatbotExternalUserId)) {
+    return NextResponse.json({ message: `userId must be ${INPUT_LIMITS.chatbotExternalUserId} characters or fewer.` }, { status: 400 });
+  }
+  if (exceedsCharacterLimit(message, INPUT_LIMITS.chatbotMessage)) {
+    return NextResponse.json({ message: `message must be ${INPUT_LIMITS.chatbotMessage} characters or fewer.` }, { status: 400 });
+  }
 
   // companyId/targetAppId arrive from the embedded widget as either raw
   // UUIDs or scoped/encoded identifier tokens (scidv1.<nonce>.<cipher>) — see

@@ -13,6 +13,7 @@ import type {
 import { validateShortNameFormat } from "@/lib/orchestrations/http-trigger/endpoint-resolution";
 import type { AdminSession } from "@/lib/admin/auth";
 import { assertOrchestrationOwnership, OrchestrationAccessError } from "@/lib/orchestrations/db";
+import { INPUT_LIMITS, assertCharacterLimit, assertSerializedByteLimit } from "@/lib/validation/input-limits";
 
 // ============================================================================
 // Database Row Mappers
@@ -99,6 +100,9 @@ export async function createTrigger(data: {
   // fanned-out inbox row polls for (NULL = legacy, un-scoped default row).
   environmentId?: string | null;
 }): Promise<OrchestrationTrigger> {
+  assertCharacterLimit(data.name.trim(), INPUT_LIMITS.resourceName, "Trigger name");
+  if (data.description) assertCharacterLimit(data.description.trim(), INPUT_LIMITS.shortDescription, "Trigger description");
+  assertSerializedByteLimit(data.config, INPUT_LIMITS.structuredJsonBytes, "Trigger configuration");
   const pool = getPool();
 
   // Encrypt sensitive data in config before storing
@@ -213,6 +217,9 @@ export async function updateTrigger(
     updatedById: string;
   }
 ): Promise<OrchestrationTrigger> {
+  if (data.name !== undefined) assertCharacterLimit(data.name.trim(), INPUT_LIMITS.resourceName, "Trigger name");
+  if (data.description) assertCharacterLimit(data.description.trim(), INPUT_LIMITS.shortDescription, "Trigger description");
+  if (data.config !== undefined) assertSerializedByteLimit(data.config, INPUT_LIMITS.structuredJsonBytes, "Trigger configuration");
   const pool = getPool();
   const updates: string[] = ["updated_at = now()", "updated_by = $2"];
   const params: any[] = [id, data.updatedById];

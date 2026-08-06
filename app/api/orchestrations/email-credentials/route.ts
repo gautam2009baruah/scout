@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { fetchIMAPEmails } from "@/lib/integrations/email/imap";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
 
 async function validateTargetAppScope(companyId: string, targetAppId: string | null) {
   if (!targetAppId) {
@@ -140,6 +141,15 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (exceedsCharacterLimit(String(name), INPUT_LIMITS.resourceName)) {
+      return NextResponse.json({ success: false, error: `Name must be ${INPUT_LIMITS.resourceName} characters or fewer.` }, { status: 400 });
+    }
+    if (exceedsCharacterLimit(String(emailAddress), INPUT_LIMITS.emailAddress)) {
+      return NextResponse.json({ success: false, error: `Email address must be ${INPUT_LIMITS.emailAddress} characters or fewer.` }, { status: 400 });
+    }
+    if (imapHost && exceedsCharacterLimit(String(imapHost), 255)) {
+      return NextResponse.json({ success: false, error: "IMAP host must be 255 characters or fewer." }, { status: 400 });
+    }
 
     if (provider === "imap" && (!imapHost || !imapPassword)) {
       return NextResponse.json(
@@ -156,6 +166,9 @@ export async function POST(request: NextRequest) {
     }
 
     const environmentIds = normalizeEnvironmentIds(body.environmentIds);
+    if (environmentIds.length > 100) {
+      return NextResponse.json({ success: false, error: "At most 100 environments may be assigned." }, { status: 400 });
+    }
     if (!(await validateEnvironmentIds(String(targetAppId), environmentIds))) {
       return NextResponse.json(
         { success: false, error: "At least one valid environment is required." },

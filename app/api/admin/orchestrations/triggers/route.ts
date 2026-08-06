@@ -16,6 +16,8 @@ import { getPool } from "@/lib/db/pool";
 import type { TriggerConfig, OrchestrationTriggerType, TriggerStatus } from "@/shared/orchestrationTypes";
 import { getCurrentAdminSession } from "@/lib/admin/session";
 import { clearTriggerCache } from "@/lib/orchestrations/chatbot-trigger-matcher";
+import { InputValidationError } from "@/lib/validation/input-limits";
+import { mapDatabaseInputError } from "@/lib/db/errors";
 
 // A trigger's email-related credential reference(s) must belong to the same
 // company as the orchestration itself — otherwise a trigger could be wired
@@ -164,6 +166,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(trigger, { status: 201 });
   } catch (error) {
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    const databaseError = mapDatabaseInputError(error);
+    if (databaseError) return NextResponse.json({ error: databaseError.message }, { status: databaseError.statusCode });
     if (error instanceof OrchestrationAccessError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }
@@ -234,6 +241,11 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json(trigger);
   } catch (error) {
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    const databaseError = mapDatabaseInputError(error);
+    if (databaseError) return NextResponse.json({ error: databaseError.message }, { status: databaseError.statusCode });
     if (error instanceof OrchestrationAccessError) {
       return NextResponse.json({ error: error.message }, { status: error.statusCode });
     }

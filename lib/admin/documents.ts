@@ -5,6 +5,7 @@ import { getAccessibleTopicIds } from "./content-structure";
 import { enqueueProcessingJob } from "./processing-jobs";
 import type { AdminSession } from "./auth";
 import crypto from "node:crypto";
+import { INPUT_LIMITS, exceedsCharacterLimit } from "@/lib/validation/input-limits";
 
 export const DOCUMENT_STATUSES = [
   "uploaded",
@@ -731,6 +732,15 @@ export async function createDocument(input: CreateDocumentInput, session: AdminS
   if (!input.companyId || !input.folderId || !originalFilename || !checksum || !name) {
     throw new DocumentError("Company, folder, filename, checksum, and name are required.");
   }
+  if (exceedsCharacterLimit(name, INPUT_LIMITS.resourceName)) {
+    throw new DocumentError(`Document name must be ${INPUT_LIMITS.resourceName} characters or fewer.`);
+  }
+  if (exceedsCharacterLimit(originalFilename, INPUT_LIMITS.filename)) {
+    throw new DocumentError(`Filename must be ${INPUT_LIMITS.filename} characters or fewer.`);
+  }
+  if (externalSourceUrl && exceedsCharacterLimit(externalSourceUrl, INPUT_LIMITS.endpointUrl)) {
+    throw new DocumentError(`External source URL must be ${INPUT_LIMITS.endpointUrl} characters or fewer.`);
+  }
 
   if (!isDocumentStorageMode(storageMode)) {
     throw new DocumentError("Invalid document storage mode.");
@@ -1372,6 +1382,9 @@ export async function updateDocument(id: string, input: UpdateDocumentInput, ses
 
     if (!name) {
       throw new DocumentError("Document name is required.");
+    }
+    if (exceedsCharacterLimit(name, INPUT_LIMITS.resourceName)) {
+      throw new DocumentError(`Document name must be ${INPUT_LIMITS.resourceName} characters or fewer.`);
     }
 
     params.push(name);

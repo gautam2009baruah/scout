@@ -8,6 +8,7 @@ import { useToast } from "./toast";
 import { ModalCloseButton } from "./modal-close-button";
 import type { AdminModule } from "@/lib/admin/permissions";
 import type { CompanySummary, RoleSummary } from "@/lib/admin/administration";
+import { INPUT_LIMITS } from "@/lib/validation/input-limits";
 
 type MasterDataFormsProps = {
   companies: CompanySummary[];
@@ -462,6 +463,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
             <input
               className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
               name="name"
+              maxLength={INPUT_LIMITS.companyName}
               placeholder="Acme Corporation"
               required
               type="text"
@@ -473,6 +475,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
             <input
               className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
               name="slug"
+              maxLength={INPUT_LIMITS.companySlug}
               placeholder="acme"
               type="text"
             />
@@ -523,6 +526,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
               <input
                 className="mt-2 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
                 name="name"
+                maxLength={INPUT_LIMITS.roleName}
                 onChange={(event) => setRoleName(event.target.value)}
                 placeholder="Billing Manager"
                 required
@@ -551,6 +555,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
             <textarea
               className="mt-2 min-h-24 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
               name="description"
+              maxLength={INPUT_LIMITS.roleDescription}
               onChange={(event) => setRoleDescription(event.target.value)}
               placeholder="Can manage billing records and related uploads."
               value={roleDescription}
@@ -608,6 +613,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                   <input
                     className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
                     onChange={(event) => setTargetAppName(event.target.value)}
+                    maxLength={INPUT_LIMITS.targetApplicationName}
                     placeholder="Target app name"
                     required
                     type="text"
@@ -723,6 +729,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                   <input
                     className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
                     onChange={(event) => setNewEnvironmentName(event.target.value)}
+                    maxLength={INPUT_LIMITS.environmentName}
                     placeholder="Environment name"
                     required
                     type="text"
@@ -731,6 +738,7 @@ export function MasterDataForms({ companies, modules, currentCompanyId, editingR
                   <input
                     className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10"
                     onChange={(event) => setNewEnvironmentUrl(event.target.value)}
+                    maxLength={INPUT_LIMITS.environmentUrl}
                     placeholder="https://app.example.com"
                     required
                     type="text"

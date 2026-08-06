@@ -22,6 +22,7 @@ import type { AdminSession } from "@/lib/admin/auth";
 import { assertTargetAppScope } from "@/lib/orchestrations/request-scope";
 import { createTrigger } from "./triggers";
 import { clearTriggerCache } from "./chatbot-trigger-matcher";
+import { INPUT_LIMITS, assertCharacterLimit, assertSerializedByteLimit } from "@/lib/validation/input-limits";
 import { indexOrchestration } from "./planner/orchestration-index";
 import type { EmailTriggerConfig, ScheduleTriggerConfig } from "@/shared/orchestrationTypes";
 import { calculateNextRunTime } from "./scheduler/cron-utils";
@@ -112,6 +113,9 @@ export async function createOrchestration(data: {
   // that create orchestrations without a human actor in the loop.
   createdById?: string | null;
 }): Promise<Orchestration> {
+  assertCharacterLimit(data.name.trim(), INPUT_LIMITS.resourceName, "Orchestration name");
+  if (data.description) assertCharacterLimit(data.description.trim(), INPUT_LIMITS.description, "Orchestration description");
+  assertSerializedByteLimit(data.variables || {}, INPUT_LIMITS.structuredJsonBytes, "Orchestration variables");
   const pool = getPool();
   const result = await pool.query<OrchestrationRow>(
     `INSERT INTO orchestrations
@@ -329,6 +333,9 @@ export async function updateOrchestration(
     updatedById: string;
   }
 ): Promise<Orchestration> {
+  if (data.name !== undefined) assertCharacterLimit(data.name.trim(), INPUT_LIMITS.resourceName, "Orchestration name");
+  if (data.description) assertCharacterLimit(data.description.trim(), INPUT_LIMITS.description, "Orchestration description");
+  if (data.variables !== undefined) assertSerializedByteLimit(data.variables, INPUT_LIMITS.structuredJsonBytes, "Orchestration variables");
   const pool = getPool();
 
   const updates: string[] = ["updated_at = now()", "updated_by = $1"];
@@ -966,6 +973,9 @@ export async function createNode(data: {
   config: Record<string, unknown>;
   displayDescription?: string;
 }): Promise<OrchestrationNode> {
+  assertCharacterLimit(data.label.trim(), INPUT_LIMITS.resourceName, "Node label");
+  if (data.displayDescription) assertCharacterLimit(data.displayDescription.trim(), INPUT_LIMITS.shortDescription, "Node description");
+  assertSerializedByteLimit(data.config, INPUT_LIMITS.structuredJsonBytes, "Node configuration");
   const pool = getPool();
   const result = await pool.query<NodeRow>(
     `INSERT INTO orchestration_nodes 
@@ -1016,6 +1026,9 @@ export async function updateNode(
     displayDescription?: string;
   }
 ): Promise<OrchestrationNode> {
+  if (data.label !== undefined) assertCharacterLimit(data.label.trim(), INPUT_LIMITS.resourceName, "Node label");
+  if (data.displayDescription) assertCharacterLimit(data.displayDescription.trim(), INPUT_LIMITS.shortDescription, "Node description");
+  if (data.config !== undefined) assertSerializedByteLimit(data.config, INPUT_LIMITS.structuredJsonBytes, "Node configuration");
   const pool = getPool();
 
   const updates: string[] = ["updated_at = now()"];

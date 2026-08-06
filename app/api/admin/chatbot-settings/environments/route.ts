@@ -6,6 +6,7 @@ import {
   createChatbotKeyEnvironment,
   listChatbotKeyEnvironments
 } from "@/lib/admin/chatbot-settings";
+import { mapDatabaseInputError } from "@/lib/db/errors";
 
 export const runtime = "nodejs";
 
@@ -63,6 +64,9 @@ export async function POST(request: Request) {
     if (error instanceof ChatbotSettingsError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }
+
+    const databaseError = mapDatabaseInputError(error);
+    if (databaseError) return NextResponse.json({ message: databaseError.message }, { status: databaseError.statusCode });
 
     return NextResponse.json({ message: error instanceof Error ? error.message : "Unable to create environment." }, { status: 500 });
   }

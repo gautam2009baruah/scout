@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPool } from "@/lib/db/pool";
 import { resolveGuidIdentifier } from "@/lib/chat/embed-id-token";
 import { assertChatbotApiKeyAccess, ChatbotApiKeyAccessError } from "@/lib/chat/api-key-access";
+import { INPUT_LIMITS, InputValidationError, assertSerializedByteLimit, exceedsCharacterLimit } from "@/lib/validation/input-limits";
+import { readJsonBody, REQUEST_BODY_LIMITS, RequestValidationError } from "@/lib/validation/request";
 
 export const runtime = "nodejs";
 
@@ -16,7 +18,7 @@ type ActionModeTelemetryRequest = {
 
 export async function POST(request: NextRequest) {
   try {
-    const body: ActionModeTelemetryRequest = await request.json();
+    const body = await readJsonBody<ActionModeTelemetryRequest>(request, REQUEST_BODY_LIMITS.chatbotJson);
     const companyIdentifier = (body.companyId || "").trim();
     const userId = (body.userId || "").trim();
     const targetAppIdentifier = (body.targetAppId || "").trim();
@@ -30,6 +32,10 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (exceedsCharacterLimit(userId, INPUT_LIMITS.chatbotExternalUserId)) {
+      return NextResponse.json({ message: `userId must be ${INPUT_LIMITS.chatbotExternalUserId} characters or fewer.` }, { status: 400 });
+    }
+    assertSerializedByteLimit(body.metadata || {}, INPUT_LIMITS.chatbotMetadataBytes, "metadata");
 
     // The API key is always bound to exactly one target app — use that
     // authoritative scope for the write, not the client-supplied
@@ -58,6 +64,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof InputValidationError) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
+    if (error instanceof RequestValidationError) {
+      return NextResponse.json({ message: error.message }, { status: error.statusCode });
+    }
     if (error instanceof ChatbotApiKeyAccessError) {
       return NextResponse.json({ message: error.message }, { status: error.statusCode });
     }

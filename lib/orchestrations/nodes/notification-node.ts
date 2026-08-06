@@ -5,6 +5,7 @@ import type { NotificationNodeConfig } from "@/shared/orchestrationTypes";
 import { evaluateExpression } from "../expression-evaluator";
 import { sendEmail } from "@/lib/admin/email";
 import { getPool } from "@/lib/db/pool";
+import { INPUT_LIMITS, assertCharacterLimit } from "@/lib/validation/input-limits";
 
 type ChannelKey = "email" | "internal" | "teams" | "slack" | "sms" | "whatsapp";
 
@@ -915,6 +916,12 @@ async function createInternalNotification(input: {
   persistentUntilRead: boolean;
   metadata: Record<string, unknown>;
 }): Promise<string> {
+  assertCharacterLimit(input.title, INPUT_LIMITS.internalNotificationTitle, "Internal notification title");
+  assertCharacterLimit(input.type, INPUT_LIMITS.internalNotificationType, "Internal notification type");
+  if (input.actionLabel) {
+    assertCharacterLimit(input.actionLabel, INPUT_LIMITS.internalNotificationActionLabel, "Internal notification action label");
+  }
+
   const pool = getPool();
 
   const expiresAt = input.expiryDate ? new Date(input.expiryDate) : null;
