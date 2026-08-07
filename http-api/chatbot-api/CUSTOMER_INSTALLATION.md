@@ -583,26 +583,6 @@ For a traditional multi-page website, add these references to the common layout 
 </html>
 ```
 
-#### NexusVendor reference mapping
-
-The NexusVendor reference application uses the same pattern:
-
-```text
-nexusvendor-enterprise-portal/index.html
-  -> /scout-chatbot-config.local.js
-  -> /scout-chatbot-install.js
-  -> http://localhost:3000/scout-chatbot.js?v=1.1.2
-  -> http://localhost:3000/embed/scout-chatbot
-  -> http://localhost:4200/v1/chat/query
-```
-
-Reference files:
-
-- `nexusvendor-enterprise-portal/index.html` contains the two customer-side script references.
-- `nexusvendor-enterprise-portal/scout-chatbot-config.local.js` contains generated local configuration and is intentionally excluded from source control.
-- `nexusvendor-enterprise-portal/scout-chatbot-config.local.js.example` is the safe configuration template.
-- `nexusvendor-enterprise-portal/scout-chatbot-install.js` loads the Scout-hosted loader.
-
 ### 9.2 Single-block alternative
 
 If the customer does not want two local files, the configuration and installation may be placed directly in the shared HTML template. Add this immediately before `</body>`:
@@ -780,28 +760,19 @@ Never allow a browser user to choose an arbitrary `targetAppId` or `userId`.
 
 ---
 
-## 12. NexusVendor reference implementation
+## 12. Reference provisioning workflow
 
-The repository's `nexusvendor-enterprise-portal` is a working reference.
-
-From that project directory:
-
-```bash
-npm run configure:chatbot
-npm run dev
-```
-
-The configuration script:
+A typical customer provisioning script automates the identifier and API-key steps from sections 5 and 6. Such a script:
 
 - finds an active Scout company user with chatbot access;
-- finds or creates the NexusVendor target application;
+- finds or creates the customer's target application;
 - aligns the workflow target record required by telemetry;
 - grants target-app access when the user is operating in scoped mode;
-- revokes the previous active NexusVendor key;
+- revokes the previous active browser key for that target application;
 - generates and hashes a new browser key;
-- writes `scout-chatbot-config.local.js` with restrictive file permissions where supported.
+- writes a local `scout-chatbot-config.local.js` with restrictive file permissions where supported.
 
-The generated local configuration is excluded from source control. This script contains NexusVendor-specific company and URL values and is a reference, not a general customer provisioning command.
+The generated local configuration is excluded from source control because it contains company-specific and URL values. Treat it as a reference, not a general customer provisioning command.
 
 ---
 
@@ -1038,8 +1009,6 @@ Complete this section for each customer deployment. Deliver plaintext keys throu
 - API-key migration: `db/migrations/093_chatbot_api_keys.sql`
 - Target-app migration: `db/migrations/036_guided_workflow_training_sessions.sql`
 - User target-app access: `db/migrations/085_user_target_app_access.sql`
-- NexusVendor reference installer: `nexusvendor-enterprise-portal/scout-chatbot-install.js`
-- NexusVendor provisioning example: `nexusvendor-enterprise-portal/scripts/configure-scout-chatbot.mjs`
 
 ---
 
