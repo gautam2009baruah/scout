@@ -1,9 +1,0 @@
-window.NexusVendorScoutChatbotConfig = {
-  scoutUrl: "http://localhost:3000",
-  apiUrl: "http://localhost:4200",
-  apiKey: "target-app-scoped-browser-key",
-  userId: "customer-owned-external-user-id",
-  targetAppId: "target-app-uuid",
-  targetAppName: "NexusVendor Enterprise Portal",
-  assistantName: "Scout Assistant"
-};
