@@ -43,6 +43,7 @@ function rectRelativeToTop(element: Element): DOMRect {
 const toolbarId = "scout-guided-workflow-recorder";
 const confirmationDialogId = "scout-confirmation-dialog";
 const pickerReviewDialogId = "scout-picker-review-dialog";
+const configPromptDialogId = "scout-config-prompt-dialog";
 const toastId = "scout-recorder-toast";
 const previewOverlayId = "scout-recorder-preview";
 const recorderBuild = "202606241500";
@@ -138,6 +139,18 @@ async function getRecorderMeta() {
   } catch {
     return stored;
   }
+}
+
+// The extension's own UI (toolbar, dialogs, banners) lives in the same document
+// as the host page, so without this, pointerdown/mousedown/click on it bubbles
+// straight up to the host page's document — exactly what "close this menu/modal
+// on outside click" listeners watch for. That closed the host's menu the instant
+// a trainer clicked "Create step" (or any other extension control), before
+// picker mode ever got a chance to let them select something inside it.
+function isolateFromHostPage(element: HTMLElement) {
+  element.addEventListener("pointerdown", (event) => event.stopPropagation());
+  element.addEventListener("mousedown", (event) => event.stopPropagation());
+  element.addEventListener("click", (event) => event.stopPropagation());
 }
 
 function showToast(message: string, tone: "success" | "error" | "info" = "info") {
@@ -254,6 +267,7 @@ function showConfirmationDialog(
   `;
 
   document.body.appendChild(dialog);
+  isolateFromHostPage(dialog);
 
   // Handle button clicks
   document.getElementById("scout-confirm-accept")?.addEventListener("click", async () => {
@@ -287,6 +301,65 @@ function showConfirmationDialog(
  */
 function closeConfirmationDialog() {
   document.getElementById(confirmationDialogId)?.remove();
+}
+
+/**
+ * Custom-styled replacement for window.prompt() when pasting recorder config JSON.
+ */
+function showConfigPromptDialog(initialValue = ""): Promise<string | null> {
+  document.getElementById(configPromptDialogId)?.remove();
+
+  const dialog = document.createElement("div");
+  dialog.id = configPromptDialogId;
+  dialog.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 2147483647;
+    background: #1e293b;
+    color: #f1f5f9;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    font: 14px system-ui, sans-serif;
+    width: min(480px, calc(100vw - 32px));
+  `;
+
+  dialog.innerHTML = `
+    <div style="margin-bottom: 12px;">
+      <strong style="font-size: 16px;">Configure recorder</strong>
+      <div style="margin-top: 6px; color: #cbd5e1; line-height: 1.5;">
+        Paste Scout recorder config JSON for this training session.
+      </div>
+    </div>
+    <textarea id="scout-config-prompt-input" spellcheck="false" style="box-sizing:border-box;width:100%;height:160px;resize:vertical;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:10px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;outline:none"></textarea>
+    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
+      <button id="scout-config-prompt-cancel" style="${modalButtonStyle("#334155")}">Cancel</button>
+      <button id="scout-config-prompt-save" style="${modalButtonStyle("#3b82f6")}">Save</button>
+    </div>
+  `;
+
+  document.body.appendChild(dialog);
+  isolateFromHostPage(dialog);
+
+  const textarea = document.getElementById("scout-config-prompt-input") as HTMLTextAreaElement | null;
+  if (textarea) {
+    textarea.value = initialValue;
+    textarea.focus();
+  }
+
+  return new Promise((resolve) => {
+    const finish = (value: string | null) => {
+      dialog.remove();
+      resolve(value);
+    };
+    document.getElementById("scout-config-prompt-cancel")?.addEventListener("click", () => finish(null));
+    document.getElementById("scout-config-prompt-save")?.addEventListener("click", () => finish(textarea?.value ?? null));
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") finish(null);
+    });
+  });
 }
 
 function escapeHtml(value: string) {
@@ -540,6 +613,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   `;
 
   document.body.appendChild(dialog);
+  isolateFromHostPage(dialog);
   const dragHandle = document.getElementById("scout-picker-drag-handle");
   if (dragHandle) attachDialogDrag(dialog, dragHandle);
   const descriptionEditor = createPickerRichTextEditor(document.getElementById("scout-picker-description"));
@@ -821,6 +895,7 @@ async function previewCreatedSteps() {
 }
 
 function attachDrag(root: HTMLElement) {
+  isolateFromHostPage(root);
   let dragging = false;
   let startX = 0;
   let startY = 0;
@@ -881,7 +956,7 @@ function syncButton() {
 }
 
 async function configureRecorder() {
-  const rawConfig = window.prompt("Paste Scout recorder config JSON for this training session.");
+  const rawConfig = await showConfigPromptDialog();
 
   if (!rawConfig) {
     return;

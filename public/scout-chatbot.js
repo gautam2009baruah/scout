@@ -36,7 +36,10 @@
     iframe.src = scoutOrigin + "/embed/scout-chatbot";
     iframe.allow = "clipboard-write";
     iframe.style.position = "fixed";
-    iframe.style.zIndex = String(config.zIndex || 2147482000);
+    // The guided-workflow tooltip player (scout-smart-adoption-player.js) tops out
+    // at z-index 2147483000 so it never covers the chat widget — keep this at the
+    // true CSS z-index ceiling (2^31 - 1) so the chatbot always renders above it.
+    iframe.style.zIndex = String(config.zIndex || 2147483647);
     iframe.style.bottom = "12px";
     iframe.style.width = "80px";
     iframe.style.height = "80px";
@@ -58,7 +61,7 @@
       unavailableNotice.setAttribute("aria-live", "polite");
       unavailableNotice.textContent = "Chat is temporarily unavailable. Please try again later.";
       unavailableNotice.style.position = "fixed";
-      unavailableNotice.style.zIndex = String((config.zIndex || 2147482000) + 1);
+      unavailableNotice.style.zIndex = String(config.zIndex || 2147483647);
       unavailableNotice.style.bottom = "12px";
       unavailableNotice.style.width = "280px";
       unavailableNotice.style.boxSizing = "border-box";

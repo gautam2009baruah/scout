@@ -638,6 +638,13 @@ export function ScoutChatbot({
   const [activeTab, setActiveTab] = useState<ChatTab>("qa");
   const [isMinimizing, setIsMinimizing] = useState(false);
   const [activeWorkflow, setActiveWorkflow] = useState<ScoutWorkflowSession | null>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setActiveWorkflow(null);
+    }
+  }, [isOpen]);
+
   const [workflowSessions, setWorkflowSessions] = useState<ScoutWorkflowSession[]>([]);
   const [expandedWorkflowSessions, setExpandedWorkflowSessions] = useState<Set<string>>(() => new Set());
   const [workflowSearchQuery, setWorkflowSearchQuery] = useState("");

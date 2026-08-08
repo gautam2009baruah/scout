@@ -107,7 +107,7 @@ A chatbot instance is always scoped to exactly one target application. The compa
 | `position` | `bottom-right` | Launcher position; use `bottom-right` or `bottom-left` |
 | `placeholder` | `Ask about vendors or start a workflow...` | Input prompt |
 | `quickPrompts` | `['Find a contract', 'Check vendor risk']` | Optional suggested questions |
-| `zIndex` | `2147482000` | Optional stacking order override |
+| `zIndex` | `2147483647` | Optional stacking order override |
 
 Do not include trailing slashes in `scoutUrl` or `apiUrl`. The loader tolerates them, but normalized URLs are easier to troubleshoot.
 

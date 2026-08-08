@@ -786,27 +786,29 @@
     const style = document.createElement("style");
     style.id = "scout-adoption-player-style";
     style.textContent = `
-      .scout-adoption-launcher { position: fixed; right: 20px; bottom: 20px; z-index: 2147483646; border: 0; border-radius: 999px; background: #020617; color: #fff; padding: 12px 16px; font: 600 14px system-ui, sans-serif; box-shadow: 0 16px 44px rgb(15 23 42 / .28); cursor: pointer; }
-      .scout-adoption-menu { position: fixed; right: 20px; bottom: 72px; z-index: 2147483646; width: min(320px, calc(100vw - 40px)); border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; box-shadow: 0 18px 52px rgb(15 23 42 / .22); padding: 8px; font: 14px system-ui, sans-serif; }
+      .scout-adoption-launcher { position: fixed; right: 20px; bottom: 20px; z-index: 2147482999; border: 0; border-radius: 999px; background: #020617; color: #fff; padding: 12px 16px; font: 600 14px system-ui, sans-serif; box-shadow: 0 16px 44px rgb(15 23 42 / .28); cursor: pointer; }
+      .scout-adoption-menu { position: fixed; right: 20px; bottom: 72px; z-index: 2147482999; width: min(320px, calc(100vw - 40px)); border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; box-shadow: 0 18px 52px rgb(15 23 42 / .22); padding: 8px; font: 14px system-ui, sans-serif; }
       .scout-adoption-menu button { display: block; width: 100%; border: 0; border-radius: 6px; background: transparent; padding: 10px; text-align: left; color: #0f172a; cursor: pointer; }
       .scout-adoption-highlight { outline: 3px solid #0ea5e9 !important; outline-offset: 4px !important; border-radius: 6px !important; }
       .scout-adoption-pick-candidate { outline: 3px solid #f59e0b !important; outline-offset: 4px !important; border-radius: 6px !important; cursor: crosshair !important; }
-      .scout-adoption-overlay { position: fixed; inset: 0; z-index: 2147483646; background: rgb(15 23 42 / .52); box-shadow: inset 0 0 140px rgb(15 23 42 / .46); }
-      .scout-adoption-tooltip { position: fixed; z-index: 2147483647; width: max-content; max-width: min(292px, calc(100vw - 32px)); border: 1px solid rgba(14, 165, 233, .22); border-radius: 14px; background: rgba(255,255,255,.98); box-shadow: 0 18px 48px rgb(15 23 42 / .20), 0 2px 10px rgb(15 23 42 / .08); padding: 12px 14px 11px; color: #0f172a; font: 13px/1.4 system-ui, sans-serif; backdrop-filter: blur(10px); }
-      .scout-adoption-tooltip__close { position: absolute; top: 7px; right: 8px; width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: #64748b !important; padding: 0 !important; margin: 0 !important; font: 18px/1 system-ui, sans-serif !important; cursor: pointer; }
-      .scout-adoption-tooltip__close:hover { background: #f1f5f9 !important; color: #0f172a !important; }
-      .scout-adoption-tooltip h3 { max-width: 238px; padding-right: 20px; margin: 0 0 4px; font-size: 13px; font-weight: 750; line-height: 1.35; }
-      .scout-adoption-tooltip__message { max-width: 252px; margin: 0; color: #475569; font-size: 12.5px; }
+      .scout-adoption-overlay { position: fixed; inset: 0; z-index: 2147482999; background: rgb(15 23 42 / .52); box-shadow: inset 0 0 140px rgb(15 23 42 / .46); }
+      .scout-adoption-tooltip { position: fixed; z-index: 2147483000; width: max-content; max-width: min(292px, calc(100vw - 32px)); border: 1px solid rgba(2, 132, 199, .4); border-radius: 0; background: #0ea5e9; box-shadow: 0 4px 14px rgb(15 23 42 / .18), 0 1px 4px rgb(15 23 42 / .10); padding: 8px 14px 12px; color: #fff; font: 13px/1.4 system-ui, sans-serif; }
+      .scout-adoption-tooltip__header { display: flex; justify-content: flex-end; margin: -2px -6px 2px 0; }
+      .scout-adoption-tooltip__close { width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: rgba(255,255,255,.85) !important; padding: 0 !important; margin: 0 !important; font: 18px/1 system-ui, sans-serif !important; cursor: pointer; flex-shrink: 0; }
+      .scout-adoption-tooltip__close:hover { background: rgba(255,255,255,.16) !important; color: #fff !important; }
+      .scout-adoption-tooltip h3 { max-width: 252px; margin: 0 0 4px; font-size: 13px; font-weight: 750; line-height: 1.35; }
+      .scout-adoption-tooltip__message { max-width: 252px; margin: 0; color: rgba(255,255,255,.92); font-size: 12.5px; }
+      .scout-adoption-tooltip__message a { color: #fff; }
       .scout-adoption-tooltip__message p, .scout-adoption-tooltip__message div { margin: 0 0 4px; }
       .scout-adoption-tooltip__message h1, .scout-adoption-tooltip__message h2, .scout-adoption-tooltip__message h3 { margin: 0 0 5px; font-weight: 750; line-height: 1.2; }
       .scout-adoption-tooltip__message h1 { font-size: 17px; }
       .scout-adoption-tooltip__message h2 { font-size: 15px; }
       .scout-adoption-tooltip__message h3 { font-size: 13.5px; }
-      .scout-adoption-tooltip__message blockquote { margin: 4px 0; border-left: 3px solid #cbd5e1; padding-left: 8px; color: #64748b; }
-      .scout-adoption-tooltip__message pre { overflow: auto; border-radius: 6px; background: #f1f5f9; padding: 6px; font-size: 11px; }
-      .scout-adoption-tooltip__message img { max-width: 100%; height: auto; border-radius: 6px; }
+      .scout-adoption-tooltip__message blockquote { margin: 4px 0; border-left: 3px solid rgba(255,255,255,.45); padding-left: 8px; color: rgba(255,255,255,.8); }
+      .scout-adoption-tooltip__message pre { overflow: auto; border-radius: 4px; background: #f1f5f9; color: #0f172a; padding: 6px; font-size: 11px; }
+      .scout-adoption-tooltip__message img { max-width: 100%; height: auto; border-radius: 4px; }
       .scout-adoption-tooltip__message table { max-width: 100%; border-collapse: collapse; font-size: 11px; }
-      .scout-adoption-tooltip__message th, .scout-adoption-tooltip__message td { border: 1px solid #cbd5e1; padding: 3px 5px; }
+      .scout-adoption-tooltip__message th, .scout-adoption-tooltip__message td { border: 1px solid rgba(255,255,255,.4); padding: 3px 5px; }
       .scout-adoption-tooltip__message ul, .scout-adoption-tooltip__message ol { margin: 4px 0 0 18px; padding: 0; }
       .scout-adoption-tooltip__message li { margin: 2px 0; }
       .scout-adoption-tooltip__message .ql-align-center { text-align: center; }
@@ -818,18 +820,20 @@
       .scout-adoption-tooltip__message .ql-indent-1 { padding-left: 1.5em; }
       .scout-adoption-tooltip__message .ql-indent-2 { padding-left: 3em; }
       .scout-adoption-tooltip__message .ql-indent-3 { padding-left: 4.5em; }
-      .scout-adoption-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: #64748b; font-size: 11.5px; }
-      .scout-adoption-footer button { margin-left: 6px; border: 1px solid #dbe3ee; border-radius: 999px; background: #fff; padding: 5px 9px; color: #0f172a; cursor: pointer; font: 600 12px system-ui, sans-serif; }
-      .scout-adoption-footer button[data-next] { border-color: #0f172a; background: #0f172a; color: #fff; }
-      .scout-adoption-tooltip__arrow { position: absolute; width: 12px; height: 12px; background: rgba(255,255,255,.98); border: 1px solid rgba(14, 165, 233, .22); transform: rotate(45deg); }
-      .scout-adoption-tooltip[data-floating="center"] { max-width: min(420px, calc(100vw - 32px)); padding: 18px 18px 15px; box-shadow: 0 30px 80px rgb(15 23 42 / .28), 0 8px 22px rgb(15 23 42 / .14); }
+      .scout-adoption-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+      .scout-adoption-footer button { border: 1px solid rgba(255,255,255,.55); border-radius: 0; background: transparent; padding: 5px 11px; color: #fff; cursor: pointer; font: 700 12px system-ui, sans-serif; }
+      .scout-adoption-footer button:hover { background: rgba(255,255,255,.12); }
+      .scout-adoption-footer button[data-next] { border-color: #fff; background: #fff; color: #0369a1; }
+      .scout-adoption-footer button[data-next]:hover { background: rgba(255,255,255,.88); }
+      .scout-adoption-tooltip__arrow { position: absolute; width: 12px; height: 12px; background: #0ea5e9; border: 1px solid rgba(2, 132, 199, .4); transform: rotate(45deg); }
+      .scout-adoption-tooltip[data-floating="center"] { max-width: min(420px, calc(100vw - 32px)); padding: 18px 18px 15px; box-shadow: 0 10px 30px rgb(15 23 42 / .22), 0 3px 10px rgb(15 23 42 / .12); }
       .scout-adoption-tooltip[data-floating="center"] .scout-adoption-tooltip__arrow { display: none; }
       .scout-adoption-tooltip[data-floating="center"] .scout-adoption-tooltip__message { max-width: 360px; font-size: 13px; }
       .scout-adoption-tooltip[data-placement="bottom"] .scout-adoption-tooltip__arrow { top: -7px; left: var(--arrow-left, 22px); border-right: 0; border-bottom: 0; }
       .scout-adoption-tooltip[data-placement="top"] .scout-adoption-tooltip__arrow { bottom: -7px; left: var(--arrow-left, 22px); border-left: 0; border-top: 0; }
       .scout-adoption-tooltip[data-placement="right"] .scout-adoption-tooltip__arrow { left: -7px; top: var(--arrow-top, 20px); border-right: 0; border-top: 0; }
       .scout-adoption-tooltip[data-placement="left"] .scout-adoption-tooltip__arrow { right: -7px; top: var(--arrow-top, 20px); border-left: 0; border-bottom: 0; }
-      .scout-adoption-missing, .scout-adoption-recovery-panel { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 2147483647; width: min(360px, calc(100vw - 24px)); border: 1px solid rgb(148 163 184 / .38); border-radius: 12px; background: rgb(255 255 255 / .88); color: #0f172a; padding: 9px; font: 12.5px/1.35 system-ui, sans-serif; box-shadow: 0 16px 42px rgb(15 23 42 / .16); backdrop-filter: blur(12px); }
+      .scout-adoption-missing, .scout-adoption-recovery-panel { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 2147483000; width: min(360px, calc(100vw - 24px)); border: 1px solid rgb(148 163 184 / .38); border-radius: 12px; background: rgb(255 255 255 / .88); color: #0f172a; padding: 9px; font: 12.5px/1.35 system-ui, sans-serif; box-shadow: 0 16px 42px rgb(15 23 42 / .16); backdrop-filter: blur(12px); }
       .scout-adoption-recovery-panel[data-dragging="true"] { user-select: none; cursor: grabbing; }
       .scout-adoption-recovery-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; cursor: grab; }
       .scout-adoption-recovery-title { min-width: 0; display: flex; align-items: center; gap: 7px; font-weight: 750; color: #0f172a; }
@@ -843,7 +847,7 @@
       .scout-adoption-recovery-actions button:hover { background: #f8fafc; border-color: #cbd5e1; }
       .scout-adoption-recovery-actions button[data-primary] { border-color: #0f172a; background: #0f172a; color: #fff; }
       .scout-adoption-recovery-actions button[data-danger] { border-color: #fecaca; color: #b91c1c; }
-      .scout-adoption-target-arrow { position: fixed; z-index: 2147483647; pointer-events: none; display: flex; align-items: center; gap: 6px; border-radius: 999px; background: rgb(14 165 233 / .92); color: #fff; padding: 5px 8px; font: 700 11px system-ui, sans-serif; box-shadow: 0 10px 30px rgb(14 165 233 / .30); }
+      .scout-adoption-target-arrow { position: fixed; z-index: 2147483000; pointer-events: none; display: flex; align-items: center; gap: 6px; border-radius: 999px; background: rgb(14 165 233 / .92); color: #fff; padding: 5px 8px; font: 700 11px system-ui, sans-serif; box-shadow: 0 10px 30px rgb(14 165 233 / .30); }
       .scout-adoption-target-arrow:after { content: ""; position: absolute; left: 50%; bottom: -7px; margin-left: -6px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 7px solid rgb(14 165 233 / .92); }
       .scout-adoption-recovery-toast { top: max(16px, env(safe-area-inset-top)); bottom: auto; max-width: min(420px, calc(100vw - 32px)); text-align: center; pointer-events: none; }
       @keyframes scout-spin { to { transform: rotate(360deg); } }
@@ -861,14 +865,13 @@
     tooltip.className = "scout-adoption-tooltip";
     tooltip.innerHTML = `
       <div class="scout-adoption-tooltip__arrow"></div>
-      <button type="button" class="scout-adoption-tooltip__close" data-close aria-label="Close guide">&times;</button>
+      <div class="scout-adoption-tooltip__header">
+        <button type="button" class="scout-adoption-tooltip__close" data-close aria-label="Close guide">&times;</button>
+      </div>
       <div class="scout-adoption-tooltip__message"></div>
       <div class="scout-adoption-footer">
-        <span>${input.hideStepCount ? "" : `${input.index + 1} / ${input.total}`}</span>
-        <span>
-          ${input.index > 0 ? "<button type=\"button\" data-back>Back</button>" : ""}
-          <button type="button" data-next>${input.primaryLabel || (input.index + 1 === input.total ? "Done" : "Next")}</button>
-        </span>
+        ${input.index > 0 ? "<button type=\"button\" data-back>Back</button>" : ""}
+        <button type="button" data-next>${input.primaryLabel || (input.index + 1 === input.total ? "Done" : "Next")}</button>
       </div>
     `;
     // Track tooltip interactions to prevent blur/change events from advancing workflow
@@ -1364,6 +1367,8 @@
     return path.join(" > ");
   }
 
+  let activePlayer = null;
+
   class Player {
     constructor(guide, guideResolver, analytics) {
       this.guide = guide;
@@ -1497,6 +1502,7 @@
       this.preWorkflowConfirmationShown = false;
       this.clear();
       this.resetProgress();
+      if (activePlayer === this) activePlayer = null;
     }
 
     runSteps(steps, phase, onComplete) {
@@ -1630,7 +1636,6 @@
         index: this.index,
         total: this.steps.length,
         target: document.body,
-        hideStepCount: this.phase === "pre",
         primaryLabel: this.phase === "pre" ? "Start" : undefined,
         onBack: () => this.previous(onComplete),
         onNext: () => this.next(onComplete),
@@ -2056,7 +2061,8 @@
       const guide = this.guideResolver ? this.guideResolver(guideId) : null;
       if (!guide) return;
       this.stop();
-      new Player(guide, this.guideResolver, this.analytics).start();
+      activePlayer = new Player(guide, this.guideResolver, this.analytics);
+      activePlayer.start();
     }
 
     previous(onComplete) {
@@ -2138,7 +2144,9 @@
         item.textContent = guide.title;
         item.addEventListener("click", () => {
           menu.remove();
-          new Player(guide, guideResolver, analytics).start();
+          if (activePlayer) activePlayer.stop();
+          activePlayer = new Player(guide, guideResolver, analytics);
+          activePlayer.start();
         });
         menu.appendChild(item);
       });
@@ -2271,7 +2279,10 @@
         detectContext,
         play(guideId) {
           const guide = guides.find((item) => item.id === guideId) || guides[0];
-          if (guide) new Player(guide, guideResolver, analytics).start();
+          if (!guide) return;
+          if (activePlayer) activePlayer.stop();
+          activePlayer = new Player(guide, guideResolver, analytics);
+          activePlayer.start();
         },
         // Continues a guide on a fresh page load after saveGuideResumeState() was
         // set on the previous page — skips entry steps and any pre-workflow
@@ -2280,7 +2291,10 @@
         // calls this instead of play().
         resume(guideId) {
           const guide = guides.find((item) => item.id === guideId);
-          if (guide) new Player(guide, guideResolver, analytics).start({ resetProgress: false, skipEntry: true });
+          if (!guide) return;
+          if (activePlayer) activePlayer.stop();
+          activePlayer = new Player(guide, guideResolver, analytics);
+          activePlayer.start({ resetProgress: false, skipEntry: true });
         }
       };
     }
