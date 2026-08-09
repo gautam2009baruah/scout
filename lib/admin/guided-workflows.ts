@@ -93,6 +93,27 @@ function assertGuidedText(value: string, limit: number, label: string) {
   }
 }
 
+const MAX_EMBEDDED_RICH_TEXT_IMAGE_BYTES = 8 * 1024 * 1024;
+
+function assertGuidedRichText(value: string, label: string) {
+  let embeddedImageBytes = 0;
+  const htmlWithoutEmbeddedImageData = value.replace(
+    /data:image\/[a-z0-9.+-]+(?:;[a-z0-9.+-]+=[^;,"']+)*;base64,([a-z0-9+/=\s]+)/gi,
+    (_dataUrl, encoded: string) => {
+      const base64 = encoded.replace(/\s/g, "");
+      const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+      embeddedImageBytes += Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+      return "data:image/embedded;base64,[image]";
+    }
+  );
+
+  assertGuidedText(htmlWithoutEmbeddedImageData, INPUT_LIMITS.richText, label);
+
+  if (embeddedImageBytes > MAX_EMBEDDED_RICH_TEXT_IMAGE_BYTES) {
+    throw new GuidedWorkflowError(`${label} may contain at most 8 MB of embedded images.`);
+  }
+}
+
 function mapGuide(row: {
   id: string;
   company_id: string;
@@ -1258,7 +1279,7 @@ export async function createGuidedWorkflow(input: {
     throw new GuidedWorkflowError(`Guides may contain at most ${INPUT_LIMITS.structuredItems} steps or recorded actions.`);
   }
   if (input.preWorkflowConfirmationHtml) {
-    assertGuidedText(input.preWorkflowConfirmationHtml, INPUT_LIMITS.richText, "Pre-workflow confirmation content");
+    assertGuidedRichText(input.preWorkflowConfirmationHtml, "Pre-workflow confirmation content");
   }
 
   const result = await getPool().query<{ id: string }>(
@@ -1342,7 +1363,7 @@ export async function updateGuidedWorkflow(id: string, input: {
 
   if (typeof input.preWorkflowConfirmationHtml === "string") {
     const html = input.preWorkflowConfirmationHtml.trim();
-    assertGuidedText(html, INPUT_LIMITS.richText, "Pre-workflow confirmation content");
+    assertGuidedRichText(html, "Pre-workflow confirmation content");
     params.push(html);
     fields.push(`pre_workflow_confirmation_html = $${params.length}`);
   }

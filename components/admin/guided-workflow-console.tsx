@@ -1595,6 +1595,15 @@ function RichTextEditor({ label, onChange, placeholder = "Write the step descrip
       const editor = Jodit.make(element, {
         height: 260,
         minHeight: 160,
+        allowResizeTags: new Set(["img"]),
+        resizer: {
+          showSize: true,
+          hideSizeTimeout: 2000,
+          forImageChangeAttributes: true,
+          min_width: 20,
+          min_height: 20,
+          useAspectRatio: new Set(["img"])
+        },
         askBeforePasteHTML: false,
         askBeforePasteFromWord: false,
         defaultActionOnPaste: "insert_clear_html",

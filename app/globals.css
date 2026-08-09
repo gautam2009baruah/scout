@@ -455,6 +455,14 @@ textarea {
   line-height: 1.5rem;
 }
 
+.scout-editor-shell .jodit-resizer {
+  z-index: 20 !important;
+}
+
+.scout-editor-shell .jodit-resizer > div {
+  z-index: 21 !important;
+}
+
 .scout-editor-shell .jodit-wysiwyg a {
   color: #1d4ed8;
   text-decoration: underline;
