@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       `SELECT cta.company_id, w.target_app_id
        FROM guided_workflow_guides w
        INNER JOIN company_target_applications cta ON cta.id = w.target_app_id
-       WHERE w.id = $1 AND w.deleted_at IS NULL
+       WHERE w.id = $1
        LIMIT 1`,
       [workflowId],
     );

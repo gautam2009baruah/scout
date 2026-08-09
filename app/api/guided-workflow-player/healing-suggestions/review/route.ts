@@ -75,7 +75,6 @@ async function handleApprove(request: NextRequest) {
         s.*,
         w.steps_json,
         w.recorded_actions_json,
-        w.version,
         w.title,
         w.description,
         w.status,

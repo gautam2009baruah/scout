@@ -1,6 +1,6 @@
 (function () {
   const DEFAULTS = { scoutBaseUrl: "", targetAppId: "", autoShowLauncher: true, userId: "", apiKey: "" };
-  const PLAYER_VERSION = "20260728-guide-resume-race-fix";
+  const PLAYER_VERSION = "20260809-healing-api-diagnostics";
   const GOAL_TIMEOUT_MS = 45000;
   const AUTO_CLICK_PREVIEW_MS = 350;
   const LOCATION_EVENT = "scout:locationchange";
@@ -1370,10 +1370,11 @@
   let activePlayer = null;
 
   class Player {
-    constructor(guide, guideResolver, analytics) {
+    constructor(guide, guideResolver, analytics, config) {
       this.guide = guide;
       this.guideResolver = guideResolver;
       this.analytics = analytics;
+      this.config = config || DEFAULTS;
       this.index = 0;
       this.steps = [];
       this.phase = "main";
@@ -1645,6 +1646,10 @@
     }
 
     showMissing(step, onComplete) {
+      if (this.guide.allowAutoHealing !== true) {
+        this.showMissingWithoutHealing(step, onComplete);
+        return;
+      }
       this.emitAnalytics({
         eventType: "step_failed",
         stepExecutionId: this.stepExecutionId(step),
@@ -1663,16 +1668,44 @@
         actionType: step.trigger || step.type,
         healingUsed: true
       });
-      this.showAutoRecoveryLoading();
+      this.showAutoRecoveryLoading(step);
       window.setTimeout(() => this.trySmartRecovery(step, onComplete), 250);
     }
 
-    showAutoRecoveryLoading() {
+    missingStepContent(step) {
+      const configuredMessage = String(step?.message || step?.title || "No instruction was configured for this step.");
+      return `
+        <div style="margin-bottom:8px;font-weight:700;">The instruction for this step is shown below, but its control could not be found.</div>
+        <div style="padding:10px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;color:#0f172a;">${sanitizeGuideHtml(configuredMessage)}</div>
+      `;
+    }
+
+    showMissingWithoutHealing(step, onComplete) {
+      const panel = this.showRecoveryPanel(`
+        <div class="scout-adoption-recovery-head" data-drag-handle>
+          <div class="scout-adoption-recovery-title"><span class="scout-adoption-recovery-grip" title="Drag this panel" aria-label="Drag this panel">${iconSvg("grip")}</span><span class="scout-adoption-recovery-dot" style="background:#f59e0b;box-shadow:0 0 0 5px rgb(245 158 11 / .14);"></span> Control not found</div>
+          <div class="scout-adoption-recovery-actions">
+            ${iconButton("skip", "Skip this step", "skip", true)}
+            ${iconButton("stop", "Stop this guide", "x", false, true)}
+            ${iconButton("close", "Close this message", "close")}
+          </div>
+        </div>
+        <div class="scout-adoption-recovery-body">${this.missingStepContent(step)}</div>
+      `);
+      panel.querySelector("[data-skip]").addEventListener("click", () => {
+        panel.remove();
+        this.next(onComplete);
+      });
+      panel.querySelector("[data-stop]").addEventListener("click", () => this.stop());
+      panel.querySelector("[data-close]").addEventListener("click", () => panel.remove());
+    }
+
+    showAutoRecoveryLoading(step) {
       this.showRecoveryPanel(`
         <div class="scout-adoption-recovery-head" data-drag-handle>
           <div class="scout-adoption-recovery-title"><span class="scout-adoption-recovery-grip" title="Drag this panel" aria-label="Drag this panel">${iconSvg("grip")}</span><span class="scout-adoption-recovery-spin"></span> AI auto healing</div>
         </div>
-        <div class="scout-adoption-recovery-body">Control not found. Scout AI is auto-healing by finding the best replacement control.</div>
+        <div class="scout-adoption-recovery-body">${this.missingStepContent(step)}<div style="margin-top:8px;">Scout AI is auto-healing by finding the best replacement control.</div></div>
       `);
     }
 
@@ -1717,7 +1750,8 @@
           </div>
         </div>
         <div class="scout-adoption-recovery-body">
-          Control not found. Scout AI auto-healed it and highlighted a replacement. Accept to continue and send it for trainer review.
+          ${this.missingStepContent(step)}
+          <div style="margin-top:8px;">Scout AI auto-healed the missing control and highlighted a replacement. Accept to continue and send it for trainer review.</div>
         </div>
       `);
       banner.querySelector("[data-accept]").addEventListener("click", async () => {
@@ -1761,11 +1795,11 @@
             ${iconButton("close", "Close recovery panel", "close")}
           </div>
         </div>
-        <div class="scout-adoption-recovery-body">${escapeHtml(message || "Scout could not safely identify the control. You can select the best matching control and send it for trainer approval.")}</div>
+        <div class="scout-adoption-recovery-body">${this.missingStepContent(step)}<div style="margin-top:8px;">${escapeHtml(message || "Scout could not safely identify the control. You can select the best matching control and send it for trainer approval.")}</div></div>
       `);
       banner.querySelector("[data-pick]").addEventListener("click", () => this.startManualControlSelection(step, onComplete));
       banner.querySelector("[data-retry]").addEventListener("click", () => {
-        this.showAutoRecoveryLoading();
+        this.showAutoRecoveryLoading(step);
         window.setTimeout(() => this.trySmartRecovery(step, onComplete), 250);
       });
       banner.querySelector("[data-skip]").addEventListener("click", () => {
@@ -1837,9 +1871,9 @@
       };
 
       try {
-        const response = await fetch("/api/guided-workflow-player/healing-suggestions", {
+        const response = await fetch(new URL("/api/guided-workflow-player/healing-suggestions", this.config.scoutBaseUrl || window.location.origin).toString(), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(this.config.apiKey ? { "X-Api-Key": this.config.apiKey } : {}) },
           body: JSON.stringify({
             workflowId: this.guide.id,
             stepId: step.id,
@@ -1855,7 +1889,10 @@
             pageTitle: document.title
           })
         });
-        if (!response.ok) throw new Error(response.statusText);
+        if (!response.ok) {
+          const failure = await response.json().catch(() => null);
+          throw new Error(failure?.message || failure?.error || response.statusText || `HTTP ${response.status}`);
+        }
         this.emitAnalytics({
           eventType: "healing_succeeded",
           stepExecutionId: this.stepExecutionId(step),
@@ -1868,7 +1905,7 @@
         this.showRecovery("Accepted. Saved for trainer review. Continuing...");
       } catch (error) {
         console.error("[Scout Smart Recovery] Failed to save accepted match", error);
-        this.showRecovery("Accepted. Continuing with highlighted control.");
+        this.showRecovery(`Accepted control, but Scout could not save it for trainer review: ${error instanceof Error ? error.message : "Unknown error"}. Continuing with the highlighted control.`);
       }
 
       await delay(500);
@@ -1877,9 +1914,9 @@
 
     async rejectSmartRecovery(step, control) {
       try {
-        await fetch("/api/guided-workflow-player/healing-suggestions/reject-recovery", {
+        await fetch(new URL("/api/guided-workflow-player/healing-suggestions/reject-recovery", this.config.scoutBaseUrl || window.location.origin).toString(), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(this.config.apiKey ? { "X-Api-Key": this.config.apiKey } : {}) },
           body: JSON.stringify({
             workflowId: this.guide.id,
             stepId: step.id,
@@ -1905,9 +1942,9 @@
 
     async recordSkippedRecovery(step) {
       try {
-        await fetch("/api/guided-workflow-player/healing-suggestions/reject-recovery", {
+        await fetch(new URL("/api/guided-workflow-player/healing-suggestions/reject-recovery", this.config.scoutBaseUrl || window.location.origin).toString(), {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(this.config.apiKey ? { "X-Api-Key": this.config.apiKey } : {}) },
           body: JSON.stringify({
             workflowId: this.guide.id,
             stepId: step.id,
@@ -2061,7 +2098,7 @@
       const guide = this.guideResolver ? this.guideResolver(guideId) : null;
       if (!guide) return;
       this.stop();
-      activePlayer = new Player(guide, this.guideResolver, this.analytics);
+      activePlayer = new Player(guide, this.guideResolver, this.analytics, this.config);
       activePlayer.start();
     }
 
@@ -2127,7 +2164,7 @@
     return payload.guides || [];
   }
 
-  function showLauncher(guides, guideResolver, analytics) {
+  function showLauncher(guides, guideResolver, analytics, config) {
     injectStyles();
     const launcher = document.createElement("button");
     launcher.className = "scout-adoption-launcher";
@@ -2145,7 +2182,7 @@
         item.addEventListener("click", () => {
           menu.remove();
           if (activePlayer) activePlayer.stop();
-          activePlayer = new Player(guide, guideResolver, analytics);
+          activePlayer = new Player(guide, guideResolver, analytics, config);
           activePlayer.start();
         });
         menu.appendChild(item);
@@ -2272,7 +2309,7 @@
       const guides = await loadGuides(config);
       const guideResolver = (guideId) => guides.find((item) => item.id === guideId);
       const analytics = createAnalytics(config);
-      if (config.autoShowLauncher && guides.length > 0) showLauncher(guides, guideResolver, analytics);
+      if (config.autoShowLauncher && guides.length > 0) showLauncher(guides, guideResolver, analytics, config);
       return {
         version: PLAYER_VERSION,
         guides,
@@ -2281,7 +2318,7 @@
           const guide = guides.find((item) => item.id === guideId) || guides[0];
           if (!guide) return;
           if (activePlayer) activePlayer.stop();
-          activePlayer = new Player(guide, guideResolver, analytics);
+          activePlayer = new Player(guide, guideResolver, analytics, config);
           activePlayer.start();
         },
         // Continues a guide on a fresh page load after saveGuideResumeState() was
@@ -2293,7 +2330,7 @@
           const guide = guides.find((item) => item.id === guideId);
           if (!guide) return;
           if (activePlayer) activePlayer.stop();
-          activePlayer = new Player(guide, guideResolver, analytics);
+          activePlayer = new Player(guide, guideResolver, analytics, config);
           activePlayer.start({ resetProgress: false, skipEntry: true });
         }
       };

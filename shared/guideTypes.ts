@@ -163,6 +163,7 @@ export type Guide = {
   goalContext?: GoalContext;
   preWorkflowConfirmationHtml?: string;
   preWorkflowConfirmationEnabled?: boolean;
+  allowAutoHealing?: boolean;
   entrySteps?: GuideStep[];
   mainSteps?: GuideStep[];
   steps: GuideStep[];

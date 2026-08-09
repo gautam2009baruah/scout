@@ -1230,19 +1230,10 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
                       <li>Use Chatbot settings package to generate both JS files with obfuscated IDs.</li>
                       <li>Distribute the files to the client application and include them in HTML or React bootstrap.</li>
                     </ol>
-                  </details>
+                  </details>                 
 
                   <details className="rounded-lg border border-slate-200 p-4">
-                    <summary className="cursor-pointer text-sm font-semibold text-slate-800">2) Domain-aware key policy</summary>
-                    <div className="mt-3 space-y-2 text-sm text-slate-600">
-                      <p>Add allowed origins when creating the key to restrict usage to specific hostnames or origins.</p>
-                      <p>Examples: https://app.company.com, *.partner.company.com</p>
-                      <p>Target app level key policies can be handled by issuing separate keys per app/environment.</p>
-                    </div>
-                  </details>
-
-                  <details className="rounded-lg border border-slate-200 p-4">
-                    <summary className="cursor-pointer text-sm font-semibold text-slate-800">3) Code samples</summary>
+                    <summary className="cursor-pointer text-sm font-semibold text-slate-800">2) Code samples</summary>
                     <div className="mt-3 grid gap-3 lg:grid-cols-2">
                       <div>
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">HTML client</p>

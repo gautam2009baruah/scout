@@ -4,10 +4,102 @@ import { buildElementIdentity } from "./controlIdentity";
 const PICKER_OVERLAY_ID = "scout-picker-overlay";
 const PICKER_LABEL_ID = "scout-picker-label";
 const PICKER_HIGHLIGHT_ID = "scout-picker-highlight";
+const PICKER_DRAG_ID = "scout-picker-drag-selection";
+const DRAG_THRESHOLD = 6;
 
 let pickerActive = false;
 let currentHighlightedElement: Element | null = null;
 let pickerResolve: ((identity: ElementIdentity | null) => void) | null = null;
+let dragStart: { x: number; y: number } | null = null;
+let dragging = false;
+let liveDraggedElement: Element | null = null;
+
+type PickerRect = { left: number; top: number; right: number; bottom: number; width: number; height: number };
+
+function normalizedRect(start: { x: number; y: number }, end: { x: number; y: number }): PickerRect {
+  const left = Math.min(start.x, end.x);
+  const top = Math.min(start.y, end.y);
+  const right = Math.max(start.x, end.x);
+  const bottom = Math.max(start.y, end.y);
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+function intersectionArea(a: PickerRect, b: DOMRect): number {
+  return Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
+    Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+}
+
+function isPickerElement(element: Element): boolean {
+  return Boolean(element.closest(
+    `#${PICKER_OVERLAY_ID}, #${PICKER_LABEL_ID}, #${PICKER_HIGHLIGHT_ID}, #${PICKER_DRAG_ID}, #scout-guided-workflow-recorder`
+  ));
+}
+
+/** Resolve a drawn rectangle to the visible DOM element whose box best fits it. */
+function bestElementForRect(selection: PickerRect): Element | null {
+  const selectionArea = Math.max(1, selection.width * selection.height);
+  const centerX = (selection.left + selection.right) / 2;
+  const centerY = (selection.top + selection.bottom) / 2;
+  const centerElement = document.elementFromPoint(centerX, centerY);
+  const candidates = new Set<Element>();
+
+  // Sample the dragged area and score each hit plus its ancestors. This is
+  // fast enough to run continuously, so the highlighted DOM target can snap
+  // live while the trainer is still dragging.
+  const xs = [selection.left + 1, centerX, selection.right - 1];
+  const ys = [selection.top + 1, centerY, selection.bottom - 1];
+  for (const x of xs) {
+    for (const y of ys) {
+      if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight) continue;
+      for (const hit of document.elementsFromPoint(x, y)) {
+        let candidate: Element | null = hit;
+        while (candidate && candidate !== document.documentElement) {
+          candidates.add(candidate);
+          candidate = candidate.parentElement;
+        }
+      }
+    }
+  }
+  if (currentHighlightedElement) {
+    let candidate: Element | null = currentHighlightedElement;
+    while (candidate && candidate !== document.documentElement) {
+      candidates.add(candidate);
+      candidate = candidate.parentElement;
+    }
+  }
+
+  const semanticTags = new Set(["DIV", "SPAN", "TR", "TABLE", "TD", "TH", "SECTION", "ARTICLE", "FORM", "FIELDSET", "LABEL", "UL", "OL", "LI", "NAV", "HEADER", "FOOTER", "MAIN", "ASIDE"]);
+  let best: { element: Element; score: number; area: number } | null = null;
+
+  for (const element of candidates) {
+    if (!(element instanceof HTMLElement) || isPickerElement(element)) continue;
+    const style = getComputedStyle(element);
+    if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+    const rect = element.getBoundingClientRect();
+    const area = rect.width * rect.height;
+    if (area <= 0) continue;
+    const intersection = intersectionArea(selection, rect);
+    if (intersection <= 0) continue;
+
+    const selectionCoverage = intersection / selectionArea;
+    const elementCoverage = intersection / area;
+    const union = selectionArea + area - intersection;
+    const iou = intersection / Math.max(1, union);
+    const containsSelection = rect.left <= selection.left && rect.top <= selection.top && rect.right >= selection.right && rect.bottom >= selection.bottom;
+    const semanticBonus = semanticTags.has(element.tagName) ? 0.08 : 0;
+    const interactiveBonus = element.matches("button, input, select, textarea, a, [role], [tabindex]") ? 0.06 : 0;
+    // IoU favours a box shaped like the gesture; the coverage terms also let
+    // a trainer draw just inside a larger container and still select it.
+    const score = iou * 0.55 + selectionCoverage * 0.25 + elementCoverage * 0.2 +
+      (containsSelection ? 0.12 : 0) + semanticBonus + interactiveBonus;
+
+    if (!best || score > best.score + 0.0001 || (Math.abs(score - best.score) <= 0.0001 && area < best.area)) {
+      best = { element, score, area };
+    }
+  }
+
+  return best?.element ?? centerElement;
+}
 
 function controlElementFromTarget(target: Element): Element {
   const label = target.closest("label");
@@ -85,6 +177,16 @@ function injectPickerStyles() {
       cursor: crosshair;
       pointer-events: none;
     }
+
+    #${PICKER_DRAG_ID} {
+      position: fixed;
+      display: none;
+      pointer-events: none;
+      border: 2px dashed #2563eb;
+      background: rgba(37, 99, 235, 0.16);
+      border-radius: 4px;
+      z-index: 2147483645;
+    }
   `;
 
   document.head.appendChild(style);
@@ -108,6 +210,10 @@ function createPickerElements() {
   const label = document.createElement("div");
   label.id = PICKER_LABEL_ID;
   document.body.appendChild(label);
+
+  const dragSelection = document.createElement("div");
+  dragSelection.id = PICKER_DRAG_ID;
+  document.body.appendChild(dragSelection);
 }
 
 /**
@@ -117,6 +223,31 @@ function removePickerElements() {
   document.getElementById(PICKER_OVERLAY_ID)?.remove();
   document.getElementById(PICKER_HIGHLIGHT_ID)?.remove();
   document.getElementById(PICKER_LABEL_ID)?.remove();
+  document.getElementById(PICKER_DRAG_ID)?.remove();
+}
+
+function handleMouseDown(event: MouseEvent) {
+  if (!pickerActive || event.button !== 0) return;
+  const target = event.target as Element;
+  if (isPickerElement(target)) return;
+  // Picker gestures must not activate, focus, or dismiss host-page UI.
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  dragStart = { x: event.clientX, y: event.clientY };
+  dragging = false;
+  liveDraggedElement = currentHighlightedElement ?? controlElementFromTarget(target);
+}
+
+function suppressPostDragClick() {
+  const suppress = (event: MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  };
+  document.addEventListener("click", suppress, { capture: true, once: true });
+  // Some engines do not synthesize a click after a prevented drag.
+  window.setTimeout(() => document.removeEventListener("click", suppress, true), 250);
 }
 
 /**
@@ -197,6 +328,32 @@ function updateHighlight(element: Element) {
 function handleMouseMove(event: MouseEvent) {
   if (!pickerActive) return;
 
+  if (dragStart) {
+    const rect = normalizedRect(dragStart, { x: event.clientX, y: event.clientY });
+    if (dragging || Math.hypot(rect.width, rect.height) >= DRAG_THRESHOLD) {
+      dragging = true;
+      event.preventDefault();
+      event.stopPropagation();
+      const dragSelection = document.getElementById(PICKER_DRAG_ID);
+      if (dragSelection) {
+        dragSelection.style.display = "block";
+        dragSelection.style.left = `${rect.left}px`;
+        dragSelection.style.top = `${rect.top}px`;
+        dragSelection.style.width = `${rect.width}px`;
+        dragSelection.style.height = `${rect.height}px`;
+      }
+      const liveMatch = bestElementForRect(rect);
+      if (liveMatch) {
+        liveDraggedElement = liveMatch;
+        currentHighlightedElement = liveMatch;
+        const highlight = document.getElementById(PICKER_HIGHLIGHT_ID);
+        if (highlight) highlight.style.transition = "none";
+        updateHighlight(liveMatch);
+      }
+      return;
+    }
+  }
+
   // Don't highlight picker elements themselves
   const target = event.target as Element;
   if (
@@ -219,11 +376,41 @@ function handleMouseMove(event: MouseEvent) {
   updateHighlight(currentHighlightedElement);
 }
 
+function handleMouseUp(event: MouseEvent) {
+  if (!pickerActive || !dragStart) return;
+  const start = dragStart;
+  dragStart = null;
+  if (!dragging) return;
+  dragging = false;
+  event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
+  suppressPostDragClick();
+
+  // Select exactly what the live DOM highlight showed at release.
+  const selected = liveDraggedElement ?? bestElementForRect(normalizedRect(start, { x: event.clientX, y: event.clientY }));
+  if (!selected) return;
+  const identity = buildElementIdentity(selected, window.location.href);
+  exitPickerMode();
+  if (pickerResolve) {
+    pickerResolve(identity);
+    pickerResolve = null;
+  }
+}
+
 /**
  * Handle click during picker mode
  */
 function handleClick(event: MouseEvent) {
   if (!pickerActive) return;
+
+  // The click synthesized after a completed drag must not replace its result.
+  if (dragging) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    return;
+  }
 
   // Prevent the real click from happening
   event.preventDefault();
@@ -283,9 +470,14 @@ function exitPickerMode() {
 
   pickerActive = false;
   currentHighlightedElement = null;
+  dragStart = null;
+  dragging = false;
+  liveDraggedElement = null;
 
   // Remove event listeners
   document.removeEventListener("mousemove", handleMouseMove, true);
+  document.removeEventListener("mousedown", handleMouseDown, true);
+  document.removeEventListener("mouseup", handleMouseUp, true);
   document.removeEventListener("click", handleClick, true);
   document.removeEventListener("keydown", handleKeyDown, true);
 
@@ -323,6 +515,8 @@ export function enterPickerMode(): Promise<ElementIdentity | null> {
 
   // Add event listeners (capture phase to intercept before app handlers)
   document.addEventListener("mousemove", handleMouseMove, true);
+  document.addEventListener("mousedown", handleMouseDown, true);
+  document.addEventListener("mouseup", handleMouseUp, true);
   document.addEventListener("click", handleClick, true);
   document.addEventListener("keydown", handleKeyDown, true);
 

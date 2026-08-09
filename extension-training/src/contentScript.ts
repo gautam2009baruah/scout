@@ -776,7 +776,6 @@ const icons = {
   sync: icon(`<path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 16h5v5"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 8h-5V3"/>`),
   spinner: icon(`<path d="M21 12a9 9 0 0 1-9 9"/><path d="M3 12a9 9 0 0 1 9-9"/>`),
   goal: icon(`<path d="M12 21V3"/><path d="M6 4h11l-2 4 2 4H6"/>`),
-  export: icon(`<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/>`),
   minimize: icon(`<path d="M6 12h12"/>`)
 };
 
@@ -1028,35 +1027,6 @@ async function clearRecorderConfig() {
   }
 }
 
-async function exportJson() {
-  const state = await getState();
-  const startContext = state.startContext ?? currentPageContext();
-  const firstMainStep = state.actions.find((action) => action.stepPurpose !== "navigation");
-  const goalContext = firstMainStep
-    ? {
-      url: firstMainStep.url,
-      title: document.title,
-      capturedAt: new Date(firstMainStep.timestamp).toISOString()
-    }
-    : startContext;
-  const entrySteps = state.actions.filter((action) => action.stepPurpose === "navigation");
-  const mainSteps = state.actions.filter((action) => action.stepPurpose !== "navigation");
-  const payload = {
-    startContext,
-    goalContext,
-    entrySteps,
-    mainSteps
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "scout-recording.json";
-  link.click();
-  URL.revokeObjectURL(url);
-  showToast(`Exported ${entrySteps.length} entry and ${mainSteps.length} main step${mainSteps.length === 1 ? "" : "s"}.`, "success");
-}
-
 async function renderToolbar() {
   if (!isTopFrame) return;
   document.getElementById(toolbarId)?.remove();
@@ -1131,7 +1101,6 @@ async function renderToolbar() {
       }
     }, pendingSyncCount > 0 ? "#dc2626" : "#0f766e");
     root.append(addBadge(sync, pendingSyncCount));
-    root.append(iconButton(`Export JSON (${state.actions.length})`, icons.export, exportJson, "#334155"));
   }
 
   // Add pulse animation style

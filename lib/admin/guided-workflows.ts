@@ -71,6 +71,7 @@ export type PlayerTrainingSession = {
     steps: number;
     preWorkflowConfirmationHtml?: string;
     preWorkflowConfirmationEnabled?: boolean;
+    allowAutoHealing?: boolean;
     analyticsLoggingEnabled: boolean;
     updatedAt: string;
   }>;
@@ -105,6 +106,7 @@ function mapGuide(row: {
   steps_json: GuideStep[];
   pre_workflow_confirmation_html: string;
   pre_workflow_confirmation_enabled: boolean;
+  allow_auto_healing: boolean;
   target_app_id: string | null;
   target_app_name: string | null;
   recording_session_id: string | null;
@@ -131,6 +133,7 @@ function mapGuide(row: {
     versionBuild: row.version_build,
     preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
     preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
+    allowAutoHealing: Boolean(row.allow_auto_healing),
     recordedActions,
     steps: (row.steps_json ?? []).map((step) => {
       const source = actionsById.get(step.actionSourceId);
@@ -311,6 +314,7 @@ const guideSelect = `
     guided_workflow_guides.steps_json,
     guided_workflow_guides.pre_workflow_confirmation_html,
     guided_workflow_guides.pre_workflow_confirmation_enabled,
+    guided_workflow_guides.allow_auto_healing,
     users.name AS created_by_name,
     guided_workflow_guides.created_at,
     guided_workflow_guides.updated_at
@@ -1238,6 +1242,7 @@ export async function createGuidedWorkflow(input: {
   status?: GuideStatus;
   preWorkflowConfirmationHtml?: string;
   preWorkflowConfirmationEnabled?: boolean;
+  allowAutoHealing?: boolean;
   recordedActions?: RecordedAction[];
   steps?: GuideStep[];
 }, session: AdminSession) {
@@ -1266,12 +1271,13 @@ export async function createGuidedWorkflow(input: {
         status,
         pre_workflow_confirmation_html,
         pre_workflow_confirmation_enabled,
+        allow_auto_healing,
         recorded_actions_json,
         steps_json,
         created_by,
         updated_by
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $10)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11, $11)
       RETURNING id
     `,
     [
@@ -1282,6 +1288,7 @@ export async function createGuidedWorkflow(input: {
       input.status ?? "draft",
       input.preWorkflowConfirmationHtml?.trim() ?? "",
       Boolean(input.preWorkflowConfirmationEnabled && input.preWorkflowConfirmationHtml?.trim()),
+      Boolean(input.allowAutoHealing),
       JSON.stringify(input.recordedActions ?? []),
       JSON.stringify(steps),
       session.user.id
@@ -1297,6 +1304,7 @@ export async function updateGuidedWorkflow(id: string, input: {
   status?: GuideStatus;
   preWorkflowConfirmationHtml?: string;
   preWorkflowConfirmationEnabled?: boolean;
+  allowAutoHealing?: boolean;
   recordedActions?: RecordedAction[];
   steps?: GuideStep[];
 }, session: AdminSession) {
@@ -1352,6 +1360,11 @@ export async function updateGuidedWorkflow(id: string, input: {
     throw new GuidedWorkflowError(`Guides may contain at most ${INPUT_LIMITS.structuredItems} steps or recorded actions.`);
   }
 
+  if (typeof input.allowAutoHealing === "boolean") {
+    params.push(input.allowAutoHealing);
+    fields.push(`allow_auto_healing = $${params.length}`);
+  }
+
   if (recordedActions) {
     params.push(JSON.stringify(recordedActions));
     fields.push(`recorded_actions_json = $${params.length}::jsonb`);
@@ -1393,13 +1406,14 @@ export async function updateGuidedWorkflow(id: string, input: {
         description: string;
         pre_workflow_confirmation_html: string;
         pre_workflow_confirmation_enabled: boolean;
+        allow_auto_healing: boolean;
         recorded_actions_json: RecordedAction[];
       }>(
         `
           UPDATE guided_workflow_guides
           SET next_build = next_build + 1, published_version_major = $2, published_version_build = $3
           WHERE id = $1
-          RETURNING steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, recorded_actions_json
+          RETURNING steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, allow_auto_healing, recorded_actions_json
         `,
         [id, versionMajor, versionBuild]
       );
@@ -1408,8 +1422,8 @@ export async function updateGuidedWorkflow(id: string, input: {
         await getPool().query(
           `
             INSERT INTO guided_workflow_guide_versions
-              (guide_id, version_major, version_build, steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, recorded_actions_json, created_by)
-            VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9::jsonb, $10)
+              (guide_id, version_major, version_build, steps_json, title, description, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, allow_auto_healing, recorded_actions_json, created_by)
+            VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10::jsonb, $11)
           `,
           [
             id,
@@ -1420,6 +1434,7 @@ export async function updateGuidedWorkflow(id: string, input: {
             snapshot.description,
             snapshot.pre_workflow_confirmation_html,
             snapshot.pre_workflow_confirmation_enabled,
+            snapshot.allow_auto_healing,
             JSON.stringify(snapshot.recorded_actions_json),
             session.user.id,
           ]
@@ -1625,6 +1640,7 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
     steps_json: GuideStep[];
     pre_workflow_confirmation_html: string;
     pre_workflow_confirmation_enabled: boolean;
+    allow_auto_healing: boolean;
     created_at: Date;
     updated_at: Date;
   }>(
@@ -1640,6 +1656,7 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
              gwv.steps_json,
              gwv.pre_workflow_confirmation_html,
              gwv.pre_workflow_confirmation_enabled,
+             gwv.allow_auto_healing,
              guided_workflow_guides.created_at,
              guided_workflow_guides.updated_at
       FROM guided_workflow_guides
@@ -1671,6 +1688,7 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
       status: row.status,
       preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
       preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
+      allowAutoHealing: Boolean(row.allow_auto_healing),
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
       steps: row.steps_json ?? []
@@ -1693,6 +1711,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
     analytics_logging_enabled: boolean;
     pre_workflow_confirmation_html: string;
     pre_workflow_confirmation_enabled: boolean;
+    allow_auto_healing: boolean;
     actions_count: number;
     steps_json: GuideStep[];
     guide_updated_at: Date;
@@ -1711,6 +1730,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
         guided_workflow_topics.analytics_logging_enabled,
         gwv.pre_workflow_confirmation_html,
         gwv.pre_workflow_confirmation_enabled,
+        gwv.allow_auto_healing,
         guided_workflow_topics.actions_count,
         gwv.steps_json,
         guided_workflow_guides.updated_at AS guide_updated_at,
@@ -1752,6 +1772,7 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
       status: row.guide_status,
       preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
       preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
+      allowAutoHealing: Boolean(row.allow_auto_healing),
       analyticsLoggingEnabled: row.analytics_logging_enabled !== false,
       actionsCount: Number(row.actions_count),
       steps: countEnabledSteps(row.steps_json ?? []),
@@ -1979,6 +2000,7 @@ export type GuideVersionContent = {
   steps: GuideStep[];
   preWorkflowConfirmationHtml: string;
   preWorkflowConfirmationEnabled: boolean;
+  allowAutoHealing: boolean;
   recordedActions: RecordedAction[];
 };
 
@@ -1995,10 +2017,11 @@ export async function getGuideVersionContent(guideId: string, versionMajor: numb
     steps_json: GuideStep[];
     pre_workflow_confirmation_html: string;
     pre_workflow_confirmation_enabled: boolean;
+    allow_auto_healing: boolean;
     recorded_actions_json: RecordedAction[];
   }>(
     `
-      SELECT version_major, version_build, title, description, steps_json, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, recorded_actions_json
+      SELECT version_major, version_build, title, description, steps_json, pre_workflow_confirmation_html, pre_workflow_confirmation_enabled, allow_auto_healing, recorded_actions_json
       FROM guided_workflow_guide_versions
       WHERE guide_id = $1 AND version_major = $2 AND version_build = $3 AND deleted_at IS NULL
       LIMIT 1
@@ -2019,6 +2042,7 @@ export async function getGuideVersionContent(guideId: string, versionMajor: numb
     steps: row.steps_json ?? [],
     preWorkflowConfirmationHtml: row.pre_workflow_confirmation_html ?? "",
     preWorkflowConfirmationEnabled: Boolean(row.pre_workflow_confirmation_enabled),
+    allowAutoHealing: Boolean(row.allow_auto_healing),
     recordedActions: row.recorded_actions_json ?? [],
   };
 }

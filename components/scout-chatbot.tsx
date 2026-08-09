@@ -267,7 +267,7 @@ type ScoutAdoptionPlayerHandle = {
   play(guideId?: string): void;
 };
 
-const SCOUT_PLAYER_VERSION = "20260728-guide-resume-race-fix";
+const SCOUT_PLAYER_VERSION = "20260809-healing-api-diagnostics";
 
 declare global {
   interface Window {

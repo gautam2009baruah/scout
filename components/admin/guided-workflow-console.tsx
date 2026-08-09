@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, FileText, Globe2, History, MoreVertical, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, FileText, Globe2, HelpCircle, History, MoreVertical, Play, Plus, RefreshCw, Save, Search, Sparkles, Trash2, X } from "lucide-react";
 import type { Jodit as JoditInstance } from "jodit";
 import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
@@ -26,6 +26,7 @@ type EditorState = {
   status: GuideStatus;
   preWorkflowConfirmationHtml: string;
   preWorkflowConfirmationEnabled: boolean;
+  allowAutoHealing: boolean;
   steps: GuideStep[];
 };
 
@@ -465,6 +466,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
         status: nextStatus ?? editor.status,
         preWorkflowConfirmationHtml: editor.preWorkflowConfirmationHtml,
         preWorkflowConfirmationEnabled: editor.preWorkflowConfirmationEnabled,
+        allowAutoHealing: editor.allowAutoHealing,
         steps: editor.steps.map((step, index) => ({ ...step, enabled: step.enabled !== false, order: index + 1 }))
       })
     });
@@ -548,6 +550,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
       description: content.description,
       preWorkflowConfirmationHtml: content.preWorkflowConfirmationHtml,
       preWorkflowConfirmationEnabled: content.preWorkflowConfirmationEnabled,
+      allowAutoHealing: Boolean(content.allowAutoHealing),
       steps: (content.steps as GuideStep[]).map((step) => ({ ...step, enabled: step.enabled !== false }))
     }));
     setLoadedVersion({ major: versionMajor, build: versionBuild });
@@ -715,6 +718,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
           sessionDetails={sessionDetails}
           trainingSessions={filteredSessions}
           updatePreWorkflowConfirmation={updatePreWorkflowConfirmation}
+          updateAutoHealing={(enabled) => setEditor((current) => ({ ...current, status: "draft", allowAutoHealing: enabled }))}
           updateStep={updateStep}
         />
       </section>
@@ -747,7 +751,7 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
   );
 }
 
-function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep, editor, guides, loadedVersion, loadGuideVersion, moveStep, onRefresh, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updatePreWorkflowConfirmation, updateStep }: {
+function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep, editor, guides, loadedVersion, loadGuideVersion, moveStep, onRefresh, publishTopicGuide, recorderConfig, selectedSession, selectedTopic, sessionDetails, setTopicRecording, trainingSessions, updateAutoHealing, updatePreWorkflowConfirmation, updateStep }: {
   appBaseUrl: string;
   convertTopic(topicId: string): void;
   deleteTopic(topicId: string): void;
@@ -766,6 +770,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   sessionDetails: SessionDetailsState;
   trainingSessions: GuidedWorkflowRecordingSessionRow[];
   updatePreWorkflowConfirmation(html: string, enabled: boolean): void;
+  updateAutoHealing(enabled: boolean): void;
   updateStep(index: number, patch: Partial<GuideStep>): void;
 }) {
   const [copiedKey, setCopiedKey] = useState("");
@@ -1138,16 +1143,6 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
               <p className="mt-1 text-xs text-slate-500">Edit descriptions, delete mistakes, and reorder steps before publishing.</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <label className={`inline-flex items-center gap-2 text-xs font-semibold ${hasWorkflowConfirmation ? "text-slate-700" : "text-slate-400"}`}>
-                <input
-                  checked={workflowConfirmationEnabled}
-                  className="h-4 w-4 rounded border-slate-300 text-slate-950"
-                  disabled={!hasWorkflowConfirmation}
-                  onChange={(event) => updatePreWorkflowConfirmation(workflowConfirmationHtml, event.target.checked)}
-                  type="checkbox"
-                />
-                Show before workflow
-              </label>
               <button
                 className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!canCreateWorkflowConfirmation}
@@ -1161,6 +1156,27 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
                 {hasWorkflowConfirmation ? "Edit start message" : "Create start message"}
               </button>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className={`group relative inline-flex items-center gap-2 text-[11px] font-medium normal-case ${sessionGuide ? "cursor-pointer text-slate-700" : "cursor-not-allowed text-slate-400"}`}>
+              <input checked={editor.allowAutoHealing} className="h-4 w-4 rounded border-slate-300" disabled={!sessionGuide} onChange={(event) => updateAutoHealing(event.target.checked)} type="checkbox" />
+              Allow Auto-healing
+              <HelpCircle aria-label="About auto-healing" className="h-4 w-4 text-slate-400" />
+              <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden w-72 rounded-lg bg-slate-950 px-3 py-2 text-xs font-normal leading-5 text-white shadow-xl group-hover:block group-focus-within:block">
+                When a workflow control cannot be found, Scout may suggest a replacement control to the customer. The customer can accept it and send the match for trainer review.
+              </span>
+            </label>
+            <label className={`inline-flex items-center gap-2 text-[11px] font-medium normal-case ${hasWorkflowConfirmation ? "cursor-pointer text-slate-700" : "cursor-not-allowed text-slate-400"}`}>
+              <input
+                checked={workflowConfirmationEnabled}
+                className="h-4 w-4 rounded border-slate-300 text-slate-950"
+                disabled={!hasWorkflowConfirmation}
+                onChange={(event) => updatePreWorkflowConfirmation(workflowConfirmationHtml, event.target.checked)}
+                type="checkbox"
+              />
+              Show before workflow
+            </label>
           </div>
 
           {!sessionGuide ? (
@@ -1321,8 +1337,8 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
         </div>
       </div>
       {introEditorOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4" onClick={() => setIntroEditorOpen(false)}>
-          <div className="relative w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4">
+          <div className="relative w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-5 shadow-2xl">
             <ModalCloseButton onClick={() => setIntroEditorOpen(false)} />
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
@@ -1412,6 +1428,7 @@ function editorFromGuide(guide: GuidedWorkflowRow | null): EditorState {
     status: guide?.status ?? "draft",
     preWorkflowConfirmationHtml: guide?.preWorkflowConfirmationHtml ?? "",
     preWorkflowConfirmationEnabled: Boolean(guide?.preWorkflowConfirmationEnabled && guide?.preWorkflowConfirmationHtml?.trim()),
+    allowAutoHealing: Boolean(guide?.allowAutoHealing),
     steps: (guide?.steps ?? []).map((step) => ({ ...step, enabled: step.enabled !== false }))
   };
 }
@@ -1471,6 +1488,7 @@ function editorHasChanges(editor: EditorState, guide: GuidedWorkflowRow) {
     || editor.description !== guide.description
     || editor.preWorkflowConfirmationHtml !== (guide.preWorkflowConfirmationHtml ?? "")
     || editor.preWorkflowConfirmationEnabled !== Boolean(guide.preWorkflowConfirmationEnabled && guide.preWorkflowConfirmationHtml?.trim())
+    || editor.allowAutoHealing !== Boolean(guide.allowAutoHealing)
     || JSON.stringify(normalizeSteps(editor.steps)) !== JSON.stringify(normalizeSteps(guide.steps));
 }
 
@@ -1517,7 +1535,7 @@ function downloadJson(filename: string, value: unknown) {
 
 function installSnippet(targetAppId: string, appBaseUrl: string) {
   const baseUrl = appBaseUrl;
-  const playerVersion = "20260728-guide-resume-race-fix";
+  const playerVersion = "20260809-healing-api-diagnostics";
 
   return `<script src="${baseUrl}/scout-smart-adoption-player.js?v=${playerVersion}"></script>
 <script>

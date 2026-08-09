@@ -69,6 +69,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           status: body.status === "draft" || body.status === "published" ? body.status : undefined,
           preWorkflowConfirmationHtml: typeof body.preWorkflowConfirmationHtml === "string" ? body.preWorkflowConfirmationHtml : undefined,
           preWorkflowConfirmationEnabled: typeof body.preWorkflowConfirmationEnabled === "boolean" ? body.preWorkflowConfirmationEnabled : undefined,
+          allowAutoHealing: typeof body.allowAutoHealing === "boolean" ? body.allowAutoHealing : undefined,
           recordedActions: Array.isArray(body.recordedActions) ? body.recordedActions : undefined,
           steps: Array.isArray(body.steps) ? body.steps : undefined
         },
