@@ -444,6 +444,7 @@ textarea {
 .scout-editor-shell .jodit-wysiwyg {
   min-height: 8rem;
   max-height: 16rem;
+  overflow-y: auto;
 }
 
 .scout-editor-shell .jodit-wysiwyg {

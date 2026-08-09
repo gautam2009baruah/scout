@@ -1712,7 +1712,7 @@ function RichTextEditor({ label, onChange, placeholder = "Write the step descrip
           <Eye className="h-3.5 w-3.5" /> Preview
         </button>
       </div>
-      <div className={`scout-editor-shell overflow-hidden rounded-lg border border-slate-300 bg-white ${ready ? "" : "opacity-70"}`}>
+      <div className={`scout-editor-shell max-h-[22rem] overflow-y-auto overflow-x-hidden rounded-lg border border-slate-300 bg-white ${ready ? "" : "opacity-70"}`}>
         <textarea ref={editorRef} />
       </div>
       {previewOpen ? (
@@ -1855,8 +1855,7 @@ function SelectorDetailsEditor({ onChange, target }: { onChange: (target: Target
         <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setOpen((current) => !current)} type="button">
           <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`} />
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-slate-700">Control identification details</p>
-            <p className="mt-1 truncate text-[11px] text-slate-500">{controlIdentifierText(target)}</p>
+            <p className="text-xs font-semibold text-slate-700">Control identification details</p>            
           </div>
         </button>
         {open ? (
