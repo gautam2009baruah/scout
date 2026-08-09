@@ -437,17 +437,19 @@ export function TriggersMonitoringDashboard({
       </div>
 
       {/* Filters */}
-      <div className="bg-white border border-slate-200 rounded-lg p-4">
-        <div className="flex items-end gap-4 flex-wrap">
-          <Filter className="h-5 w-5 text-slate-600 mb-2" />
-
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
+          <Filter className="h-4 w-4 text-slate-500" />
+          Filters
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {targetApps.length > 0 && (
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
+            <div className="min-w-0">
+              <label className="mb-1.5 block text-xs font-medium text-slate-700">
                 Target App
               </label>
               <select
-                className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+                className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
                 value={filter.targetAppId}
                 onChange={(e) => {
                   const nextTargetAppId = e.target.value;
@@ -467,12 +469,12 @@ export function TriggersMonitoringDashboard({
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-xs font-medium text-slate-700">
               Environment
             </label>
             <select
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+              className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm disabled:bg-slate-100 disabled:text-slate-500"
               disabled={filter.targetAppId === "all"}
               value={filter.environmentId}
               onChange={(e) => setFilter({ ...filter, environmentId: e.target.value })}
@@ -486,12 +488,12 @@ export function TriggersMonitoringDashboard({
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-xs font-medium text-slate-700">
               Trigger Type
             </label>
             <select
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+              className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
               value={filter.triggerType}
               onChange={(e) => setFilter({ ...filter, triggerType: e.target.value })}
             >
@@ -504,12 +506,12 @@ export function TriggersMonitoringDashboard({
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-xs font-medium text-slate-700">
               Status
             </label>
             <select
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+              className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
               value={filter.status}
               onChange={(e) => setFilter({ ...filter, status: e.target.value })}
             >
@@ -520,26 +522,26 @@ export function TriggersMonitoringDashboard({
           </div>
         </div>
 
-        <div className="flex items-end gap-4 flex-wrap mt-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
+        <div className="mt-4 grid grid-cols-1 items-end gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-xs font-medium text-slate-700">
               Executions From
             </label>
             <input
               type="datetime-local"
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+              className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
               value={filter.from}
               onChange={(e) => setFilter({ ...filter, from: e.target.value })}
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-xs font-medium text-slate-700">
               Executions To
             </label>
             <input
               type="datetime-local"
-              className="rounded border border-slate-300 px-3 py-1.5 text-sm"
+              className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm"
               value={filter.to}
               onChange={(e) => setFilter({ ...filter, to: e.target.value })}
             />
@@ -548,7 +550,7 @@ export function TriggersMonitoringDashboard({
           <button
             onClick={loadTriggers}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
           >
             <Filter className="h-4 w-4" />
             Filter

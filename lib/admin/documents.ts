@@ -137,6 +137,8 @@ export type DocumentFilters = {
   search?: string;
   page?: number;
   pageSize?: number;
+  sortBy?: string;
+  sortDirection?: string;
 };
 
 export class DocumentError extends Error {
@@ -1154,12 +1156,30 @@ export async function listDocuments(filters: DocumentFilters, session: AdminSess
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, pageCount);
   const offset = (page - 1) * pageSize;
+  const sortColumns: Record<string, string> = {
+    number: "documents.created_at",
+    document: "LOWER(documents.name)",
+    type: "LOWER(documents.file_type)",
+    size: "documents.file_size",
+    status: "documents.status",
+    version: "documents.version",
+    access: `(
+      SELECT COUNT(*) FROM document_role_permissions
+      WHERE document_role_permissions.document_id = documents.id AND document_role_permissions.deleted_at IS NULL
+    ) + (
+      SELECT COUNT(*) FROM document_user_permissions
+      WHERE document_user_permissions.document_id = documents.id AND document_user_permissions.deleted_at IS NULL
+    )`,
+    actions: "documents.updated_at"
+  };
+  const sortColumn = sortColumns[filters.sortBy ?? ""] ?? sortColumns.number;
+  const sortDirection = filters.sortDirection === "asc" ? "ASC" : "DESC";
   const dataParams = [...params, pageSize, offset];
   const documentsResult = await getPool().query(
     `
       ${documentSelect}
       ${whereClause}
-      ORDER BY documents.created_at DESC
+      ORDER BY ${sortColumn} ${sortDirection}, documents.id ASC
       LIMIT $${params.length + 1}
       OFFSET $${params.length + 2}
     `,

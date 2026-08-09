@@ -66,7 +66,7 @@ async function postAction(action: RecordedAction, configOverride?: RecorderConfi
     if (!response.ok) {
       const message = typeof payload?.message === "string" ? payload.message : `Scout upload failed with HTTP ${response.status}.`;
       if (shouldClearConfig(response.status, message)) {
-        await browserApi.setStorage({ recorderConfig: undefined });
+        await browserApi.removeStorage("recorderConfig");
         await setRecorderStatus({
           configured: false,
           lastPostStatus: "Training recording halted",
@@ -141,9 +141,10 @@ browserApi.onMessage(async (message) => {
     }
   }
   if (type === "SCOUT_RECORDER_CLEAR_CONFIG") {
-    await browserApi.setStorage({ recorderConfig: undefined });
+    await browserApi.removeStorage("recorderConfig");
     await setState(defaultState);
     await setRecorderStatus({ configured: false, postedCount: 0, lastPostStatus: "Config cleared", lastError: "" });
+    return { cleared: true };
   }
   if (type === "SCOUT_RECORDING_START") await setState({ isRecording: true, isPaused: false, actions: [] });
   if (type === "SCOUT_RECORDING_STOP") await setState({ ...state, isRecording: false, isPaused: false });

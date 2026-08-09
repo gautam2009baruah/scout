@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Check, ChevronDown, Clipboard, Copy, Eye, FileText,
 import type { Jodit as JoditInstance } from "jodit";
 import type { GuideStatus, GuideStep, SelectorCandidate, SelectorCandidateType, TargetElement } from "@/shared/guideTypes";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowRow, GuidedWorkflowTargetAppRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
+import { copyTextToClipboard } from "@/lib/client/clipboard";
 import HealingSuggestionReviewer from "./healing-suggestion-reviewer-panel";
 import { useToast } from "./toast";
 import { VersionedEnvironmentReleaseModal } from "./versioned-environment-release-modal";
@@ -902,7 +903,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
   const canCreateWorkflowConfirmation = Boolean(sessionGuide);
 
   async function copyText(key: string, value: string) {
-    await navigator.clipboard.writeText(value);
+    await copyTextToClipboard(value);
     setCopiedKey(key);
     window.setTimeout(() => setCopiedKey((current) => current === key ? "" : current), 1200);
   }

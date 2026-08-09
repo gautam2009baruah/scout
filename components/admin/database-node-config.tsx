@@ -3,6 +3,7 @@
 import { Children, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Copy, Database, Loader2, RefreshCw, X } from "lucide-react";
 import type { DatabaseNodeConfig } from "@/shared/orchestrationTypes";
+import { copyTextToClipboard } from "@/lib/client/clipboard";
 
 type ActiveSchemaOption = {
   id: string;
@@ -537,7 +538,7 @@ export function DatabaseNodeConfigPanel({ config, updateConfig, targetAppId }: P
                   disabled={!previewResult?.generatedQuery}
                   onClick={async () => {
                     if (!previewResult?.generatedQuery || typeof navigator === "undefined") return;
-                    await navigator.clipboard.writeText(previewResult.generatedQuery);
+                  await copyTextToClipboard(previewResult.generatedQuery);
                   }}
                 >
                   <Copy className="h-3.5 w-3.5" />

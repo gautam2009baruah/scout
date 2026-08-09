@@ -3243,13 +3243,13 @@ export function ScoutChatbot({
 
           {activeTab === "workflows" && orchestrationPanelOpen ? (
             <aside className="absolute inset-x-0 bottom-0 top-[88px] z-20 flex min-h-0 w-full flex-col overflow-hidden bg-[var(--scout-surface)] shadow-[0_-1px_0_rgba(15,23,42,0.08)]">
-              <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 ring-1 ring-violet-100">
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700 ring-1 ring-violet-100">
                     <Network className="h-4 w-4" />
                   </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-950">Orchestrations</p>
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <p className="shrink-0 text-sm font-semibold text-slate-950">Orchestrations</p>
                     <p className="truncate text-xs text-slate-500">Published for {targetAppName || "this application"}</p>
                   </div>
                 </div>
@@ -3515,14 +3515,14 @@ export function ScoutChatbot({
             </>
           ) : (
             <div className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-slate-50 px-4 py-4">
-              <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-900">Guided workflows</p>
+              <div className="flex min-h-10 shrink-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <p className="shrink-0 text-sm font-semibold text-slate-900">Guided workflows</p>
                   <p className="truncate text-xs text-slate-500">Scoped to {targetAppName || "the selected application"}</p>
                 </div>
                 <button
                   aria-label="View orchestrations"
-                  className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700 ring-1 ring-violet-100 transition hover:bg-violet-100 focus:outline-none focus:ring-4 focus:ring-violet-100"
+                  className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700 ring-1 ring-violet-100 transition hover:bg-violet-100 focus:outline-none focus:ring-4 focus:ring-violet-100"
                   disabled={Boolean(authBlockedMessage)}
                   onClick={() => { setHistoryOpen(false); setOrchestrationPanelOpen(true); }}
                   title="View orchestrations"

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Download, ShieldCheck } from "lucide-react";
+import { copyTextToClipboard } from "@/lib/client/clipboard";
 
 type TokenResult = { token: string; scoutBaseUrl: string; expiresAt: string };
 
@@ -44,7 +45,7 @@ export function WebIngestorPanel({ folderId, folderName, onDone }: { folderId: s
 
   async function copy(value: string, label: string) {
     try {
-      await navigator.clipboard.writeText(value);
+      await copyTextToClipboard(value);
       setCopied(label);
       setTimeout(() => setCopied(null), 1500);
     } catch {

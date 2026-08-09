@@ -179,7 +179,9 @@ export async function GET(request: Request) {
         fileType: searchParams.get("file_type") || searchParams.get("fileType") || undefined,
         search: searchParams.get("search") || undefined,
         page: Number(searchParams.get("page") || 1),
-        pageSize: Number(searchParams.get("pageSize") || searchParams.get("page_size") || 20)
+        pageSize: Number(searchParams.get("pageSize") || searchParams.get("page_size") || 20),
+        sortBy: searchParams.get("sortBy") || undefined,
+        sortDirection: searchParams.get("sortDirection") || undefined
       },
       auth.session
     );

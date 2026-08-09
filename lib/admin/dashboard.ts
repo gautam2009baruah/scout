@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/db/pool";
+import { getAIProviderConfig } from "@/lib/ai/config";
 import { getAccessibleTopicIds } from "./content-structure";
 import { MODULE_KEYS, hasModuleAccess } from "./permissions";
 import type { AdminSession } from "./auth";
@@ -82,6 +83,17 @@ export type UserDashboardSummary = {
     draftGuides: number;
     publishedGuides: number;
   };
+  orchestration?: {
+    total: number;
+    drafts: number;
+    published: number;
+  };
+  emailCredentials?: {
+    registeredEmails: number;
+    incomingCredentials: number;
+    senderCredentials: number;
+    activeCredentials: number;
+  };
 };
 
 export async function getUserDashboardSummary(session: AdminSession): Promise<UserDashboardSummary> {
@@ -145,9 +157,9 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
 
   if (hasModuleAccess(session, MODULE_KEYS.contentStructure)) {
     const accessibleTopicIds = await getAccessibleTopicIds(session);
-    const params: unknown[] = [];
-    const topicFilter = accessibleTopicIds ? "AND folders.id = ANY($1::uuid[])" : "";
-    const documentFilter = accessibleTopicIds ? "AND documents.folder_id = ANY($1::uuid[])" : "";
+    const params: unknown[] = [selectedCompanyId];
+    const topicFilter = accessibleTopicIds ? "AND folders.id = ANY($2::uuid[])" : "";
+    const documentFilter = accessibleTopicIds ? "AND documents.folder_id = ANY($2::uuid[])" : "";
 
     if (accessibleTopicIds) {
       params.push(Array.from(accessibleTopicIds));
@@ -159,6 +171,7 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
           SELECT COUNT(*) AS folders
           FROM folders
           WHERE deleted_at IS NULL
+            AND company_id = $1
             ${topicFilter}
         `,
         params
@@ -177,6 +190,7 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
             COUNT(*) FILTER (WHERE status = 'failed') AS failed_documents
           FROM documents
           WHERE status <> 'deleted'
+            AND company_id = $1
             ${documentFilter}
         `,
         params
@@ -192,28 +206,42 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
     };
   }
 
-  if (hasModuleAccess(session, MODULE_KEYS.aiConfiguration)) {
+  if (hasModuleAccess(session, MODULE_KEYS.emailCredentials)) {
     const result = await getPool().query<{
-      llm_provider: string | null;
-      llm_model: string | null;
-      embedding_provider: string | null;
-      embedding_model: string | null;
+      incoming_credentials: string;
+      sender_credentials: string;
+      active_credentials: string;
     }>(
       `
         SELECT
-          (SELECT provider FROM ai_llm_provider_configs WHERE is_active = true AND company_id = $1 LIMIT 1) AS llm_provider,
-          (SELECT model FROM ai_llm_provider_configs WHERE is_active = true AND company_id = $1 LIMIT 1) AS llm_model,
-          (SELECT provider FROM ai_embedding_provider_configs WHERE is_active = true AND company_id = $1 LIMIT 1) AS embedding_provider,
-          (SELECT model FROM ai_embedding_provider_configs WHERE is_active = true AND company_id = $1 LIMIT 1) AS embedding_model
+          (SELECT COUNT(*) FROM email_credentials WHERE company_id = $1) AS incoming_credentials,
+          (SELECT COUNT(*) FROM email_sender_credentials WHERE company_id = $1) AS sender_credentials,
+          (
+            (SELECT COUNT(*) FROM email_credentials WHERE company_id = $1 AND is_active = true)
+            +
+            (SELECT COUNT(*) FROM email_sender_credentials WHERE company_id = $1 AND is_active = true)
+          ) AS active_credentials
       `,
       [selectedCompanyId]
     );
     const row = result.rows[0];
+    const incomingCredentials = Number(row?.incoming_credentials ?? 0);
+    const senderCredentials = Number(row?.sender_credentials ?? 0);
+    summary.emailCredentials = {
+      registeredEmails: incomingCredentials + senderCredentials,
+      incomingCredentials,
+      senderCredentials,
+      activeCredentials: Number(row?.active_credentials ?? 0)
+    };
+  }
+
+  if (hasModuleAccess(session, MODULE_KEYS.aiConfiguration)) {
+    const config = await getAIProviderConfig(selectedCompanyId);
     summary.aiConfiguration = {
-      llmProvider: row?.llm_provider || "Not configured",
-      llmModel: row?.llm_model || "Not configured",
-      embeddingProvider: row?.embedding_provider || "Not configured",
-      embeddingModel: row?.embedding_model || "Not configured"
+      llmProvider: config.llm_provider || "Not configured",
+      llmModel: config.llm_model || "Not configured",
+      embeddingProvider: config.embedding_provider || "Not configured",
+      embeddingModel: config.embedding_model || "Not configured"
     };
   }
 
@@ -260,11 +288,18 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
                   AND uta.target_app_id = company_target_applications.id
               ))
           ) AS training_sessions,
-          (SELECT COUNT(*)
+          (SELECT COUNT(DISTINCT gw.id)
            FROM guided_workflow_guides gw
+           INNER JOIN guided_workflow_topics gwt
+             ON gwt.guide_id = gw.id
+            AND gwt.deleted_at IS NULL
+           INNER JOIN guided_workflow_recording_sessions gwrs
+             ON gwrs.id = gwt.recording_session_id
+            AND gwrs.deleted_at IS NULL
            INNER JOIN company_target_applications cta_gw ON cta_gw.id = gw.target_app_id
            WHERE gw.status = 'draft'
              AND cta_gw.company_id = $1
+             AND cta_gw.deleted_at IS NULL
              AND (
                NOT EXISTS (
                  SELECT 1
@@ -282,11 +317,18 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
                    AND uta.target_app_id = gw.target_app_id
                )
              )) AS draft_guides,
-          (SELECT COUNT(*)
+          (SELECT COUNT(DISTINCT gw.id)
            FROM guided_workflow_guides gw
+           INNER JOIN guided_workflow_topics gwt
+             ON gwt.guide_id = gw.id
+            AND gwt.deleted_at IS NULL
+           INNER JOIN guided_workflow_recording_sessions gwrs
+             ON gwrs.id = gwt.recording_session_id
+            AND gwrs.deleted_at IS NULL
            INNER JOIN company_target_applications cta_gw ON cta_gw.id = gw.target_app_id
            WHERE gw.status = 'published'
              AND cta_gw.company_id = $1
+             AND cta_gw.deleted_at IS NULL
              AND (
                NOT EXISTS (
                  SELECT 1
@@ -313,6 +355,58 @@ export async function getUserDashboardSummary(session: AdminSession): Promise<Us
       trainingSessions: Number(row?.training_sessions ?? 0),
       draftGuides: Number(row?.draft_guides ?? 0),
       publishedGuides: Number(row?.published_guides ?? 0)
+    };
+  }
+
+  if (hasModuleAccess(session, MODULE_KEYS.orchestrationDesigner)) {
+    const result = await getPool().query<{
+      total: string;
+      drafts: string;
+      published: string;
+    }>(
+      `
+        WITH accessible_orchestrations AS (
+          SELECT o.id, o.status
+          FROM orchestrations o
+          WHERE o.company_id = $1
+            AND NOT EXISTS (
+              SELECT 1
+              FROM ai_planner_pending_requests request
+              WHERE request.draft_orchestration_id = o.id
+                AND request.status = 'rejected'
+            )
+            AND (
+              o.target_app_id IS NULL
+              OR NOT EXISTS (
+                SELECT 1
+                FROM user_target_app_access uta
+                INNER JOIN company_target_applications scope_cta ON scope_cta.id = uta.target_app_id
+                WHERE uta.user_id = $2
+                  AND uta.deleted_at IS NULL
+                  AND scope_cta.company_id = o.company_id
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM user_target_app_access uta
+                WHERE uta.user_id = $2
+                  AND uta.deleted_at IS NULL
+                  AND uta.target_app_id = o.target_app_id
+              )
+            )
+        )
+        SELECT
+          COUNT(*)::text AS total,
+          COUNT(*) FILTER (WHERE status = 'draft')::text AS drafts,
+          COUNT(*) FILTER (WHERE status = 'published')::text AS published
+        FROM accessible_orchestrations
+      `,
+      [selectedCompanyId, session.user.id]
+    );
+    const row = result.rows[0];
+    summary.orchestration = {
+      total: Number(row?.total ?? 0),
+      drafts: Number(row?.drafts ?? 0),
+      published: Number(row?.published ?? 0)
     };
   }
 

@@ -6,6 +6,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { copyTextToClipboard } from "@/lib/client/clipboard";
 import { X, Trash2, Plus, Minus, Save, ChevronDown, ChevronRight } from "lucide-react";
 import type { Node, Edge } from "reactflow";
 import type { NodeType } from "@/shared/orchestrationTypes";
@@ -902,7 +903,7 @@ function TriggerConfig({ config, updateConfig, companyId, targetAppId, orchestra
   const copyGeneratedCredential = useCallback(async () => {
     if (!generatedCredential) return;
     try {
-      await navigator.clipboard.writeText(generatedCredential.value);
+      await copyTextToClipboard(generatedCredential.value);
       setGeneratedCredential({ ...generatedCredential, copied: true });
     } catch {
       setGeneratedCredential({ ...generatedCredential, copied: false });

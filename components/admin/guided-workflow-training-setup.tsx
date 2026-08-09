@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Clipboard, Download, Edit3, Globe2, Info, Plus, ToggleLeft, ToggleRight, Trash2, X } from "lucide-react";
 import type { CompanyTargetApplication } from "@/lib/admin/administration";
 import type { GuidedWorkflowRecordingSessionRow, GuidedWorkflowTopicRow } from "@/lib/admin/guided-workflows";
+import { copyTextToClipboard } from "@/lib/client/clipboard";
 import { useToast } from "./toast";
 import { ModalCloseButton } from "./modal-close-button";
 
@@ -374,7 +375,7 @@ export function GuidedWorkflowTrainingSetup({ appBaseUrl, companies, recordingSe
   }
 
   async function copyText(key: string, value: string) {
-    await navigator.clipboard.writeText(value);
+    await copyTextToClipboard(value);
     setCopiedKey(key);
     window.setTimeout(() => setCopiedKey((current) => current === key ? "" : current), 1200);
   }

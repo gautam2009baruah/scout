@@ -333,7 +333,7 @@ function showConfigPromptDialog(initialValue = ""): Promise<string | null> {
         Paste Scout recorder config JSON for this training session.
       </div>
     </div>
-    <textarea id="scout-config-prompt-input" spellcheck="false" style="box-sizing:border-box;width:100%;height:160px;resize:vertical;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:10px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;outline:none"></textarea>
+    <textarea id="scout-config-prompt-input" rows="5" spellcheck="false" style="box-sizing:border-box;width:100%;resize:none;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:10px;font:12px ui-monospace,SFMono-Regular,Consolas,monospace;outline:none"></textarea>
     <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px;">
       <button id="scout-config-prompt-cancel" style="${modalButtonStyle("#334155")}">Cancel</button>
       <button id="scout-config-prompt-save" style="${modalButtonStyle("#3b82f6")}">Save</button>
@@ -1018,8 +1018,15 @@ async function clearRecorderConfig() {
   }
 
   try {
-    await browserApi.sendMessage({ type: "SCOUT_RECORDER_CLEAR_CONFIG" });
+    // Clear locally as well as through the background worker. This keeps the
+    // action reliable if a browser has suspended or is restarting the worker.
+    await browserApi.removeStorage("recorderConfig");
     window.localStorage.removeItem("scoutRecorderConfig");
+    await browserApi.sendMessage({ type: "SCOUT_RECORDER_CLEAR_CONFIG" });
+    const readBack = await browserApi.getStorage<{ recorderConfig?: RecorderConfig }>({ recorderConfig: undefined });
+    if (readBack.recorderConfig) {
+      throw new Error("Recorder config remained in extension storage.");
+    }
     showToast("Recorder config cleared. You can paste a new session config now.", "success");
     await renderToolbar();
   } catch {

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, ListTree, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Sparkles, Trash2, Workflow, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, Cloud, Download, FileText, FileUp, FolderPlus, Globe2, KeyRound, Link2, ListTree, Loader2, Network, Pencil, Plus, Rss, Settings2, ShieldCheck, Sparkles, Trash2, Workflow, X } from "lucide-react";
 import { MultiSelectDropdown } from "./multi-select-dropdown";
 import { TopicTree, type TopicActionTarget, type TopicCreateTarget } from "./topic-tree";
 import { TopicTreeList } from "./topic-tree-list";
@@ -64,12 +64,18 @@ type SourceAuth = { authType: string; credentialName: string; tenantId: string; 
 
 type ExternalReferenceRow = {
   id: string;
-  sourceKind: "file" | "folder";
   externalSourceUrl: string;
-  originalFilename: string;
-  fileType: string;
-  sourceMetadata: string;
 };
+
+type DocumentSort = {
+  key: "number" | "document" | "type" | "size" | "status" | "version" | "access" | "actions";
+  direction: "asc" | "desc";
+};
+
+function DocumentSortIcon({ active, direction }: { active: boolean; direction: DocumentSort["direction"] }) {
+  if (!active) return <ArrowUpDown className="h-3.5 w-3.5 opacity-60" />;
+  return direction === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />;
+}
 
 type DocumentProgressRow = {
   id: string;
@@ -187,11 +193,7 @@ async function readMessage(response: Response, fallback: string) {
 function createExternalReferenceRow(): ExternalReferenceRow {
   return {
     id: globalThis.crypto?.randomUUID?.() ?? `external-${Date.now()}-${Math.random()}`,
-    sourceKind: "file",
-    externalSourceUrl: "",
-    originalFilename: "",
-    fileType: "pdf",
-    sourceMetadata: ""
+    externalSourceUrl: ""
   };
 }
 
@@ -292,6 +294,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [documentProgressRows, setDocumentProgressRows] = useState<DocumentProgressRow[]>([]);
   const [documentGrid, setDocumentGrid] = useState<DocumentGridState>({ documents: [], page: 1, pageCount: 1, pageSize: 25, total: 0 });
   const [documentFilters, setDocumentFilters] = useState({ fileType: "", search: "", status: "" });
+  const [documentSort, setDocumentSort] = useState<DocumentSort>({ key: "number", direction: "desc" });
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
   const [accessUserIds, setAccessUserIds] = useState<string[]>([]);
   const [actionTarget, setActionTarget] = useState<TopicActionTarget | null>(null);
@@ -607,7 +610,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setExternalRows((rows) => rows.length === 1 ? rows : rows.filter((row) => row.id !== id));
   }
 
-  async function loadDocuments(target: TopicActionTarget, page = 1, filters = documentFilters, pageSize = documentGrid.pageSize) {
+  async function loadDocuments(target: TopicActionTarget, page = 1, filters = documentFilters, pageSize = documentGrid.pageSize, sort = documentSort) {
     if (!target.topicId) {
       return;
     }
@@ -615,7 +618,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     const params = new URLSearchParams({
       folderId: target.topicId,
       page: String(page),
-      pageSize: String(pageSize)
+      pageSize: String(pageSize),
+      sortBy: sort.key,
+      sortDirection: sort.direction
     });
 
     if (filters.fileType) params.set("fileType", filters.fileType);
@@ -659,7 +664,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setTopicState({ message: "", status: "idle" });
     setDocumentsTarget(target);
     setDocumentFilters({ fileType: "", search: "", status: "" });
-    await loadDocuments(target, 1, { fileType: "", search: "", status: "" });
+    const defaultSort: DocumentSort = { key: "number", direction: "desc" };
+    setDocumentSort(defaultSort);
+    await loadDocuments(target, 1, { fileType: "", search: "", status: "" }, documentGrid.pageSize, defaultSort);
   }
 
   function closeDocumentsModal() {
@@ -692,6 +699,15 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     };
     setDocumentFilters(nextFilters);
     await loadDocuments(documentsTarget, 1, nextFilters);
+  }
+
+  async function sortDocuments(key: DocumentSort["key"]) {
+    if (!documentsTarget) return;
+    const nextSort: DocumentSort = documentSort.key === key
+      ? { key, direction: documentSort.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: key === "number" ? "desc" : "asc" };
+    setDocumentSort(nextSort);
+    await loadDocuments(documentsTarget, 1, documentFilters, documentGrid.pageSize, nextSort);
   }
 
   function deleteDocument(row: DocumentGridRow) {
@@ -1211,8 +1227,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       }
 
       const activeRows = externalRows
-        .map((row) => ({ ...row, externalSourceUrl: row.externalSourceUrl.trim(), originalFilename: row.originalFilename.trim(), sourceMetadata: row.sourceMetadata.trim() }))
-        .filter((row) => row.externalSourceUrl || row.originalFilename);
+        .map((row) => ({ ...row, externalSourceUrl: row.externalSourceUrl.trim() }))
+        .filter((row) => row.externalSourceUrl);
 
       if (activeRows.length === 0) {
         setTopicState({ message: "Add at least one external reference.", status: "error" });
@@ -1222,28 +1238,19 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       const documents = [];
 
       for (const row of activeRows) {
-        let sourceMetadata: Record<string, unknown> = {};
-
-        if (row.sourceMetadata) {
-          try {
-            sourceMetadata = JSON.parse(row.sourceMetadata);
-          } catch {
-            setTopicState({ message: "Source metadata must be valid JSON.", status: "error" });
-            return;
-          }
-        }
-
+        const sourceKind = ingestionSource === "web_url" ? "file" : "folder";
+        const originalFilename = sourceKind === "folder" ? "external-folder" : inferNameFromReference(row.externalSourceUrl);
         documents.push({
           companyId: uploadTarget.companyId,
           folderId: uploadTarget.topicId,
           storageMode: documentStorageMode,
-          externalSourceKind: row.sourceKind,
+          externalSourceKind: sourceKind,
           externalSourceUrl: row.externalSourceUrl || undefined,
-          externalSourceReference: row.externalSourceUrl || row.originalFilename,
-          originalFilename: row.sourceKind === "folder" ? "external-folder" : row.originalFilename || inferNameFromReference(row.externalSourceUrl),
-          fileType: row.fileType,
+          externalSourceReference: row.externalSourceUrl,
+          originalFilename,
+          fileType: ["web_url", "crawler", "sitemap", "rss"].includes(ingestionSource) ? "html" : "pdf",
           fileSize: 0,
-          sourceMetadata: { ...sourceMetadata, ingestion_source_type: ingestionSource, credential_reference: credentialId, max_pages: crawlSettings.maxPages, max_depth: crawlSettings.maxDepth }
+          sourceMetadata: { ingestion_source_type: ingestionSource, credential_reference: credentialId, max_pages: crawlSettings.maxPages, max_depth: crawlSettings.maxDepth }
         });
       }
 
@@ -1495,14 +1502,28 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                         type="checkbox"
                       />
                     </th>
-                    <th className="px-3 py-3 font-medium">No.</th>
-                    <th className="px-3 py-3 font-medium">Document</th>
-                    <th className="px-3 py-3 font-medium">Type</th>
-                    <th className="px-3 py-3 font-medium">Size</th>
-                    <th className="px-3 py-3 font-medium">Status</th>
-                    <th className="px-3 py-3 font-medium">Version</th>
-                    <th className="px-3 py-3 font-medium">Access</th>
-                    <th className="px-3 py-3 text-right font-medium">Actions</th>
+                    {([
+                      ["number", "No."],
+                      ["document", "Document"],
+                      ["type", "Type"],
+                      ["size", "Size"],
+                      ["status", "Status"],
+                      ["version", "Version"],
+                      ["access", "Access"],
+                      ["actions", "Actions"]
+                    ] as Array<[DocumentSort["key"], string]>).map(([key, label]) => (
+                      <th className={`px-3 py-3 font-medium ${key === "actions" ? "text-right" : ""}`} key={key}>
+                        <button
+                          aria-label={`Sort by ${label}`}
+                          className={`inline-flex items-center gap-1.5 hover:text-sky-200 ${key === "actions" ? "ml-auto" : ""}`}
+                          onClick={() => void sortDocuments(key)}
+                          type="button"
+                        >
+                          {label}
+                          <DocumentSortIcon active={documentSort.key === key} direction={documentSort.direction} />
+                        </button>
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -1910,7 +1931,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                         setIngestionSource(source.value);
                         if (source.value === "upload") setShowLoginSitePanel(false);
                         setDocumentStorageMode(source.value === "upload" ? "managed_upload" : "external_reference");
-                        setExternalRows([{ ...createExternalReferenceRow(), sourceKind: source.value === "web_url" ? "file" : "folder", fileType: ["web_url", "crawler", "sitemap", "rss"].includes(source.value) ? "html" : "pdf" }]);
+                        setExternalRows([createExternalReferenceRow()]);
                         setDocumentProgressRows([]);
                         setTopicState({ message: "", status: "idle" });
                       }}
@@ -2114,16 +2135,9 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                 </div>
 
                 <div className="space-y-2">
-                  {externalRows.map((row, index) => (
+                  {externalRows.map((row) => (
                     <div className="rounded-lg border border-slate-200 bg-white p-3" key={row.id}>
-                      <div className="grid gap-2 md:grid-cols-[110px_1.4fr_1fr_110px_36px]">
-                        <label className="block">
-                          <span className="text-xs font-semibold text-slate-600">Scope</span>
-                          <select className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-sm" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { sourceKind: event.target.value as "file" | "folder" })} value={row.sourceKind}>
-                            <option value="file">Single item</option>
-                            <option value="folder">Collection</option>
-                          </select>
-                        </label>
+                      <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_36px]">
                         <label className="block">
                           <span className="text-xs font-semibold text-slate-600">{ingestionSource === "google_drive" ? "Drive file or folder URL" : ingestionSource === "sharepoint" ? "Site, library or file URL" : ingestionSource === "sitemap" ? "Sitemap.xml URL" : ingestionSource === "rss" ? "RSS or Atom feed URL" : ingestionSource === "crawler" ? "Website start URL" : "Page URL"}</span>
                           <div className="mt-1 flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 focus-within:border-slate-900 focus-within:ring-4 focus-within:ring-slate-900/10">
@@ -2131,26 +2145,10 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
                             <input className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { externalSourceUrl: event.target.value })} placeholder="https://example.com/..." value={row.externalSourceUrl} />
                           </div>
                         </label>
-                        <label className="block">
-                          <span className="text-xs font-semibold text-slate-600">Display filename</span>
-                          <input className="mt-1 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10 disabled:bg-slate-50" disabled={topicState.status === "submitting" || row.sourceKind === "folder"} onChange={(event) => updateExternalRow(row.id, { originalFilename: event.target.value })} placeholder={row.sourceKind === "folder" ? "Discovered automatically" : `Reference ${index + 1}`} value={row.originalFilename} />
-                        </label>
-                        <label className="block">
-                          <span className="text-xs font-semibold text-slate-600">Type</span>
-                          <select className="mt-1 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10 disabled:bg-slate-50" disabled={topicState.status === "submitting" || row.sourceKind === "folder"} onChange={(event) => updateExternalRow(row.id, { fileType: event.target.value })} value={row.fileType}>
-                            {supportedFileTypes.map((fileType) => (
-                              <option key={fileType} value={fileType}>{fileType.toUpperCase()}</option>
-                            ))}
-                          </select>
-                        </label>
                         <button className="mt-5 inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40" disabled={topicState.status === "submitting" || externalRows.length === 1} onClick={() => removeExternalReferenceRow(row.id)} title="Remove row" type="button">
                           <X className="h-4 w-4" />
                         </button>
                       </div>
-                      <label className="mt-2 block">
-                        <span className="text-xs font-semibold text-slate-600">Source metadata JSON</span>
-                        <textarea className="mt-1 min-h-16 w-full resize-y rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-900 focus:ring-4 focus:ring-slate-900/10" disabled={topicState.status === "submitting"} onChange={(event) => updateExternalRow(row.id, { sourceMetadata: event.target.value })} placeholder='{"owner":"Finance","source":"SharePoint"}' value={row.sourceMetadata} />
-                      </label>
                     </div>
                   ))}
                 </div>

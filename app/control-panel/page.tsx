@@ -7,6 +7,8 @@ import {
   CheckCircle2,
   FileText,
   FolderTree,
+  GitBranch,
+  Mail,
   ShieldCheck,
   UserRoundCheck,
   UsersRound,
@@ -71,11 +73,18 @@ export default async function AdminDashboardPage() {
       value: summary.aiConfiguration.llmProvider
     } : null,
     summary.guidedWorkflows ? {
-      detail: `${summary.guidedWorkflows.publishedGuides} published guides`,
+      detail: "Configured for guided workflows",
       icon: Workflow,
-      label: "Guided workflows",
+      label: "Target apps",
       tone: "bg-amber-600 text-white",
-      value: summary.guidedWorkflows.trainingSessions
+      value: summary.guidedWorkflows.targetApps
+    } : null,
+    summary.emailCredentials ? {
+      detail: `${summary.emailCredentials.incomingCredentials} incoming | ${summary.emailCredentials.senderCredentials} senders`,
+      icon: Mail,
+      label: "Registered emails",
+      tone: "bg-rose-600 text-white",
+      value: summary.emailCredentials.registeredEmails
     } : null
   ].filter(Boolean) as Array<{
     detail: string;
@@ -107,7 +116,7 @@ export default async function AdminDashboardPage() {
           </div>
         </div>
       ) : null}
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {cards.map((card) => (
           <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" key={card.label}>
             <div className="flex items-center justify-between gap-3">
@@ -172,11 +181,29 @@ export default async function AdminDashboardPage() {
                 <p className="text-sm text-slate-500">Training setup, drafts, and guides ready for target apps.</p>
               </div>
             </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-4">
-              <Metric label="Target apps" value={summary.guidedWorkflows.targetApps} />
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
               <Metric label="Training sessions" value={summary.guidedWorkflows.trainingSessions} />
               <Metric label="Drafts" value={summary.guidedWorkflows.draftGuides} />
               <Metric label="Published" value={summary.guidedWorkflows.publishedGuides} />
+            </div>
+          </article>
+        ) : null}
+
+        {summary.orchestration ? (
+          <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50 text-indigo-700">
+                <GitBranch className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-lg font-semibold tracking-normal text-slate-950">Orchestration</h2>
+                <p className="text-sm text-slate-500">Workflow designs, publication status, and execution activity.</p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <Metric label="Total" value={summary.orchestration.total} />
+              <Metric label="Drafts" value={summary.orchestration.drafts} />
+              <Metric label="Published" value={summary.orchestration.published} />
             </div>
           </article>
         ) : null}

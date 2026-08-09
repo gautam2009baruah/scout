@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { copyTextToClipboard } from "@/lib/client/clipboard";
 import {
   Ban,
   Check,
@@ -562,7 +563,7 @@ export function ChatbotSettingsForm({ companyName, defaults, initialSettings, ta
 
   function copyRotatedApiKey() {
     if (!rotatedApiKey) return;
-    navigator.clipboard.writeText(rotatedApiKey).then(
+    copyTextToClipboard(rotatedApiKey).then(
       () => setRotatedApiKeyCopied(true),
       () => showToast("Unable to copy API key. Please copy manually.", "error")
     );

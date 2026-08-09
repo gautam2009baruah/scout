@@ -31,6 +31,12 @@ export const browserApi = {
     });
   },
 
+  async removeStorage(keys: string | string[]) {
+    return new Promise<void>((resolve) => {
+      storage?.local?.remove?.(keys, () => resolve());
+    });
+  },
+
   onStorageChanged(handler: (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>) => void) {
     storage?.onChanged?.addListener?.(handler);
   },
