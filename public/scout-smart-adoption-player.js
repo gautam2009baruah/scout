@@ -792,7 +792,7 @@
       .scout-adoption-highlight { outline: 3px solid #0ea5e9 !important; outline-offset: 4px !important; border-radius: 6px !important; }
       .scout-adoption-pick-candidate { outline: 3px solid #f59e0b !important; outline-offset: 4px !important; border-radius: 6px !important; cursor: crosshair !important; }
       .scout-adoption-overlay { position: fixed; inset: 0; z-index: 2147482999; background: rgb(15 23 42 / .52); box-shadow: inset 0 0 140px rgb(15 23 42 / .46); }
-      .scout-adoption-tooltip { position: fixed; z-index: 2147483000; width: max-content; max-width: min(340px, calc(100vw - 32px)); border: 1px solid rgba(15, 23, 42, .06); border-radius: 8px; background: #fff; box-shadow: 0 10px 30px rgb(15 23 42 / .18), 0 3px 8px rgb(15 23 42 / .10); padding: 18px 22px 16px; color: #4b5563; font: 14px/1.45 system-ui, sans-serif; }
+      .scout-adoption-tooltip { position: fixed; z-index: 2147483000; width: max-content; max-width: min(340px, calc(100vw - 32px)); border: 1px solid rgba(15, 23, 42, .06); border-radius: 0; background: #fff; box-shadow: 0 14px 40px rgb(15 23 42 / .28), 0 5px 14px rgb(15 23 42 / .16); padding: 18px 22px 16px; color: #4b5563; font: 14px/1.45 system-ui, sans-serif; }
       .scout-adoption-tooltip__header { display: flex; justify-content: flex-end; margin: -8px -12px 0 0; }
       .scout-adoption-tooltip__close { width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: #9aa2ac !important; padding: 0 !important; margin: 0 !important; font: 20px/1 system-ui, sans-serif !important; cursor: pointer; flex-shrink: 0; }
       .scout-adoption-tooltip__close:hover { background: rgba(15,23,42,.06) !important; color: #4b5563 !important; }
@@ -826,7 +826,7 @@
       .scout-adoption-footer button[data-next] { border-color: #1266c9; background: #1266c9; color: #fff; box-shadow: 0 1px 2px rgb(18 102 201 / .35); }
       .scout-adoption-footer button[data-next]:hover { border-color: #0f57ad; background: #0f57ad; }
       .scout-adoption-tooltip__arrow { position: absolute; width: 12px; height: 12px; background: #fff; border: 1px solid rgba(15, 23, 42, .12); box-shadow: 0 2px 6px rgb(15 23 42 / .10); transform: rotate(45deg); }
-      .scout-adoption-tooltip[data-floating="center"] { max-width: min(420px, calc(100vw - 32px)); padding: 18px 18px 15px; box-shadow: 0 10px 30px rgb(15 23 42 / .22), 0 3px 10px rgb(15 23 42 / .12); }
+      .scout-adoption-tooltip[data-floating="center"] { max-width: min(420px, calc(100vw - 32px)); padding: 18px 18px 15px; box-shadow: 0 16px 46px rgb(15 23 42 / .30), 0 5px 16px rgb(15 23 42 / .18); }
       .scout-adoption-tooltip[data-floating="center"] .scout-adoption-tooltip__arrow { display: none; }
       .scout-adoption-tooltip[data-floating="center"] .scout-adoption-tooltip__message { max-width: 360px; font-size: 13px; }
       .scout-adoption-tooltip[data-placement="bottom"] .scout-adoption-tooltip__arrow { top: -7px; left: var(--arrow-left, 22px); border-right: 0; border-bottom: 0; }
