@@ -92,6 +92,11 @@ export class OrchestrationEngine {
         description?: string;
       }>;
     };
+    pendingApproval?: {
+      message: string;
+      approvalId: string;
+      approverEmail: string;
+    };
   }> {
     try {
       // Authoritatively (re-)establish which company/target app this
@@ -124,6 +129,7 @@ export class OrchestrationEngine {
           success: true,
           status: "paused",
           clarification: result.clarification,
+          pendingApproval: result.pendingApproval,
         };
       }
 
@@ -159,6 +165,11 @@ export class OrchestrationEngine {
         type: string;
         description?: string;
       }>;
+    };
+    pendingApproval?: {
+      message: string;
+      approvalId: string;
+      approverEmail: string;
     };
   }> {
     const node = this.nodes.get(nodeId);
@@ -260,6 +271,21 @@ export class OrchestrationEngine {
           });
         }
 
+        // Human approval pauses don't carry a `clarification` object (that's
+        // specific to AI-extraction/database/file-parser field prompts), so
+        // give chat-facing callers an honest, distinct signal instead of
+        // silently falling through to a "success" response.
+        let pendingApproval: { message: string; approvalId: string; approverEmail: string } | undefined;
+        if (node.nodeType === "human_approval" && result.output) {
+          const approverEmail = typeof result.output.approver === "string" ? result.output.approver : "the approver";
+          const approvalId = typeof result.output.approvalId === "string" ? result.output.approvalId : "";
+          pendingApproval = {
+            message: `This requires approval from ${approverEmail} before it can continue. I'll follow up here once it's resolved.`,
+            approvalId,
+            approverEmail,
+          };
+        }
+
         await this.updateNodeExecution(
           nodeExecutionId,
           "paused",
@@ -272,12 +298,13 @@ export class OrchestrationEngine {
           nodeLabel: node.label,
           nodeType: node.nodeType,
           status: "paused",
-          message: result.clarification?.message || `${this.getReadableNodeName(node.nodeType)} is waiting for more input.`,
+          message: result.clarification?.message || pendingApproval?.message || `${this.getReadableNodeName(node.nodeType)} is waiting for more input.`,
         });
         return {
           success: true,
           status: "paused",
           clarification: result.clarification,
+          pendingApproval,
         };
       }
 

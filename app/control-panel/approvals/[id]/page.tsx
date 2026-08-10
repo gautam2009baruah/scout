@@ -10,7 +10,6 @@ import { formatDateTimeForDisplay } from "@/lib/datetime";
 type ApprovalField = {
   label: string;
   value: string;
-  defaultValue?: string;
 };
 
 type ApprovalRequestData = {
@@ -195,7 +194,7 @@ export default function ApprovalPage() {
                     <div key={index} className="flex flex-col">
                       <span className="text-sm font-medium text-gray-700">{field.label}</span>
                       <span className="text-gray-900 mt-1">
-                        {field.value || field.defaultValue || "N/A"}
+                        {field.value || "N/A"}
                       </span>
                     </div>
                   ))}

@@ -7,9 +7,35 @@ import {
   updateApproval,
   updateNodeExecution,
   getExecutionById,
+  assertExecutionOwnership,
+  OrchestrationAccessError,
 } from "@/lib/orchestrations/db";
-import type { ApprovalStatus } from "@/shared/orchestrationTypes";
+import type { ApprovalStatus, OrchestrationApproval } from "@/shared/orchestrationTypes";
 import { getCurrentAdminSession } from "@/lib/admin/session";
+import type { AdminSession } from "@/lib/admin/auth";
+import { appendConversationExchange } from "@/lib/chat/conversations";
+
+// approver_email matching alone isn't tenant isolation — the same email can
+// be an admin in more than one company. Every approval read/write also
+// requires the underlying execution's orchestration to belong to the
+// caller's company (and target-app scope), same as /resume already enforces
+// via this helper.
+async function filterByOwnership(
+  session: AdminSession,
+  approvals: OrchestrationApproval[]
+): Promise<OrchestrationApproval[]> {
+  const results = await Promise.all(
+    approvals.map(async (approval) => {
+      try {
+        await assertExecutionOwnership(session, approval.executionId);
+        return approval;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return results.filter((approval): approval is OrchestrationApproval => approval !== null);
+}
 
 // GET - Get approval by ID or list approvals for current user
 export async function GET(request: NextRequest) {
@@ -38,7 +64,7 @@ export async function GET(request: NextRequest) {
       filters.status = "pending";
     }
 
-    const approvals = await getApprovals(filters);
+    const approvals = await filterByOwnership(session, await getApprovals(filters));
 
     // If specific approval ID requested, return only that one
     if (approvalId) {
@@ -101,6 +127,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    try {
+      await assertExecutionOwnership(session, approval.executionId);
+    } catch (error) {
+      if (error instanceof OrchestrationAccessError) {
+        return NextResponse.json({ error: error.message }, { status: error.statusCode });
+      }
+      throw error;
+    }
+
     if (approval.status !== "pending") {
       return NextResponse.json(
         { error: `Approval already ${approval.status}` },
@@ -137,9 +172,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // If approved and execution is paused, trigger resume
+    // Resume regardless of outcome — engine.resumeAfterApproval() reads the
+    // approval's actual status and walks the matching "approved"/"rejected"
+    // branch itself (or completes the run if that branch isn't wired).
     let resumeResult = null;
-    if (status === "approved" && execution.status === "paused") {
+    if (execution.status === "paused") {
       try {
         // Call resume endpoint internally
         const resumeResponse = await fetch(
@@ -165,6 +202,48 @@ export async function POST(request: NextRequest) {
       } catch (resumeError) {
         console.error("Error triggering resume:", resumeError);
         // Don't fail the approval if resume fails - can be retried manually
+      }
+    }
+
+    // If this run was triggered from a chatbot conversation, the user has no
+    // other way to learn the outcome — resuming happens here in the admin
+    // portal, not in the chat itself. Post a follow-up message into that
+    // conversation, same pattern as the AI-planner approval notification
+    // (app/api/admin/orchestrations/planner/pending/[id]/approve/route.ts).
+    const triggerData = execution.triggerData as Record<string, unknown> | null;
+    const conversationId = typeof triggerData?.conversationId === "string" ? triggerData.conversationId : null;
+    const chatCompanyId = typeof triggerData?.companyId === "string" ? triggerData.companyId : null;
+    if (triggerData?.triggerType === "chatbot" && conversationId && chatCompanyId && execution.triggeredBy) {
+      const resumedStatus = resumeResult?.status as string | undefined;
+      const continuation =
+        resumedStatus === "completed"
+          ? "It finished successfully."
+          : resumedStatus === "paused"
+            ? "It needs one more approval before it can finish."
+            : resumedStatus === "failed"
+              ? `It hit an error afterward: ${resumeResult?.error || "unknown error"}.`
+              : "";
+      const notification = [
+        status === "approved"
+          ? `Your request was approved by ${session.user.email}.`
+          : `Your request was rejected by ${session.user.email}${notes ? `: ${notes}` : "."}`,
+        continuation,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      try {
+        await appendConversationExchange({
+          companyId: chatCompanyId,
+          userId: execution.triggeredBy,
+          conversationId,
+          question: "(Approval notification)",
+          answer: notification,
+          citations: [],
+          metadata: { source: "human_approval", approvalId: updatedApproval.id, status },
+        });
+      } catch (notifyError) {
+        console.error("Failed to post approval notification to conversation:", notifyError);
       }
     }
 

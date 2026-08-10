@@ -294,12 +294,8 @@ export type HumanApprovalNodeConfig = {
   title: string;
   description?: string;
   fields?: Array<{
-    name: string;
     label: string;
-    type: "text" | "number" | "boolean" | "select";
-    options?: string[];
-    editable: boolean;
-    defaultValue?: unknown;
+    value: string; // literal or {{variable}} expression, evaluated at runtime
   }>;
   timeout?: number; // minutes
   escalationEmail?: string;

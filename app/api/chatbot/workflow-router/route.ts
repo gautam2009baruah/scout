@@ -1671,6 +1671,34 @@ export async function POST(request: NextRequest) {
           },
         });
       }
+
+      const pendingApproval = executionResult.pendingApproval;
+      if (pendingApproval) {
+        await persistExchange(pendingApproval.message, {
+          intent: "pending_approval",
+          executionId: execution.id,
+          approvalId: pendingApproval.approvalId,
+        });
+        return NextResponse.json({
+          answer: pendingApproval.message,
+          conversationId: persistedConversationId,
+          intent: "pending_approval",
+          confidence: match.confidence,
+          matchedOrchestrationIds: [selected.id],
+          matchedOrchestrationNames: [selected.name],
+          needsClarification: false,
+          clarifyingQuestions: [],
+          requireUserConfirmation: false,
+          plan,
+          metadata: {
+            selectedOrchestrationId: selected.id,
+            selectedOrchestrationName: selected.name,
+            executionId: execution.id,
+            approvalId: pendingApproval.approvalId,
+            approverEmail: pendingApproval.approverEmail,
+          },
+        });
+      }
     }
 
     if (!executionResult.success) {

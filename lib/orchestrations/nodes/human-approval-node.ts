@@ -31,11 +31,19 @@ export async function executeHumanApprovalNode(
       throw new Error(`Invalid email format: ${approverEmail}`);
     }
 
+    // Resolve each field's {{variable}} expression against context, same as
+    // approverEmail above — the config UI's own placeholder text promises
+    // this, but nothing evaluated it before.
+    const resolvedFields = (config.fields || []).map((field) => ({
+      label: field.label,
+      value: String(evaluateExpression(field.value, context) ?? ""),
+    }));
+
     // Prepare approval request data
     const requestData: Record<string, unknown> = {
       title: config.title,
       description: config.description,
-      fields: config.fields || [],
+      fields: resolvedFields,
       context: { ...context },
     };
 
@@ -66,8 +74,8 @@ export async function executeHumanApprovalNode(
       await sendEmail({
         to: approverEmail,
         subject: `Approval Required: ${config.title}`,
-        body: `Approval Required: ${config.title}\n\n${config.description || ""}\n\n${(config.fields || [])
-          .map((field) => `${field.label}: ${field.defaultValue ?? "N/A"}`)
+        body: `Approval Required: ${config.title}\n\n${config.description || ""}\n\n${resolvedFields
+          .map((field) => `${field.label}: ${field.value || "N/A"}`)
           .join("\n")}\n\nReview and respond: ${approvalUrl}`,
       });
     } catch (emailError) {
