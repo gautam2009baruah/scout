@@ -3057,7 +3057,7 @@ export function ScoutChatbot({
       style={{ ...cssVars, fontFamily: "var(--scout-font-family)" }}
     >
       <style>{`
-        .scout-chatbot-sharp { border-radius: 0 !important; box-shadow: 0 14px 40px rgb(15 23 42 / .28), 0 5px 14px rgb(15 23 42 / .16) !important; }
+        .scout-chatbot-sharp { border-radius: 0 !important; box-shadow: 0 18px 45px -22px rgb(15 23 42 / .35), 0 8px 18px -14px rgb(15 23 42 / .22) !important; }
         .scout-chatbot-sharp > header { background: #1266c9 !important; }
       `}</style>
       <header
