@@ -3057,7 +3057,7 @@ export function ScoutChatbot({
       style={{ ...cssVars, fontFamily: "var(--scout-font-family)" }}
     >
       <style>{`
-        .scout-chatbot-sharp { border-radius: 0 !important; box-shadow: 0 18px 45px -22px rgb(15 23 42 / .35), 0 8px 18px -14px rgb(15 23 42 / .22) !important; }
+        .scout-chatbot-sharp { border-radius: 6px !important; box-shadow: 0 18px 45px -22px rgb(15 23 42 / .35), 0 8px 18px -14px rgb(15 23 42 / .22) !important; }
         .scout-chatbot-sharp > header { background: #1266c9 !important; }
       `}</style>
       <header
@@ -3123,7 +3123,7 @@ export function ScoutChatbot({
                 <div className="mb-3">
                   <input
                     aria-label="Search conversations"
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+                    className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
                     onChange={(event) => setHistorySearchDraft(event.target.value)}
                     placeholder="Search conversations"
                     value={historySearchDraft}
@@ -3131,7 +3131,7 @@ export function ScoutChatbot({
                 </div>
                 {historyActionState.message ? (
                   <p className={cn(
-                    "mb-4 rounded-xl border px-3 py-2 text-sm",
+                    "mb-4 rounded-md border px-3 py-2 text-sm",
                     historyActionState.type === "error"
                       ? "border-red-100 bg-red-50 text-red-700"
                       : historyActionState.type === "success"
@@ -3142,7 +3142,7 @@ export function ScoutChatbot({
                   </p>
                 ) : null}
                 {selectedConversationIds.size > 0 ? (
-                  <div className="mb-3 flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="mb-3 flex min-h-11 items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-800">{selectedConversationIds.size} selected</p>
                     </div>
@@ -3191,7 +3191,7 @@ export function ScoutChatbot({
                   </div>
                 ) : null}
                 {historyState.loading ? <p className="text-sm text-slate-500">Loading conversations...</p> : null}
-                {historyState.error ? <p className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{historyState.error}</p> : null}
+                {historyState.error ? <p className="rounded-md border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">{historyState.error}</p> : null}
                 {!historyState.loading && !historyState.error ? (
                   <div className="space-y-5">
                     <ConversationHistorySection
@@ -3265,7 +3265,7 @@ export function ScoutChatbot({
                 <div className="mb-3">
                   <input
                     aria-label="Search orchestrations"
-                    className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-4 focus:ring-violet-100"
+                    className="h-10 w-full rounded-md border border-slate-200 px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-4 focus:ring-violet-100"
                     onChange={(event) => setOrchestrationSearchQuery(event.target.value)}
                     placeholder="Search orchestrations"
                     value={orchestrationSearchQuery}
@@ -3273,16 +3273,16 @@ export function ScoutChatbot({
                 </div>
 
                 {authBlockedMessage ? (
-                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                     {authBlockedMessage}
                   </div>
                 ) : null}
 
                 {orchestrationsState.status === "loading" ? (
-                  <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading orchestrations...</p>
+                  <p className="rounded-md bg-slate-50 px-3 py-3 text-sm text-slate-500">Loading orchestrations...</p>
                 ) : orchestrationsState.message ? (
                   <p className={cn(
-                    "rounded-xl border px-3 py-3 text-sm",
+                    "rounded-md border px-3 py-3 text-sm",
                     orchestrationsState.status === "error" ? "border-red-100 bg-red-50 text-red-700" : "border-slate-100 bg-slate-50 text-slate-500"
                   )}>{orchestrationsState.message}</p>
                 ) : (
@@ -3299,7 +3299,7 @@ export function ScoutChatbot({
                       const textExpanded = expandedOrchestrationText.has(orchestration.id);
                       const needsTextToggle = orchestration.name.length > 60 || (orchestration.description || "").length > 90;
                       return (
-                        <section className="group/orchestration relative overflow-visible rounded-xl border border-slate-200 bg-white" key={orchestration.id}>
+                        <section className="group/orchestration relative overflow-visible rounded-md border border-slate-200 bg-white" key={orchestration.id}>
                           <div
                             aria-disabled={orchestration.disabled || undefined}
                             aria-expanded={expanded}
@@ -3343,13 +3343,13 @@ export function ScoutChatbot({
                             </span>
                           </div>
                           {orchestration.disabled && orchestration.disabledReason ? (
-                            <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/orchestration:visible group-hover/orchestration:opacity-100 group-focus-within/orchestration:visible group-focus-within/orchestration:opacity-100 whitespace-normal break-words">
+                                  <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-md bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/orchestration:visible group-hover/orchestration:opacity-100 group-focus-within/orchestration:visible group-focus-within/orchestration:opacity-100 whitespace-normal break-words">
                               {orchestration.disabledReason}
                             </span>
                           ) : null}
                           {expanded ? (
                             <div className="space-y-1 border-t border-slate-100 bg-slate-50/70 p-2">
-                              <div className="mb-2 rounded-lg border border-violet-100 bg-white p-3">
+                            <div className="mb-2 rounded-md border border-violet-100 bg-white p-3">
                                 <p className="text-xs leading-5 text-slate-600">
                                   Review the steps below. Nothing runs until you select Start workflow.
                                 </p>
@@ -3364,16 +3364,16 @@ export function ScoutChatbot({
                                 </button>
                               </div>
                               {orchestration.nodes.length > 0 ? orchestration.nodes.map((node, index) => (
-                                <div className="group/node relative flex min-h-10 items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-200" key={node.id} tabIndex={0}>
+                                  <div className="group/node relative flex min-h-10 items-center gap-3 rounded-md bg-white px-3 py-2 text-sm ring-1 ring-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-200" key={node.id} tabIndex={0}>
                                   <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-50 text-[11px] font-bold text-violet-700">{index + 1}</span>
                                   <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{node.label}</span>
                                   <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">{formatNodeType(node.nodeType)}</span>
-                                  <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/node:visible group-hover/node:opacity-100 group-focus/node:visible group-focus/node:opacity-100 whitespace-normal break-words">
+                                      <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-md bg-slate-950 px-3 py-2.5 text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/node:visible group-hover/node:opacity-100 group-focus/node:visible group-focus/node:opacity-100 whitespace-normal break-words">
                                     {node.description || `${node.label} (${formatNodeType(node.nodeType)})`}
                                   </span>
                                 </div>
                               )) : (
-                                <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500">No nodes are configured.</p>
+                              <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-500">No nodes are configured.</p>
                               )}
                             </div>
                           ) : null}
@@ -3417,7 +3417,7 @@ export function ScoutChatbot({
             <>
               <div ref={messagesViewportRef} className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-[var(--scout-surface)] px-5 py-5">
                 {authBlockedMessage ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                     {authBlockedMessage}
                   </div>
                 ) : null}
@@ -3444,7 +3444,7 @@ export function ScoutChatbot({
 
               <div className="border-t border-slate-100 bg-slate-50/70 px-5 py-4">
                 {attachedFile ? (
-                  <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
+                  <div className="mb-2 flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700">
                     <span className="flex min-w-0 items-center gap-1.5">
                       <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                       <span className="truncate font-medium">{attachedFile.name}</span>
@@ -3460,13 +3460,13 @@ export function ScoutChatbot({
                   </div>
                 ) : null}
                 {attachmentError ? (
-                  <div className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
+                  <div className="mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700">
                     {attachmentError}
                   </div>
                 ) : null}
                 <form
                   className={cn(
-                    "rounded-[22px] border bg-white p-2 shadow-sm focus-within:ring-4 focus-within:ring-[var(--scout-focus)]",
+                    "rounded-md border bg-white p-2 shadow-sm focus-within:ring-4 focus-within:ring-[var(--scout-focus)]",
                     actionModeArmed
                       ? "border-amber-300 focus-within:border-amber-400"
                       : "border-slate-200 focus-within:border-sky-300"
@@ -3519,7 +3519,7 @@ export function ScoutChatbot({
             </>
           ) : (
             <div className="scrollbar-soft flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-slate-50 px-4 py-4">
-              <div className="flex min-h-10 shrink-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
+              <div className="flex min-h-10 shrink-0 items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
                 <div className="flex min-w-0 items-baseline gap-2">
                   <p className="shrink-0 text-sm font-semibold text-slate-900">Guided workflows</p>
                   <p className="truncate text-xs text-slate-500">Scoped to {targetAppName || "the selected application"}</p>
@@ -3537,7 +3537,7 @@ export function ScoutChatbot({
                 </button>
               </div>
               {activeWorkflow && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="font-semibold">Player started</p>
@@ -3555,7 +3555,7 @@ export function ScoutChatbot({
               )}
 
               {authBlockedMessage ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   {authBlockedMessage}
                 </div>
               ) : null}
@@ -3563,7 +3563,7 @@ export function ScoutChatbot({
               <div>
                 <input
                   aria-label="Search guided workflows"
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-4 focus:ring-violet-100"
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-violet-300 focus:ring-4 focus:ring-violet-100"
                   onChange={(event) => setWorkflowSearchQuery(event.target.value)}
                   placeholder="Search guided workflows"
                   value={workflowSearchQuery}
@@ -3571,10 +3571,10 @@ export function ScoutChatbot({
               </div>
 
               {workflowsState.status === "loading" ? (
-                <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-500">Loading workflows...</p>
+                <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-500">Loading workflows...</p>
               ) : workflowsState.message ? (
                 <p className={cn(
-                  "rounded-lg border px-3 py-2 text-sm",
+                  "rounded-md border px-3 py-2 text-sm",
                   workflowsState.status === "error" ? "border-red-100 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-500"
                 )}>
                   {workflowsState.message}
@@ -3602,9 +3602,9 @@ export function ScoutChatbot({
                   const isExpanded = expandedWorkflowSessions.has(session.id) || queryMatched;
 
                   return (
-                    <div className="overflow-visible rounded-lg border border-slate-200 bg-white" key={session.id}>
+                      <div className="overflow-visible rounded-md border border-slate-200 bg-white" key={session.id}>
                       <button
-                        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-t-lg px-3 text-left text-sm font-semibold text-slate-950 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-t-md px-3 text-left text-sm font-semibold text-slate-950 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                         onClick={() => toggleWorkflowSession(session.id)}
                         type="button"
                       >
@@ -3616,12 +3616,12 @@ export function ScoutChatbot({
                       </button>
 
                       {isExpanded && (
-                        <div className="rounded-b-lg border-t border-slate-100 bg-slate-50/70 p-2">
+                          <div className="rounded-b-md border-t border-slate-100 bg-slate-50/70 p-2">
                           {topics.length > 0 ? (
                             <div className="grid gap-1.5">
                               {topics.map((topic, index) => (
                                 <button
-                                  className="group/topic relative flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                                  className="group/topic relative flex min-h-10 w-full items-center justify-between gap-3 rounded-md bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                                   key={topic.id}
                                   onClick={() => startWorkflowTopic(topic)}
                                   type="button"
@@ -3635,7 +3635,7 @@ export function ScoutChatbot({
                                     {topic.steps} steps
                                   </span>
                                   {topic.description ? (
-                                    <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/topic:visible group-hover/topic:opacity-100 group-focus/topic:visible group-focus/topic:opacity-100 whitespace-normal break-words">
+                                    <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-md bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/topic:visible group-hover/topic:opacity-100 group-focus/topic:visible group-focus/topic:opacity-100 whitespace-normal break-words">
                                       {topic.description}
                                     </span>
                                   ) : null}
@@ -3644,7 +3644,7 @@ export function ScoutChatbot({
                             </div>
                           ) : (
                             <button
-                              className="group/topic relative flex min-h-10 w-full items-center justify-between gap-3 rounded-lg bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                            className="group/topic relative flex min-h-10 w-full items-center justify-between gap-3 rounded-md bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                               onClick={() => startWorkflow(session)}
                               type="button"
                             >
@@ -3654,7 +3654,7 @@ export function ScoutChatbot({
                                 {session.steps} steps
                               </span>
                               {session.description ? (
-                                <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-xl bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/topic:visible group-hover/topic:opacity-100 group-focus/topic:visible group-focus/topic:opacity-100 whitespace-normal break-words">
+                              <span className="pointer-events-none absolute left-3 right-3 top-[calc(100%+6px)] z-30 invisible rounded-md bg-slate-950 px-3 py-2.5 text-left text-xs font-normal leading-5 text-white opacity-0 shadow-xl transition group-hover/topic:visible group-hover/topic:opacity-100 group-focus/topic:visible group-focus/topic:opacity-100 whitespace-normal break-words">
                                   {session.description}
                                 </span>
                               ) : null}
@@ -3687,7 +3687,7 @@ export function ScoutChatbot({
 
         {confirmResetOpen ? (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true">
-            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+              <div className="w-full max-w-sm rounded-md bg-white p-6 shadow-2xl">
               <h3 className="text-lg font-semibold text-slate-950">Start new conversation?</h3>
               <p className="mt-2 text-sm text-slate-600">This clears the current visible chat, active context window, cached orchestration state, and starts with a fresh conversation id.</p>
               <div className="mt-6 flex justify-end gap-3">
@@ -3704,19 +3704,19 @@ export function ScoutChatbot({
 
         {historyRenameTarget ? (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true">
-            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="w-full max-w-sm rounded-md bg-white p-6 shadow-2xl">
               <h3 className="text-lg font-semibold text-slate-950">Rename conversation</h3>
               <input
                 aria-label="Conversation title"
-                className="mt-4 h-11 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+                  className="mt-4 h-11 w-full rounded-md border border-slate-200 px-3 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
                 onChange={(event) => setHistoryRenameValue(event.target.value)}
                 value={historyRenameValue}
               />
               <div className="mt-6 flex justify-end gap-3">
-                <button className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => { setHistoryRenameTarget(null); setHistoryRenameValue(""); }} type="button">
+                  <button className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => { setHistoryRenameTarget(null); setHistoryRenameValue(""); }} type="button">
                   Cancel
                 </button>
-                <button className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={historyActionState.type === "renaming"} onClick={() => void renameConversation()} type="button">
+                  <button className="rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={historyActionState.type === "renaming"} onClick={() => void renameConversation()} type="button">
                   {historyActionState.type === "renaming" ? "Saving..." : "Save"}
                 </button>
               </div>
@@ -3726,14 +3726,14 @@ export function ScoutChatbot({
 
         {historyDeleteTarget ? (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true">
-            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl">
+              <div className="w-full max-w-sm rounded-md bg-white p-6 shadow-2xl">
               <h3 className="text-lg font-semibold text-slate-950">Delete conversation?</h3>
               <p className="mt-2 text-sm text-slate-600">This removes the conversation from history and it cannot be resumed later.</p>
               <div className="mt-6 flex justify-end gap-3">
-                <button className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => setHistoryDeleteTarget(null)} type="button">
+                  <button className="rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700" onClick={() => setHistoryDeleteTarget(null)} type="button">
                   Cancel
                 </button>
-                <button className="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={historyActionState.type === "deleting"} onClick={() => void deleteConversation()} type="button">
+                  <button className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60" disabled={historyActionState.type === "deleting"} onClick={() => void deleteConversation()} type="button">
                   {historyActionState.type === "deleting" ? "Deleting..." : "Delete"}
                 </button>
               </div>
@@ -4686,7 +4686,7 @@ function ConversationHistorySection({
         <span className="text-xs text-slate-400">{items.length}{pageCount > 1 ? ` • Page ${currentPage}/${pageCount}` : ""}</span>
       </div>
       {items.length === 0 ? (
-        <p className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">{emptyMessage}</p>
+        <p className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">{emptyMessage}</p>
       ) : (
         <div className="space-y-2">
           {items.map((item) => {
@@ -4695,7 +4695,7 @@ function ConversationHistorySection({
             const isSelected = selectedConversationIds.has(item.id);
 
             return (
-              <div key={item.id} className={cn("min-w-0 overflow-hidden rounded-xl border", isCurrent ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-white") }>
+              <div key={item.id} className={cn("min-w-0 overflow-hidden rounded-md border", isCurrent ? "border-sky-200 bg-sky-50" : "border-slate-200 bg-white") }>
                 <div className="flex min-w-0 items-start gap-2.5 px-3 py-3">
                   <button
                     aria-label={isSelected ? `Deselect ${item.title}` : `Select ${item.title}`}
