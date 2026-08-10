@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, LifeBuoy, ListChecks, LoaderCircle, Mail, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BadgeHelp, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, ListChecks, LoaderCircle, Mail, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -688,7 +688,7 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
                   aria-label="Help Center"
                   className="inline-flex h-9 w-9 items-center justify-center text-slate-500 transition hover:text-blue-700"
                 >
-                  <LifeBuoy className="h-5 w-5" />
+                  <BadgeHelp className="h-5 w-5" />
                 </Link>
               </div>
             </div>
