@@ -681,16 +681,15 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
               </div>
               <div className="flex flex-wrap items-center gap-3 md:border-l md:border-slate-300 md:pl-5">
                 <CompanyContextSwitcher />
+                <UserMenu name={session.user.name} />
                 <Link
                   href="/control-panel/help"
                   title="Help Center"
                   aria-label="Help Center"
-                  className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-blue-700"
+                  className="inline-flex h-9 w-9 items-center justify-center text-slate-500 transition hover:text-blue-700"
                 >
-                  <LifeBuoy className="h-4 w-4" />
-                  <span className="hidden sm:inline">Help</span>
+                  <LifeBuoy className="h-5 w-5" />
                 </Link>
-                <UserMenu name={session.user.name} />
               </div>
             </div>
           </header>

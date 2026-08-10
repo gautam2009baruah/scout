@@ -462,14 +462,14 @@ export function HelpCenter() {
           <p className="mt-2 max-w-2xl text-sm text-blue-50/90">
             Search {CATEGORIES.length} areas and {totalControls} documented controls. No jargon — just what each screen does and how to use it.
           </p>
-          <div className="mt-6 flex max-w-xl items-center gap-2 bg-white px-3 shadow-lg">
+          <div className="mt-6 flex max-w-xl items-center gap-2 bg-white px-3 shadow-lg ring-1 ring-transparent transition focus-within:ring-2 focus-within:ring-blue-500/40">
             <Search className="h-5 w-5 shrink-0 text-slate-400" />
             <input
               ref={searchRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search pages and controls…  (press / )"
-              className="h-12 w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+              className="h-12 w-full bg-transparent text-sm text-slate-900 outline-none focus:!outline-none focus-visible:!outline-none placeholder:text-slate-400"
               aria-label="Search help"
             />
             {query ? (
@@ -572,9 +572,9 @@ export function HelpCenter() {
                         <a
                           href={page.path}
                           title="Open this page"
-                          className="inline-flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
+                          className="inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
                         >
-                          {page.path}<ArrowRight className="h-3 w-3" />
+                          Open page<ArrowRight className="h-3 w-3" />
                         </a>
                       ) : null}
                     </div>
