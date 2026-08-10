@@ -299,6 +299,17 @@ export function HelpCenter() {
   const [query, setQuery] = useState("");
   const [activeKey, setActiveKey] = useState(CATEGORIES[0].key);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const detailRef = useRef<HTMLDivElement | null>(null);
+
+  function selectCategory(key: string) {
+    setActiveKey(key);
+    setQuery("");
+    requestAnimationFrame(() => {
+      if (typeof window !== "undefined" && window.innerWidth < 1024) {
+        detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -375,12 +386,17 @@ export function HelpCenter() {
             const a = ACCENTS[cat.accent];
             return (
               <article key={`${cat.key}-${page.name}`} className="border border-slate-300 bg-white">
-                <div className="flex items-center gap-2 border-b border-slate-200 px-5 py-3">
+                <button
+                  type="button"
+                  onClick={() => selectCategory(cat.key)}
+                  className="flex w-full items-center gap-2 border-b border-slate-200 px-5 py-3 text-left transition hover:bg-slate-50"
+                >
                   <span className={`inline-flex h-6 items-center gap-1.5 ${a.soft} ${a.text} px-2 text-[11px] font-semibold uppercase tracking-wide ring-1 ${a.ring}`}>
                     <cat.icon className="h-3.5 w-3.5" /> {cat.label}
                   </span>
                   <h3 className="text-sm font-semibold text-slate-950">{page.name}</h3>
-                </div>
+                  <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-slate-400">Open<ArrowRight className="h-3.5 w-3.5" /></span>
+                </button>
                 <ControlList controls={controls} accent={cat.accent} />
               </article>
             );
@@ -413,7 +429,7 @@ export function HelpCenter() {
                   <button
                     key={cat.key}
                     type="button"
-                    onClick={() => setActiveKey(cat.key)}
+                    onClick={() => selectCategory(cat.key)}
                     className={`flex w-full items-center gap-3 border-l-2 px-3 py-3 text-left transition ${isActive ? `border-current ${a.text} ${a.soft}` : "border-l-transparent text-slate-600 hover:bg-slate-50"}`}
                   >
                     <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center text-white ${a.icon}`}>
@@ -429,7 +445,7 @@ export function HelpCenter() {
               })}
             </nav>
 
-            <div className="space-y-5">
+            <div ref={detailRef} className="scroll-mt-20 space-y-5">
               <div className="flex items-start gap-3 border border-slate-300 bg-white p-5">
                 <span className={`inline-flex h-11 w-11 shrink-0 items-center justify-center text-white ${ACCENTS[activeCategory.accent].icon}`}>
                   <activeCategory.icon className="h-6 w-6" />
@@ -446,7 +462,13 @@ export function HelpCenter() {
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base font-semibold text-slate-950">{page.name}</h3>
                       {page.path ? (
-                        <code className="bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">{page.path}</code>
+                        <a
+                          href={page.path}
+                          title="Open this page"
+                          className="inline-flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
+                        >
+                          {page.path}<ArrowRight className="h-3 w-3" />
+                        </a>
                       ) : null}
                     </div>
                     <p className="mt-1 text-sm leading-6 text-slate-600">{page.summary}</p>
