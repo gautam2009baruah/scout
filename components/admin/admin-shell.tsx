@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, ListChecks, LoaderCircle, Mail, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Building2, ChevronDown, ChevronRight, CircleHelp, Compass, Database, FolderTree, GitBranch, LayoutDashboard, LifeBuoy, ListChecks, LoaderCircle, Mail, MapPinned, Menu, PanelLeftClose, PanelLeftOpen, SlidersHorizontal, Sparkles, TableProperties, UsersRound, X } from "lucide-react";
 import type { AdminSession } from "@/lib/admin/auth";
 import { UserMenu } from "./user-menu";
 import { CompanyContextSwitcher } from "./company-context-switcher";
@@ -681,6 +681,15 @@ export function AdminShell({ active, activeHref, children, session, title }: Adm
               </div>
               <div className="flex flex-wrap items-center gap-3 md:border-l md:border-slate-300 md:pl-5">
                 <CompanyContextSwitcher />
+                <Link
+                  href="/control-panel/help"
+                  title="Help Center"
+                  aria-label="Help Center"
+                  className="inline-flex h-10 items-center gap-2 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-blue-700"
+                >
+                  <LifeBuoy className="h-4 w-4" />
+                  <span className="hidden sm:inline">Help</span>
+                </Link>
                 <UserMenu name={session.user.name} />
               </div>
             </div>

@@ -11,6 +11,7 @@ export { EmailCredentialsManager } from "./email-credentials-manager";
 export { ExecutionMonitor } from "./execution-monitor";
 export { GuidedWorkflowManager } from "./guided-workflow-console";
 export { GuidedWorkflowTrainingSetup } from "./guided-workflow-training-setup";
+export { HelpCenter } from "./help-center";
 export { default as HealingSuggestionReviewer } from "./healing-suggestion-reviewer-panel";
 export { OrchestrationDesigner } from "./orchestration-designer";
 export { OrchestrationList } from "./orchestration-list";
