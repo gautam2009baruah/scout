@@ -881,7 +881,7 @@ export function ScoutChatbot({
     "--scout-surface": theme?.backgroundColor ?? theme?.surfaceColor ?? (theme?.darkMode ? "#0f172a" : "#ffffff"),
     "--scout-text": theme?.textColor ?? (theme?.darkMode ? "#f8fafc" : "#0f172a"),
     "--scout-focus": `color-mix(in srgb, ${theme?.accentColor ?? "#0ea5e9"} 18%, transparent)`,
-    "--scout-radius": theme?.borderRadius ?? "28px",
+    "--scout-radius": theme?.borderRadius ?? "0px",
     "--scout-font-family": theme?.fontFamily ?? "inherit"
   };
 
@@ -3049,13 +3049,17 @@ export function ScoutChatbot({
     <section
       aria-label={`${assistantName} chat widget`}
       className={cn(
-        "relative flex w-full flex-col overflow-hidden rounded-[var(--scout-radius)] border border-white/80 bg-[var(--scout-surface)] text-[var(--scout-text)] shadow-chat-panel ring-1 ring-slate-950/5 animate-slide-up transition duration-200 ease-out",
+        "scout-chatbot-sharp relative flex w-full flex-col overflow-hidden rounded-[var(--scout-radius)] border border-white/80 bg-[var(--scout-surface)] text-[var(--scout-text)] shadow-chat-panel ring-1 ring-slate-950/5 animate-slide-up transition duration-200 ease-out",
         isMinimizing && "scale-75 opacity-0",
         variant === "inline" ? "max-w-[440px] min-h-[680px]" : "h-full min-h-0 max-w-none",
         className
       )}
       style={{ ...cssVars, fontFamily: "var(--scout-font-family)" }}
     >
+      <style>{`
+        .scout-chatbot-sharp, .scout-chatbot-sharp * { border-radius: 0 !important; }
+        .scout-chatbot-sharp { box-shadow: 0 14px 40px rgb(15 23 42 / .28), 0 5px 14px rgb(15 23 42 / .16) !important; }
+      `}</style>
       <header
         className={cn(
           "border-b border-slate-100 bg-[var(--scout-brand)] px-4 py-2 text-white",

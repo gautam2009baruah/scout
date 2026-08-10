@@ -794,7 +794,7 @@
       .scout-adoption-overlay { position: fixed; inset: 0; z-index: 2147482999; background: rgb(15 23 42 / .52); box-shadow: inset 0 0 140px rgb(15 23 42 / .46); }
       .scout-adoption-tooltip { position: fixed; z-index: 2147483000; width: max-content; max-width: min(340px, calc(100vw - 32px)); border: 1px solid rgba(15, 23, 42, .06); border-radius: 0; background: #fff; box-shadow: 0 14px 40px rgb(15 23 42 / .28), 0 5px 14px rgb(15 23 42 / .16); padding: 18px 22px 16px; color: #4b5563; font: 14px/1.45 system-ui, sans-serif; }
       .scout-adoption-tooltip__header { display: flex; justify-content: flex-end; margin: -8px -12px 0 0; }
-      .scout-adoption-tooltip__close { width: 22px; height: 22px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: #9aa2ac !important; padding: 0 !important; margin: 0 !important; font: 20px/1 system-ui, sans-serif !important; cursor: pointer; flex-shrink: 0; }
+      .scout-adoption-tooltip__close { width: 26px; height: 26px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: #9aa2ac !important; padding: 0 !important; margin: 0 !important; font: 24px/1 system-ui, sans-serif !important; cursor: pointer; flex-shrink: 0; }
       .scout-adoption-tooltip__close:hover { background: rgba(15,23,42,.06) !important; color: #4b5563 !important; }
       .scout-adoption-tooltip h3 { max-width: 296px; margin: 0 0 8px; font-size: 18px; font-weight: 700; line-height: 1.3; color: #1266c9; }
       .scout-adoption-tooltip__message { max-width: 296px; margin: 0; color: #5b6572; font-size: 14px; line-height: 1.45; }
