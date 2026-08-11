@@ -3581,7 +3581,7 @@ export function ScoutChatbot({
                 </p>
               ) : null}
 
-              <div className="grid gap-2">
+              <div className="grid min-w-0 gap-2">
                 {workflowSessions
                   .map((session) => {
                     const allTopics = session.topics ?? [];
@@ -3602,13 +3602,13 @@ export function ScoutChatbot({
                   const isExpanded = expandedWorkflowSessions.has(session.id) || queryMatched;
 
                   return (
-                      <div className="overflow-visible rounded-md border border-slate-200 bg-white" key={session.id}>
+                      <div className="min-w-0 overflow-visible rounded-md border border-slate-200 bg-white" key={session.id}>
                       <button
-                          className="flex min-h-11 w-full items-center justify-between gap-3 rounded-t-md px-3 text-left text-sm font-semibold text-slate-950 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                          className="flex min-h-11 min-w-0 w-full items-center justify-between gap-3 rounded-t-md px-3 text-left text-sm font-semibold text-slate-950 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                         onClick={() => toggleWorkflowSession(session.id)}
                         type="button"
                       >
-                        <span className="min-w-0 truncate">{session.title}</span>
+                        <span className="min-w-0 break-words">{session.title}</span>
                         <span className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-500">
                           {topics.length} topics
                           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -3616,19 +3616,19 @@ export function ScoutChatbot({
                       </button>
 
                       {isExpanded && (
-                          <div className="rounded-b-md border-t border-slate-100 bg-slate-50/70 p-2">
+                          <div className="min-w-0 rounded-b-md border-t border-slate-100 bg-slate-50/70 p-2">
                           {topics.length > 0 ? (
-                            <div className="grid gap-1.5">
+                            <div className="grid min-w-0 gap-1.5">
                               {topics.map((topic, index) => (
                                 <button
-                                  className="group/topic relative flex min-h-10 w-full items-center justify-between gap-3 rounded-md bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                                  className="group/topic relative flex min-h-10 min-w-0 w-full items-center justify-between gap-3 rounded-md bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                                   key={topic.id}
                                   onClick={() => startWorkflowTopic(topic)}
                                   type="button"
                                 >
                                   <div className="flex min-w-0 flex-1 items-center gap-2">
                                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-50 text-[10px] font-bold text-violet-700">{index + 1}</span>
-                                    <span className="min-w-0 truncate font-medium text-slate-800">{topic.title}</span>
+                                    <span className="min-w-0 flex-1 break-words font-medium text-slate-800">{topic.title}</span>
                                   </div>
                                   <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
                                     <Play className="h-3 w-3 fill-current" />
@@ -3644,11 +3644,11 @@ export function ScoutChatbot({
                             </div>
                           ) : (
                             <button
-                            className="group/topic relative flex min-h-10 w-full items-center justify-between gap-3 rounded-md bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
+                            className="group/topic relative flex min-h-10 min-w-0 w-full items-center justify-between gap-3 rounded-md bg-white px-3 text-left text-sm shadow-sm transition hover:text-sky-700 focus:outline-none focus:ring-4 focus:ring-[var(--scout-focus)]"
                               onClick={() => startWorkflow(session)}
                               type="button"
                             >
-                              <span className="min-w-0 truncate font-medium text-slate-800">{session.title}</span>
+                              <span className="min-w-0 flex-1 break-words font-medium text-slate-800">{session.title}</span>
                               <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
                                 <Play className="h-3 w-3 fill-current" />
                                 {session.steps} steps
