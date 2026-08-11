@@ -392,7 +392,7 @@ export function TopicTree({ accessibleTargetAppIds, canCreateRoot, onOpenMenu, o
       <div className="relative min-h-[500px] overflow-auto rounded-lg border border-slate-200 bg-white" ref={containerRef}>
       {selectedCompanyId && tree.length === 0 ? (
         <div className="absolute inset-x-0 top-32 z-10 text-center text-sm font-medium text-slate-500">
-          No topics created for this company.
+          No folder created for this company.
         </div>
       ) : null}
       <svg className="min-h-[500px] w-full" ref={svgRef} role="img" />

@@ -135,6 +135,10 @@ export type DocumentFilters = {
   status?: string;
   fileType?: string;
   search?: string;
+  // Show only documents that are NOT released to this environment (see
+  // document_environment_releases / lib/admin/environment-releases.ts) —
+  // lets an admin find what's still missing from a given environment.
+  notPublishedEnvironmentId?: string;
   page?: number;
   pageSize?: number;
   sortBy?: string;
@@ -1145,6 +1149,16 @@ export async function listDocuments(filters: DocumentFilters, session: AdminSess
   if (filters.search?.trim()) {
     params.push(`%${filters.search.trim()}%`);
     conditions.push(`(documents.name ILIKE $${params.length} OR documents.original_filename ILIKE $${params.length})`);
+  }
+
+  if (filters.notPublishedEnvironmentId) {
+    params.push(filters.notPublishedEnvironmentId);
+    conditions.push(`NOT EXISTS (
+      SELECT 1 FROM document_environment_releases
+      WHERE document_environment_releases.document_id = documents.id
+        AND document_environment_releases.environment_id = $${params.length}
+        AND document_environment_releases.deleted_at IS NULL
+    )`);
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";

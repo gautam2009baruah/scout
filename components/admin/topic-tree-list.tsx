@@ -203,7 +203,7 @@ export function TopicTreeList({ accessibleTargetAppIds, canCreateRoot, onOpenMen
 
       {selectedCompanyId && tree.length === 0 ? (
         <div className="py-10 text-center text-sm font-medium text-slate-500">
-          No topics created for this company.
+          No folder created for this company.
         </div>
       ) : (
         <div className="ml-[13px] border-l border-slate-200">

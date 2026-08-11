@@ -293,7 +293,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
   const [externalRows, setExternalRows] = useState<ExternalReferenceRow[]>([createExternalReferenceRow()]);
   const [documentProgressRows, setDocumentProgressRows] = useState<DocumentProgressRow[]>([]);
   const [documentGrid, setDocumentGrid] = useState<DocumentGridState>({ documents: [], page: 1, pageCount: 1, pageSize: 25, total: 0 });
-  const [documentFilters, setDocumentFilters] = useState({ fileType: "", search: "", status: "" });
+  const [documentFilters, setDocumentFilters] = useState({ fileType: "", search: "", status: "", notPublishedEnvironmentId: "" });
+  const [documentEnvironmentOptions, setDocumentEnvironmentOptions] = useState<Array<{ id: string; label: string }>>([]);
   const [documentSort, setDocumentSort] = useState<DocumentSort>({ key: "number", direction: "desc" });
   const [accessRoleIds, setAccessRoleIds] = useState<string[]>([]);
   const [accessUserIds, setAccessUserIds] = useState<string[]>([]);
@@ -461,8 +462,11 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
       setActionTarget(null);
       setTopicState({ message: "", status: "idle" });
       setDocumentsTarget(target);
-      setDocumentFilters({ fileType: "", search: "", status: "" });
-      await loadDocuments(target, 1, { fileType: "", search: "", status: "" });
+      setDocumentFilters({ fileType: "", search: "", status: "", notPublishedEnvironmentId: "" });
+      await Promise.all([
+        loadDocuments(target, 1, { fileType: "", search: "", status: "", notPublishedEnvironmentId: "" }),
+        loadDocumentEnvironmentOptions(target)
+      ]);
 
       if (cancelled) {
         return;
@@ -626,6 +630,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     if (filters.fileType) params.set("fileType", filters.fileType);
     if (filters.status) params.set("status", filters.status);
     if (filters.search) params.set("search", filters.search);
+    if (filters.notPublishedEnvironmentId) params.set("notPublishedEnvironmentId", filters.notPublishedEnvironmentId);
 
     const response = await fetch(`/api/admin/documents?${params.toString()}`);
     const body = await response.json().catch(() => null);
@@ -659,14 +664,51 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     );
   }
 
+  // Environments a folder's documents could be released to, flattened across
+  // every target app the folder belongs to — powers the "not published to"
+  // filter below. Labels disambiguate by target app name only when the
+  // folder spans more than one, same rule EnvironmentReleaseModal follows.
+  async function loadDocumentEnvironmentOptions(target: TopicActionTarget) {
+    if (!target.topicId) {
+      setDocumentEnvironmentOptions([]);
+      return;
+    }
+
+    const appOptions = target.targetAppIds?.length
+      ? target.targetAppIds.map((id, index) => ({ id, name: target.targetAppNames?.[index] || "Target app" }))
+      : targetApps.filter((app) => app.companyId === target.companyId);
+
+    if (appOptions.length === 0) {
+      setDocumentEnvironmentOptions([]);
+      return;
+    }
+
+    const results = await Promise.all(appOptions.map(async (app) => {
+      const response = await fetch(`/api/admin/content-structure/${target.topicId}/environments?targetAppId=${encodeURIComponent(app.id)}`);
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(body?.environments)) {
+        return [];
+      }
+      return (body.environments as Array<{ id: string; name: string }>).map((environment) => ({
+        id: environment.id,
+        label: appOptions.length > 1 ? `${environment.name} (${app.name})` : environment.name
+      }));
+    }));
+
+    setDocumentEnvironmentOptions(results.flat());
+  }
+
   async function openDocumentsModal(target: TopicActionTarget) {
     setActionTarget(null);
     setTopicState({ message: "", status: "idle" });
     setDocumentsTarget(target);
-    setDocumentFilters({ fileType: "", search: "", status: "" });
+    setDocumentFilters({ fileType: "", search: "", status: "", notPublishedEnvironmentId: "" });
     const defaultSort: DocumentSort = { key: "number", direction: "desc" };
     setDocumentSort(defaultSort);
-    await loadDocuments(target, 1, { fileType: "", search: "", status: "" }, documentGrid.pageSize, defaultSort);
+    await Promise.all([
+      loadDocuments(target, 1, { fileType: "", search: "", status: "", notPublishedEnvironmentId: "" }, documentGrid.pageSize, defaultSort),
+      loadDocumentEnvironmentOptions(target)
+    ]);
   }
 
   function closeDocumentsModal() {
@@ -681,6 +723,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     setVersionSummary(null);
     setCompareFromVersion(null);
     setCompareToVersion(null);
+    setDocumentEnvironmentOptions([]);
     setTopicState({ message: "", status: "idle" });
   }
 
@@ -695,7 +738,8 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
     const nextFilters = {
       fileType: String(form.get("fileType") ?? ""),
       search: String(form.get("search") ?? ""),
-      status: String(form.get("status") ?? "")
+      status: String(form.get("status") ?? ""),
+      notPublishedEnvironmentId: String(form.get("notPublishedEnvironmentId") ?? "")
     };
     setDocumentFilters(nextFilters);
     await loadDocuments(documentsTarget, 1, nextFilters);
@@ -1455,7 +1499,7 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               <span className="h-8 w-8" aria-hidden="true" />
             </div>
 
-            <form className="grid gap-2 border-b border-slate-200 px-3 py-3 sm:px-5 md:grid-cols-[minmax(180px,1fr)_130px_150px_auto]" onSubmit={applyDocumentFilters}>
+            <form className="grid gap-2 border-b border-slate-200 px-3 py-3 sm:px-5 md:grid-cols-[minmax(180px,1fr)_130px_150px_200px_auto]" onSubmit={applyDocumentFilters}>
               <input className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-slate-900" defaultValue={documentFilters.search} name="search" placeholder="Search name or filename" />
               <select className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" defaultValue={documentFilters.fileType} name="fileType">
                 <option value="">All types</option>
@@ -1464,6 +1508,18 @@ export function TopicManager({ canManageAccess, grants, roles, selectedCompanyId
               <select className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" defaultValue={documentFilters.status} name="status">
                 <option value="">All statuses</option>
                 {["uploaded", "queued", "processing", "parsed", "chunked", "embedded", "indexed", "failed"].map((status) => <option key={status} value={status}>{status}</option>)}
+              </select>
+              <select
+                className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                defaultValue={documentFilters.notPublishedEnvironmentId}
+                disabled={documentEnvironmentOptions.length === 0}
+                name="notPublishedEnvironmentId"
+                title="Show only documents not released to the chosen environment"
+              >
+                <option value="">Not published to: any environment</option>
+                {documentEnvironmentOptions.map((environment) => (
+                  <option key={environment.id} value={environment.id}>Not published to: {environment.label}</option>
+                ))}
               </select>
               <button className="h-10 rounded-lg bg-slate-950 px-4 text-sm font-semibold text-white" type="submit">Filter</button>
             </form>

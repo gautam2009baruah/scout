@@ -130,7 +130,7 @@ export function EnvironmentReleaseModal({ title, apiUrl, targetAppId, targetAppO
         </p>
         {bulkSaveUrls && bulkSaveUrls.length > 1 ? (
           <p className="mt-2 rounded-lg bg-indigo-50 px-3 py-2 text-xs text-indigo-800">
-            Applies to all {bulkSaveUrls.length} selected documents — each document&apos;s release state for this target app is set to exactly what you choose below, replacing its own current selection.
+            Applies to all {bulkSaveUrls.length}&nbsp; selected documents — each document&apos;s release state for this target app is set to exactly what you choose below, replacing its own current selection.
           </p>
         ) : null}
         {targetAppOptions && targetAppOptions.length > 1 ? (

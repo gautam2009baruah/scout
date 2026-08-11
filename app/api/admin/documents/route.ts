@@ -178,6 +178,7 @@ export async function GET(request: Request) {
         status: searchParams.get("status") || undefined,
         fileType: searchParams.get("file_type") || searchParams.get("fileType") || undefined,
         search: searchParams.get("search") || undefined,
+        notPublishedEnvironmentId: searchParams.get("notPublishedEnvironmentId") || undefined,
         page: Number(searchParams.get("page") || 1),
         pageSize: Number(searchParams.get("pageSize") || searchParams.get("page_size") || 20),
         sortBy: searchParams.get("sortBy") || undefined,

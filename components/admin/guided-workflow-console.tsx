@@ -653,15 +653,16 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
               {filteredSessions.map((session) => {
                 const collapsed = collapsedSessionIds.has(session.id);
                 return (
-                  <div className="rounded-lg border border-slate-200 bg-white p-2" key={session.id}>
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-2" key={session.id}>
                     <button
-                      className="flex w-full items-center gap-2 text-left"
+                      className="flex min-w-0 w-full items-center gap-2 text-left"
                       onClick={() => setCollapsedSessionIds((current) => {
                         const next = new Set(current);
                         if (next.has(session.id)) next.delete(session.id);
                         else next.add(session.id);
                         return next;
                       })}
+                      title={session.title}
                       type="button"
                     >
                       <ChevronDown className={`h-4 w-4 shrink-0 text-slate-500 transition ${collapsed ? "-rotate-90" : ""}`} />
@@ -669,23 +670,24 @@ export function GuidedWorkflowManager({ appBaseUrl, guides, selectedCompanyId, s
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{session.topics.length}</span>
                     </button>
                     {!collapsed ? (
-                      <div className="mt-2 grid gap-1 pl-6">
+                      <div className="mt-2 grid min-w-0 gap-1 pl-6">
                         {session.topics.length === 0 ? (
                           <p className="text-xs text-slate-500">No topics yet.</p>
                         ) : session.topics.map((topic) => {
                           const active = selectedTopicId === topic.id;
                           return (
                             <button
-                              className={`w-full rounded-md border px-2 py-2 text-left transition ${active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                              className={`min-w-0 w-full rounded-md border px-2 py-2 text-left transition ${active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
                               key={topic.id}
                               onClick={() => {
                                 setSelectedSessionId(session.id);
                                 setSelectedTopicId(topic.id);
                               }}
+                              title={topic.title}
                               type="button"
                             >
-                              <div className="flex items-start justify-between gap-2">
-                                <span className="min-w-0 truncate text-xs font-semibold">{topic.title}</span>
+                              <div className="flex min-w-0 items-start justify-between gap-2">
+                                <span className="line-clamp-2 min-w-0 flex-1 break-words text-xs font-semibold">{topic.title}</span>
                                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${active ? "bg-white/15 text-white" : topic.status === "published" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{topic.status}</span>
                               </div>
                             </button>
@@ -930,8 +932,8 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
       <div className="grid gap-5 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="text-lg font-semibold text-slate-950">{selectedSession.title}</p>
-            <p className="mt-1 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-700">
+            <p className="break-words text-lg font-semibold text-slate-950">{selectedSession.title}</p>
+            <p className="mt-1 flex flex-wrap items-center gap-2 break-words text-sm font-semibold text-slate-700">
               {selectedTopic.title}
               {sessionGuide ? <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-600">Published: v{formatVersion(sessionGuide.versionMajor, sessionGuide.versionBuild)}</span> : null}
               {loadedVersion !== null ? (
@@ -1121,7 +1123,7 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
             recorderConfig ? (
               <div>
                 <p className="mt-3 text-xs text-slate-500">Copy this into the trainer extension for this training session.</p>
-                <pre className="mt-3 max-h-40 overflow-auto rounded-lg bg-slate-950 p-3 text-xs text-white">{JSON.stringify(recorderConfig, null, 2)}</pre>
+                <pre className="mt-3 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-slate-950 p-3 text-xs text-white">{JSON.stringify(recorderConfig, null, 2)}</pre>
               </div>
             ) : (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -1548,7 +1550,7 @@ function installSnippet(targetAppId: string, appBaseUrl: string) {
 }
 
 function Panel({ children, title }: { children: ReactNode; title: string }) {
-  return <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><h2 className="text-lg font-semibold text-slate-950">{title}</h2>{children}</section>;
+  return <section className="flex min-w-0 flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"><h2 className="text-lg font-semibold text-slate-950">{title}</h2>{children}</section>;
 }
 
 function Field({ children, label }: { children: ReactNode; label: string }) {
