@@ -1557,6 +1557,44 @@ function Field({ children, label }: { children: ReactNode; label: string }) {
   return <label className="block"><span className="text-sm font-medium text-slate-700">{label}</span><div className="mt-2 [&_.input]:w-full [&_.input]:rounded-lg [&_.input]:border [&_.input]:border-slate-200 [&_.input]:bg-white [&_.input]:px-3 [&_.input]:text-sm [&_.input]:outline-none [&_.input:focus]:border-slate-900 [&_input.input]:h-10 [&_select.input]:h-10">{children}</div></label>;
 }
 
+// Subset of the tooltip CSS from public/scout-smart-adoption-player.js
+// (createTooltip / .scout-adoption-tooltip rules), trimmed to the
+// center-floating variant used for previewing step and start-message content.
+// Keep in sync with that file if the live tooltip's look changes.
+const TOOLTIP_PREVIEW_CSS = `
+  .scout-adoption-tooltip { width: max-content; max-width: min(420px, calc(100vw - 32px)); border: 1px solid rgba(15, 23, 42, .06); border-radius: 0; background: #fff; box-shadow: 0 16px 46px rgb(15 23 42 / .30), 0 5px 16px rgb(15 23 42 / .18); padding: 18px 18px 15px; color: #4b5563; font: 14px/1.45 system-ui, sans-serif; }
+  .scout-adoption-tooltip__header { display: flex; justify-content: flex-end; margin: -8px -12px 0 0; }
+  .scout-adoption-tooltip__close { width: 26px; height: 26px; display: inline-grid; place-items: center; border: 0 !important; border-radius: 999px !important; background: transparent !important; color: #9aa2ac !important; padding: 0 !important; margin: 0 !important; font: 24px/1 system-ui, sans-serif !important; cursor: pointer; flex-shrink: 0; }
+  .scout-adoption-tooltip__close:hover { background: rgba(15,23,42,.06) !important; color: #4b5563 !important; }
+  .scout-adoption-tooltip h3 { max-width: 360px; margin: 0 0 8px; font-size: 18px; font-weight: 700; line-height: 1.3; color: #1266c9; }
+  .scout-adoption-tooltip__message { max-width: 360px; margin: 0; color: #5b6572; font-size: 13px; line-height: 1.45; }
+  .scout-adoption-tooltip__message a { color: #1266c9; }
+  .scout-adoption-tooltip__message p, .scout-adoption-tooltip__message div { margin: 0 0 4px; }
+  .scout-adoption-tooltip__message h1, .scout-adoption-tooltip__message h2, .scout-adoption-tooltip__message h3 { margin: 0 0 5px; font-weight: 750; line-height: 1.2; }
+  .scout-adoption-tooltip__message h1 { font-size: 17px; }
+  .scout-adoption-tooltip__message h2 { font-size: 15px; }
+  .scout-adoption-tooltip__message h3 { font-size: 13.5px; }
+  .scout-adoption-tooltip__message blockquote { margin: 4px 0; border-left: 3px solid #cbd5e1; padding-left: 8px; color: #64748b; }
+  .scout-adoption-tooltip__message pre { overflow: auto; border-radius: 4px; background: #f1f5f9; color: #0f172a; padding: 6px; font-size: 11px; }
+  .scout-adoption-tooltip__message img { max-width: 100%; height: auto; border-radius: 4px; }
+  .scout-adoption-tooltip__message table { max-width: 100%; border-collapse: collapse; font-size: 11px; }
+  .scout-adoption-tooltip__message th, .scout-adoption-tooltip__message td { border: 1px solid #e2e8f0; padding: 3px 5px; }
+  .scout-adoption-tooltip__message ul, .scout-adoption-tooltip__message ol { margin: 4px 0 0 18px; padding: 0; }
+  .scout-adoption-tooltip__message li { margin: 2px 0; }
+  .scout-adoption-tooltip__message .ql-align-center { text-align: center; }
+  .scout-adoption-tooltip__message .ql-align-right { text-align: right; }
+  .scout-adoption-tooltip__message .ql-align-justify { text-align: justify; }
+  .scout-adoption-tooltip__message .ql-size-small { font-size: .75em; }
+  .scout-adoption-tooltip__message .ql-size-large { font-size: 1.35em; }
+  .scout-adoption-tooltip__message .ql-size-huge { font-size: 1.8em; }
+  .scout-adoption-tooltip__message .ql-indent-1 { padding-left: 1.5em; }
+  .scout-adoption-tooltip__message .ql-indent-2 { padding-left: 3em; }
+  .scout-adoption-tooltip__message .ql-indent-3 { padding-left: 4.5em; }
+  .scout-adoption-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .scout-adoption-footer button { border: 1px solid #d0d5dd; border-radius: 4px; background: #fff; padding: 8px 16px; color: #475569; cursor: not-allowed; font: 600 14px system-ui, sans-serif; opacity: .6; }
+  .scout-adoption-footer button[data-next] { border-color: #1266c9; background: #1266c9; color: #fff; box-shadow: 0 1px 2px rgb(18 102 201 / .35); }
+`;
+
 function RichTextEditor({ label, onChange, placeholder = "Write the step description...", trainingSessions, value }: { label: string; onChange: (value: string) => void; placeholder?: string; trainingSessions: GuidedWorkflowRecordingSessionRow[]; value: string }) {
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const joditRef = useRef<JoditInstance | null>(null);
@@ -1591,7 +1629,25 @@ function RichTextEditor({ label, onChange, placeholder = "Write the step descrip
       const element = editorRef.current;
       if (!element || joditRef.current) return;
 
-      const { Jodit } = await import("jodit");
+      // jodit's default entry (esm/index.js) only wires up a curated subset of
+      // plugins — it's missing justify/indent (align, outdent, indent all
+      // silently no-op), resizer/image-properties (no drag-to-resize handles
+      // on images), fullsize, source, clean-html (eraser), and the
+      // clipboard/paste plugins backing askBeforePasteHTML below. Side-effect
+      // import each one so the buttons we actually expose do something.
+      const [{ Jodit }] = await Promise.all([
+        import("jodit"),
+        import("jodit/esm/plugins/justify/justify.js"),
+        import("jodit/esm/plugins/indent/indent.js"),
+        import("jodit/esm/plugins/resizer/resizer.js"),
+        import("jodit/esm/plugins/image-properties/image-properties.js"),
+        import("jodit/esm/plugins/fullsize/fullsize.js"),
+        import("jodit/esm/plugins/source/source.js"),
+        import("jodit/esm/plugins/clean-html/clean-html.js"),
+        import("jodit/esm/plugins/clipboard/clipboard.js"),
+        import("jodit/esm/plugins/paste/paste.js"),
+        import("jodit/esm/plugins/paste-from-word/paste-from-word.js")
+      ]);
       if (cancelled || !editorRef.current) return;
 
       const editor = Jodit.make(element, {
@@ -1615,7 +1671,10 @@ function RichTextEditor({ label, onChange, placeholder = "Write the step descrip
           "bold", "italic", "underline", "strikethrough", "|",
           "ul", "ol", "|",
           "font", "fontsize", "brush", "paragraph", "|",
-          "align", "outdent", "indent", "|",
+          // Explicit left/center/right/justify buttons instead of the combined
+          // "align" dropdown — the dropdown popup was unreliable inside this
+          // panel's scroll container, so these are always visible and one click.
+          "left", "center", "right", "justify", "outdent", "indent", "|",
           "link", "image", "table", "|",
           "undo", "redo", "eraser", "source", "fullsize"
         ],
@@ -1723,18 +1782,31 @@ function RichTextEditor({ label, onChange, placeholder = "Write the step descrip
           <Eye className="h-3.5 w-3.5" /> Preview
         </button>
       </div>
-      <div className={`scout-editor-shell max-h-[22rem] overflow-y-auto overflow-x-hidden rounded-lg border border-slate-300 bg-white ${ready ? "" : "opacity-70"}`}>
+      {/* No overflow/max-height here — .scout-editor-shell .jodit-wysiwyg (globals.css)
+          already scrolls its own content. Clipping this wrapper cuts off Jodit's
+          image-resize handles and toolbar popups (align, font size, color). */}
+      <div className={`scout-editor-shell rounded-lg border border-slate-300 bg-white ${ready ? "" : "opacity-70"}`}>
         <textarea ref={editorRef} />
       </div>
       {previewOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/30 p-4" onClick={() => setPreviewOpen(false)}>
-          <div className="relative w-full max-w-md rounded-lg border border-slate-200 bg-white p-4 shadow-xl" onClick={(event) => event.stopPropagation()}>
-            <ModalCloseButton onClick={() => setPreviewOpen(false)} />
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-slate-950">Step description preview</p>
-              <span className="h-8 w-8" aria-hidden="true" />
+          {/* Reproduces the live player's .scout-adoption-tooltip (center-floating
+              variant, see preWorkflowConfirmationStep/createTooltip in
+              public/scout-smart-adoption-player.js) so this preview is pixel-for-pixel
+              what the end user sees, not a generic rendering. */}
+          <style>{TOOLTIP_PREVIEW_CSS}</style>
+          <div className="relative" onClick={(event) => event.stopPropagation()}>
+            <div className="scout-adoption-tooltip" data-floating="center" style={{ position: "relative", top: "auto", left: "auto" }}>
+              <div className="scout-adoption-tooltip__header">
+                <button aria-label="Close preview" className="scout-adoption-tooltip__close" onClick={() => setPreviewOpen(false)} type="button">&times;</button>
+              </div>
+              <div className="scout-adoption-tooltip__message" dangerouslySetInnerHTML={{ __html: sanitizeGuideHtml(value) || "<p>No content yet.</p>" }} />
+              <div className="scout-adoption-footer">
+                <button disabled type="button">Back</button>
+                <button data-next disabled type="button">Next</button>
+              </div>
             </div>
-            <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: sanitizeGuideHtml(value) || "<p>No description.</p>" }} />
+            <p className="mt-2 text-center text-xs text-slate-400">Preview — shown exactly as it will appear to the user</p>
           </div>
         </div>
       ) : null}
