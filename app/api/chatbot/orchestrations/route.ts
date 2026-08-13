@@ -87,10 +87,12 @@ export async function GET(request: Request) {
     // against internal user-scoping tables (see getOrchestrationPage's own
     // userId filter, which is for the admin control panel's RBAC only; same
     // rule loadChatbotWorkflowCandidates in workflow-router/route.ts follows).
+    // Environment membership is the live eligibility check. Do not filter on
+    // the editable orchestration row's status: an admin may be drafting a
+    // newer revision while this environment remains pinned to a published one.
     const page = await getOrchestrationPage({
       companyId,
       targetAppId,
-      status: "published",
       page: 1,
       pageSize: 100,
       environmentId: apiKeyRecord.environmentId

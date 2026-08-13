@@ -229,10 +229,11 @@ async function loadChatbotWorkflowCandidates(
   const triggerByOrchestrationId = new Map(
     activeChatbotTriggers.map((trigger) => [trigger.orchestrationId, trigger])
   );
+  // The release is version-pinned, so a current draft must not hide the
+  // previously published build still promoted to this environment.
   const page = await getOrchestrationPage({
     companyId,
     targetAppId,
-    status: "published",
     page: 1,
     pageSize: 100,
     environmentId,

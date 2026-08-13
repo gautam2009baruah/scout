@@ -1689,7 +1689,9 @@ export async function getPublishedGuidesForPlayer(input: { targetAppId: string; 
       LEFT JOIN guided_workflow_topics ON guided_workflow_topics.id = guided_workflow_guides.topic_id
       LEFT JOIN company_target_applications ON company_target_applications.id = guided_workflow_guides.target_app_id
       WHERE guided_workflow_guides.target_app_id = $1
-        AND guided_workflow_guides.status = 'published'
+        -- The environment release already pins a published version through
+        -- gwv. The editable guide can be a newer draft without changing what
+        -- this environment is allowed to run.
         AND (guided_workflow_topics.id IS NULL OR guided_workflow_topics.deleted_at IS NULL)
       ORDER BY guided_workflow_guides.updated_at DESC
     `,
@@ -1768,7 +1770,8 @@ export async function getPublishedTrainingSessionsForPlayer(input: { targetAppId
         ON gwv.guide_id = guided_workflow_guides.id AND gwv.version_major = gwer.version_major AND gwv.version_build = gwer.version_build
       WHERE guided_workflow_recording_sessions.company_target_application_id = $1
         AND guided_workflow_guides.target_app_id = $1
-        AND guided_workflow_guides.status = 'published'
+        -- As above, eligibility comes from the active environment release,
+        -- not the status of an in-progress edit on the guide row.
         AND guided_workflow_recording_sessions.deleted_at IS NULL
         AND guided_workflow_topics.deleted_at IS NULL
       ORDER BY guided_workflow_recording_sessions.updated_at DESC, guided_workflow_topics.sort_order ASC, guided_workflow_topics.created_at ASC
