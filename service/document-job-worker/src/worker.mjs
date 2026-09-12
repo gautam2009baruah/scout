@@ -344,6 +344,17 @@ function findSentenceBoundaryEnd(tokens, start, rawEnd, minTokenSize) {
   return rawEnd;
 }
 
+// Blank-line-delimited paragraphs are the unit repeated block tags (<li>, <article>,
+// <div>, ...) collapse to in parseHtml — one listing "card" (hotel name + rooms +
+// price) on a search-results page is typically one paragraph here, even when it has
+// no semantic heading of its own.
+function splitIntoParagraphs(text) {
+  return String(text || "")
+    .split(/\n\s*\n+/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+}
+
 function createDocumentChunks(document, folderPath, parsedOutput) {
   const chunkMinTokenSize = 500;
   const chunkTokenSize = 820;
@@ -352,58 +363,110 @@ function createDocumentChunks(document, folderPath, parsedOutput) {
   const chunks = [];
   let chunkIndex = 0;
 
+  const pushChunk = (contentParagraphs, tokenCount, pageNumber, section) => {
+    chunks.push({
+      chunkIndex,
+      content: contentParagraphs.join("\n\n"),
+      pageNumber,
+      sectionTitle: section.title || parsedOutput.title || null,
+      tokenCount,
+      metadata: {
+        document_name: document.name,
+        document_type: document.file_type,
+        section_title: section.title,
+        section_path: section.sectionPath,
+        folder_path: folderPath,
+        file_type: document.file_type,
+        page_number: pageNumber,
+        country: document.source_metadata_json?.country,
+        department: document.source_metadata_json?.department,
+        process_stage: document.source_metadata_json?.process_stage,
+        effective_date: document.source_metadata_json?.effective_date,
+        source_url: document.external_source_url || document.source_metadata_json?.source_url
+      }
+    });
+    chunkIndex += 1;
+  };
+
   for (const page of parsedOutput.pages ?? []) {
     const pageNumber = Number(page.page_number) || 1;
     const sections = splitIntoSections(page.text, parsedOutput.title || "Section");
 
     for (const section of sections) {
-      const tokens = tokenize(String(section.text || ""));
+      const paragraphs = splitIntoParagraphs(section.text)
+        .map((text) => ({ text, tokens: tokenize(text) }))
+        .filter((paragraph) => paragraph.tokens.length > 0);
 
-      if (tokens.length === 0) {
+      if (paragraphs.length === 0) {
         continue;
       }
 
-      for (let start = 0; start < tokens.length; start += step) {
-        const rawEnd = Math.min(start + chunkTokenSize, tokens.length);
+      // Pack whole paragraphs per chunk (never splitting one mid-way) so a card/record
+      // never gets fused with a neighboring one with no separator in between. Only a
+      // single paragraph too big to fit on its own falls back to the previous
+      // sentence-boundary token-window slicing.
+      let bufferParagraphs = [];
+      let bufferTokenCount = 0;
 
-        if (rawEnd === start) {
-          break;
+      const flush = () => {
+        if (bufferParagraphs.length === 0) {
+          return;
         }
 
-        if ((rawEnd - start) < chunkMinTokenSize && tokens.length > chunkMinTokenSize && rawEnd < tokens.length) {
+        pushChunk(bufferParagraphs.map((paragraph) => paragraph.text), bufferTokenCount, pageNumber, section);
+
+        let overlapTokenCount = 0;
+        let overlapStart = bufferParagraphs.length;
+        for (let index = bufferParagraphs.length - 1; index >= 0; index -= 1) {
+          const nextOverlapTokenCount = overlapTokenCount + bufferParagraphs[index].tokens.length;
+          if (nextOverlapTokenCount > chunkTokenOverlap) {
+            break;
+          }
+          overlapTokenCount = nextOverlapTokenCount;
+          overlapStart = index;
+        }
+
+        bufferParagraphs = bufferParagraphs.slice(overlapStart);
+        bufferTokenCount = overlapTokenCount;
+      };
+
+      for (const paragraph of paragraphs) {
+        if (paragraph.tokens.length > chunkTokenSize) {
+          flush();
+          bufferParagraphs = [];
+          bufferTokenCount = 0;
+
+          for (let start = 0; start < paragraph.tokens.length; start += step) {
+            const rawEnd = Math.min(start + chunkTokenSize, paragraph.tokens.length);
+
+            if (rawEnd === start) {
+              break;
+            }
+
+            if ((rawEnd - start) < chunkMinTokenSize && paragraph.tokens.length > chunkMinTokenSize && rawEnd < paragraph.tokens.length) {
+              continue;
+            }
+
+            const end = findSentenceBoundaryEnd(paragraph.tokens, start, rawEnd, chunkMinTokenSize);
+            const chunkTokens = paragraph.tokens.slice(start, end);
+            pushChunk([chunkTokens.join(" ")], chunkTokens.length, pageNumber, section);
+
+            if (start + chunkTokenSize >= paragraph.tokens.length) {
+              break;
+            }
+          }
           continue;
         }
 
-        const end = findSentenceBoundaryEnd(tokens, start, rawEnd, chunkMinTokenSize);
-        const chunkTokens = tokens.slice(start, end);
-
-        chunks.push({
-          chunkIndex,
-          content: chunkTokens.join(" "),
-          pageNumber,
-          sectionTitle: section.title || parsedOutput.title || null,
-          tokenCount: chunkTokens.length,
-          metadata: {
-            document_name: document.name,
-            document_type: document.file_type,
-            section_title: section.title,
-            section_path: section.sectionPath,
-            folder_path: folderPath,
-            file_type: document.file_type,
-            page_number: pageNumber,
-            country: document.source_metadata_json?.country,
-            department: document.source_metadata_json?.department,
-            process_stage: document.source_metadata_json?.process_stage,
-            effective_date: document.source_metadata_json?.effective_date,
-            source_url: document.external_source_url || document.source_metadata_json?.source_url
-          }
-        });
-        chunkIndex += 1;
-
-        if (start + chunkTokenSize >= tokens.length) {
-          break;
+        if (bufferTokenCount + paragraph.tokens.length > chunkTokenSize && bufferParagraphs.length > 0) {
+          flush();
         }
+
+        bufferParagraphs.push(paragraph);
+        bufferTokenCount += paragraph.tokens.length;
       }
+
+      flush();
     }
   }
 
@@ -710,7 +773,22 @@ function decodeHtmlEntities(value) {
 async function parseHtml(file) {
   const html = file.toString("utf8");
   const title = decodeHtmlEntities(html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/<[^>]+>/g, " ").trim() || "");
-  const text = decodeHtmlEntities(html.replace(/<!--[\s\S]*?-->/g, " ").replace(/<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi, " ").replace(/<(h[1-6]|p|div|section|article|li|tr|br)\b[^>]*>/gi, "\n").replace(/<\/((h[1-6])|p|div|section|article|li|tr|table)>/gi, "\n").replace(/<t[dh]\b[^>]*>/gi, "\t").replace(/<[^>]+>/g, " ")).replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
+  // <h1>-<h6> become "#"-prefixed markdown-style lines (not just a bare newline like other
+  // block tags) so isHeadingLine/splitIntoSections recognizes them as section boundaries.
+  // Without this, headings that aren't ALL CAPS or numbered (e.g. "Grand Palace Hotel") are
+  // indistinguishable from body text, so a whole page of per-heading tables (e.g. one table
+  // of room types per hotel) collapses into a single section and gets chunked by raw token
+  // count — splitting mid-table and mixing rows from different hotels into the same chunk.
+  const text = decodeHtmlEntities(
+    html
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<(script|style|noscript|svg)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+      .replace(/<h([1-6])\b[^>]*>/gi, (_match, level) => `\n\n${"#".repeat(Number(level))} `)
+      .replace(/<(p|div|section|article|li|tr|br)\b[^>]*>/gi, "\n")
+      .replace(/<\/((h[1-6])|p|div|section|article|li|tr|table)>/gi, "\n")
+      .replace(/<t[dh]\b[^>]*>/gi, "\t")
+      .replace(/<[^>]+>/g, " ")
+  ).replace(/[ \t]+/g, " ").replace(/\n\s*\n\s*\n+/g, "\n\n").trim();
   if (!text) throw new Error("The HTML page did not contain extractable text.");
   return buildOutput(title, [{ page_number: 1, text }], { content_type: "text/html" });
 }
