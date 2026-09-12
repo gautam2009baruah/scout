@@ -1231,6 +1231,11 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
                       {step.navigationMode === "autoClick" ? "Auto-click this control" : "Wait for user click"}
                     </span>
                   ) : null}
+                  {purpose === "main" && step.autoClick ? (
+                    <span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800">
+                      Auto-performed
+                    </span>
+                  ) : null}
                   <div className="flex gap-1">
                     {pendingHealingCount > 0 ? (
                       <button
@@ -1313,6 +1318,19 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
                               <option value="focus">Focus</option>
                               {step.trigger === "input" ? <option value="input">Input</option> : null}
                               <option value="manualNext">Manual next</option>
+                            </select>
+                          </label>
+                        ) : null}
+                        {purpose === "main" ? (
+                          <label className="grid gap-1 text-xs font-medium text-slate-600">
+                            Automation
+                            <select
+                              className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                              onChange={(event) => updateStep(index, { autoClick: event.target.value === "auto" })}
+                              value={step.autoClick ? "auto" : "manual"}
+                            >
+                              <option value="manual">Wait for user</option>
+                              <option value="auto">Auto-perform (click / check / select)</option>
                             </select>
                           </label>
                         ) : null}

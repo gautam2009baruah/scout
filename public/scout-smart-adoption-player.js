@@ -1,8 +1,12 @@
 (function () {
   const DEFAULTS = { scoutBaseUrl: "", targetAppId: "", autoShowLauncher: true, userId: "", apiKey: "" };
-  const PLAYER_VERSION = "20260809-healing-api-diagnostics";
+  const PLAYER_VERSION = "20260912-main-step-automation";
   const GOAL_TIMEOUT_MS = 45000;
   const AUTO_CLICK_PREVIEW_MS = 350;
+  // How long to keep retrying for a step's control to show up before giving up.
+  // Auto-performed steps (clicks/checks/selections) can trigger a slow screen
+  // transition (spinner, async navigation) before the next step's control exists.
+  const STEP_APPEAR_TIMEOUT_MS = 10000;
   const LOCATION_EVENT = "scout:locationchange";
   // A navigation step's click can cause a REAL page unload, which destroys this
   // whole script (including whatever is polling for the next page to be ready)
@@ -1155,11 +1159,13 @@
           ? "highlight"
           : step.type || (stepPurpose === "navigation" || step.trigger === "click" ? "click" : ["input", "change", "blur", "focus"].includes(step.trigger) ? "input" : "highlight"),
         navigationMode,
-        // navigationMode is the single source of truth for whether a step auto-clicks —
-        // never trust a persisted step.autoClick, which can go stale (e.g. a step once set
-        // to "autoClick" then switched back to "waitForUser" without navigationMode changing
-        // again) and silently override the admin's current choice.
-        autoClick: navigationMode === "autoClick",
+        // For navigation steps, navigationMode is the single source of truth for
+        // whether a step auto-clicks — never trust a persisted step.autoClick, which
+        // can go stale (e.g. a step once set to "autoClick" then switched back to
+        // "waitForUser" without navigationMode changing again) and silently override
+        // the admin's current choice. Main steps have no navigationMode, so their own
+        // autoClick flag (set directly by the admin) drives auto-performing them.
+        autoClick: stepPurpose === "navigation" ? navigationMode === "autoClick" : Boolean(step.autoClick),
         trigger: stepPurpose === "navigation" ? "click" : step.trigger
       });
     };
@@ -1202,6 +1208,35 @@
   function isSafeAutoClickTarget(target) {
     const text = [target.innerText, target.getAttribute("aria-label"), target.getAttribute("title")].filter(Boolean).join(" ").toLowerCase();
     return !/\b(delete|remove|submit|save|publish|confirm|approve|pay|send)\b/.test(text);
+  }
+
+  // Controls whose state can be set programmatically without knowing free-text
+  // user input: checkboxes/radios (toggle via a native click) and dropdowns
+  // (choose the option recorded during training).
+  function isAutoSelectableInput(target) {
+    if (target instanceof HTMLSelectElement) return true;
+    if (target instanceof HTMLInputElement) return target.type === "checkbox" || target.type === "radio";
+    const role = target.getAttribute && target.getAttribute("role");
+    return role === "checkbox" || role === "radio" || role === "switch";
+  }
+
+  function autoPerformInput(target, recordedTarget) {
+    if (!(target instanceof HTMLSelectElement)) {
+      target.click();
+      return;
+    }
+    const wanted = String(recordedTarget?.selectedOptionText || recordedTarget?.elementIdentity?.selectedOptionText || "").trim();
+    const options = Array.from(target.options).filter((option) => !option.disabled);
+    const match = wanted ? options.find((option) => (option.textContent || "").trim() === wanted) : null;
+    const chosen = match || options.find((option) => option.value) || options[0];
+    if (chosen) target.value = chosen.value;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  async function waitForStepTarget(step) {
+    const found = await waitForCondition(() => Boolean(findTarget(step.target || {})), STEP_APPEAR_TIMEOUT_MS);
+    return found ? findTarget(step.target || {}) : null;
   }
 
   function resolveGoalContext(guide, mainSteps) {
@@ -1562,11 +1597,13 @@
         return;
       }
 
-      const target = findTarget(step.target || {});
+      let target = findTarget(step.target || {});
+      if (!target) target = await waitForStepTarget(step);
       if (!target) {
         this.showMissing(step, onComplete);
         return;
       }
+      if (this.stopped) return;
 
       target.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
       target.classList.add("scout-adoption-highlight");
@@ -1604,6 +1641,13 @@
 
       if (step.type === "input" || ["input", "change", "blur", "focus"].includes(step.trigger)) {
         const eventName = ["change", "blur", "focus"].includes(step.trigger) ? step.trigger : "input";
+        if (step.autoClick === true && isAutoSelectableInput(target) && isSafeAutoClickTarget(target)) {
+          await delay(AUTO_CLICK_PREVIEW_MS);
+          if (this.stopped) return;
+          autoPerformInput(target, step.target);
+          if (!this.stopped) this.next(onComplete);
+          return;
+        }
         const onEvent = () => {
           // Ignore events from auto-fill (only real user interactions should advance)
           if (window.__scoutAutoFillInProgress) {
