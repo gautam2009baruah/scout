@@ -1325,13 +1325,26 @@ function SessionDetailsPanel({ appBaseUrl, convertTopic, deleteTopic, deleteStep
                           <label className="grid gap-1 text-xs font-medium text-slate-600">
                             Automation
                             <select
-                              className="h-10 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                              className="h-10 w-full min-w-0 truncate rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
                               onChange={(event) => updateStep(index, { autoClick: event.target.value === "auto" })}
                               value={step.autoClick ? "auto" : "manual"}
                             >
                               <option value="manual">Wait for user</option>
-                              <option value="auto">Auto-perform (click / check / select)</option>
+                              <option value="auto">Auto-perform this step</option>
                             </select>
+                            <p className="text-[11px] font-normal text-slate-500">Auto-clicks buttons, auto-checks checkboxes, and auto-selects the recorded dropdown option during playback.</p>
+                          </label>
+                        ) : null}
+                        {purpose === "main" && step.autoClick && (step.target?.tagName ?? "").toLowerCase() === "select" ? (
+                          <label className="grid gap-1 text-xs font-medium text-slate-600">
+                            Option to auto-select
+                            <input
+                              className="h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-sm font-normal text-slate-900 outline-none transition focus:border-slate-900"
+                              onChange={(event) => updateStep(index, { target: { ...step.target, selectedOptionText: event.target.value } })}
+                              placeholder="Exact option text, e.g. United States"
+                              value={step.target?.selectedOptionText ?? ""}
+                            />
+                            <p className="text-[11px] font-normal text-slate-500">Must match the dropdown option&apos;s visible text exactly. Filled in from what was selected when this step was recorded — edit it if that wasn&apos;t the right value.</p>
                           </label>
                         ) : null}
                       </div>

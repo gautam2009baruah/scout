@@ -518,6 +518,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   navigationMode?: NavigationStepMode;
   trigger: GuideStepTrigger;
   autoClick?: boolean;
+  selectedOptionText?: string;
 }> {
   document.getElementById(pickerReviewDialogId)?.remove();
 
@@ -607,11 +608,18 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
     </div>
     <div id="scout-picker-automation-controls" style="display:none;margin-top:12px;border:1px solid #1e293b;border-radius:10px;padding:10px;background:#020617;color:#cbd5e1">
       <div style="font-weight:700;color:#f8fafc">Automation</div>
-      <select id="scout-picker-automation" style="box-sizing:border-box;width:100%;margin-top:7px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
+      <select id="scout-picker-automation" style="box-sizing:border-box;width:100%;max-width:100%;margin-top:7px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none;text-overflow:ellipsis">
         <option value="manual">Wait for user</option>
-        <option value="auto">Auto-perform (click / check / select)</option>
+        <option value="auto">Auto-perform this step</option>
       </select>
       <div style="margin-top:6px;color:#94a3b8;line-height:1.35">Auto-perform clicks buttons, checks checkboxes and selects the recorded dropdown option automatically during playback.</div>
+      ${identity.tagName.toLowerCase() === "select" ? `
+      <div style="margin-top:10px">
+        <span style="display:block;margin-bottom:5px;font-weight:700;color:#f8fafc">Option to auto-select</span>
+        <input id="scout-picker-selected-option" type="text" value="${escapeHtml(identity.selectedOptionText ?? "")}" placeholder="Exact option text, e.g. United States" style="box-sizing:border-box;width:100%;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none" />
+        <div style="margin-top:6px;color:#94a3b8;line-height:1.35">Must match the dropdown option's visible text exactly. Pre-filled from what's currently selected — edit it if that's not the right value.</div>
+      </div>
+      ` : ""}
     </div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 14px 14px;border-top:1px solid rgba(148,163,184,.18);background:#0f172a">
@@ -662,9 +670,10 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
           : "click";
       const automationValue = (document.getElementById("scout-picker-automation") as HTMLSelectElement | null)?.value;
       const autoClick = purpose === "main" ? automationValue === "auto" : undefined;
+      const selectedOptionText = (document.getElementById("scout-picker-selected-option") as HTMLInputElement | null)?.value.trim() || undefined;
       dialog.remove();
       descriptionEditor?.destruct();
-      resolve({ action: value, description, purpose, navigationMode, trigger, autoClick });
+      resolve({ action: value, description, purpose, navigationMode, trigger, autoClick, selectedOptionText });
     };
 
     document.getElementById("scout-picker-accept")?.addEventListener("click", () => finish("accept"));
@@ -764,7 +773,10 @@ async function startPickerMode() {
     }
 
     if (reviewResult.action === "accept") {
-      const action = createManualSelectAction(identity, reviewResult.description, stepOrder, reviewResult.purpose, reviewResult.navigationMode, reviewResult.trigger, reviewResult.autoClick);
+      const identityForAction = reviewResult.selectedOptionText !== undefined
+        ? { ...identity, selectedOptionText: reviewResult.selectedOptionText }
+        : identity;
+      const action = createManualSelectAction(identityForAction, reviewResult.description, stepOrder, reviewResult.purpose, reviewResult.navigationMode, reviewResult.trigger, reviewResult.autoClick);
       await sendAction(action, true);
     }
   }
