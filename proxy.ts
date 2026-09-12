@@ -20,9 +20,13 @@ function hasSessionCookie(request: NextRequest): boolean {
 }
 
 function jsonBodyLimit(pathname: string): number {
-  return pathname.startsWith("/chat/") || pathname.startsWith("/api/chatbot/")
-    ? REQUEST_BODY_LIMITS.chatbotJson
-    : REQUEST_BODY_LIMITS.adminJson;
+  if (pathname.startsWith("/chat/") || pathname.startsWith("/api/chatbot/")) {
+    return REQUEST_BODY_LIMITS.chatbotJson;
+  }
+  if (pathname === "/api/admin/documents/ingest-html") {
+    return REQUEST_BODY_LIMITS.webIngestJson;
+  }
+  return REQUEST_BODY_LIMITS.adminJson;
 }
 
 function rejectDeclaredOversizedJson(request: NextRequest, pathname: string): NextResponse | null {

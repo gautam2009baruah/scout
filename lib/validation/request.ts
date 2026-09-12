@@ -1,6 +1,8 @@
 export const REQUEST_BODY_LIMITS = {
   chatbotJson: 256 * 1024,
   adminJson: 1024 * 1024,
+  // Captured page HTML can run several MB before JSON-escaping overhead; keep this above web-ingestion.ts's MAX_PAGE_BYTES.
+  webIngestJson: 8 * 1024 * 1024,
 } as const;
 
 export class RequestValidationError extends Error {
