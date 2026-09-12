@@ -517,6 +517,7 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   purpose: GuideStepPurpose;
   navigationMode?: NavigationStepMode;
   trigger: GuideStepTrigger;
+  autoClick?: boolean;
 }> {
   document.getElementById(pickerReviewDialogId)?.remove();
 
@@ -604,6 +605,14 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
       </select>
       <div style="margin-top:6px;color:#94a3b8;line-height:1.35">Use auto-click for entry/menu links that can safely move the user to the target page.</div>
     </div>
+    <div id="scout-picker-automation-controls" style="display:none;margin-top:12px;border:1px solid #1e293b;border-radius:10px;padding:10px;background:#020617;color:#cbd5e1">
+      <div style="font-weight:700;color:#f8fafc">Automation</div>
+      <select id="scout-picker-automation" style="box-sizing:border-box;width:100%;margin-top:7px;border:1px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;padding:8px;font:12px system-ui,sans-serif;outline:none">
+        <option value="manual">Wait for user</option>
+        <option value="auto">Auto-perform (click / check / select)</option>
+      </select>
+      <div style="margin-top:6px;color:#94a3b8;line-height:1.35">Auto-perform clicks buttons, checks checkboxes and selects the recorded dropdown option automatically during playback.</div>
+    </div>
     </div>
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:10px 14px 14px;border-top:1px solid rgba(148,163,184,.18);background:#0f172a">
       <button id="scout-picker-cancel" style="${modalButtonStyle("#334155")}">Cancel</button>
@@ -619,10 +628,14 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
   const descriptionEditor = createPickerRichTextEditor(document.getElementById("scout-picker-description"));
   const purposeSelect = document.getElementById("scout-picker-purpose") as HTMLSelectElement | null;
   const navigationControls = document.getElementById("scout-picker-navigation-controls");
+  const automationControls = document.getElementById("scout-picker-automation-controls");
   const triggerField = document.getElementById("scout-picker-trigger-field");
   const syncNavigationControls = () => {
     if (navigationControls) {
       navigationControls.style.display = purposeSelect?.value === "navigation" ? "block" : "none";
+    }
+    if (automationControls) {
+      automationControls.style.display = purposeSelect?.value === "navigation" ? "none" : "block";
     }
     if (triggerField) {
       triggerField.style.display = purposeSelect?.value === "navigation" ? "none" : "block";
@@ -647,9 +660,11 @@ async function showPickedControlReview(identity: NonNullable<typeof lastPickedId
           : triggerValue === "change" || triggerValue === "blur" || triggerValue === "focus" || triggerValue === "manualNext"
           ? triggerValue
           : "click";
+      const automationValue = (document.getElementById("scout-picker-automation") as HTMLSelectElement | null)?.value;
+      const autoClick = purpose === "main" ? automationValue === "auto" : undefined;
       dialog.remove();
       descriptionEditor?.destruct();
-      resolve({ action: value, description, purpose, navigationMode, trigger });
+      resolve({ action: value, description, purpose, navigationMode, trigger, autoClick });
     };
 
     document.getElementById("scout-picker-accept")?.addEventListener("click", () => finish("accept"));
@@ -749,7 +764,7 @@ async function startPickerMode() {
     }
 
     if (reviewResult.action === "accept") {
-      const action = createManualSelectAction(identity, reviewResult.description, stepOrder, reviewResult.purpose, reviewResult.navigationMode, reviewResult.trigger);
+      const action = createManualSelectAction(identity, reviewResult.description, stepOrder, reviewResult.purpose, reviewResult.navigationMode, reviewResult.trigger, reviewResult.autoClick);
       await sendAction(action, true);
     }
   }
@@ -867,7 +882,9 @@ async function previewCreatedSteps() {
     const order = action.stepOrder ?? actions.indexOf(action) + 1;
     const description = action.stepDescription || action.elementText || action.labelText || action.ariaLabel || action.tagName || "Selected control";
     const purpose = action.stepPurpose === "navigation" ? "Navigation" : "Main";
-    const mode = action.stepPurpose === "navigation" ? action.navigationMode === "autoClick" ? "Auto-click" : "Wait" : "";
+    const mode = action.stepPurpose === "navigation"
+      ? action.navigationMode === "autoClick" ? "Auto-click" : "Wait"
+      : action.autoClick ? "Auto-performed" : "";
     label.style.cssText = `position:absolute;left:${rect.left + window.scrollX}px;top:${Math.max(8, rect.top + window.scrollY - 62)}px;max-width:320px;border-radius:12px;background:#0f172a;color:white;padding:8px 9px 9px;box-shadow:0 12px 32px rgba(15,23,42,.36);pointer-events:auto`;
     label.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px">

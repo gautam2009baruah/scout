@@ -74,6 +74,8 @@ export type RecordedAction = {
   stepOrder?: number;
   stepPurpose?: GuideStepPurpose;
   navigationMode?: NavigationStepMode;
+  // Only meaningful when stepPurpose is "main" — auto-perform this control (click / check / select) during playback.
+  autoClick?: boolean;
   trigger?: GuideStepTrigger;
   elementIdentity?: ElementIdentity;
   stepDescription?: string;

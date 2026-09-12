@@ -168,6 +168,7 @@ export function generateGuideFromRecording(actions: RecordedAction[], input?: { 
       message: messageForAction(action),
       stepPurpose: action.stepPurpose ?? "main",
       navigationMode: action.stepPurpose === "navigation" ? action.navigationMode ?? "waitForUser" : undefined,
+      autoClick: action.stepPurpose === "navigation" ? undefined : Boolean(action.autoClick),
       trigger: triggerForAction(action),
       actionSourceId: action.id
     }));

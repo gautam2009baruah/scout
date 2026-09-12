@@ -127,7 +127,8 @@ export function createManualSelectAction(
   stepOrder?: number,
   stepPurpose: GuideStepPurpose = "main",
   navigationMode?: NavigationStepMode,
-  trigger: GuideStepTrigger = defaultTriggerForElementIdentity(elementIdentity)
+  trigger: GuideStepTrigger = defaultTriggerForElementIdentity(elementIdentity),
+  autoClick?: boolean
 ): RecordedAction {
   return {
     id: createId(),
@@ -142,6 +143,7 @@ export function createManualSelectAction(
     stepOrder,
     stepPurpose,
     navigationMode: stepPurpose === "navigation" ? navigationMode ?? "waitForUser" : undefined,
+    autoClick: stepPurpose === "main" ? Boolean(autoClick) : undefined,
     trigger: stepPurpose === "navigation" ? undefined : trigger,
     elementIdentity,
     stepDescription: stepDescription?.trim() || undefined,

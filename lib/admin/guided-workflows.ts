@@ -235,6 +235,7 @@ function applyGuideStepDetails(recordedActions: RecordedAction[], steps: GuideSt
       ...action,
       stepPurpose: step?.stepPurpose ?? action.stepPurpose ?? "main",
       navigationMode: step?.stepPurpose === "navigation" ? step.navigationMode ?? action.navigationMode ?? "waitForUser" : undefined,
+      autoClick: step?.stepPurpose === "navigation" ? undefined : Boolean(step?.autoClick ?? action.autoClick),
       trigger: step?.stepPurpose === "navigation" ? undefined : step?.trigger ?? action.trigger
     });
   }).sort((left, right) => {
